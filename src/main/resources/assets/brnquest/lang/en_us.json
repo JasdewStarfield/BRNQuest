@@ -19,6 +19,9 @@
   "screen.brnquest.status.active": "Tracked",
   "screen.brnquest.status.completed": "Completed, rewards available",
   "screen.brnquest.status.reward_claimed": "Rewards claimed",
+  "screen.brnquest.dependencies": "Required quests",
+  "screen.brnquest.dependency.entry": "• %1$s — %2$s",
+  "screen.brnquest.dependencies.none": "No resolvable prerequisites",
   "toast.brnquest.updated": "BRNQuest updated",
   "toast.brnquest.updated.description": "Quest progress changed."
 }

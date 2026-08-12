@@ -24,4 +24,11 @@ class QuestViewportMathTest {
         assertEquals(0, QuestViewportMath.clampScroll(-20, 500, 200));
         assertEquals(300, QuestViewportMath.clampScroll(900, 500, 200));
     }
+
+    @Test void partialRewardRowStillContributesItsFullHeight() {
+        assertEquals(0, QuestViewportMath.rewardGridHeight(0, 8));
+        assertEquals(28, QuestViewportMath.rewardGridHeight(1, 8));
+        assertEquals(28, QuestViewportMath.rewardGridHeight(8, 8));
+        assertEquals(56, QuestViewportMath.rewardGridHeight(9, 8));
+    }
 }

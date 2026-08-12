@@ -6,13 +6,13 @@ import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 
-/** Registers the deliberately unbound-by-default task-book key mapping. */
+/** Registers the rebindable task-book shortcut used for fast in-world access. */
 public final class ClientKeyRegistry {
     private static KeyMapping open;
     private ClientKeyRegistry() {}
     public static KeyMapping create() {
-        // The key is intentionally unbound so packs can choose a conflict-free default.
-        open = new KeyMapping("key.brnquest.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_UNKNOWN, KeyMapping.CATEGORY_MISC);
+        // J follows the familiar quest/journal convention while remaining rebindable in Controls.
+        open = new KeyMapping("key.brnquest.open", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, KeyMapping.CATEGORY_MISC);
         return open;
     }
     public static void tick() {

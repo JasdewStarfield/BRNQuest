@@ -5,6 +5,7 @@ final class QuestViewportMath {
     static final double MIN_ZOOM = 0.50;
     static final double MAX_ZOOM = 2.00;
     static final double GRID_SCALE = 34.0;
+    static final int REWARD_ROW_HEIGHT = 28;
 
     private QuestViewportMath() {}
 
@@ -20,5 +21,10 @@ final class QuestViewportMath {
 
     static double clampScroll(double value, int contentHeight, int viewportHeight) {
         return Math.max(0.0, Math.min(Math.max(0, contentHeight - viewportHeight), value));
+    }
+
+    static int rewardGridHeight(int rewardCount, int columns) {
+        if (rewardCount <= 0) return 0;
+        return ((rewardCount + Math.max(1, columns) - 1) / Math.max(1, columns)) * REWARD_ROW_HEIGHT;
     }
 }

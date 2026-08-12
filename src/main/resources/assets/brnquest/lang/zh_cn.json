@@ -19,6 +19,9 @@
   "screen.brnquest.status.active": "正在追踪",
   "screen.brnquest.status.completed": "已完成，奖励待领取",
   "screen.brnquest.status.reward_claimed": "奖励已领取",
+  "screen.brnquest.dependencies": "需要先完成",
+  "screen.brnquest.dependency.entry": "• %1$s — %2$s",
+  "screen.brnquest.dependencies.none": "没有可解析的依赖任务",
   "toast.brnquest.updated": "BRNQuest 已更新",
   "toast.brnquest.updated.description": "任务进度发生变化。"
 }

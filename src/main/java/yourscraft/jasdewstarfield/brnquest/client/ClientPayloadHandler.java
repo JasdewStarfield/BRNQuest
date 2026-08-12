@@ -1,8 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.toasts.SystemToast;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
@@ -21,14 +19,11 @@ public final class ClientPayloadHandler {
     public static void progress(BrnQuestNetwork.ProgressSnapshotPayload payload) {
         Minecraft.getInstance().execute(() -> {
             ClientQuestState.get().progress(payload.json());
-            if (payload.toast()) SystemToast.add(Minecraft.getInstance().getToasts(), SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
-                    Component.translatable("toast.brnquest.updated"), Component.translatable("toast.brnquest.updated.description"));
         });
     }
     public static void delta(BrnQuestNetwork.ProgressDeltaPayload payload) { Minecraft.getInstance().execute(() -> ClientQuestState.get().progress(payload.json())); }
     public static void toast(BrnQuestNetwork.QuestToastPayload payload) {
-        Minecraft.getInstance().execute(() -> SystemToast.add(Minecraft.getInstance().getToasts(), SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
-                Component.translatable("toast.brnquest.updated"), Component.translatable("toast.brnquest.updated.description")));
+        // Protocol 1 retains the payload type, but generic progress toasts are intentionally suppressed.
     }
     public static void open(BrnQuestNetwork.OpenScreenPayload payload) {
         Minecraft.getInstance().execute(() -> {

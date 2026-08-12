@@ -53,6 +53,7 @@ public final class QuestScreen extends Screen {
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
+    private List<Component> hoveredComponentTooltip = List.of();
 
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
@@ -64,6 +65,10 @@ public final class QuestScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Tooltips are collected by content layers and rendered only after every opaque panel.
+        hoveredDetailStack = ItemStack.EMPTY;
+        hoveredDetailText = null;
+        hoveredComponentTooltip = List.of();
         // Blur the world once, then render every BRNQuest layer above it.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xC8151820);
@@ -80,6 +85,7 @@ public final class QuestScreen extends Screen {
         renderCanvas(graphics, chapters.get(chapterIndex), mouseX, mouseY);
         if (detailsOpen) renderDetails(graphics, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
+        renderDeferredTooltip(graphics, mouseX, mouseY);
     }
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter) {
@@ -194,8 +200,9 @@ public final class QuestScreen extends Screen {
         fillChamfer(graphics, x, y, size, color);
         renderQuestVisual(graphics, quest, x, y, size);
 
-        if (Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
-            graphics.renderTooltip(font, Component.literal(questTitle(quest)), mouseX, mouseY);
+        if (mouseX >= canvasLeft() && mouseX < right && mouseY >= top && mouseY < bottom
+                && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
+            hoveredDetailText = Component.literal(questTitle(quest));
         }
     }
 
@@ -229,8 +236,6 @@ public final class QuestScreen extends Screen {
     private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY) {
         rewardHitboxes.clear();
         taskHitboxes.clear();
-        hoveredDetailStack = ItemStack.EMPTY;
-        hoveredDetailText = null;
         int left = detailLeft();
         graphics.fill(left, 0, width, height, 0xF0202632);
         graphics.drawString(font, Component.literal("×"), width - 14, 4, 0xFFFFFF, false);
@@ -313,11 +318,7 @@ public final class QuestScreen extends Screen {
         if (status == QuestStatus.LOCKED && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= visibleStatusY && mouseY <= visibleStatusY + font.lineHeight
                 && visibleStatusY >= DETAIL_CONTENT_TOP && visibleStatusY < height - DETAIL_CONTENT_BOTTOM_MARGIN) {
-            graphics.renderComponentTooltip(font, dependencyTooltip(quest), mouseX, mouseY);
-        } else if (!hoveredDetailStack.isEmpty()) {
-            graphics.renderTooltip(font, hoveredDetailStack, mouseX, mouseY);
-        } else if (hoveredDetailText != null) {
-            graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
+            hoveredComponentTooltip = dependencyTooltip(quest);
         }
 
     }
@@ -600,6 +601,17 @@ public final class QuestScreen extends Screen {
 
     private QuestDefinition selectedQuest() {
         return ClientQuestState.get().book().map(snapshot -> snapshot.quests().get(ClientQuestState.get().selected())).orElse(null);
+    }
+
+    /** Draws the one winning hover surface at the final z-order, above details and navigation chrome. */
+    private void renderDeferredTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (!hoveredComponentTooltip.isEmpty()) {
+            graphics.renderComponentTooltip(font, hoveredComponentTooltip, mouseX, mouseY);
+        } else if (!hoveredDetailStack.isEmpty()) {
+            graphics.renderTooltip(font, hoveredDetailStack, mouseX, mouseY);
+        } else if (hoveredDetailText != null) {
+            graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
+        }
     }
 
     private String questTitle(QuestDefinition quest) {

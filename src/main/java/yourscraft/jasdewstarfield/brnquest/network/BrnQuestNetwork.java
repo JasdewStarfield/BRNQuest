@@ -176,13 +176,12 @@ public final class BrnQuestNetwork {
         for (int i = 0; i < chunks.size(); i++) send(player, new BookChunkPayload(snapshot.revision(), i, chunks.get(i)));
     }
 
-    public static void syncProgress(ServerPlayer player, boolean toast) {
+    public static void syncProgress(ServerPlayer player, boolean changed) {
         PlayerProgress progress = ProgressEngine.get().progress(player);
         String json = GSON.toJson(new ProgressWire(progress.questsView(), progress.taskProgressView(), progress.claimedRewardsView(), progress.revision()));
         if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
-        if (toast) {
+        if (changed) {
             send(player, new ProgressDeltaPayload(json));
-            send(player, new QuestToastPayload("progress_changed"));
         } else {
             send(player, new ProgressSnapshotPayload(json, false));
         }

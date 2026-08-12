@@ -25,6 +25,8 @@ public final class QuestScreen extends Screen {
     private static final int NAV_LEFT = 0;
     private static final int NAV_RIGHT = 150;
     private static final int NAV_HANDLE_WIDTH = 12;
+    private static final int NAV_GROUP_HEIGHT = 13;
+    private static final int NAV_CHAPTER_HEIGHT = 15;
     private static final int CANVAS_MARGIN = 0;
     private static final int DETAIL_WIDTH = 250;
     private static final int NODE_BASE_SIZE = 18;
@@ -90,19 +92,21 @@ public final class QuestScreen extends Screen {
         navigationContentHeight = navigationContentHeight(book);
         navigationScroll = QuestViewportMath.clampScroll(navigationScroll, navigationContentHeight, viewportHeight);
         int y = NAV_TOP - (int) Math.round(navigationScroll);
+        // A continuous panel makes the compact rows read as one navigation surface.
+        graphics.fill(NAV_LEFT, NAV_TOP, NAV_RIGHT + 4, height - NAV_BOTTOM_MARGIN, 0xB8181E27);
         graphics.enableScissor(NAV_LEFT, NAV_TOP, NAV_RIGHT + 6, height - NAV_BOTTOM_MARGIN);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             if (entry.group() != null) {
-                graphics.fill(NAV_LEFT, y, NAV_RIGHT, y + 14, 0xD01B222C);
-                graphics.drawString(font, Component.literal("▾ " + entry.group().title()), NAV_LEFT + 5, y + 3, 0xFFB7C5D8, false);
-                y += 16;
+                graphics.fill(NAV_LEFT, y, NAV_RIGHT, y + NAV_GROUP_HEIGHT, 0xE01B222C);
+                graphics.drawString(font, Component.literal("▾ " + entry.group().title()), NAV_LEFT + 4, y + 2, 0xFFB7C5D8, false);
+                y += NAV_GROUP_HEIGHT;
                 continue;
             }
             ChapterDefinition chapter = entry.chapter();
             int color = chapter.id().equals(selectedChapter.id()) ? 0xFF4A6A88 : 0xE0262D38;
-            graphics.fill(NAV_LEFT + 8, y, NAV_RIGHT, y + 16, color);
-            graphics.drawString(font, Component.literal(chapter.title()), NAV_LEFT + 14, y + 4, 0xFFFFFF, false);
-            y += 18;
+            graphics.fill(NAV_LEFT + 4, y, NAV_RIGHT, y + NAV_CHAPTER_HEIGHT, color);
+            graphics.drawString(font, Component.literal(chapter.title()), NAV_LEFT + 9, y + 3, 0xFFFFFF, false);
+            y += NAV_CHAPTER_HEIGHT;
         }
         graphics.disableScissor();
         renderScrollbar(graphics, NAV_RIGHT + 2, NAV_TOP, height - NAV_BOTTOM_MARGIN,
@@ -112,7 +116,7 @@ public final class QuestScreen extends Screen {
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
-        int right = detailsOpen ? detailLeft() - 6 : width - CANVAS_MARGIN;
+        int right = detailsOpen ? detailLeft() : width - CANVAS_MARGIN;
         int top = 0;
         int bottom = height;
         graphics.enableScissor(canvasLeft(), top, right, bottom);
@@ -435,7 +439,7 @@ public final class QuestScreen extends Screen {
             if (mouseX >= left) return true;
         }
 
-        int canvasRight = detailsOpen ? left - 6 : width - CANVAS_MARGIN;
+        int canvasRight = detailsOpen ? left : width - CANVAS_MARGIN;
         if (mouseX > canvasLeft() && mouseX < canvasRight) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.get(chapterIndex);
@@ -491,7 +495,7 @@ public final class QuestScreen extends Screen {
         double nextZoom = QuestViewportMath.clampZoom(zoom + vertical * 0.10);
         if (nextZoom == oldZoom) return true;
         // Preserve the task coordinate at the visible canvas center while zooming.
-        int canvasRight = detailsOpen ? detailLeft() - 6 : width - CANVAS_MARGIN;
+        int canvasRight = detailsOpen ? detailLeft() : width - CANVAS_MARGIN;
         double anchorX = (canvasLeft() + canvasRight) / 2.0;
         double anchorY = height / 2.0;
         panX = QuestViewportMath.panForStableAnchor(anchorX, screenOriginX(), panX, oldZoom, nextZoom);
@@ -516,10 +520,10 @@ public final class QuestScreen extends Screen {
         int y = NAV_TOP - (int) Math.round(navigationScroll);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             if (entry.group() != null) {
-                y += 16;
+                y += NAV_GROUP_HEIGHT;
             } else {
-                if (mouseY >= y && mouseY <= y + 16) return entry.chapter();
-                y += 18;
+                if (mouseY >= y && mouseY <= y + NAV_CHAPTER_HEIGHT) return entry.chapter();
+                y += NAV_CHAPTER_HEIGHT;
             }
         }
         return null;
@@ -692,7 +696,8 @@ public final class QuestScreen extends Screen {
     }
 
     private int canvasLeft() {
-        return navigationCollapsed ? NAV_HANDLE_WIDTH + 4 : NAV_RIGHT + NAV_HANDLE_WIDTH + 8;
+        // The canvas touches adjacent chrome exactly; no invisible dead strip remains on either side.
+        return navigationCollapsed ? NAV_HANDLE_WIDTH : NAV_RIGHT + 4 + NAV_HANDLE_WIDTH;
     }
 
     private int screenOriginX() {
@@ -701,7 +706,7 @@ public final class QuestScreen extends Screen {
 
     private int navigationContentHeight(QuestBookDefinition book) {
         return QuestPresentation.navigation(book).stream()
-                .mapToInt(entry -> entry.group() != null ? 16 : 18).sum();
+                .mapToInt(entry -> entry.group() != null ? NAV_GROUP_HEIGHT : NAV_CHAPTER_HEIGHT).sum();
     }
 
     private int navigationViewportHeight() {

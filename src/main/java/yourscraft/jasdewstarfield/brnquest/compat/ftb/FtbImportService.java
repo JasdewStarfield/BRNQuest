@@ -2,8 +2,6 @@ package yourscraft.jasdewstarfield.brnquest.compat.ftb;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonParser;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
@@ -12,6 +10,8 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.workspace.NativePackWriter;
+import yourscraft.jasdewstarfield.brnquest.workspace.WorkspacePaths;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -24,10 +24,16 @@ public final class FtbImportService {
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[a-zA-Z0-9._-]+");
 
     public ImportExecution execute(MinecraftServer server, String sourceName, String namespace, String bookId, boolean dryRun) throws IOException {
+        return execute(server, sourceName, namespace, bookId, dryRun, ImportTarget.WORLD);
+    }
+
+    public ImportExecution execute(MinecraftServer server, String sourceName, String namespace, String bookId,
+                                   boolean dryRun, ImportTarget target) throws IOException {
         requireSegment(sourceName, "source");
         requireSegment(namespace, "namespace");
         requireSegment(bookId, "book_id");
-        Path importRoot = server.getServerDirectory().resolve("brnquest-import").toAbsolutePath().normalize();
+        Path importRoot = target == ImportTarget.WORKSPACE ? WorkspacePaths.imports(server)
+                : server.getServerDirectory().resolve("brnquest-import").toAbsolutePath().normalize();
         Path source = importRoot.resolve(sourceName).normalize();
         if (!source.startsWith(importRoot) || !Files.isDirectory(source) || Files.isSymbolicLink(source)) {
             throw new IOException("Import source is outside the allowed root or does not exist: " + sourceName);
@@ -36,37 +42,25 @@ public final class FtbImportService {
         FtbImportResult result = new FtbV13Importer().importBook(source, namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT));
         validateItems(server, result);
         String json = NativeBookJson.encode(result.book());
-        if (!dryRun && !result.report().hasFatal()) write(server, namespace, bookId, json, result);
-        return new ImportExecution(result, json, dryRun);
+        if (!dryRun && !result.report().hasFatal()) write(server, namespace, bookId, json, result, target);
+        return new ImportExecution(result, json, dryRun, target);
     }
 
-    private void write(MinecraftServer server, String namespace, String bookId, String json, FtbImportResult result) throws IOException {
+    private void write(MinecraftServer server, String namespace, String bookId, String json,
+                       FtbImportResult result, ImportTarget target) throws IOException {
+        if (target == ImportTarget.WORKSPACE) {
+            NativePackWriter.write(WorkspacePaths.workspace(server), namespace, bookId, json, "BRNQuest author workspace");
+            writeReport(WorkspacePaths.reports(server), namespace, bookId, result);
+            return;
+        }
         Path world = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
         Path pack = world.resolve("datapacks/brnquest-import-" + namespace + "-" + bookId).normalize();
         if (!pack.startsWith(world) || Files.exists(pack)) throw new FileAlreadyExistsException(pack.toString());
-        Path bookFile = pack.resolve("data").resolve(namespace).resolve("brnquest/books").resolve(bookId + ".json");
-        Files.createDirectories(bookFile.getParent());
-        Files.writeString(pack.resolve("pack.mcmeta"), "{\n  \"pack\": {\n    \"pack_format\": 48,\n    \"description\": \"BRNQuest deterministic import\"\n  }\n}\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-        Files.writeString(bookFile, json, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-        // Schema 1 keeps an assembled book for atomic loading and emits canonical standalone
-        // resources so pack authors can edit chapter boundaries without reverse engineering it.
-        var root = JsonParser.parseString(json).getAsJsonObject();
-        var gson = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
-        for (var element : root.getAsJsonArray("chapter_groups")) {
-            var value = element.getAsJsonObject();
-            String pathName = ResourceName.path(value.get("id").getAsString());
-            Path file = pack.resolve("data").resolve(namespace).resolve("brnquest/chapter_groups").resolve(pathName + ".json");
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, gson.toJson(value) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-        }
-        for (var element : root.getAsJsonArray("chapters")) {
-            var value = element.getAsJsonObject();
-            String pathName = ResourceName.path(value.get("id").getAsString());
-            Path file = pack.resolve("data").resolve(namespace).resolve("brnquest/chapters").resolve(pathName + ".json");
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, gson.toJson(value) + "\n", StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-        }
-        Path reports = world.resolve("brnquest-reports");
+        NativePackWriter.write(pack, namespace, bookId, json, "BRNQuest deterministic import");
+        writeReport(world.resolve("brnquest-reports"), namespace, bookId, result);
+    }
+
+    private void writeReport(Path reports, String namespace, String bookId, FtbImportResult result) throws IOException {
         Files.createDirectories(reports);
         Files.writeString(reports.resolve("import-" + namespace + "-" + bookId + ".json"), result.report().toJson() + "\n",
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -136,8 +130,6 @@ public final class FtbImportService {
         result.report().add(new Diagnostic(severity, "BQF-103", "", kind + ".item", objectId, message));
     }
 
-    public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun) {}
-    private static final class ResourceName {
-        private static String path(String id) { return id.substring(id.indexOf(':') + 1); }
-    }
+    public enum ImportTarget { WORLD, WORKSPACE }
+    public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun, ImportTarget target) {}
 }

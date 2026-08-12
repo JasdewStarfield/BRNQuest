@@ -11,11 +11,13 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerDestroyItemEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import yourscraft.jasdewstarfield.brnquest.command.BrnQuestCommands;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookReloadListener;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor;
+import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
 
 /** NeoForge event wiring kept separate from loader-neutral model and runtime code. */
 public final class PlatformModHooks {
@@ -29,10 +31,16 @@ public final class PlatformModHooks {
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onItemCrafted);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onItemDestroyed);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onPlayerTick);
+        NeoForge.EVENT_BUS.addListener(PlatformModHooks::onServerStarted);
         if (FMLEnvironment.dist == Dist.CLIENT) PlatformClientHooks.register(modEventBus);
     }
 
     private static void onReloadListeners(AddReloadListenerEvent event) { event.addListener(new QuestBookReloadListener()); }
+    private static void onServerStarted(ServerStartedEvent event) {
+        // The initial resource load has already completed at this lifecycle point.
+        // A newly copied workspace is therefore followed by one explicit reload.
+        new WorkspaceDeploymentService().autoDeployAndReload(event.getServer());
+    }
     private static void onCommands(RegisterCommandsEvent event) { BrnQuestCommands.register(event.getDispatcher()); }
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {

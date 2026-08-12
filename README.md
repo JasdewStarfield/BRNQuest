@@ -22,6 +22,9 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 The current manual client acceptance procedure is documented in
 [`docs/CLIENT_ACCEPTANCE_zh.md`](docs/CLIENT_ACCEPTANCE_zh.md).
 
+整合包作者的全局任务工作区、新世界自动部署和显式更新流程见
+[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)。
+
 ## Source layout
 
 Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. As features are introduced, keep stable API, data/import, progress, task, reward, team, network, client, integration, command, and diagnostics concerns in separate packages as specified by the shared design document.

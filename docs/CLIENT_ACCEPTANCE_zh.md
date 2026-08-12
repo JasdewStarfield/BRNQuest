@@ -24,10 +24,10 @@ powershell -ExecutionPolicy Bypass -File .\tools\validation\prepare-eow-fixture.
 本批新增了描述字段和作者顺序语义。请创建一个允许作弊的新世界，避免旧世界中上一版生成的数据包遮蔽新导入结果，然后依次执行。旧数据包的任务 JSON 不含 `subtitle`/`description` 字段，`/reload` 不会重建它，导入命令也按安全策略拒绝覆盖，所以不能复用旧世界验证描述。
 
 ```text
-/brnquest import_ftb eow embers_of_winter main --dry-run
-/brnquest import_ftb eow embers_of_winter main
-/brnquest import_ftb eow embers_of_winter main
-/reload
+/brnquest workspace import_ftb eow embers_of_winter main --dry-run
+/brnquest workspace import_ftb eow embers_of_winter main
+/brnquest workspace deploy
+/brnquest workspace reload
 /brnquest validate
 /brnquest open
 ```
@@ -35,7 +35,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\validation\prepare-eow-fixture.
 预期结果：
 
 - dry-run 和实际导入都报告 `6 chapters, 53 quests`；仅安装 BRNQuest 的开发环境应为 `0 errors, 6 warnings`，这些 warning 对应未安装的 Farmer's Delight 物品和 FTB 缺失物品占位符；
-- 第二次实际导入拒绝覆盖已有数据包；
+- 第二次 workspace 导入拒绝覆盖已有作者工作区；同一世界第二次普通 deploy 拒绝覆盖已有部署；
 - validate 报告 `53 quests` 和一个 64 位十六进制 revision；
 - `/brnquest open` 不得再出现 `String too big`、`EncoderException` 或断线；
 - 任务书显示 6 个章节，节点可以选择，拖动画布与滚轮缩放有效；

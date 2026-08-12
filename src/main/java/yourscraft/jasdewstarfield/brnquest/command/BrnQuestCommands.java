@@ -11,6 +11,8 @@ import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportService;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
+import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
+import yourscraft.jasdewstarfield.brnquest.workspace.WorkspacePaths;
 
 /** Server commands delegate to the same APIs used by integrations and network handlers. */
 public final class BrnQuestCommands {
@@ -28,6 +30,19 @@ public final class BrnQuestCommands {
                         .then(Commands.literal("claim").then(Commands.argument("player", EntityArgument.player()).then(Commands.argument("reward", StringArgumentType.string()).executes(BrnQuestCommands::rewardClaim)))))
                 .then(Commands.literal("validate").requires(s -> s.hasPermission(2)).executes(BrnQuestCommands::validate))
                 .then(Commands.literal("diagnose").requires(s -> s.hasPermission(2)).executes(BrnQuestCommands::diagnose))
+                .then(Commands.literal("workspace").requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("deploy")
+                                .executes(ctx -> deployWorkspace(ctx, false))
+                                .then(Commands.literal("--replace").executes(ctx -> deployWorkspace(ctx, true))))
+                        .then(Commands.literal("reload").executes(BrnQuestCommands::reloadWorkspace))
+                        .then(Commands.literal("import_ftb")
+                                .then(Commands.argument("source", StringArgumentType.word())
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .executes(ctx -> importFtb(ctx, "main", false, FtbImportService.ImportTarget.WORKSPACE))
+                                                .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, "main", true, FtbImportService.ImportTarget.WORKSPACE)))
+                                                .then(Commands.argument("book_id", StringArgumentType.word())
+                                                        .executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), false, FtbImportService.ImportTarget.WORKSPACE))
+                                                        .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), true, FtbImportService.ImportTarget.WORKSPACE))))))))
                 .then(Commands.literal("reload").requires(s -> s.hasPermission(2)).executes(ctx -> {
                     ctx.getSource().getServer().reloadResources(ctx.getSource().getServer().getPackRepository().getSelectedIds());
                     ctx.getSource().sendSuccess(() -> Component.literal("BRNQuest reload requested"), true);
@@ -36,11 +51,11 @@ public final class BrnQuestCommands {
                 .then(Commands.literal("import_ftb").requires(s -> s.hasPermission(2))
                         .then(Commands.argument("source", StringArgumentType.word())
                                 .then(Commands.argument("namespace", StringArgumentType.word())
-                                        .executes(ctx -> importFtb(ctx, "main", false))
-                                        .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, "main", true)))
+                                        .executes(ctx -> importFtb(ctx, "main", false, FtbImportService.ImportTarget.WORLD))
+                                        .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, "main", true, FtbImportService.ImportTarget.WORLD)))
                                         .then(Commands.argument("book_id", StringArgumentType.word())
-                                                .executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), false))
-                                                .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), true))))))));
+                                                .executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), false, FtbImportService.ImportTarget.WORLD))
+                                                .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), true, FtbImportService.ImportTarget.WORLD))))))));
     }
 
     private static int open(CommandContext<CommandSourceStack> context, String quest) {
@@ -98,15 +113,41 @@ public final class BrnQuestCommands {
         return QuestBookManager.get().lastReport().hasFatal() ? 0 : 1;
     }
 
-    private static int importFtb(CommandContext<CommandSourceStack> context, String bookId, boolean dryRun) {
+    private static int deployWorkspace(CommandContext<CommandSourceStack> context, boolean replace) {
+        try {
+            var service = new WorkspaceDeploymentService();
+            var result = service.deploy(context.getSource().getServer(), replace);
+            if (result.status() == WorkspaceDeploymentService.Status.ALREADY_DEPLOYED) {
+                context.getSource().sendFailure(Component.literal("Workspace is already deployed; use --replace for an explicit backed-up replacement"));
+                return 0;
+            }
+            service.reloadIncludingWorkspace(context.getSource().getServer());
+            String backup = result.backup() == null ? "" : ", backup " + result.backup();
+            context.getSource().sendSuccess(() -> Component.literal("BRNQuest workspace " + result.status().name().toLowerCase() + ": " + result.files() + " files" + backup), true);
+            audit(context, "workspace_deploy", context.getSource().getTextName(), WorkspacePaths.workspace(context.getSource().getServer()).toString(), result.status().name());
+            return 1;
+        } catch (Exception exception) {
+            context.getSource().sendFailure(Component.literal("Workspace deployment failed: " + exception.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int reloadWorkspace(CommandContext<CommandSourceStack> context) {
+        new WorkspaceDeploymentService().reloadIncludingWorkspace(context.getSource().getServer());
+        context.getSource().sendSuccess(() -> Component.literal("BRNQuest deployed workspace reload requested"), true);
+        return 1;
+    }
+
+    private static int importFtb(CommandContext<CommandSourceStack> context, String bookId, boolean dryRun,
+                                 FtbImportService.ImportTarget target) {
         String source = StringArgumentType.getString(context, "source");
         String namespace = StringArgumentType.getString(context, "namespace");
         try {
-            var execution = new FtbImportService().execute(context.getSource().getServer(), source, namespace, bookId, dryRun);
+            var execution = new FtbImportService().execute(context.getSource().getServer(), source, namespace, bookId, dryRun, target);
             var result = execution.result();
             long errors = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity().ordinal() >= yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR.ordinal()).count();
             long warnings = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN).count();
-            context.getSource().sendSuccess(() -> Component.literal("BRNQuest import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + errors + " errors, " + warnings + " warnings")
+            context.getSource().sendSuccess(() -> Component.literal("BRNQuest " + target.name().toLowerCase() + " import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + errors + " errors, " + warnings + " warnings")
                     .withStyle(errors == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
             yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
                     context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), errors, warnings);

@@ -4,7 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $versionRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $fixtureRoot = Join-Path $versionRoot 'src\test\resources\fixtures\ftb_v13\eow'
-$targetRoot = Join-Path $versionRoot 'run\brnquest-import\eow'
+$targetRoot = Join-Path $versionRoot 'run\config\brnquest\imports\eow'
 $manifest = Join-Path $fixtureRoot 'SHA256SUMS'
 
 New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null

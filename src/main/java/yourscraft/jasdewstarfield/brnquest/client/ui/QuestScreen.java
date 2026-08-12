@@ -28,10 +28,18 @@ public final class QuestScreen extends Screen {
     private static final int CANVAS_MARGIN = 20;
     private static final int DETAIL_WIDTH = 250;
     private static final int NODE_BASE_SIZE = 18;
+    private static final int NAV_TOP = 20;
+    private static final int NAV_BOTTOM_MARGIN = 20;
+    private static final int DETAIL_CONTENT_TOP = 48;
+    private static final int DETAIL_CONTENT_BOTTOM_MARGIN = 82;
 
     private double panX;
     private double panY;
     private double zoom = 1.0;
+    private double navigationScroll;
+    private double detailScroll;
+    private int navigationContentHeight;
+    private int detailContentHeight;
     private int chapterIndex;
     private double dragX;
     private double dragY;
@@ -69,7 +77,11 @@ public final class QuestScreen extends Screen {
     }
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter) {
-        int y = 20;
+        int viewportHeight = navigationViewportHeight();
+        navigationContentHeight = navigationContentHeight(book);
+        navigationScroll = QuestViewportMath.clampScroll(navigationScroll, navigationContentHeight, viewportHeight);
+        int y = NAV_TOP - (int) Math.round(navigationScroll);
+        graphics.enableScissor(NAV_LEFT, NAV_TOP, NAV_RIGHT + 6, height - NAV_BOTTOM_MARGIN);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             if (entry.group() != null) {
                 graphics.fill(NAV_LEFT, y, NAV_RIGHT, y + 14, 0xD01B222C);
@@ -83,6 +95,9 @@ public final class QuestScreen extends Screen {
             graphics.drawString(font, Component.literal(chapter.title()), NAV_LEFT + 14, y + 4, 0xFFFFFF, false);
             y += 18;
         }
+        graphics.disableScissor();
+        renderScrollbar(graphics, NAV_RIGHT + 2, NAV_TOP, height - NAV_BOTTOM_MARGIN,
+                navigationContentHeight, viewportHeight, navigationScroll);
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
@@ -205,8 +220,9 @@ public final class QuestScreen extends Screen {
         QuestStatus status = status(quest);
         int contentLeft = left + 10;
         int contentWidth = DETAIL_WIDTH - 40;
-        int y = 50;
-        graphics.enableScissor(left + 1, 43, width - 21, height - 82);
+        int viewportHeight = detailViewportHeight();
+        int y = DETAIL_CONTENT_TOP - (int) Math.round(detailScroll);
+        graphics.enableScissor(left + 1, DETAIL_CONTENT_TOP, width - 25, height - DETAIL_CONTENT_BOTTOM_MARGIN);
         y = drawWrapped(graphics, quest.title(), contentLeft, y, contentWidth, 0xFFFFFF) + 3;
         if (!quest.subtitle().isBlank()) y = drawWrapped(graphics, quest.subtitle(), contentLeft, y, contentWidth, 0xFFB7C5D8) + 4;
 
@@ -246,7 +262,11 @@ public final class QuestScreen extends Screen {
                 }
             }
         }
+        detailContentHeight = Math.max(0, y + (int) Math.round(detailScroll) - DETAIL_CONTENT_TOP + 8);
+        detailScroll = QuestViewportMath.clampScroll(detailScroll, detailContentHeight, viewportHeight);
         graphics.disableScissor();
+        renderScrollbar(graphics, width - 24, DETAIL_CONTENT_TOP, height - DETAIL_CONTENT_BOTTOM_MARGIN,
+                detailContentHeight, viewportHeight, detailScroll);
 
         renderDetailButtons(graphics, quest, status, ready);
     }
@@ -275,8 +295,9 @@ public final class QuestScreen extends Screen {
         if (!stack.isEmpty()) graphics.renderItem(stack, x + 4, y + 4);
         else graphics.drawCenteredString(font, "?", x + 12, y + 8, 0xFFFFFFFF);
         if (claimed) graphics.drawString(font, "✓", x + 15, y + 14, 0xFF8BE2A0, true);
-        if (claimable) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
-        if (mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
+        boolean visible = y >= DETAIL_CONTENT_TOP && y + 24 <= height - DETAIL_CONTENT_BOTTOM_MARGIN;
+        if (claimable && visible) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
+        if (visible && mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
             String title = reward.config().getOrDefault("title", "");
             if (title.isBlank()) title = !stack.isEmpty() ? stack.getHoverName().getString() : reward.typeId().getPath();
             graphics.renderTooltip(font, Component.literal(title), mouseX, mouseY);
@@ -306,6 +327,18 @@ public final class QuestScreen extends Screen {
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null) return super.mouseClicked(mouseX, mouseY, button);
 
+        if (mouseX >= NAV_RIGHT && mouseX <= NAV_RIGHT + 8 && navigationContentHeight > navigationViewportHeight()) {
+            navigationScroll = scrollFromTrack(mouseY, NAV_TOP, height - NAV_BOTTOM_MARGIN,
+                    navigationContentHeight, navigationViewportHeight());
+            return true;
+        }
+        if (detailsOpen && mouseX >= width - 28 && mouseX <= width - 18 && detailContentHeight > detailViewportHeight()
+                && mouseY >= DETAIL_CONTENT_TOP && mouseY <= height - DETAIL_CONTENT_BOTTOM_MARGIN) {
+            detailScroll = scrollFromTrack(mouseY, DETAIL_CONTENT_TOP, height - DETAIL_CONTENT_BOTTOM_MARGIN,
+                    detailContentHeight, detailViewportHeight());
+            return true;
+        }
+
         ChapterDefinition navigationChoice = navigationChoice(snapshot.book(), mouseX, mouseY);
         if (navigationChoice != null) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
@@ -313,6 +346,7 @@ public final class QuestScreen extends Screen {
             panX = 0;
             panY = 0;
             detailsOpen = false;
+            detailScroll = 0;
             return true;
         }
 
@@ -320,6 +354,7 @@ public final class QuestScreen extends Screen {
         int left = detailLeft();
         if (detailsOpen && mouseX >= width - 42 && mouseX <= width - 20 && mouseY >= 20 && mouseY <= 42) {
             detailsOpen = false;
+            detailScroll = 0;
             return true;
         }
         if (detailsOpen && selected != null) {
@@ -358,6 +393,7 @@ public final class QuestScreen extends Screen {
                 if (Math.abs(mouseX - screenX(quest.x())) <= radius && Math.abs(mouseY - screenY(quest.y())) <= radius) {
                     ClientQuestState.get().selected(quest.id());
                     detailsOpen = true;
+                    detailScroll = 0;
                     BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), quest.id().toString());
                     return true;
                 }
@@ -389,7 +425,27 @@ public final class QuestScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        zoom = Math.max(0.35, Math.min(2.5, zoom + vertical * 0.1));
+        if (x >= NAV_LEFT && x <= NAV_RIGHT + 8) {
+            navigationScroll = QuestViewportMath.clampScroll(navigationScroll - vertical * 24,
+                    navigationContentHeight, navigationViewportHeight());
+            return true;
+        }
+        if (detailsOpen && x >= detailLeft()) {
+            detailScroll = QuestViewportMath.clampScroll(detailScroll - vertical * 24,
+                    detailContentHeight, detailViewportHeight());
+            return true;
+        }
+
+        double oldZoom = zoom;
+        double nextZoom = QuestViewportMath.clampZoom(zoom + vertical * 0.10);
+        if (nextZoom == oldZoom) return true;
+        // Preserve the task coordinate at the visible canvas center while zooming.
+        int canvasRight = detailsOpen ? detailLeft() - 6 : width - CANVAS_MARGIN;
+        double anchorX = (CANVAS_LEFT + canvasRight) / 2.0;
+        double anchorY = height / 2.0;
+        panX = QuestViewportMath.panForStableAnchor(anchorX, 260, panX, oldZoom, nextZoom);
+        panY = QuestViewportMath.panForStableAnchor(anchorY, height / 2.0, panY, oldZoom, nextZoom);
+        zoom = nextZoom;
         return true;
     }
 
@@ -397,6 +453,7 @@ public final class QuestScreen extends Screen {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == 256 && detailsOpen) {
             detailsOpen = false;
+            detailScroll = 0;
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -404,7 +461,7 @@ public final class QuestScreen extends Screen {
 
     private ChapterDefinition navigationChoice(QuestBookDefinition book, double mouseX, double mouseY) {
         if (mouseX < NAV_LEFT || mouseX > NAV_RIGHT) return null;
-        int y = 20;
+        int y = NAV_TOP - (int) Math.round(navigationScroll);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             if (entry.group() != null) {
                 y += 16;
@@ -533,6 +590,36 @@ public final class QuestScreen extends Screen {
 
     private int detailLeft() {
         return width - DETAIL_WIDTH;
+    }
+
+    private int navigationContentHeight(QuestBookDefinition book) {
+        return QuestPresentation.navigation(book).stream()
+                .mapToInt(entry -> entry.group() != null ? 16 : 18).sum();
+    }
+
+    private int navigationViewportHeight() {
+        return Math.max(1, height - NAV_TOP - NAV_BOTTOM_MARGIN);
+    }
+
+    private int detailViewportHeight() {
+        return Math.max(1, height - DETAIL_CONTENT_TOP - DETAIL_CONTENT_BOTTOM_MARGIN);
+    }
+
+    private void renderScrollbar(GuiGraphics graphics, int x, int top, int bottom,
+                                 int contentHeight, int viewportHeight, double scroll) {
+        if (contentHeight <= viewportHeight) return;
+        int trackHeight = bottom - top;
+        int thumbHeight = Math.max(16, (int) Math.round(trackHeight * (viewportHeight / (double) contentHeight)));
+        int travel = trackHeight - thumbHeight;
+        int maxScroll = contentHeight - viewportHeight;
+        int thumbTop = top + (int) Math.round(travel * (scroll / maxScroll));
+        graphics.fill(x, top, x + 3, bottom, 0x66343D49);
+        graphics.fill(x, thumbTop, x + 3, thumbTop + thumbHeight, 0xFF7C8CA0);
+    }
+
+    private double scrollFromTrack(double mouseY, int top, int bottom, int contentHeight, int viewportHeight) {
+        double ratio = Math.max(0.0, Math.min(1.0, (mouseY - top) / Math.max(1.0, bottom - top)));
+        return ratio * Math.max(0, contentHeight - viewportHeight);
     }
 
     private record RewardHitbox(int left, int top, int right, int bottom, RewardDefinition reward) {

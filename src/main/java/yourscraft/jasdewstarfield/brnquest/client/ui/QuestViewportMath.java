@@ -1,0 +1,24 @@
+package yourscraft.jasdewstarfield.brnquest.client.ui;
+
+/** Deterministic viewport math kept independent from rendering for unit testing. */
+final class QuestViewportMath {
+    static final double MIN_ZOOM = 0.50;
+    static final double MAX_ZOOM = 2.00;
+    static final double GRID_SCALE = 34.0;
+
+    private QuestViewportMath() {}
+
+    static double clampZoom(double value) {
+        return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, value));
+    }
+
+    static double panForStableAnchor(double anchorScreen, double screenOrigin, double oldPan,
+                                     double oldZoom, double newZoom) {
+        double worldAtAnchor = (anchorScreen - screenOrigin - oldPan) / (GRID_SCALE * oldZoom);
+        return anchorScreen - screenOrigin - worldAtAnchor * GRID_SCALE * newZoom;
+    }
+
+    static double clampScroll(double value, int contentHeight, int viewportHeight) {
+        return Math.max(0.0, Math.min(Math.max(0, contentHeight - viewportHeight), value));
+    }
+}

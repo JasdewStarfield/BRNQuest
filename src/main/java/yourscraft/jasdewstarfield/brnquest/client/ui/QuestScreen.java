@@ -36,12 +36,19 @@ public final class QuestScreen extends Screen {
 
     public QuestScreen() { super(Component.translatable("screen.brnquest.title")); }
 
+    /**
+     * Screen.render may call this virtual method while rendering its children. Keeping
+     * it empty prevents a second blur pass from being applied over the completed quest UI.
+     */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // Do not use Screen.renderBackground here. In 1.21 it can leave the world-blur
-        // post effect active until the completed GUI frame is composited, blurring our text too.
-        graphics.fill(0, 0, width, height, 0xFF0D1118);
-        graphics.fill(10, 10, width - 10, height - 10, 0xE0151820);
+        // Match BRNTalk's ordering: blur the world once, then render every quest layer
+        // above it. The no-op override prevents super.render below from blurring twice.
+        super.renderBackground(graphics, mouseX, mouseY, partialTick);
+        graphics.fill(10, 10, width - 10, height - 10, 0xC8151820);
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null) {
             graphics.drawCenteredString(font, Component.translatable("screen.brnquest.loading"), width / 2, height / 2, 0xFFFFFF);

@@ -37,6 +37,9 @@ class FtbV13ImporterTest {
                 .map(yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition::order).toList());
         assertTrue(result.book().quests().stream().anyMatch(quest -> quest.description().contains("耗尽之前抵达避难所")),
                 "Localized FTB description lines must survive import");
+        assertTrue(result.book().quests().stream().filter(quest -> quest.legacyId().equals("7D44928441162C4F"))
+                .noneMatch(quest -> quest.title().equals(quest.legacyId())),
+                "Untitled quests must derive a readable label from their first objective");
         assertEquals(NativeBookJson.encode(result.book()), NativeBookJson.encode(new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main").book()));
     }
 

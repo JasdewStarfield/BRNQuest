@@ -61,6 +61,51 @@ public final class BrnQuestGameTests {
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)
+    public static void individualObjectiveClicksPreserveSiblingProgress(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition first = new TaskDefinition(id("book"), id("check_one"), id("checkmark"), Map.of(), false);
+        TaskDefinition second = new TaskDefinition(id("book"), id("check_two"), id("checkmark"), Map.of(), false);
+        QuestDefinition quest = quest("multi_check", List.of(), List.of(first, second), List.of());
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+
+        var partial = ProgressEngine.get().completeTask(player, quest.id(), first.id());
+        helper.assertTrue(!partial.success(), "one of two required rows must not complete the quest");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(first.id().toString()), 1L,
+                "the clicked row must retain its progress");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()), QuestStatus.AVAILABLE,
+                "quest remains available while a sibling row is incomplete");
+
+        var completed = ProgressEngine.get().completeTask(player, quest.id(), second.id());
+        helper.assertTrue(completed.success(), completed.message());
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()), QuestStatus.COMPLETED,
+                "the final row click must complete the quest transaction");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void submittedItemRowIsNotConsumedTwice(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition item = new TaskDefinition(id("book"), id("submitted_item"), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "2L", "consume_items", "1b"), false);
+        TaskDefinition check = new TaskDefinition(id("book"), id("later_check"), id("checkmark"), Map.of(), false);
+        QuestDefinition quest = quest("staged_submission", List.of(), List.of(item, check), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.STONE, 2));
+        ProgressEngine.get().reconcile(player);
+
+        ProgressEngine.get().completeTask(player, quest.id(), item.id());
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0, "clicked item row consumes once");
+        var completed = ProgressEngine.get().completeTask(player, quest.id(), check.id());
+
+        helper.assertTrue(completed.success(), completed.message());
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0, "final completion must not consume the submitted row again");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
     public static void duplicateRewardClaimIsIdempotent(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel();
         RewardDefinition reward = new RewardDefinition(id("book"), id("diamond_reward"), id("item"),

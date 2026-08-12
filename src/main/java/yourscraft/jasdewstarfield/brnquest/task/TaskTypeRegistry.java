@@ -37,6 +37,7 @@ public final class TaskTypeRegistry {
     private static final class ItemTask implements TaskType<Map<String, String>> {
         public com.mojang.serialization.Codec<Map<String, String>> configCodec() { return com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.STRING); }
         public boolean satisfied(ServerPlayer player, TaskDefinition definition, PlayerProgress progress) {
+            if (progress.taskProgress(definition.id().toString()) >= 1) return true;
             ItemStack expected = expected(player, definition);
             if (expected.isEmpty()) return false;
             int required = requiredCount(definition, expected);

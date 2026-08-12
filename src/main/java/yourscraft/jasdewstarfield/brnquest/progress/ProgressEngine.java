@@ -65,13 +65,54 @@ public final class ProgressEngine {
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                if (type != null && !type.consume(player, task)) {
+                // A row submitted earlier has already applied its one-time consumption.
+                if (type != null && progress.taskProgress(task.id().toString()) < 1 && !type.consume(player, task)) {
                     restoreMainInventory(player, inventoryBeforeConsume);
                     return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
                 }
             }
             return markCompleted(player, quest, progress, data);
         }));
+    }
+
+    /** Applies one task-row intent, then lets the normal transaction decide whether the quest can finish. */
+    public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId) {
+        return synchronizedPlayer(player, () -> {
+            var snapshot = QuestBookManager.get().active().orElse(null);
+            QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
+            if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest " + questId);
+            TaskDefinition task = quest.tasks().stream().filter(candidate -> candidate.id().equals(taskId)).findFirst().orElse(null);
+            if (task == null) return OperationResult.failure("NOT_FOUND", "Task does not belong to quest " + taskId);
+            PlayerProgress progress = progress(player);
+            QuestStatus status = progress.status(questId.toString());
+            if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) {
+                return OperationResult.failure("LOCKED", "Quest is not available");
+            }
+            if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
+
+            if (task.typeId().getPath().equals("checkmark")) {
+                progress.addTaskProgress(task.id().toString(), 1);
+                QuestProgressData.get(player.getServer()).setDirty();
+            } else {
+                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+                if (type == null || !type.satisfied(player, task, progress)) {
+                    return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
+                }
+                List<net.minecraft.world.item.ItemStack> inventoryBeforeConsume = player.getInventory().items.stream()
+                        .map(net.minecraft.world.item.ItemStack::copy).toList();
+                if (!type.consume(player, task)) {
+                    restoreMainInventory(player, inventoryBeforeConsume);
+                    return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
+                }
+                progress.addTaskProgress(task.id().toString(), 1);
+                QuestProgressData.get(player.getServer()).setDirty();
+            }
+
+            OperationResult result = complete(player, questId, false);
+            // A checked row remains useful progress even while sibling rows are incomplete.
+            if (!result.success()) BrnQuestNetwork.syncProgress(player, true);
+            return result;
+        });
     }
 
     public OperationResult forceComplete(ServerPlayer player, ResourceLocation questId) {
@@ -138,6 +179,11 @@ public final class ProgressEngine {
         PlayerProgress progress = progress(player);
         QuestStatus status = progress.status(questId.toString());
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return OperationResult.failure("NOT_TRACKABLE", "Quest is not available");
+        if (status == QuestStatus.AVAILABLE) {
+            // The HUD represents one focused objective, so activating a new quest replaces the old focus.
+            progress.questsView().entrySet().stream().filter(entry -> entry.getValue() == QuestStatus.ACTIVE)
+                    .map(Map.Entry::getKey).forEach(id -> progress.status(id, QuestStatus.AVAILABLE));
+        }
         progress.status(questId.toString(), status == QuestStatus.ACTIVE ? QuestStatus.AVAILABLE : QuestStatus.ACTIVE);
         QuestProgressData.get(player.getServer()).setDirty();
         BrnQuestNetwork.syncProgress(player, true);

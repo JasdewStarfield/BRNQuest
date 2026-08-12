@@ -118,12 +118,32 @@ public final class FtbV13Importer {
                 translations, aliases, file, legacy, report);
         List<RewardDefinition> rewards = readRewards(raw.getList("rewards", Tag.TAG_COMPOUND), bookId, namespace,
                 translations, aliases, file, legacy, report);
+        String translatedTitle = translations.getOrDefault("quest." + legacy + ".title", "");
+        String title = translatedTitle.isBlank() ? defaultTaskTitle(tasks, legacy) : translatedTitle;
         return new QuestDefinition(bookId, id, chapterId,
-                translations.getOrDefault("quest." + legacy + ".title", legacy),
+                title,
                 translations.getOrDefault("quest." + legacy + ".quest_subtitle", ""),
                 translations.getOrDefault("quest." + legacy + ".quest_desc", ""),
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
                 dependencies, tasks, rewards, legacy);
+    }
+
+    /** Gives untitled imported quests a stable author-facing label; clients localize item names at render time. */
+    private String defaultTaskTitle(List<TaskDefinition> tasks, String fallback) {
+        if (tasks.isEmpty()) return fallback;
+        TaskDefinition first = tasks.getFirst();
+        String custom = first.config().getOrDefault("title", "");
+        if (!custom.isBlank()) return custom;
+        if (first.typeId().getPath().equals("item")) {
+            try {
+                CompoundTag item = net.minecraft.nbt.TagParser.parseTag(first.config().getOrDefault("item", ""));
+                String itemId = item.getString("id");
+                if (!itemId.isBlank()) return itemId;
+            } catch (Exception ignored) {
+                // Malformed item data already receives its importer diagnostic; retain the legacy fallback here.
+            }
+        }
+        return first.typeId().getPath().equals("checkmark") ? "Check objective" : fallback;
     }
 
     private List<TaskDefinition> readTasks(ListTag list, ResourceLocation bookId, String namespace,

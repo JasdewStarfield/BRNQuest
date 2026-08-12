@@ -84,6 +84,15 @@ public final class BrnQuestNetwork {
         public static final StreamCodec<ByteBuf, CompleteCheckmarkPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, CompleteCheckmarkPayload::revision, ByteBufCodecs.STRING_UTF8, CompleteCheckmarkPayload::questId, CompleteCheckmarkPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
+    public record CompleteTaskPayload(String revision, String questId, String taskId) implements CustomPacketPayload {
+        public static final Type<CompleteTaskPayload> TYPE = payloadType("complete_task");
+        public static final StreamCodec<ByteBuf, CompleteTaskPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::revision,
+                ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::questId,
+                ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::taskId,
+                CompleteTaskPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
     public record ToggleTrackedPayload(String revision, String questId) implements CustomPacketPayload {
         public static final Type<ToggleTrackedPayload> TYPE = payloadType("toggle_tracked");
         public static final StreamCodec<ByteBuf, ToggleTrackedPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, ToggleTrackedPayload::revision, ByteBufCodecs.STRING_UTF8, ToggleTrackedPayload::questId, ToggleTrackedPayload::new);
@@ -115,6 +124,14 @@ public final class BrnQuestNetwork {
         registrar.playToServer(CompleteCheckmarkPayload.TYPE, CompleteCheckmarkPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.questId());
             if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) ProgressEngine.get().complete(player, id, true);
+        });
+        registrar.playToServer(CompleteTaskPayload.TYPE, CompleteTaskPayload.CODEC, (payload, context) -> {
+            ResourceLocation questId = ResourceLocation.tryParse(payload.questId());
+            ResourceLocation taskId = ResourceLocation.tryParse(payload.taskId());
+            if (context.player() instanceof ServerPlayer player && questId != null && taskId != null
+                    && payload.revision().equals(currentRevision())) {
+                ProgressEngine.get().completeTask(player, questId, taskId);
+            }
         });
         registrar.playToServer(ToggleTrackedPayload.TYPE, ToggleTrackedPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.questId());
@@ -175,6 +192,7 @@ public final class BrnQuestNetwork {
     public static void requestBook(String revision) { PacketDistributor.sendToServer(new RequestBookPayload(revision)); }
     public static void requestOpen(String knownRevision) { PacketDistributor.sendToServer(new RequestOpenPayload(knownRevision)); }
     public static void completeCheckmark(String revision, String questId) { PacketDistributor.sendToServer(new CompleteCheckmarkPayload(revision, questId)); }
+    public static void completeTask(String revision, String questId, String taskId) { PacketDistributor.sendToServer(new CompleteTaskPayload(revision, questId, taskId)); }
     public static void toggleTracked(String revision, String questId) { PacketDistributor.sendToServer(new ToggleTrackedPayload(revision, questId)); }
     public static void claimReward(String revision, String rewardId) { PacketDistributor.sendToServer(new ClaimRewardPayload(revision, rewardId)); }
     public static void selectQuest(String revision, String questId) { PacketDistributor.sendToServer(new SelectQuestPayload(revision, questId)); }

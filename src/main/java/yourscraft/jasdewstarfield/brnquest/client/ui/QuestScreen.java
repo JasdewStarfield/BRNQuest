@@ -24,14 +24,14 @@ import java.util.Map;
 public final class QuestScreen extends Screen {
     private static final int NAV_LEFT = 0;
     private static final int NAV_RIGHT = 150;
-    private static final int CANVAS_LEFT = 156;
+    private static final int NAV_HANDLE_WIDTH = 12;
     private static final int CANVAS_MARGIN = 0;
     private static final int DETAIL_WIDTH = 250;
     private static final int NODE_BASE_SIZE = 18;
     private static final int NAV_TOP = 0;
     private static final int NAV_BOTTOM_MARGIN = 0;
-    private static final int DETAIL_CONTENT_TOP = 34;
-    private static final int DETAIL_CONTENT_BOTTOM_MARGIN = 78;
+    private static final int DETAIL_CONTENT_TOP = 8;
+    private static final int DETAIL_CONTENT_BOTTOM_MARGIN = 8;
 
     private double panX;
     private double panY;
@@ -45,8 +45,12 @@ public final class QuestScreen extends Screen {
     private double dragY;
     private boolean dragging;
     private boolean detailsOpen;
+    private boolean navigationCollapsed;
     private final Map<ResourceLocation, ItemStack> itemCache = new HashMap<>();
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
+    private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
+    private ItemStack hoveredDetailStack = ItemStack.EMPTY;
+    private Component hoveredDetailText;
 
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
@@ -77,6 +81,11 @@ public final class QuestScreen extends Screen {
     }
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter) {
+        if (navigationCollapsed) {
+            graphics.fill(0, 0, NAV_HANDLE_WIDTH, height, 0xD01B222C);
+            graphics.drawCenteredString(font, "›", NAV_HANDLE_WIDTH / 2, height / 2 - 4, 0xFFB7C5D8);
+            return;
+        }
         int viewportHeight = navigationViewportHeight();
         navigationContentHeight = navigationContentHeight(book);
         navigationScroll = QuestViewportMath.clampScroll(navigationScroll, navigationContentHeight, viewportHeight);
@@ -98,13 +107,15 @@ public final class QuestScreen extends Screen {
         graphics.disableScissor();
         renderScrollbar(graphics, NAV_RIGHT + 2, NAV_TOP, height - NAV_BOTTOM_MARGIN,
                 navigationContentHeight, viewportHeight, navigationScroll);
+        graphics.fill(NAV_RIGHT + 4, 0, NAV_RIGHT + 4 + NAV_HANDLE_WIDTH, height, 0xD01B222C);
+        graphics.drawCenteredString(font, "‹", NAV_RIGHT + 4 + NAV_HANDLE_WIDTH / 2, height / 2 - 4, 0xFFB7C5D8);
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
         int right = detailsOpen ? detailLeft() - 6 : width - CANVAS_MARGIN;
         int top = 0;
         int bottom = height;
-        graphics.enableScissor(CANVAS_LEFT, top, right, bottom);
+        graphics.enableScissor(canvasLeft(), top, right, bottom);
         renderGrid(graphics, right, top, bottom);
 
         Map<ResourceLocation, QuestDefinition> chapterQuests = new HashMap<>();
@@ -123,10 +134,10 @@ public final class QuestScreen extends Screen {
         int spacing = Math.max(12, (int) Math.round(34 * zoom));
         int originX = screenX(0);
         int originY = screenY(0);
-        int firstX = CANVAS_LEFT + Math.floorMod(originX - CANVAS_LEFT, spacing);
+        int firstX = canvasLeft() + Math.floorMod(originX - canvasLeft(), spacing);
         int firstY = top + Math.floorMod(originY - top, spacing);
         for (int x = firstX; x < right; x += spacing) graphics.fill(x, top, x + 1, bottom, 0x243C4655);
-        for (int y = firstY; y < bottom; y += spacing) graphics.fill(CANVAS_LEFT, y, right, y + 1, 0x243C4655);
+        for (int y = firstY; y < bottom; y += spacing) graphics.fill(canvasLeft(), y, right, y + 1, 0x243C4655);
     }
 
     /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
@@ -163,7 +174,7 @@ public final class QuestScreen extends Screen {
         int y = screenY(quest.y());
         int size = nodeSize();
         int radius = size / 2;
-        if (x - radius < CANVAS_LEFT || x + radius > right || y - radius < top || y + radius > bottom) return;
+        if (x - radius < canvasLeft() || x + radius > right || y - radius < top || y + radius > bottom) return;
 
         QuestStatus status = status(quest);
         int color = switch (status) {
@@ -172,12 +183,14 @@ public final class QuestScreen extends Screen {
             default -> 0xFF59606B;
         };
         boolean selected = quest.id().equals(ClientQuestState.get().selected());
+        boolean tracked = status == QuestStatus.ACTIVE;
+        if (tracked) fillChamfer(graphics, x, y, size + 7, 0xFF57C7F2);
         fillChamfer(graphics, x, y, size + (selected ? 4 : 2), selected ? 0xFF91C9F4 : 0xFF222936);
         fillChamfer(graphics, x, y, size, color);
         renderQuestVisual(graphics, quest, x, y, size);
 
         if (Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
-            graphics.renderTooltip(font, Component.literal(quest.title()), mouseX, mouseY);
+            graphics.renderTooltip(font, Component.literal(questTitle(quest)), mouseX, mouseY);
         }
     }
 
@@ -210,10 +223,12 @@ public final class QuestScreen extends Screen {
 
     private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY) {
         rewardHitboxes.clear();
+        taskHitboxes.clear();
+        hoveredDetailStack = ItemStack.EMPTY;
+        hoveredDetailText = null;
         int left = detailLeft();
         graphics.fill(left, 0, width, height, 0xF0202632);
-        graphics.fill(left, 0, width, 28, 0xFF2A3341);
-        graphics.drawString(font, Component.literal("×"), width - 18, 10, 0xFFFFFF, false);
+        graphics.drawString(font, Component.literal("×"), width - 14, 4, 0xFFFFFF, false);
 
         QuestDefinition quest = selectedQuest();
         if (quest == null) return;
@@ -223,7 +238,7 @@ public final class QuestScreen extends Screen {
         int viewportHeight = detailViewportHeight();
         int y = DETAIL_CONTENT_TOP - (int) Math.round(detailScroll);
         graphics.enableScissor(left + 1, DETAIL_CONTENT_TOP, width - 10, height - DETAIL_CONTENT_BOTTOM_MARGIN);
-        y = drawWrapped(graphics, quest.title(), contentLeft, y, contentWidth, 0xFFFFFF) + 3;
+        y = drawWrapped(graphics, questTitle(quest), contentLeft, y, contentWidth - 14, 0xFFFFFF) + 3;
         if (!quest.subtitle().isBlank()) y = drawWrapped(graphics, quest.subtitle(), contentLeft, y, contentWidth, 0xFFB7C5D8) + 4;
 
         boolean ready = canSubmit(quest, status);
@@ -236,6 +251,15 @@ public final class QuestScreen extends Screen {
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
             graphics.drawString(font, Component.literal("ⓘ"), contentLeft + statusWidth + 4, y, 0xFF68BDE8, false);
             statusWidth += 4 + font.width("ⓘ");
+        }
+        if (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) {
+            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
+            int pinX = detailTrackX(pin);
+            graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : 0xFFB7C5D8, false);
+            if (mouseX >= pinX - 2 && mouseX <= pinX + font.width(pin) + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
+                hoveredDetailText = Component.translatable(status == QuestStatus.ACTIVE
+                        ? "screen.brnquest.untrack" : "screen.brnquest.track");
+            }
         }
         if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
             graphics.drawString(font, Component.translatable("screen.brnquest.ready"), contentLeft + font.width(statusText) + 6, y, 0xFF72D88D, false);
@@ -252,7 +276,7 @@ public final class QuestScreen extends Screen {
             graphics.drawString(font, Component.translatable("screen.brnquest.no_requirements"), contentLeft, y, 0xFF9AA6B5, false);
             y += 18;
         } else {
-            for (TaskDefinition task : quest.tasks()) y = renderTask(graphics, task, status, contentLeft, y, contentWidth);
+            for (TaskDefinition task : quest.tasks()) y = renderTask(graphics, quest, task, status, contentLeft, y, contentWidth, mouseX, mouseY);
         }
 
         if (!quest.rewards().isEmpty()) {
@@ -285,12 +309,16 @@ public final class QuestScreen extends Screen {
                 && mouseY >= visibleStatusY && mouseY <= visibleStatusY + font.lineHeight
                 && visibleStatusY >= DETAIL_CONTENT_TOP && visibleStatusY < height - DETAIL_CONTENT_BOTTOM_MARGIN) {
             graphics.renderComponentTooltip(font, dependencyTooltip(quest), mouseX, mouseY);
+        } else if (!hoveredDetailStack.isEmpty()) {
+            graphics.renderTooltip(font, hoveredDetailStack, mouseX, mouseY);
+        } else if (hoveredDetailText != null) {
+            graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
         }
 
-        renderDetailButtons(graphics, quest, status, ready);
     }
 
-    private int renderTask(GuiGraphics graphics, TaskDefinition task, QuestStatus status, int x, int y, int width) {
+    private int renderTask(GuiGraphics graphics, QuestDefinition quest, TaskDefinition task, QuestStatus status,
+                           int x, int y, int width, int mouseX, int mouseY) {
         boolean satisfied = taskSatisfied(task, status);
         graphics.fill(x, y, x + width, y + 24, satisfied ? 0x663B6749 : 0x66343D49);
         ItemStack stack = task.typeId().getPath().equals("item") ? item(task.id(), task.config().getOrDefault("item", "")) : ItemStack.EMPTY;
@@ -303,41 +331,35 @@ public final class QuestScreen extends Screen {
         String progress = taskProgressText(task, stack, satisfied);
         graphics.drawString(font, Component.literal(progress), x + 24, y + 13, 0xFFABB7C6, false);
         if (task.optional()) graphics.drawString(font, Component.translatable("screen.brnquest.optional"), x + width - 38, y + 13, 0xFF9AA6B5, false);
+        boolean visible = y >= DETAIL_CONTENT_TOP && y + 24 <= height - DETAIL_CONTENT_BOTTOM_MARGIN;
+        boolean interactive = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !satisfied
+                && (task.typeId().getPath().equals("checkmark") || task.typeId().getPath().equals("item"));
+        if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
+        if (visible && mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 24) {
+            if (!stack.isEmpty()) hoveredDetailStack = stack;
+            else hoveredDetailText = Component.literal(title);
+        }
         return y + 28;
     }
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
         boolean claimed = ClientQuestState.get().claimed().contains(reward.id().toString());
         boolean claimable = isCompleted(status) && !claimed;
-        graphics.fill(x, y, x + 24, y + 24, claimed ? 0x88405A48 : claimable ? 0xAA7C6136 : 0x88404A57);
         ItemStack stack = reward.typeId().getPath().equals("item") ? item(reward.id(), reward.config().getOrDefault("item", "")) : ItemStack.EMPTY;
         if (!stack.isEmpty()) graphics.renderItem(stack, x + 4, y + 4);
         else graphics.drawCenteredString(font, "?", x + 12, y + 8, 0xFFFFFFFF);
+        if (claimable) {
+            graphics.fill(x + 2, y + 2, x + 22, y + 3, 0xFFE6B55B);
+            graphics.fill(x + 2, y + 21, x + 22, y + 22, 0xFFE6B55B);
+        }
         if (claimed) graphics.drawString(font, "✓", x + 15, y + 14, 0xFF8BE2A0, true);
         boolean visible = y >= DETAIL_CONTENT_TOP && y + 24 <= height - DETAIL_CONTENT_BOTTOM_MARGIN;
         if (claimable && visible) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
         if (visible && mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
             String title = reward.config().getOrDefault("title", "");
             if (title.isBlank()) title = !stack.isEmpty() ? stack.getHoverName().getString() : reward.typeId().getPath();
-            graphics.renderTooltip(font, Component.literal(title), mouseX, mouseY);
-        }
-    }
-
-    private void renderDetailButtons(GuiGraphics graphics, QuestDefinition quest, QuestStatus status, boolean ready) {
-        int left = detailLeft();
-        boolean available = status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE;
-        if (available) {
-            graphics.fill(left + 10, height - 72, left + 104, height - 52, 0xFF41698F);
-            graphics.drawString(font, Component.translatable("screen.brnquest.track"), left + 18, height - 66, 0xFFFFFF, false);
-            graphics.fill(left + 112, height - 72, width - 10, height - 52, ready ? 0xFF4C7F59 : 0xFF454B54);
-            graphics.drawString(font, Component.translatable("screen.brnquest.complete"), left + 120, height - 66, ready ? 0xFFFFFF : 0xFF8B929C, false);
-        }
-
-        boolean hasClaimable = isCompleted(status) && quest.rewards().stream()
-                .anyMatch(reward -> !ClientQuestState.get().claimed().contains(reward.id().toString()));
-        if (hasClaimable) {
-            graphics.fill(left + 10, height - 44, width - 10, height - 24, 0xFF8B663B);
-            graphics.drawString(font, Component.translatable("screen.brnquest.claim_all"), left + 18, height - 38, 0xFFFFFF, false);
+            if (!stack.isEmpty()) hoveredDetailStack = stack;
+            else hoveredDetailText = Component.literal(title);
         }
     }
 
@@ -346,7 +368,13 @@ public final class QuestScreen extends Screen {
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null) return super.mouseClicked(mouseX, mouseY, button);
 
-        if (mouseX >= NAV_RIGHT && mouseX <= NAV_RIGHT + 8 && navigationContentHeight > navigationViewportHeight()) {
+        int navigationHandleLeft = navigationCollapsed ? 0 : NAV_RIGHT + 4;
+        if (mouseX >= navigationHandleLeft && mouseX <= navigationHandleLeft + NAV_HANDLE_WIDTH) {
+            navigationCollapsed = !navigationCollapsed;
+            return true;
+        }
+
+        if (!navigationCollapsed && mouseX >= NAV_RIGHT && mouseX <= NAV_RIGHT + 4 && navigationContentHeight > navigationViewportHeight()) {
             navigationScroll = scrollFromTrack(mouseY, NAV_TOP, height - NAV_BOTTOM_MARGIN,
                     navigationContentHeight, navigationViewportHeight());
             return true;
@@ -378,33 +406,32 @@ public final class QuestScreen extends Screen {
         }
         if (detailsOpen && selected != null) {
             QuestStatus status = status(selected);
+            Component statusText = Component.translatable("screen.brnquest.status." + status.name().toLowerCase(java.util.Locale.ROOT));
+            int statusY = detailStatusY(selected);
+            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
+            int trackX = detailTrackX(pin);
+            if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
+                    && mouseX >= trackX && mouseX <= trackX + 14 && mouseY >= statusY && mouseY <= statusY + font.lineHeight) {
+                BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), selected.id().toString());
+                return true;
+            }
+            for (TaskHitbox hitbox : taskHitboxes) {
+                if (hitbox.contains(mouseX, mouseY)) {
+                    BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), hitbox.quest().id().toString(), hitbox.task().id().toString());
+                    return true;
+                }
+            }
             for (RewardHitbox hitbox : rewardHitboxes) {
                 if (hitbox.contains(mouseX, mouseY)) {
                     BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), hitbox.reward().id().toString());
                     return true;
                 }
             }
-            if (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) {
-                if (mouseY >= height - 72 && mouseY <= height - 52 && mouseX >= left + 10 && mouseX < left + 108) {
-                    BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), selected.id().toString());
-                    return true;
-                }
-                if (mouseY >= height - 72 && mouseY <= height - 52 && mouseX >= left + 108 && canSubmit(selected, status)) {
-                    BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(), selected.id().toString());
-                    return true;
-                }
-            }
-            if (mouseY >= height - 44 && mouseY <= height - 24 && mouseX >= left + 10 && isCompleted(status)) {
-                selected.rewards().stream()
-                        .filter(reward -> !ClientQuestState.get().claimed().contains(reward.id().toString()))
-                        .forEach(reward -> BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), reward.id().toString()));
-                return true;
-            }
             if (mouseX >= left) return true;
         }
 
         int canvasRight = detailsOpen ? left - 6 : width - CANVAS_MARGIN;
-        if (mouseX > CANVAS_LEFT && mouseX < canvasRight) {
+        if (mouseX > canvasLeft() && mouseX < canvasRight) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.get(chapterIndex);
             int radius = nodeSize() / 2 + 2;
@@ -444,7 +471,7 @@ public final class QuestScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        if (x >= NAV_LEFT && x <= NAV_RIGHT + 8) {
+        if (!navigationCollapsed && x >= NAV_LEFT && x <= NAV_RIGHT + NAV_HANDLE_WIDTH + 4) {
             navigationScroll = QuestViewportMath.clampScroll(navigationScroll - vertical * 24,
                     navigationContentHeight, navigationViewportHeight());
             return true;
@@ -460,9 +487,9 @@ public final class QuestScreen extends Screen {
         if (nextZoom == oldZoom) return true;
         // Preserve the task coordinate at the visible canvas center while zooming.
         int canvasRight = detailsOpen ? detailLeft() - 6 : width - CANVAS_MARGIN;
-        double anchorX = (CANVAS_LEFT + canvasRight) / 2.0;
+        double anchorX = (canvasLeft() + canvasRight) / 2.0;
         double anchorY = height / 2.0;
-        panX = QuestViewportMath.panForStableAnchor(anchorX, 260, panX, oldZoom, nextZoom);
+        panX = QuestViewportMath.panForStableAnchor(anchorX, screenOriginX(), panX, oldZoom, nextZoom);
         panY = QuestViewportMath.panForStableAnchor(anchorY, height / 2.0, panY, oldZoom, nextZoom);
         zoom = nextZoom;
         return true;
@@ -479,6 +506,7 @@ public final class QuestScreen extends Screen {
     }
 
     private ChapterDefinition navigationChoice(QuestBookDefinition book, double mouseX, double mouseY) {
+        if (navigationCollapsed) return null;
         if (mouseX < NAV_LEFT || mouseX > NAV_RIGHT) return null;
         int y = NAV_TOP - (int) Math.round(navigationScroll);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
@@ -565,6 +593,31 @@ public final class QuestScreen extends Screen {
         return ClientQuestState.get().book().map(snapshot -> snapshot.quests().get(ClientQuestState.get().selected())).orElse(null);
     }
 
+    private String questTitle(QuestDefinition quest) {
+        if (quest.tasks().isEmpty()) return quest.title();
+        TaskDefinition task = quest.tasks().getFirst();
+        boolean generated = quest.title().isBlank() || quest.title().equals(quest.legacyId())
+                || quest.title().equals(quest.id().getPath()) || ResourceLocation.tryParse(quest.title()) != null;
+        if (!generated) return quest.title();
+        String custom = task.config().getOrDefault("title", "");
+        if (!custom.isBlank()) return custom;
+        ItemStack stack = task.typeId().getPath().equals("item") ? item(task.id(), task.config().getOrDefault("item", "")) : ItemStack.EMPTY;
+        if (!stack.isEmpty()) return stack.getHoverName().getString();
+        return task.typeId().getPath().equals("checkmark") ? Component.translatable("screen.brnquest.task.checkmark").getString() : quest.title();
+    }
+
+    private int detailStatusY(QuestDefinition quest) {
+        int width = DETAIL_WIDTH - 38;
+        int y = DETAIL_CONTENT_TOP - (int) Math.round(detailScroll);
+        y += font.split(Component.literal(questTitle(quest)), width).size() * font.lineHeight + 3;
+        if (!quest.subtitle().isBlank()) y += font.split(Component.literal(quest.subtitle()), width).size() * font.lineHeight + 4;
+        return y;
+    }
+
+    private int detailTrackX(String pin) {
+        return detailLeft() + 10 + (DETAIL_WIDTH - 24) - font.width(pin);
+    }
+
     private ItemStack item(ResourceLocation cacheId, String snbt) {
         return itemCache.computeIfAbsent(cacheId, ignored -> {
             if (snbt.isBlank() || minecraft.level == null) return ItemStack.EMPTY;
@@ -621,7 +674,7 @@ public final class QuestScreen extends Screen {
     }
 
     private int screenX(double x) {
-        return (int) (260 + panX + x * 34 * zoom);
+        return (int) (screenOriginX() + panX + x * 34 * zoom);
     }
 
     private int screenY(double y) {
@@ -630,6 +683,14 @@ public final class QuestScreen extends Screen {
 
     private int detailLeft() {
         return width - DETAIL_WIDTH;
+    }
+
+    private int canvasLeft() {
+        return navigationCollapsed ? NAV_HANDLE_WIDTH + 4 : NAV_RIGHT + NAV_HANDLE_WIDTH + 8;
+    }
+
+    private int screenOriginX() {
+        return canvasLeft() + 96;
     }
 
     private int navigationContentHeight(QuestBookDefinition book) {
@@ -663,6 +724,12 @@ public final class QuestScreen extends Screen {
     }
 
     private record RewardHitbox(int left, int top, int right, int bottom, RewardDefinition reward) {
+        boolean contains(double x, double y) {
+            return x >= left && x <= right && y >= top && y <= bottom;
+        }
+    }
+
+    private record TaskHitbox(int left, int top, int right, int bottom, QuestDefinition quest, TaskDefinition task) {
         boolean contains(double x, double y) {
             return x >= left && x <= right && y >= top && y <= bottom;
         }

@@ -3,8 +3,11 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
+import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 
 /** Minimal tracked-quest HUD rendered only from the immutable client cache. */
 public final class QuestHud {
@@ -15,9 +18,41 @@ public final class QuestHud {
         if (minecraft.options.hideGui) return;
         ClientQuestState.get().trackedQuest().flatMap(id -> ClientQuestState.get().book().map(s -> s.quests().get(id))).ifPresent(quest -> {
             if (quest == null) return;
-            int width = minecraft.font.width(quest.title()) + 16;
-            graphics.fill(graphics.guiWidth() - width - 8, 10, graphics.guiWidth() - 8, 30, 0xB010141C);
-            graphics.drawString(minecraft.font, quest.title(), graphics.guiWidth() - width, 16, 0xFFFFFF, false);
+            int taskLines = Math.min(3, quest.tasks().size());
+            String questTitle = displayTitle(minecraft, quest.title(), quest.legacyId(), quest.tasks().isEmpty() ? null : quest.tasks().getFirst());
+            int width = Math.max(120, minecraft.font.width(questTitle) + 20);
+            int left = graphics.guiWidth() - width - 8;
+            int bottom = 30 + taskLines * 11;
+            graphics.fill(left, 10, graphics.guiWidth() - 8, bottom, 0xC010141C);
+            graphics.fill(left, 10, left + 3, bottom, 0xFF57C7F2);
+            graphics.drawString(minecraft.font, "★ " + questTitle, left + 8, 16, 0xFF8DDCFA, false);
+            for (int index = 0; index < taskLines; index++) {
+                TaskDefinition task = quest.tasks().get(index);
+                boolean done = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
+                String title = displayTitle(minecraft, task.config().getOrDefault("title", ""), "", task);
+                graphics.drawString(minecraft.font, (done ? "✓ " : "• ") + title, left + 8, 28 + index * 11,
+                        done ? 0xFF72D88D : 0xFFD8DEE8, false);
+            }
         });
+    }
+
+    /** Resolves old ID-only imports into the same localized item labels shown by the detail screen. */
+    private static String displayTitle(Minecraft minecraft, String current, String legacy, TaskDefinition task) {
+        boolean generated = current.isBlank() || current.equals(legacy) || ResourceLocation.tryParse(current) != null;
+        if (!generated || task == null) return current;
+        String custom = task.config().getOrDefault("title", "");
+        if (!custom.isBlank()) return custom;
+        if (task.typeId().getPath().equals("item") && minecraft.level != null) {
+            try {
+                ItemStack stack = ItemStack.parseOptional(minecraft.level.registryAccess(),
+                        TagParser.parseTag(task.config().getOrDefault("item", "")));
+                if (!stack.isEmpty()) return stack.getHoverName().getString();
+            } catch (Exception ignored) {
+                // Unknown optional-mod items remain readable through the type fallback below.
+            }
+        }
+        return task.typeId().getPath().equals("checkmark")
+                ? net.minecraft.network.chat.Component.translatable("screen.brnquest.task.checkmark").getString()
+                : task.typeId().getPath();
     }
 }

@@ -5,6 +5,7 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -27,6 +28,15 @@ class FtbV13ImporterTest {
                 .anyMatch(task -> "16L".equals(task.config().get("count"))), "Outer FTB item counts must survive mapping");
         assertEquals(53, result.book().quests().stream().map(q -> q.id()).distinct().count());
         assertTrue(result.book().legacyIds().containsKey("7D44928441162C4F"));
+        assertEquals(List.of("流程设计", "冬日余烬"), result.book().chapterGroups().stream()
+                .sorted(java.util.Comparator.comparingInt(yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition::order))
+                .map(yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition::title).toList());
+        assertEquals(List.of(0, 1, 2, 3, 4), result.book().chapters().stream()
+                .filter(chapter -> chapter.groupId().equals(result.book().chapterGroups().get(1).id()))
+                .sorted(java.util.Comparator.comparingInt(yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition::order))
+                .map(yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition::order).toList());
+        assertTrue(result.book().quests().stream().anyMatch(quest -> quest.description().contains("耗尽之前抵达避难所")),
+                "Localized FTB description lines must survive import");
         assertEquals(NativeBookJson.encode(result.book()), NativeBookJson.encode(new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main").book()));
     }
 

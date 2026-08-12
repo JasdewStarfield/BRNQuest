@@ -55,7 +55,16 @@ public final class FtbV13Importer {
     }
 
     private void readTranslations(CompoundTag tag, Map<String, String> target) {
-        for (String key : tag.getAllKeys()) target.put(key, tag.getString(key));
+        for (String key : tag.getAllKeys()) {
+            Tag value = tag.get(key);
+            if (value instanceof ListTag lines) {
+                // FTB stores quest descriptions as a list of localized lines.
+                target.put(key, java.util.stream.IntStream.range(0, lines.size())
+                        .mapToObj(lines::getString).collect(java.util.stream.Collectors.joining("\n")));
+            } else {
+                target.put(key, tag.getString(key));
+            }
+        }
     }
 
     private void readGroups(CompoundTag root, ResourceLocation bookId, String namespace,
@@ -105,15 +114,20 @@ public final class FtbV13Importer {
         List<ResourceLocation> dependencies = new ArrayList<>();
         ListTag dependencyTags = raw.getList("dependencies", Tag.TAG_STRING);
         for (int i = 0; i < dependencyTags.size(); i++) dependencies.add(remember(namespace, dependencyTags.getString(i), aliases));
-        List<TaskDefinition> tasks = readTasks(raw.getList("tasks", Tag.TAG_COMPOUND), bookId, namespace, aliases, file, legacy, report);
-        List<RewardDefinition> rewards = readRewards(raw.getList("rewards", Tag.TAG_COMPOUND), bookId, namespace, aliases, file, legacy, report);
+        List<TaskDefinition> tasks = readTasks(raw.getList("tasks", Tag.TAG_COMPOUND), bookId, namespace,
+                translations, aliases, file, legacy, report);
+        List<RewardDefinition> rewards = readRewards(raw.getList("rewards", Tag.TAG_COMPOUND), bookId, namespace,
+                translations, aliases, file, legacy, report);
         return new QuestDefinition(bookId, id, chapterId,
                 translations.getOrDefault("quest." + legacy + ".title", legacy),
+                translations.getOrDefault("quest." + legacy + ".quest_subtitle", ""),
+                translations.getOrDefault("quest." + legacy + ".quest_desc", ""),
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
                 dependencies, tasks, rewards, legacy);
     }
 
     private List<TaskDefinition> readTasks(ListTag list, ResourceLocation bookId, String namespace,
+                                           Map<String, String> translations,
                                            Map<String, ResourceLocation> aliases, String file, String quest,
                                            DiagnosticReport report) {
         List<TaskDefinition> result = new ArrayList<>();
@@ -123,12 +137,15 @@ public final class FtbV13Importer {
             String type = raw.getString("type");
             validateCount(raw, file, "quests[" + quest + "].tasks[" + legacy + "]", legacy, report);
             warnUnknown(type, file, "quests[" + quest + "].tasks[" + legacy + "]", legacy, report);
-            result.add(new TaskDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), flatten(raw), raw.getBoolean("optional")));
+            Map<String, String> config = flatten(raw);
+            config.put("title", translations.getOrDefault("task." + legacy + ".title", ""));
+            result.add(new TaskDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), config, raw.getBoolean("optional")));
         }
         return result;
     }
 
     private List<RewardDefinition> readRewards(ListTag list, ResourceLocation bookId, String namespace,
+                                               Map<String, String> translations,
                                                Map<String, ResourceLocation> aliases, String file, String quest,
                                                DiagnosticReport report) {
         List<RewardDefinition> result = new ArrayList<>();
@@ -138,7 +155,9 @@ public final class FtbV13Importer {
             String type = raw.getString("type");
             validateCount(raw, file, "quests[" + quest + "].rewards[" + legacy + "]", legacy, report);
             warnUnknown(type, file, "quests[" + quest + "].rewards[" + legacy + "]", legacy, report);
-            result.add(new RewardDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), flatten(raw),
+            Map<String, String> config = flatten(raw);
+            config.put("title", translations.getOrDefault("reward." + legacy + ".title", ""));
+            result.add(new RewardDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), config,
                     raw.getBoolean("autoclaim") ? "auto" : "manual", raw.getBoolean("team_reward")));
         }
         return result;

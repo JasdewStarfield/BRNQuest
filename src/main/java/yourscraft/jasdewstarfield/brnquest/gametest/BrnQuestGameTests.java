@@ -79,7 +79,7 @@ public final class BrnQuestGameTests {
 
     private static QuestDefinition quest(String path, List<ResourceLocation> dependencies,
                                          List<TaskDefinition> tasks, List<RewardDefinition> rewards) {
-        return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", 0, 0,
+        return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", "", "", 0, 0,
                 dependencies, tasks, rewards, path.toUpperCase(java.util.Locale.ROOT));
     }
 

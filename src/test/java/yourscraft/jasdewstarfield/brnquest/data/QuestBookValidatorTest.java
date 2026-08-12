@@ -45,7 +45,7 @@ class QuestBookValidatorTest {
     }
 
     private static QuestDefinition quest(String path, List<ResourceLocation> dependencies) {
-        return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", 0, 0,
+        return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", "", "", 0, 0,
                 dependencies, List.of(), List.of(), path);
     }
 

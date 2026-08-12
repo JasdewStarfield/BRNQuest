@@ -15,14 +15,36 @@ class NativeBookJsonTest {
         ResourceLocation bookId = ResourceLocation.parse("test:main");
         ResourceLocation chapterId = ResourceLocation.parse("test:intro");
         TaskDefinition task = new TaskDefinition(bookId, ResourceLocation.parse("test:task"), ResourceLocation.parse("brnquest:checkmark"), Map.of(), false);
-        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId, "Quest", "{id:\"minecraft:book\",count:1}", 1, 2, List.of(), List.of(task), List.of(), "ABCDEF0123456789");
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                "Quest", "Subtitle", "Description", "{id:\"minecraft:book\",count:1}",
+                1, 2, List.of(), List.of(task), List.of(), "ABCDEF0123456789");
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Book", List.of(), List.of(new ChapterDefinition(bookId, chapterId, ResourceLocation.parse("test:group"), "Intro", "", 0, List.of(quest))), Map.of("ABCDEF0123456789", quest.id()));
         String encoded = NativeBookJson.encode(book);
         QuestBookDefinition decoded = NativeBookJson.decode(JsonParser.parseString(encoded).getAsJsonObject());
         assertEquals(encoded, NativeBookJson.encode(decoded));
+        assertEquals("Subtitle", decoded.quests().getFirst().subtitle());
+        assertEquals("Description", decoded.quests().getFirst().description());
         assertEquals(QuestBookSnapshot.of(book).revision(), QuestBookSnapshot.of(decoded).revision());
         var codecJson = QuestDefinition.CODEC.encodeStart(JsonOps.INSTANCE, quest).getOrThrow();
         assertEquals(quest, QuestDefinition.CODEC.parse(JsonOps.INSTANCE, codecJson).getOrThrow());
         assertThrows(UnsupportedOperationException.class, () -> decoded.chapters().add(null));
+    }
+
+    @Test void preservesAuthorVisibleTaskAndRewardOrder() {
+        ResourceLocation bookId = ResourceLocation.parse("test:main");
+        ResourceLocation chapterId = ResourceLocation.parse("test:intro");
+        TaskDefinition firstTask = new TaskDefinition(bookId, ResourceLocation.parse("test:z_task"), ResourceLocation.parse("brnquest:checkmark"), Map.of(), false);
+        TaskDefinition secondTask = new TaskDefinition(bookId, ResourceLocation.parse("test:a_task"), ResourceLocation.parse("brnquest:custom"), Map.of(), false);
+        RewardDefinition firstReward = new RewardDefinition(bookId, ResourceLocation.parse("test:z_reward"), ResourceLocation.parse("brnquest:custom"), Map.of(), "manual", false);
+        RewardDefinition secondReward = new RewardDefinition(bookId, ResourceLocation.parse("test:a_reward"), ResourceLocation.parse("brnquest:custom"), Map.of(), "manual", false);
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                "Quest", "", "", "", 0, 0, List.of(), List.of(firstTask, secondTask),
+                List.of(firstReward, secondReward), "LEGACY");
+        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Book", List.of(),
+                List.of(new ChapterDefinition(bookId, chapterId, ResourceLocation.parse("test:group"), "Intro", "", 0, List.of(quest))), Map.of());
+
+        QuestDefinition decoded = NativeBookJson.decode(JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject()).quests().getFirst();
+        assertEquals(List.of(firstTask.id(), secondTask.id()), decoded.tasks().stream().map(TaskDefinition::id).toList());
+        assertEquals(List.of(firstReward.id(), secondReward.id()), decoded.rewards().stream().map(RewardDefinition::id).toList());
     }
 }

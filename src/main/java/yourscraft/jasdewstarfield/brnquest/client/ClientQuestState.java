@@ -22,6 +22,7 @@ public final class ClientQuestState {
     private int expectedBytes;
     private final Map<Integer, String> chunks = new HashMap<>();
     private Map<String, QuestStatus> statuses = Map.of();
+    private Map<String, Long> taskProgress = Map.of();
     private Set<String> claimed = Set.of();
     private ResourceLocation selected;
 
@@ -29,6 +30,7 @@ public final class ClientQuestState {
     public static ClientQuestState get() { return INSTANCE; }
     public Optional<QuestBookSnapshot> book() { return Optional.ofNullable(book); }
     public Map<String, QuestStatus> statuses() { return statuses; }
+    public Map<String, Long> taskProgress() { return taskProgress; }
     public Set<String> claimed() { return claimed; }
     public ResourceLocation selected() { return selected; }
     public void selected(ResourceLocation selected) { this.selected = selected; }
@@ -60,6 +62,7 @@ public final class ClientQuestState {
         if (json.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
         BrnQuestNetwork.ProgressWire wire = GSON.fromJson(json, BrnQuestNetwork.ProgressWire.class);
         statuses = wire.quests() == null ? Map.of() : Map.copyOf(wire.quests());
+        taskProgress = wire.tasks() == null ? Map.of() : Map.copyOf(wire.tasks());
         claimed = wire.claimed() == null ? Set.of() : Set.copyOf(wire.claimed());
     }
 

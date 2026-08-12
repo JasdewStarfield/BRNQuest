@@ -18,7 +18,8 @@ public final class NativeBookJson {
         root.addProperty("id", book.id().toString());
         root.addProperty("title", book.title());
         JsonArray groups = new JsonArray();
-        book.chapterGroups().stream().sorted(Comparator.comparing(g -> g.id().toString())).forEach(group -> {
+        book.chapterGroups().stream().sorted(Comparator.comparingInt(ChapterGroupDefinition::order)
+                .thenComparing(g -> g.id().toString())).forEach(group -> {
             JsonObject value = new JsonObject();
             value.addProperty("id", group.id().toString());
             value.addProperty("title", group.title());
@@ -27,7 +28,13 @@ public final class NativeBookJson {
         });
         root.add("chapter_groups", groups);
         JsonArray chapters = new JsonArray();
-        book.chapters().stream().sorted(Comparator.comparing(c -> c.id().toString())).forEach(chapter -> chapters.add(encodeChapter(chapter)));
+        Map<ResourceLocation, Integer> groupOrder = new HashMap<>();
+        book.chapterGroups().forEach(group -> groupOrder.put(group.id(), group.order()));
+        book.chapters().stream().sorted(Comparator
+                        .comparingInt((ChapterDefinition chapter) -> groupOrder.getOrDefault(chapter.groupId(), Integer.MAX_VALUE))
+                        .thenComparingInt(ChapterDefinition::order)
+                        .thenComparing(chapter -> chapter.id().toString()))
+                .forEach(chapter -> chapters.add(encodeChapter(chapter)));
         root.add("chapters", chapters);
         JsonObject aliases = new JsonObject();
         book.legacyIds().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(e -> aliases.addProperty(e.getKey(), e.getValue().toString()));
@@ -59,7 +66,8 @@ public final class NativeBookJson {
         value.addProperty("icon", chapter.icon());
         value.addProperty("order", chapter.order());
         JsonArray quests = new JsonArray();
-        chapter.quests().stream().sorted(Comparator.comparing(q -> q.id().toString())).forEach(quest -> quests.add(encodeQuest(quest)));
+        // Quest, task, and reward list order is author-visible presentation data.
+        chapter.quests().forEach(quest -> quests.add(encodeQuest(quest)));
         value.add("quests", quests);
         return value;
     }
@@ -68,6 +76,8 @@ public final class NativeBookJson {
         JsonObject value = new JsonObject();
         value.addProperty("id", quest.id().toString());
         value.addProperty("title", quest.title());
+        value.addProperty("subtitle", quest.subtitle());
+        value.addProperty("description", quest.description());
         value.addProperty("icon", quest.icon());
         value.addProperty("x", quest.x());
         value.addProperty("y", quest.y());
@@ -76,10 +86,10 @@ public final class NativeBookJson {
         quest.dependencies().stream().sorted(Comparator.comparing(ResourceLocation::toString)).forEach(id -> dependencies.add(id.toString()));
         value.add("dependencies", dependencies);
         JsonArray tasks = new JsonArray();
-        quest.tasks().stream().sorted(Comparator.comparing(t -> t.id().toString())).forEach(task -> tasks.add(encodeTask(task)));
+        quest.tasks().forEach(task -> tasks.add(encodeTask(task)));
         value.add("tasks", tasks);
         JsonArray rewards = new JsonArray();
-        quest.rewards().stream().sorted(Comparator.comparing(r -> r.id().toString())).forEach(reward -> rewards.add(encodeReward(reward)));
+        quest.rewards().forEach(reward -> rewards.add(encodeReward(reward)));
         value.add("rewards", rewards);
         return value;
     }
@@ -127,7 +137,8 @@ public final class NativeBookJson {
             JsonObject reward = element.getAsJsonObject();
             rewards.add(new RewardDefinition(bookId, id(reward.get("id").getAsString()), id(reward.get("type").getAsString()), config(reward), text(reward, "claim_policy"), bool(reward, "team_reward")));
         }
-        return new QuestDefinition(bookId, id(value.get("id").getAsString()), chapterId, text(value, "title"), text(value, "icon"),
+        return new QuestDefinition(bookId, id(value.get("id").getAsString()), chapterId,
+                text(value, "title"), text(value, "subtitle"), text(value, "description"), text(value, "icon"),
                 value.get("x").getAsDouble(), value.get("y").getAsDouble(), dependencies, tasks, rewards, text(value, "legacy_id"));
     }
 

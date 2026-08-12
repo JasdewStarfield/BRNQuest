@@ -19,6 +19,9 @@ Before running Gradle, check for stale Gradle, Java, or Minecraft development pr
 
 The development run configurations are `runClient`, `runServer`, `runGameTestServer`, and `runData`.
 
+The current manual client acceptance procedure is documented in
+[`docs/CLIENT_ACCEPTANCE_zh.md`](docs/CLIENT_ACCEPTANCE_zh.md).
+
 ## Source layout
 
 Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. As features are introduced, keep stable API, data/import, progress, task, reward, team, network, client, integration, command, and diagnostics concerns in separate packages as specified by the shared design document.

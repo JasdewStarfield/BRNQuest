@@ -1,3 +1,11 @@
 {
-  "modmenu.descriptionTranslation.brnquest": "面向 Minecraft 整合包的服务端权威、数据驱动任务系统。"
+  "modmenu.descriptionTranslation.brnquest": "面向 Minecraft 整合包的服务端权威、数据驱动任务系统。",
+  "key.brnquest.open": "打开 BRNQuest",
+  "screen.brnquest.title": "任务书",
+  "screen.brnquest.loading": "正在等待服务端任务书……",
+  "screen.brnquest.track": "追踪",
+  "screen.brnquest.complete": "完成",
+  "screen.brnquest.claim": "领取下一项奖励",
+  "toast.brnquest.updated": "BRNQuest 已更新",
+  "toast.brnquest.updated.description": "任务进度发生变化。"
 }

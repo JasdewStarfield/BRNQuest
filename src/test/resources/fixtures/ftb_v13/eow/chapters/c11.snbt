@@ -1,0 +1,32 @@
+{
+	default_hide_dependency_lines: false
+	default_quest_shape: ""
+	filename: "c11"
+	group: "2FA794AB51884C87"
+	id: "2518136143BCE123"
+	images: [ ]
+	order_index: 2
+	quest_links: [ ]
+	quests: [
+		{
+			dependencies: ["632685A446EA33B1"]
+			id: "3C0A9E71D5F482B6"
+			tasks: [{
+				id: "6A91F2C04E7B35D8"
+				type: "custom"
+			}]
+			x: 0.0d
+			y: 0.0d
+		}
+		{
+			dependencies: ["3C0A9E71D5F482B6"]
+			id: "5E20B7A4C9831DF6"
+			tasks: [{
+				id: "1B6D84F3A90C527E"
+				type: "custom"
+			}]
+			x: 2.0d
+			y: 0.0d
+		}
+	]
+}

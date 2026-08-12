@@ -1,3 +1,11 @@
 {
-  "modmenu.descriptionTranslation.brnquest": "A server-authoritative, data-driven quest system for Minecraft modpacks."
+  "modmenu.descriptionTranslation.brnquest": "A server-authoritative, data-driven quest system for Minecraft modpacks.",
+  "key.brnquest.open": "Open BRNQuest",
+  "screen.brnquest.title": "Quest Book",
+  "screen.brnquest.loading": "Waiting for the server quest book...",
+  "screen.brnquest.track": "Track",
+  "screen.brnquest.complete": "Complete",
+  "screen.brnquest.claim": "Claim next reward",
+  "toast.brnquest.updated": "BRNQuest updated",
+  "toast.brnquest.updated.description": "Quest progress changed."
 }

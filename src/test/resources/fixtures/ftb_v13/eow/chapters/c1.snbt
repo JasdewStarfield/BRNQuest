@@ -1,0 +1,198 @@
+{
+	autofocus_id: "0065599D4438A0BB"
+	default_hide_dependency_lines: false
+	default_quest_shape: ""
+	filename: "c1"
+	group: "2FA794AB51884C87"
+	id: "45846775ED619AF8"
+	images: [ ]
+	order_index: 1
+	quest_links: [ ]
+	quests: [
+		{
+			icon: {
+				components: {
+					"minecraft:custom_name": "\"消防斧\""
+					"minecraft:enchantments": {
+						levels: {
+							"minecraft:sharpness": 4
+							"minecraft:unbreaking": 3
+						}
+					}
+				}
+				id: "minecraft:golden_axe"
+			}
+			id: "7D44928441162C4F"
+			rewards: [
+				{
+					id: "126097F5BE27E25A"
+					item: {
+						components: {
+							"minecraft:custom_name": "\"消防斧\""
+							"minecraft:enchantments": {
+								levels: {
+									"minecraft:sharpness": 4
+									"minecraft:unbreaking": 3
+								}
+							}
+						}
+						count: 1
+						id: "minecraft:golden_axe"
+					}
+					type: "item"
+				}
+				{
+					count: 16
+					id: "147B1DA15C12CDCC"
+					item: {
+						count: 1
+						id: "farmersdelight:hamburger"
+					}
+					type: "item"
+				}
+				{
+					id: "47A368670FF3910A"
+					type: "custom"
+				}
+				{
+					id: "2D4BE53D7C379B70"
+					item: {
+						components: {
+							"minecraft:custom_name": "\"求生用屠宰匕首\""
+							"minecraft:enchantments": {
+								levels: {
+									"minecraft:unbreaking": 3
+								}
+							}
+						}
+						count: 1
+						id: "farmersdelight:iron_knife"
+					}
+					type: "item"
+				}
+				{
+					count: 8
+					id: "1ECF8A2C7356DA55"
+					item: {
+						components: {
+							"minecraft:custom_name": "\"临时引火器\""
+						}
+						count: 1
+						id: "minecraft:fire_charge"
+					}
+					type: "item"
+				}
+			]
+			tasks: [{
+				id: "4E95600F33EEC3D8"
+				type: "checkmark"
+			}]
+			x: 0.0d
+			y: 1.0d
+		}
+		{
+			dependencies: ["488F82E6859AFFC4"]
+			id: "65E7A5223870A986"
+			tasks: [{
+				id: "096B7F9C03D76ABD"
+				type: "checkmark"
+			}]
+			x: 3.0d
+			y: -2.0d
+		}
+		{
+			dependencies: ["7D44928441162C4F"]
+			id: "488F82E6859AFFC4"
+			tasks: [{
+				id: "7D1555EF6B2F5798"
+				item: { count: 1, id: "minecraft:crafting_table" }
+				type: "item"
+			}]
+			x: 1.5d
+			y: -0.5d
+		}
+		{
+			dependencies: ["7D44928441162C4F"]
+			id: "5899F85C4648BE46"
+			tasks: [{
+				id: "0C0335E50B6DED32"
+				item: { count: 1, id: "farmersdelight:ham" }
+				type: "item"
+			}]
+			x: 0.0d
+			y: -2.0d
+		}
+		{
+			dependencies: [
+				"488F82E6859AFFC4"
+				"5899F85C4648BE46"
+			]
+			id: "1D4CEB31CACEF9ED"
+			tasks: [{
+				id: "4E324B6B5FBB630E"
+				item: { count: 1, id: "minecraft:campfire" }
+				type: "item"
+			}]
+			x: 1.5d
+			y: -2.0d
+		}
+		{
+			dependencies: ["7D44928441162C4F"]
+			id: "4ABF8B4F9E58A576"
+			tasks: [{
+				id: "710B586148FFCAA3"
+				item: { count: 1, id: "farmersdelight:straw" }
+				type: "item"
+			}]
+			x: -1.5d
+			y: -0.5d
+		}
+		{
+			dependencies: ["4ABF8B4F9E58A576"]
+			id: "0E7F02D608D96AF1"
+			rewards: [{
+				id: "4D7A2E61C736736C"
+				item: {
+					components: {
+						"minecraft:custom_name": "\"结实耐用的十字镐\""
+						"minecraft:enchantments": {
+							levels: {
+								"minecraft:efficiency": 3
+								"minecraft:unbreaking": 5
+							}
+						}
+					}
+					count: 1
+					id: "minecraft:iron_pickaxe"
+				}
+				type: "item"
+			}]
+			tasks: [
+				{
+					count: 16L
+					id: "477F21F3542BD8AA"
+					item: { count: 1, id: "farmersdelight:rope" }
+					type: "item"
+				}
+				{
+					count: 2L
+					id: "548ECDB63DF4BDF8"
+					item: { count: 1, id: "minecraft:stick" }
+					type: "item"
+				}
+			]
+			x: -1.5d
+			y: -2.0d
+		}
+		{
+			dependencies: ["7D44928441162C4F"]
+			id: "632685A446EA33B1"
+			tasks: [{
+				id: "290F9B5910A106AC"
+				type: "custom"
+			}]
+			x: 6.0d
+			y: 1.0d
+		}
+	]
+}

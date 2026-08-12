@@ -15,6 +15,10 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+repositories {
+    mavenCentral()
+}
+
 neoForge {
     version = project.neo_version
 
@@ -55,10 +59,31 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    unitTest {
+        // Merge test classes/resources into the BRNQuest test mod for the NeoForge JUnit launcher.
+        testedMod = mods."${mod_id}"
+        enable()
+    }
 }
 
 // Data-generator output is compiled and packaged with handwritten resources.
 sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+def generateGameTestStructure = tasks.register('generateGameTestStructure') {
+    def encoded = file('src/main/gametest/empty.nbt.b64')
+    def generated = layout.buildDirectory.file('generated/gametestResources/data/brnquest/structure/empty.nbt')
+    inputs.file encoded
+    outputs.file generated
+    doLast {
+        // Keep the tiny binary structure reproducible and reviewable as Base64 in source control.
+        def target = generated.get().asFile
+        target.parentFile.mkdirs()
+        target.bytes = Base64.decoder.decode(encoded.getText('UTF-8').trim())
+    }
+}
+sourceSets.main.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')
+tasks.named('processResources').configure { dependsOn generateGameTestStructure }
 
 def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     def replaceProperties = [
@@ -88,6 +113,15 @@ publishing {
             from components.java
         }
     }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 idea.module {

@@ -1,0 +1,30 @@
+{
+	default_hide_dependency_lines: false
+	default_quest_shape: ""
+	filename: "754D9721E993901D"
+	group: "2FA794AB51884C87"
+	id: "754D9721E993901D"
+	images: [ ]
+	order_index: 0
+	quest_links: [ ]
+	quests: [
+		{
+			id: "169D24C8CFE4A9F7"
+			tasks: [{
+				id: "6EADAD37CB08D801"
+				type: "checkmark"
+			}]
+			x: 0.0d
+			y: 0.0d
+		}
+		{
+			id: "6EB14F05E788D383"
+			tasks: [{
+				id: "5E83803AEA006F03"
+				type: "checkmark"
+			}]
+			x: 3.0d
+			y: 0.0d
+		}
+	]
+}

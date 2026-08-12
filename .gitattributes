@@ -1,2 +1,19 @@
-# Auto detect text files and perform LF normalization
+# Normalize source and generated text so deterministic hashes do not depend on Windows checkout settings.
 * text=auto
+.gitattributes text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.properties text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.snbt text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=lf
+*.b64 text eol=lf
+*SUMS text eol=lf
+
+# Compatibility fixtures are byte-for-byte source snapshots; do not normalize them.
+src/test/resources/fixtures/ftb_v13/eow/*.snbt -text -eol -diff
+src/test/resources/fixtures/ftb_v13/eow/**/*.snbt -text -eol -diff

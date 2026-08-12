@@ -1,0 +1,20 @@
+{
+	default_hide_dependency_lines: false
+	default_quest_shape: ""
+	filename: "c15"
+	group: "2FA794AB51884C87"
+	id: "264C18A290EE52FE"
+	images: [ ]
+	order_index: 3
+	quest_links: [ ]
+	quests: [{
+		id: "648EAB198FC7F8EA"
+		tasks: [{
+			id: "47257A588AA8F8A5"
+			item: { components: { "ftbquests:missing_item": "recipe_linkage:research_table" }, count: 1, id: "ftbquests:missing_item" }
+			type: "item"
+		}]
+		x: 0.0d
+		y: 0.0d
+	}]
+}

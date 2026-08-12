@@ -22,6 +22,9 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 The current manual client acceptance procedure is documented in
 [`docs/CLIENT_ACCEPTANCE_zh.md`](docs/CLIENT_ACCEPTANCE_zh.md).
 
+日常回归优先使用零可选依赖的
+[`docs/TEST_PACK_zh.md`](docs/TEST_PACK_zh.md) 原生验收任务包；EOW fixture 保留用于导入兼容测试。
+
 整合包作者的全局任务工作区、新世界自动部署和显式更新流程见
 [`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)。
 

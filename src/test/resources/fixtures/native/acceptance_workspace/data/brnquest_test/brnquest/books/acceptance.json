@@ -1,0 +1,325 @@
+{
+  "schema_version": 1,
+  "id": "brnquest_test:acceptance",
+  "title": "BRNQuest 原生验收任务书",
+  "chapter_groups": [
+    { "id": "brnquest_test:core", "title": "核心交互", "order": 0 },
+    { "id": "brnquest_test:layout", "title": "布局与边界", "order": 1 },
+    { "id": "brnquest_test:overflow", "title": "章节滚动压力", "order": 2 }
+  ],
+  "chapters": [
+    {
+      "id": "brnquest_test:basics",
+      "group_id": "brnquest_test:core",
+      "title": "01 基础完成流程",
+      "icon": "{id:\"minecraft:book\",count:1}",
+      "order": 0,
+      "quests": [
+        {
+          "id": "brnquest_test:welcome",
+          "title": "欢迎与打勾目标",
+          "subtitle": "点击目标行完成，而不是点击底部按钮",
+          "description": "这是验收链的起点。\n悬浮目标和奖励，检查文字与物品 Tooltip 不会穿透详情抽屉。",
+          "icon": "",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_WELCOME",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:welcome_check", "type": "brnquest:checkmark", "config": { "title": "点击我确认界面可交互" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:welcome_apple", "type": "brnquest:item", "config": { "count": "2", "item": "{id:\"minecraft:apple\",count:1}" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:observe_workbench",
+          "title": "工作台观察任务",
+          "subtitle": "物品保留在背包中",
+          "description": "把工作台放入玩家物品栏。数量达到 1 后应显示可完成，点击目标行后物品不会被消耗。",
+          "icon": "",
+          "x": 3.0,
+          "y": 0.0,
+          "legacy_id": "TEST_OBSERVE",
+          "dependencies": ["brnquest_test:welcome"],
+          "tasks": [
+            { "id": "brnquest_test:observe_workbench_item", "type": "brnquest:item", "config": { "consume_items": "false", "count": "1", "item": "{id:\"minecraft:crafting_table\",count:1}" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:observe_bread", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:bread\",count:1}" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:submit_stone",
+          "title": "提交 4 个圆石",
+          "subtitle": "完成时消耗物品",
+          "description": "准备至少 4 个圆石。点击目标后应只消耗 4 个，并立即解锁后继任务。",
+          "icon": "",
+          "x": 6.0,
+          "y": 0.0,
+          "legacy_id": "TEST_SUBMIT",
+          "dependencies": ["brnquest_test:observe_workbench"],
+          "tasks": [
+            { "id": "brnquest_test:submit_stone_item", "type": "brnquest:item", "config": { "consume_items": "true", "count": "4", "item": "{id:\"minecraft:cobblestone\",count:1}" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:submit_iron", "type": "brnquest:item", "config": { "count": "2", "item": "{id:\"minecraft:iron_ingot\",count:1}" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:multi_objective",
+          "title": "多目标逐项完成",
+          "subtitle": "每个目标拥有独立状态",
+          "description": "先分别点击两个确认目标，再准备 2 根火把并点击物品目标。任务只能在三个必需目标都完成后完成。",
+          "icon": "",
+          "x": 9.0,
+          "y": 0.0,
+          "legacy_id": "TEST_MULTI",
+          "dependencies": ["brnquest_test:submit_stone"],
+          "tasks": [
+            { "id": "brnquest_test:multi_check_a", "type": "brnquest:checkmark", "config": { "title": "确认目标 A" }, "optional": false },
+            { "id": "brnquest_test:multi_check_b", "type": "brnquest:checkmark", "config": { "title": "确认目标 B" }, "optional": false },
+            { "id": "brnquest_test:multi_torches", "type": "brnquest:item", "config": { "consume_items": "false", "count": "2", "item": "{id:\"minecraft:torch\",count:1}" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:multi_reward_gold", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:gold_ingot\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:multi_reward_lapis", "type": "brnquest:item", "config": { "count": "4", "item": "{id:\"minecraft:lapis_lazuli\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:multi_reward_redstone", "type": "brnquest:item", "config": { "count": "8", "item": "{id:\"minecraft:redstone\",count:1}" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:branches",
+      "group_id": "brnquest_test:core",
+      "title": "02 分支、追踪与依赖",
+      "icon": "{id:\"minecraft:compass\",count:1}",
+      "order": 1,
+      "quests": [
+        {
+          "id": "brnquest_test:branch_root",
+          "title": "分支起点",
+          "subtitle": "用于检查追踪 HUD",
+          "description": "追踪此任务后关闭界面，HUD 应显示目标。再次点击星标取消追踪不应关闭详情。",
+          "icon": "",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_BRANCH_ROOT",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:branch_root_check", "type": "brnquest:checkmark", "config": { "title": "完成分支起点" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:branch_upper",
+          "title": "上方分支",
+          "subtitle": "纵向与斜向连线",
+          "description": "节点位于起点右上方，依赖箭头应指向本节点。",
+          "icon": "",
+          "x": 3.0,
+          "y": -3.0,
+          "legacy_id": "TEST_BRANCH_UP",
+          "dependencies": ["brnquest_test:branch_root"],
+          "tasks": [
+            { "id": "brnquest_test:branch_upper_check", "type": "brnquest:checkmark", "config": { "title": "完成上方分支" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:branch_lower",
+          "title": "下方煤炭观察",
+          "subtitle": "物品任务也应可追踪",
+          "description": "准备 3 个煤炭。详情状态和 HUD 目标应同步显示当前数量。",
+          "icon": "",
+          "x": 3.0,
+          "y": 3.0,
+          "legacy_id": "TEST_BRANCH_DOWN",
+          "dependencies": ["brnquest_test:branch_root"],
+          "tasks": [
+            { "id": "brnquest_test:branch_lower_coal", "type": "brnquest:item", "config": { "consume_items": "false", "count": "3", "item": "{id:\"minecraft:coal\",count:1}" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:branch_join",
+          "title": "汇合节点",
+          "subtitle": "同时依赖两个分支",
+          "description": "只有上下两个分支均完成后才解锁。锁定提示应列出两个依赖的章节和任务名。",
+          "icon": "",
+          "x": 7.0,
+          "y": 0.0,
+          "legacy_id": "TEST_BRANCH_JOIN",
+          "dependencies": ["brnquest_test:branch_lower", "brnquest_test:branch_upper"],
+          "tasks": [
+            { "id": "brnquest_test:branch_join_check", "type": "brnquest:checkmark", "config": { "title": "完成汇合节点" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:detail_scroll",
+      "group_id": "brnquest_test:core",
+      "title": "03 长详情与多奖励",
+      "icon": "{id:\"minecraft:chest\",count:1}",
+      "order": 2,
+      "quests": [
+        {
+          "id": "brnquest_test:long_detail",
+          "title": "长详情滚动压力测试",
+          "subtitle": "最底部项目必须完整可见",
+          "description": "第一段：这个任务用于检查详情抽屉的垂直滚动。\n第二段：滚轮位于详情区域时不应缩放任务画布。\n第三段：拖动滚动条到底后，最后一排奖励和提示必须完整显示。\n第四段：长文本需要自然换行，并保持在抽屉的裁剪区域内。\n第五段：物品 Tooltip 应始终位于详情背景之上，但不得穿过关闭后的抽屉。\n第六段：完成任务后逐一点击奖励，已经领取的奖励不得再次发放。",
+          "icon": "{id:\"minecraft:writable_book\",count:1}",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_LONG_DETAIL",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:long_detail_check", "type": "brnquest:checkmark", "config": { "title": "确认长详情已滚动到底" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:long_reward_01", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:oak_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_02", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:spruce_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_03", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:birch_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_04", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:jungle_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_05", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:acacia_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_06", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:dark_oak_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_07", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:mangrove_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_08", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:cherry_log\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_09", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:crimson_stem\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_10", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:warped_stem\",count:1}" }, "claim_policy": "manual", "team_reward": false },
+            { "id": "brnquest_test:long_reward_custom", "type": "brnquest:custom", "config": { "title": "API 自定义奖励占位" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:cross_chapter",
+      "group_id": "brnquest_test:layout",
+      "title": "04 跨章节依赖",
+      "icon": "{id:\"minecraft:chain\",count:1}",
+      "order": 0,
+      "quests": [
+        {
+          "id": "brnquest_test:cross_target",
+          "title": "跨章节锁定目标",
+          "subtitle": "依赖“多目标逐项完成”",
+          "description": "在依赖未完成时悬浮“未解锁”，提示中应同时显示来源章节“01 基础完成流程”和任务名称。",
+          "icon": "",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_CROSS_TARGET",
+          "dependencies": ["brnquest_test:multi_objective"],
+          "tasks": [
+            { "id": "brnquest_test:cross_target_check", "type": "brnquest:checkmark", "config": { "title": "完成跨章节目标" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:canvas_edges",
+      "group_id": "brnquest_test:layout",
+      "title": "05 画布边界与缩放",
+      "icon": "{id:\"minecraft:map\",count:1}",
+      "order": 1,
+      "quests": [
+        {
+          "id": "brnquest_test:edge_left",
+          "title": "左侧边界节点",
+          "subtitle": "部分露出时仍应渲染",
+          "description": "平移画布，让节点只有一小部分进入左栏或把手附近；节点应在完全离开画布后才停止渲染。",
+          "icon": "",
+          "x": -12.0,
+          "y": -5.0,
+          "legacy_id": "TEST_EDGE_LEFT",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:edge_left_check", "type": "brnquest:checkmark", "config": { "title": "左边界" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:edge_center",
+          "title": "视觉中心锚点",
+          "subtitle": "缩放应围绕可视画布中心",
+          "description": "先平移到此节点，再缩放至 50% 和 200%。节点、边框、图标、连线应同步缩放且视觉中心不漂移。",
+          "icon": "",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_EDGE_CENTER",
+          "dependencies": ["brnquest_test:edge_left"],
+          "tasks": [
+            { "id": "brnquest_test:edge_center_check", "type": "brnquest:checkmark", "config": { "title": "中心锚点" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:edge_right",
+          "title": "右侧边界节点",
+          "subtitle": "详情抽屉不得额外吞掉画布",
+          "description": "打开详情抽屉并将此节点移动到抽屉边缘，检查节点和 Tooltip 的裁剪层级。",
+          "icon": "",
+          "x": 12.0,
+          "y": 5.0,
+          "legacy_id": "TEST_EDGE_RIGHT",
+          "dependencies": ["brnquest_test:edge_center"],
+          "tasks": [
+            { "id": "brnquest_test:edge_right_check", "type": "brnquest:checkmark", "config": { "title": "右边界" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:custom_types",
+      "group_id": "brnquest_test:layout",
+      "title": "06 自定义类型占位",
+      "icon": "",
+      "order": 2,
+      "quests": [
+        {
+          "id": "brnquest_test:custom_api",
+          "title": "API 驱动的自定义目标",
+          "subtitle": "内置已知类型的安全占位",
+          "description": "该目标不会通过普通点击完成，用于检查 custom 类型在没有第三方 UI 的情况下仍显示安全占位且不会报错。管理员可用 progress complete 命令完成整个任务。",
+          "icon": "",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_CUSTOM",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:custom_api_task", "type": "brnquest:custom", "config": { "title": "等待 API 写入进度" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:custom_api_reward", "type": "brnquest:custom", "config": { "title": "自定义奖励确认" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        }
+      ]
+    },
+    { "id": "brnquest_test:scroll_01", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 01", "icon": "", "order": 1, "quests": [] },
+    { "id": "brnquest_test:scroll_02", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 02", "icon": "", "order": 2, "quests": [] },
+    { "id": "brnquest_test:scroll_03", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 03", "icon": "", "order": 3, "quests": [] },
+    { "id": "brnquest_test:scroll_04", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 04", "icon": "", "order": 4, "quests": [] },
+    { "id": "brnquest_test:scroll_05", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 05", "icon": "", "order": 5, "quests": [] },
+    { "id": "brnquest_test:scroll_06", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 06", "icon": "", "order": 6, "quests": [] },
+    { "id": "brnquest_test:scroll_07", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 07", "icon": "", "order": 7, "quests": [] },
+    { "id": "brnquest_test:scroll_08", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 08", "icon": "", "order": 8, "quests": [] },
+    { "id": "brnquest_test:scroll_09", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 09", "icon": "", "order": 9, "quests": [] },
+    { "id": "brnquest_test:scroll_10", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 10", "icon": "", "order": 10, "quests": [] },
+    { "id": "brnquest_test:scroll_11", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 11", "icon": "", "order": 11, "quests": [] },
+    { "id": "brnquest_test:scroll_12", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 12", "icon": "", "order": 12, "quests": [] },
+    { "id": "brnquest_test:scroll_13", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 13", "icon": "", "order": 13, "quests": [] },
+    { "id": "brnquest_test:scroll_14", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 14", "icon": "", "order": 14, "quests": [] },
+    { "id": "brnquest_test:scroll_15", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 15", "icon": "", "order": 15, "quests": [] },
+    { "id": "brnquest_test:scroll_16", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 16", "icon": "", "order": 16, "quests": [] },
+    { "id": "brnquest_test:scroll_17", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 17", "icon": "", "order": 17, "quests": [] },
+    { "id": "brnquest_test:scroll_18", "group_id": "brnquest_test:overflow", "title": "滚动占位章节 18", "icon": "", "order": 18, "quests": [] }
+  ],
+  "legacy_ids": {
+    "TEST_WELCOME": "brnquest_test:welcome",
+    "TEST_OBSERVE": "brnquest_test:observe_workbench",
+    "TEST_SUBMIT": "brnquest_test:submit_stone"
+  }
+}

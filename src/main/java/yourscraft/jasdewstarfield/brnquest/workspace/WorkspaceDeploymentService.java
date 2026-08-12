@@ -58,12 +58,16 @@ public final class WorkspaceDeploymentService {
 
     public void autoDeployAndReload(MinecraftServer server) {
         try {
+            WorkspacePaths.ensureAuthorDirectories(server);
             DeploymentResult result = deploy(server, false);
             if (result.status() != Status.DEPLOYED) return;
             BRNQuest.LOGGER.info("[BRNQuest] Auto-deployed {} workspace files to {}", result.files(), result.target());
             reloadIncludingWorkspace(server);
         } catch (NoWorkspaceException exception) {
             BRNQuest.LOGGER.info("[BRNQuest] No author workspace found at {}; automatic deployment skipped", exception.path());
+        } catch (IOException exception) {
+            // Author content may be incomplete while a pack is being prepared; never mutate a world in that case.
+            BRNQuest.LOGGER.warn("[BRNQuest] Author workspace is not deployable; automatic deployment skipped: {}", exception.getMessage());
         } catch (Exception exception) {
             BRNQuest.LOGGER.error("[BRNQuest] Automatic workspace deployment failed; no existing world pack was replaced", exception);
         }
@@ -79,6 +83,10 @@ public final class WorkspaceDeploymentService {
 
     static void validateWorkspace(Path source) throws IOException {
         if (!Files.isDirectory(source)) throw new NoWorkspaceException(source);
+        try (var entries = Files.list(source)) {
+            // The loader creates this directory for discoverability; empty means no authored pack yet.
+            if (entries.findAny().isEmpty()) throw new NoWorkspaceException(source);
+        }
         if (!Files.isRegularFile(source.resolve("pack.mcmeta"))) throw new IOException("Workspace is missing pack.mcmeta: " + source);
         try (var paths = Files.walk(source)) {
             if (paths.anyMatch(Files::isSymbolicLink)) throw new IOException("Symbolic links are not allowed in the workspace");

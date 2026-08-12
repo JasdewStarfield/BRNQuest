@@ -15,6 +15,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WorkspaceDeploymentServiceTest {
     @TempDir Path temporary;
 
+    @Test void authorDirectoriesAreCreatedTogether() throws Exception {
+        Path root = temporary.resolve("config/brnquest");
+
+        WorkspacePaths.ensureAuthorDirectories(root);
+
+        assertTrue(Files.isDirectory(root.resolve("imports")));
+        assertTrue(Files.isDirectory(root.resolve("reports")));
+        assertTrue(Files.isDirectory(root.resolve("workspace")));
+        assertThrows(WorkspaceDeploymentService.NoWorkspaceException.class,
+                () -> WorkspaceDeploymentService.validateWorkspace(root.resolve("workspace")));
+    }
+
     @Test void firstDeployCopiesWorkspaceAndSecondDeployDoesNotOverwrite() throws Exception {
         Path source = workspace("first");
         Path target = temporary.resolve("world/datapacks/brnquest-workspace");

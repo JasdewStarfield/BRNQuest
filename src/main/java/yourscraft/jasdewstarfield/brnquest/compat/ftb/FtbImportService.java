@@ -32,8 +32,8 @@ public final class FtbImportService {
         requireSegment(sourceName, "source");
         requireSegment(namespace, "namespace");
         requireSegment(bookId, "book_id");
-        Path importRoot = target == ImportTarget.WORKSPACE ? WorkspacePaths.imports(server)
-                : server.getServerDirectory().resolve("brnquest-import").toAbsolutePath().normalize();
+        // Both the modern workspace flow and the compatibility world flow share one visible inbox.
+        Path importRoot = WorkspacePaths.imports(server);
         Path source = importRoot.resolve(sourceName).normalize();
         if (!source.startsWith(importRoot) || !Files.isDirectory(source) || Files.isSymbolicLink(source)) {
             throw new IOException("Import source is outside the allowed root or does not exist: " + sourceName);

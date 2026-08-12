@@ -18,6 +18,8 @@ config/brnquest/
 
 整合包作者应将整个 `config/brnquest/workspace/` 随实例发布。
 
+服务端启动时会自动创建 `config/brnquest/imports/`、`config/brnquest/workspace/` 和 `config/brnquest/reports/`。空 workspace 表示尚未导入任务，不会被当作损坏数据包；首次成功导入可以写入空 workspace，但绝不会覆盖已有作者内容。
+
 ## 新世界行为
 
 世界首次启动且不存在 `datapacks/brnquest-workspace/` 时，BRNQuest 会：
@@ -45,7 +47,7 @@ config/brnquest/
 - `deploy --replace` 是显式更新操作。旧部署先移动到世界 `brnquest-backups/brnquest-workspace.backup-<UTC时间>/`，再部署新版本；备份不会被 Minecraft 当作额外数据包发现。
 - `reload` 只重新发现并重载当前世界已经部署的 workspace，不会从 `config` 复制或覆盖文件。
 
-原有 `/brnquest import_ftb` 保留为直接写入当前世界的兼容命令；新整合包工作流应优先使用 `workspace import_ftb`。
+原有 `/brnquest import_ftb` 保留为直接写入当前世界的兼容命令；它也从统一的 `config/brnquest/imports/<source>/` 读取。新整合包工作流应优先使用 `workspace import_ftb`。
 
 ## 更新原则
 

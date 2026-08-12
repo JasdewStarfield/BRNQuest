@@ -14,7 +14,13 @@ public final class NativePackWriter {
     private NativePackWriter() {}
 
     public static void write(Path pack, String namespace, String bookId, String json, String description) throws IOException {
-        if (Files.exists(pack)) throw new java.nio.file.FileAlreadyExistsException(pack.toString());
+        if (Files.exists(pack)) {
+            if (!Files.isDirectory(pack)) throw new java.nio.file.FileAlreadyExistsException(pack.toString());
+            try (var entries = Files.list(pack)) {
+                // A loader-created empty workspace is a valid destination; authored content is never overwritten.
+                if (entries.findAny().isPresent()) throw new java.nio.file.FileAlreadyExistsException(pack.toString());
+            }
+        }
         Path bookFile = pack.resolve("data").resolve(namespace).resolve("brnquest/books").resolve(bookId + ".json");
         Files.createDirectories(bookFile.getParent());
         Files.writeString(pack.resolve("pack.mcmeta"), "{\n  \"pack\": {\n    \"pack_format\": 48,\n    \"description\": \"" + escape(description) + "\"\n  }\n}\n",

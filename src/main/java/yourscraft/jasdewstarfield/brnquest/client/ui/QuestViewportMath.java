@@ -27,4 +27,14 @@ final class QuestViewportMath {
         if (rewardCount <= 0) return 0;
         return ((rewardCount + Math.max(1, columns) - 1) / Math.max(1, columns)) * REWARD_ROW_HEIGHT;
     }
+
+    static boolean intersectsViewport(int centerX, int centerY, int radius,
+                                      int left, int right, int top, int bottom) {
+        return centerX + radius >= left && centerX - radius <= right
+                && centerY + radius >= top && centerY - radius <= bottom;
+    }
+
+    static double panForStableOrigin(double pan, int oldOrigin, int newOrigin) {
+        return pan + oldOrigin - newOrigin;
+    }
 }

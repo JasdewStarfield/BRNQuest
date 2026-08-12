@@ -174,7 +174,8 @@ public final class QuestScreen extends Screen {
         int y = screenY(quest.y());
         int size = nodeSize();
         int radius = size / 2;
-        if (x - radius < canvasLeft() || x + radius > right || y - radius < top || y + radius > bottom) return;
+        // Keep partially visible nodes; cull only after their entire bounds leave the canvas.
+        if (!QuestViewportMath.intersectsViewport(x, y, radius, canvasLeft(), right, top, bottom)) return;
 
         QuestStatus status = status(quest);
         int color = switch (status) {
@@ -332,7 +333,8 @@ public final class QuestScreen extends Screen {
         graphics.drawString(font, Component.literal(progress), x + 24, y + 13, 0xFFABB7C6, false);
         if (task.optional()) graphics.drawString(font, Component.translatable("screen.brnquest.optional"), x + width - 38, y + 13, 0xFF9AA6B5, false);
         boolean visible = y >= DETAIL_CONTENT_TOP && y + 24 <= height - DETAIL_CONTENT_BOTTOM_MARGIN;
-        boolean interactive = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !satisfied
+        boolean submitted = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
+        boolean interactive = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !submitted
                 && (task.typeId().getPath().equals("checkmark") || task.typeId().getPath().equals("item"));
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
         if (visible && mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 24) {
@@ -370,7 +372,10 @@ public final class QuestScreen extends Screen {
 
         int navigationHandleLeft = navigationCollapsed ? 0 : NAV_RIGHT + 4;
         if (mouseX >= navigationHandleLeft && mouseX <= navigationHandleLeft + NAV_HANDLE_WIDTH) {
+            int oldOrigin = screenOriginX();
             navigationCollapsed = !navigationCollapsed;
+            // The graph camera is independent of chrome width; compensate the changed layout origin.
+            panX = QuestViewportMath.panForStableOrigin(panX, oldOrigin, screenOriginX());
             return true;
         }
 
@@ -399,7 +404,7 @@ public final class QuestScreen extends Screen {
 
         QuestDefinition selected = selectedQuest();
         int left = detailLeft();
-        if (detailsOpen && mouseX >= width - 28 && mouseX <= width && mouseY >= 0 && mouseY <= 28) {
+        if (detailsOpen && mouseX >= width - 18 && mouseX <= width && mouseY >= 0 && mouseY <= 16) {
             detailsOpen = false;
             detailScroll = 0;
             return true;
@@ -615,7 +620,8 @@ public final class QuestScreen extends Screen {
     }
 
     private int detailTrackX(String pin) {
-        return detailLeft() + 10 + (DETAIL_WIDTH - 24) - font.width(pin);
+        // Reserve a clear gap from the close glyph so their hitboxes can never overlap.
+        return detailLeft() + 10 + (DETAIL_WIDTH - 24) - font.width(pin) - 18;
     }
 
     private ItemStack item(ResourceLocation cacheId, String snbt) {

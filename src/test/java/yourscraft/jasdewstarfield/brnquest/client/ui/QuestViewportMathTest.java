@@ -31,4 +31,21 @@ class QuestViewportMathTest {
         assertEquals(28, QuestViewportMath.rewardGridHeight(8, 8));
         assertEquals(56, QuestViewportMath.rewardGridHeight(9, 8));
     }
+
+    @Test void nodeRemainsVisibleUntilItsWholeBoundsLeaveViewport() {
+        assertEquals(true, QuestViewportMath.intersectsViewport(95, 100, 10, 100, 300, 0, 200));
+        assertEquals(true, QuestViewportMath.intersectsViewport(305, 100, 10, 100, 300, 0, 200));
+        assertEquals(false, QuestViewportMath.intersectsViewport(89, 100, 10, 100, 300, 0, 200));
+        assertEquals(false, QuestViewportMath.intersectsViewport(311, 100, 10, 100, 300, 0, 200));
+    }
+
+    @Test void changingSidebarOriginKeepsGraphAtSameScreenPosition() {
+        double oldPan = 37;
+        int oldOrigin = 260;
+        int newOrigin = 112;
+
+        double newPan = QuestViewportMath.panForStableOrigin(oldPan, oldOrigin, newOrigin);
+
+        assertEquals(oldOrigin + oldPan, newOrigin + newPan, 0.000001);
+    }
 }

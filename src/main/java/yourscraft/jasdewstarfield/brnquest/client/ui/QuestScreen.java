@@ -18,6 +18,12 @@ import java.util.Map;
 
 /** Native quest canvas with viewport culling, chapter selection, details, and intent-only controls. */
 public final class QuestScreen extends Screen {
+    private static final int CHAPTER_LEFT = 18;
+    private static final int CHAPTER_RIGHT = 150;
+    private static final int CANVAS_LEFT = 160;
+    private static final int CANVAS_RIGHT_MARGIN = 20;
+    private static final int DETAIL_WIDTH = 220;
+
     private double panX;
     private double panY;
     private double zoom = 1.0;
@@ -25,13 +31,16 @@ public final class QuestScreen extends Screen {
     private double dragX;
     private double dragY;
     private boolean dragging;
+    private boolean detailsOpen;
     private final Map<ResourceLocation, ItemStack> iconCache = new HashMap<>();
 
     public QuestScreen() { super(Component.translatable("screen.brnquest.title")); }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics, mouseX, mouseY, partialTick);
+        // Do not use Screen.renderBackground here. In 1.21 it can leave the world-blur
+        // post effect active until the completed GUI frame is composited, blurring our text too.
+        graphics.fill(0, 0, width, height, 0xFF0D1118);
         graphics.fill(10, 10, width - 10, height - 10, 0xE0151820);
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null) {
@@ -47,12 +56,14 @@ public final class QuestScreen extends Screen {
             graphics.drawString(font, chapters.get(i).title(), 23, y + 1, 0xFFFFFF, false);
         }
         renderCanvas(graphics, chapters.get(chapterIndex), mouseX, mouseY);
-        renderDetails(graphics);
+        if (detailsOpen) renderDetails(graphics);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
-        int left = 160, right = width - 230, top = 20, bottom = height - 20;
+        // The canvas always owns the available width. Details are an opt-in overlay,
+        // so browsing the graph does not permanently sacrifice a third of the screen.
+        int left = CANVAS_LEFT, right = width - CANVAS_RIGHT_MARGIN, top = 20, bottom = height - 20;
         graphics.enableScissor(left, top, right, bottom);
         for (QuestDefinition quest : chapter.quests()) for (ResourceLocation dependency : quest.dependencies()) {
             QuestDefinition parent = chapter.quests().stream().filter(q -> q.id().equals(dependency)).findFirst().orElse(null);
@@ -73,8 +84,10 @@ public final class QuestScreen extends Screen {
     }
 
     private void renderDetails(GuiGraphics graphics) {
-        int left = width - 220;
+        int left = detailLeft();
         graphics.fill(left, 20, width - 20, height - 20, 0xFF202632);
+        graphics.fill(left, 20, width - 20, 40, 0xFF2A3341);
+        graphics.drawString(font, Component.literal("×"), width - 34, 27, 0xFFFFFF, false);
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null || ClientQuestState.get().selected() == null) return;
         QuestDefinition quest = snapshot.quests().get(ClientQuestState.get().selected());
@@ -96,25 +109,32 @@ public final class QuestScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         var snapshot = ClientQuestState.get().book().orElse(null);
         if (snapshot == null) return super.mouseClicked(mouseX, mouseY, button);
-        if (mouseX >= 18 && mouseX <= 150) {
+        if (mouseX >= CHAPTER_LEFT && mouseX <= CHAPTER_RIGHT) {
             int index = ((int) mouseY - 22) / 18;
             if (index >= 0 && index < snapshot.book().chapters().size()) { chapterIndex = index; return true; }
         }
         QuestDefinition selected = selectedQuest();
-        int detailLeft = width - 220;
-        if (selected != null && mouseX >= detailLeft + 10 && mouseY >= height - 72 && mouseY <= height - 52) {
+        int detailLeft = detailLeft();
+        if (detailsOpen && mouseX >= width - 42 && mouseX <= width - 20 && mouseY >= 20 && mouseY <= 42) {
+            detailsOpen = false;
+            return true;
+        }
+        if (detailsOpen && selected != null && mouseX >= detailLeft + 10 && mouseY >= height - 72 && mouseY <= height - 52) {
             String revision = ClientQuestState.get().revision();
             if (mouseX < detailLeft + 96) BrnQuestNetwork.toggleTracked(revision, selected.id().toString()); else BrnQuestNetwork.completeCheckmark(revision, selected.id().toString());
             return true;
         }
-        if (selected != null && mouseX >= detailLeft + 10 && mouseY >= height - 44 && mouseY <= height - 24 && !selected.rewards().isEmpty()) {
+        if (detailsOpen && selected != null && mouseX >= detailLeft + 10 && mouseY >= height - 44 && mouseY <= height - 24 && !selected.rewards().isEmpty()) {
             selected.rewards().stream().filter(r -> !ClientQuestState.get().claimed().contains(r.id().toString())).findFirst()
                     .ifPresent(r -> BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), r.id().toString()));
             return true;
         }
-        if (mouseX > 160 && mouseX < width - 230) {
+        // A visible drawer consumes pointer input only inside its own bounds; the rest
+        // of the graph stays pannable and the drawer can be dismissed with Esc or ×.
+        if (detailsOpen && mouseX >= detailLeft) return true;
+        if (mouseX > CANVAS_LEFT && mouseX < width - CANVAS_RIGHT_MARGIN) {
             ChapterDefinition chapter = snapshot.book().chapters().get(chapterIndex);
-            for (QuestDefinition quest : chapter.quests()) if (Math.abs(mouseX - screenX(quest.x())) <= 10 && Math.abs(mouseY - screenY(quest.y())) <= 10) { ClientQuestState.get().selected(quest.id()); BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), quest.id().toString()); return true; }
+            for (QuestDefinition quest : chapter.quests()) if (Math.abs(mouseX - screenX(quest.x())) <= 10 && Math.abs(mouseY - screenY(quest.y())) <= 10) { ClientQuestState.get().selected(quest.id()); detailsOpen = true; BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), quest.id().toString()); return true; }
             dragging = true; dragX = mouseX; dragY = mouseY;
         }
         return super.mouseClicked(mouseX, mouseY, button);
@@ -123,6 +143,15 @@ public final class QuestScreen extends Screen {
     @Override public boolean mouseReleased(double x, double y, int button) { dragging = false; return super.mouseReleased(x, y, button); }
     @Override public boolean mouseDragged(double x, double y, int button, double dx, double dy) { if (dragging) { panX += x - dragX; panY += y - dragY; dragX = x; dragY = y; return true; } return super.mouseDragged(x, y, button, dx, dy); }
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { zoom = Math.max(0.35, Math.min(2.5, zoom + vertical * 0.1)); return true; }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256 && detailsOpen) {
+            detailsOpen = false;
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
 
     private QuestDefinition selectedQuest() { return ClientQuestState.get().book().map(s -> s.quests().get(ClientQuestState.get().selected())).orElse(null); }
     private ItemStack icon(QuestDefinition quest) {
@@ -134,4 +163,5 @@ public final class QuestScreen extends Screen {
     }
     private int screenX(double x) { return (int) (260 + panX + x * 34 * zoom); }
     private int screenY(double y) { return (int) (height / 2.0 + panY + y * 34 * zoom); }
+    private int detailLeft() { return width - DETAIL_WIDTH; }
 }

@@ -34,11 +34,13 @@ powershell -ExecutionPolicy Bypass -File .\tools\validation\prepare-eow-fixture.
 
 预期结果：
 
-- dry-run 和实际导入都报告 `6 chapters, 53 quests`；
+- dry-run 和实际导入都报告 `6 chapters, 53 quests`；仅安装 BRNQuest 的开发环境应为 `0 errors, 6 warnings`，这些 warning 对应未安装的 Farmer's Delight 物品和 FTB 缺失物品占位符；
 - 第二次实际导入拒绝覆盖已有数据包；
 - validate 报告 `53 quests` 和一个 64 位十六进制 revision；
 - `/brnquest open` 不得再出现 `String too big`、`EncoderException` 或断线；
 - 任务书显示 6 个章节，节点可以选择，拖动画布与滚轮缩放有效；
+- 初次开屏不显示详情栏，任务画布使用右侧空间；点击节点后详情以覆盖式抽屉打开，可用右上角 `×` 或 `Esc` 收起；
+- 背景、章节文字、任务节点和详情文字均保持清晰，不受原版世界背景模糊效果影响；
 - 带有效原版物品的显式图标正常显示，缺失模组物品或未知类型保留节点且使用安全占位显示。
 
 ## 4. UI 与进度回归

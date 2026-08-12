@@ -8,6 +8,9 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import net.minecraft.nbt.TagParser;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 import java.io.IOException;
@@ -98,14 +101,39 @@ public final class FtbImportService {
     }
 
     private void validateItem(MinecraftServer server, FtbImportResult result, String snbt, String objectId, String kind) {
-        try {
-            ItemStack stack = snbt == null ? ItemStack.EMPTY : ItemStack.parseOptional(server.registryAccess(), TagParser.parseTag(snbt));
-            if (!stack.isEmpty()) return;
-        } catch (Exception ignored) {
-            // The structured diagnostic below deliberately avoids leaking an implementation exception.
+        if (snbt == null || snbt.isBlank()) {
+            addItemDiagnostic(result, Diagnostic.Severity.ERROR, objectId, kind, "Item definition is missing");
+            return;
         }
-        result.report().add(new Diagnostic(Diagnostic.Severity.ERROR, "BQF-103", "", kind + ".item", objectId,
-                "Item definition cannot be resolved on this server"));
+        try {
+            var tag = TagParser.parseTag(snbt);
+            ResourceLocation itemId = ResourceLocation.tryParse(tag.getString("id"));
+            if (itemId == null) {
+                addItemDiagnostic(result, Diagnostic.Severity.ERROR, objectId, kind,
+                        "Item definition has no valid resource location");
+                return;
+            }
+            var itemKey = ResourceKey.create(Registries.ITEM, itemId);
+            if (server.registryAccess().lookupOrThrow(Registries.ITEM).get(itemKey).isEmpty()) {
+                // A syntactically valid stack from an optional mod remains in the imported book.
+                // It becomes usable automatically when that mod is installed, so this is not data loss.
+                addItemDiagnostic(result, Diagnostic.Severity.WARN, objectId, kind,
+                        "Item " + itemId + " is not registered on this server; the imported definition was preserved");
+                return;
+            }
+            ItemStack stack = ItemStack.parseOptional(server.registryAccess(), tag);
+            if (!stack.isEmpty()) return;
+            addItemDiagnostic(result, Diagnostic.Severity.ERROR, objectId, kind,
+                    "Registered item definition resolved to an empty stack");
+        } catch (Exception exception) {
+            // The structured diagnostic deliberately avoids leaking an implementation exception.
+            addItemDiagnostic(result, Diagnostic.Severity.ERROR, objectId, kind,
+                    "Item definition cannot be parsed");
+        }
+    }
+
+    private void addItemDiagnostic(FtbImportResult result, Diagnostic.Severity severity, String objectId, String kind, String message) {
+        result.report().add(new Diagnostic(severity, "BQF-103", "", kind + ".item", objectId, message));
     }
 
     public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun) {}

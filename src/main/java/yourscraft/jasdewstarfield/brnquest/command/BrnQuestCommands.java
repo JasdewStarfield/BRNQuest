@@ -104,11 +104,12 @@ public final class BrnQuestCommands {
         try {
             var execution = new FtbImportService().execute(context.getSource().getServer(), source, namespace, bookId, dryRun);
             var result = execution.result();
-            long problems = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity().ordinal() >= yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR.ordinal()).count();
-            context.getSource().sendSuccess(() -> Component.literal("BRNQuest import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + problems + " errors")
-                    .withStyle(problems == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
-            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} problems={}",
-                    context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), problems);
+            long errors = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity().ordinal() >= yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR.ordinal()).count();
+            long warnings = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN).count();
+            context.getSource().sendSuccess(() -> Component.literal("BRNQuest import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + errors + " errors, " + warnings + " warnings")
+                    .withStyle(errors == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
+            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
+                    context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), errors, warnings);
             return result.report().hasFatal() ? 0 : result.questCount();
         } catch (Exception exception) {
             yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.warn("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} result=failure message={}",

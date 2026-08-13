@@ -1,23 +1,40 @@
 package yourscraft.jasdewstarfield.brnquest.command;
 
+import com.google.gson.JsonParser;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.author.*;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /** Permission-level-2 command facade over the same author services used by the future editor UI. */
 final class AuthorCommands {
+    private static final SimpleCommandExceptionType INVALID_CONFIG = new SimpleCommandExceptionType(
+            Component.literal("[INVALID_CONFIG_JSON] Expected a JSON object containing primitive string values"));
+
     private AuthorCommands() {}
 
     static LiteralArgumentBuilder<CommandSourceStack> build() {
@@ -25,16 +42,16 @@ final class AuthorCommands {
                 .then(Commands.literal("create")
                         .then(Commands.literal("active").executes(AuthorCommands::createActive))
                         .then(Commands.literal("empty")
-                                .then(Commands.argument("book", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
                                         .then(Commands.argument("title", StringArgumentType.greedyString())
                                                 .executes(AuthorCommands::createEmpty))))
                         .then(Commands.literal("workspace")
-                                .then(Commands.argument("book", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
                                         .executes(AuthorCommands::createWorkspace))))
                 .then(Commands.literal("open")
-                        .then(Commands.argument("book", StringArgumentType.word()).executes(AuthorCommands::open)))
+                        .then(Commands.argument("book", ResourceLocationArgument.id()).executes(AuthorCommands::open)))
                 .then(Commands.literal("status")
-                        .then(Commands.argument("book", StringArgumentType.word()).executes(AuthorCommands::status)))
+                        .then(Commands.argument("book", ResourceLocationArgument.id()).executes(AuthorCommands::status)))
                 .then(sessionCommand("renew", AuthorCommands::renew))
                 .then(sessionCommand("close", AuthorCommands::close))
                 .then(sessionCommand("discard", AuthorCommands::discard))
@@ -43,16 +60,73 @@ final class AuthorCommands {
                 .then(sessionBookRevisionCommand("publish", AuthorCommands::publish))
                 .then(Commands.literal("diff")
                         .then(Commands.argument("session", StringArgumentType.word())
-                                .then(Commands.argument("book", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
                                         .then(Commands.argument("revision", StringArgumentType.word())
                                                 .then(Commands.argument("baseline", StringArgumentType.word())
                                                         .executes(AuthorCommands::diff))))))
                 .then(Commands.literal("set_title")
                         .then(Commands.argument("session", StringArgumentType.word())
-                                .then(Commands.argument("book", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
                                         .then(Commands.argument("revision", StringArgumentType.word())
                                                 .then(Commands.argument("title", StringArgumentType.greedyString())
                                                         .executes(AuthorCommands::setTitle))))))
+                .then(Commands.literal("add_group")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("group", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("order", IntegerArgumentType.integer())
+                                                                .then(Commands.argument("title", StringArgumentType.greedyString())
+                                                                        .executes(AuthorCommands::addGroup))))))))
+                .then(Commands.literal("add_chapter")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("chapter", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("group", ResourceLocationArgument.id())
+                                                                .then(Commands.argument("order", IntegerArgumentType.integer())
+                                                                        .then(Commands.argument("icon", ResourceLocationArgument.id())
+                                                                                .then(Commands.argument("title", StringArgumentType.greedyString())
+                                                                                        .executes(AuthorCommands::addChapter))))))))))
+                .then(Commands.literal("add_quest")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("quest", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("chapter", ResourceLocationArgument.id())
+                                                                .then(Commands.argument("x", DoubleArgumentType.doubleArg())
+                                                                        .then(Commands.argument("y", DoubleArgumentType.doubleArg())
+                                                                                .then(Commands.argument("icon", ResourceLocationArgument.id())
+                                                                                        .then(Commands.argument("title", StringArgumentType.greedyString())
+                                                                                                .executes(AuthorCommands::addQuest)))))))))))
+                .then(Commands.literal("add_dependency")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("quest", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("dependency", ResourceLocationArgument.id())
+                                                                .executes(AuthorCommands::addDependency)))))))
+                .then(Commands.literal("add_task")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("quest", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("task", ResourceLocationArgument.id())
+                                                                .then(Commands.argument("type", ResourceLocationArgument.id())
+                                                                        .then(Commands.argument("optional", BoolArgumentType.bool())
+                                                                                .then(Commands.argument("config", StringArgumentType.greedyString())
+                                                                                        .executes(AuthorCommands::addTask))))))))))
+                .then(Commands.literal("add_reward")
+                        .then(Commands.argument("session", StringArgumentType.word())
+                                .then(Commands.argument("book", ResourceLocationArgument.id())
+                                        .then(Commands.argument("revision", StringArgumentType.word())
+                                                .then(Commands.argument("quest", ResourceLocationArgument.id())
+                                                        .then(Commands.argument("reward", ResourceLocationArgument.id())
+                                                                .then(Commands.argument("type", ResourceLocationArgument.id())
+                                                                        .then(Commands.argument("claim_policy", StringArgumentType.word())
+                                                                                .then(Commands.argument("team", BoolArgumentType.bool())
+                                                                                        .then(Commands.argument("config", StringArgumentType.greedyString())
+                                                                                                .executes(AuthorCommands::addReward)))))))))))
                 .then(Commands.literal("deploy")
                         .executes(context -> deploy(context, false))
                         .then(Commands.literal("--replace").executes(context -> deploy(context, true))))
@@ -80,7 +154,7 @@ final class AuthorCommands {
     private static LiteralArgumentBuilder<CommandSourceStack> sessionBookRevisionCommand(
             String name, com.mojang.brigadier.Command<CommandSourceStack> command) {
         return Commands.literal(name).then(Commands.argument("session", StringArgumentType.word())
-                .then(Commands.argument("book", StringArgumentType.word())
+                .then(Commands.argument("book", ResourceLocationArgument.id())
                         .then(Commands.argument("revision", StringArgumentType.word()).executes(command))));
     }
 
@@ -159,6 +233,70 @@ final class AuthorCommands {
         if (result.success()) context.getSource().sendSuccess(() -> Component.literal(
                 "revision=" + result.value().snapshot().draftRevision()), false);
         return report(context, "draft_set_title", book.toString(), result);
+    }
+
+    private static int addGroup(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation group = id(context, "group");
+        var definition = new ChapterGroupDefinition(book, group,
+                StringArgumentType.getString(context, "title"), IntegerArgumentType.getInteger(context, "order"));
+        return reportEdit(context, "draft_add_group", group, new DraftEditService().addGroup(
+                player(context), session(context), book, revision(context), definition));
+    }
+
+    private static int addChapter(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation chapter = id(context, "chapter");
+        var definition = new ChapterDefinition(book, chapter, id(context, "group"),
+                StringArgumentType.getString(context, "title"), id(context, "icon").toString(),
+                IntegerArgumentType.getInteger(context, "order"), List.of());
+        return reportEdit(context, "draft_add_chapter", chapter, new DraftEditService().addChapter(
+                player(context), session(context), book, revision(context), definition));
+    }
+
+    private static int addQuest(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation quest = id(context, "quest");
+        ResourceLocation chapter = id(context, "chapter");
+        var definition = new QuestDefinition(book, quest, chapter, StringArgumentType.getString(context, "title"),
+                "", "", id(context, "icon").toString(), DoubleArgumentType.getDouble(context, "x"),
+                DoubleArgumentType.getDouble(context, "y"), List.of(), List.of(), List.of(), "");
+        return reportEdit(context, "draft_add_quest", quest, new DraftEditService().addQuest(
+                player(context), session(context), book, revision(context), chapter, definition));
+    }
+
+    private static int addDependency(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation quest = id(context, "quest");
+        return reportEdit(context, "draft_add_dependency", quest, new DraftEditService().addDependency(
+                player(context), session(context), book, revision(context), quest, id(context, "dependency")));
+    }
+
+    private static int addTask(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation quest = id(context, "quest");
+        ResourceLocation task = id(context, "task");
+        var definition = new TaskDefinition(book, task, id(context, "type"), config(context),
+                BoolArgumentType.getBool(context, "optional"));
+        return reportEdit(context, "draft_add_task", task, new DraftEditService().addTask(
+                player(context), session(context), book, revision(context), quest, definition));
+    }
+
+    private static int addReward(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        ResourceLocation book = book(context);
+        ResourceLocation quest = id(context, "quest");
+        ResourceLocation reward = id(context, "reward");
+        var definition = new RewardDefinition(book, reward, id(context, "type"), config(context),
+                StringArgumentType.getString(context, "claim_policy"), BoolArgumentType.getBool(context, "team"));
+        return reportEdit(context, "draft_add_reward", reward, new DraftEditService().addReward(
+                player(context), session(context), book, revision(context), quest, definition));
+    }
+
+    private static int reportEdit(CommandContext<CommandSourceStack> context, String action, ResourceLocation object,
+                                  AuthorOperationResult<DraftEditResult> result) {
+        if (result.success() && result.value() != null) context.getSource().sendSuccess(() -> Component.literal(
+                "revision=" + result.value().snapshot().draftRevision()), false);
+        return report(context, action, object.toString(), result);
     }
 
     private static int diff(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -277,7 +415,27 @@ final class AuthorCommands {
     }
 
     private static ResourceLocation book(CommandContext<CommandSourceStack> context) {
-        return ResourceLocation.parse(StringArgumentType.getString(context, "book"));
+        return ResourceLocationArgument.getId(context, "book");
+    }
+
+    private static ResourceLocation id(CommandContext<CommandSourceStack> context, String name) {
+        return ResourceLocationArgument.getId(context, name);
+    }
+
+    private static Map<String, String> config(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        try {
+            var object = JsonParser.parseString(StringArgumentType.getString(context, "config")).getAsJsonObject();
+            Map<String, String> values = new TreeMap<>();
+            // Author commands accept only the schema-1 string map. Nested JSON would
+            // otherwise be flattened ambiguously and could not round-trip losslessly.
+            object.entrySet().forEach(entry -> {
+                if (!entry.getValue().isJsonPrimitive()) throw new IllegalArgumentException("non-primitive value");
+                values.put(entry.getKey(), entry.getValue().getAsString());
+            });
+            return Map.copyOf(values);
+        } catch (RuntimeException exception) {
+            throw INVALID_CONFIG.create();
+        }
     }
 
     private static UUID session(CommandContext<CommandSourceStack> context) {

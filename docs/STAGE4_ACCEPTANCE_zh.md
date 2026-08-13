@@ -130,3 +130,16 @@
 - `remoteAdministratorsUseTargetServerPermissionsAndLeases` GameTest：远程权限边界、备份列表、路径逃逸拒绝、恢复预览、带并发令牌恢复、active 不变和 FTB 仅导入草稿均通过。
 - `runGameTestServer`：15/15 required GameTest 通过。
 - 完整 `build` 与 `git diff --check` 通过。
+
+## 4.14 阶段 4 核心验收
+
+- 作者命令新增基于原生资源位置参数的 `add_group`、`add_chapter`、`add_quest`、`add_dependency`、`add_task` 和 `add_reward`；标准 `namespace:path` 无需引号，成功后回显下一 revision。
+- `authorCommandsBuildDeployAndReloadCompleteBook` 使用独立 GameTest batch，从空白草稿构建两个章节组、两个章节、跨章节依赖、task 和 reward，依次执行 validate、diff、save、publish、deploy 与异步 reload，并核对 active 快照的完整内容。
+- 同一端到端测试确认旧 revision 与嵌套配置 JSON 均被拒绝且草稿 revision 不变；publish 和 deploy 均不会提前改变 active，只有 reload 完成才原子切换。
+- `DraftRepositoryTest`、`WorkspacePublishRepositoryTest` 与 `WorkspaceDeploymentServiceTest` 的故障注入覆盖 staging 写入、备份移动和激活后失败；首次及替换事务均保留旧合法状态或恢复为空目标。
+- `DraftRevisionGuardTest`、`EditSessionServiceTest`、远程管理员 GameTest 与恢复 GameTest 覆盖并发 revision、过期/断线租约、外部文件冲突、恢复并发令牌、路径逃逸和恢复不隐式 reload。
+- `QuestBookManagerTest` 覆盖候选 reload 解析/校验失败时保留上一 active；`NativeAcceptanceFixtureTest` 与 `FixtureHashTest` 固定原生及 FTB fixture 哈希和确定性 round-trip。
+- 完整 JUnit：101/101，通过原生及 FTB fixture 哈希、确定性 round-trip、事务故障注入、公开 API 契约及所有作者服务测试。
+- 带示例附属模组的专服 GameTest：16/16；`-PexcludeExampleAddon` 纯核心专服 GameTest：16/16。
+- 完整 `build --no-configuration-cache --no-daemon --console=plain` 与 `git diff --check` 通过；构建前无 Gradle daemon 残留，唯一既存 Java 进程不是本工作树的 Gradle/Minecraft 进程。
+- 真实远程客户端的命令回显、复制 revision 和 reload 后浏览界面仍按人工流程确认，见 [`STAGE4_MANUAL_ACCEPTANCE_zh.md`](STAGE4_MANUAL_ACCEPTANCE_zh.md)。

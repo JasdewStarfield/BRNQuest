@@ -519,6 +519,12 @@ public final class BrnQuestGameTests {
         helper.assertTrue(authorCommand != null && authorCommand.getChild("create") != null
                         && authorCommand.getChild("open") != null && authorCommand.getChild("validate") != null
                         && authorCommand.getChild("diff") != null && authorCommand.getChild("save") != null
+                        && authorCommand.getChild("add_group") != null
+                        && authorCommand.getChild("add_chapter") != null
+                        && authorCommand.getChild("add_quest") != null
+                        && authorCommand.getChild("add_dependency") != null
+                        && authorCommand.getChild("add_task") != null
+                        && authorCommand.getChild("add_reward") != null
                         && authorCommand.getChild("publish") != null && authorCommand.getChild("deploy") != null
                         && authorCommand.getChild("backups") != null
                         && authorCommand.getChild("restore_preview") != null
@@ -537,6 +543,154 @@ public final class BrnQuestGameTests {
                 "disconnect release must make the server-side draft available");
         sessions.releasePlayer(server, secondAdmin.getUUID());
         helper.succeed();
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 400, batch = "stage4AuthorWorkflow")
+    @PrefixGameTestTemplate(false)
+    public static void authorCommandsBuildDeployAndReloadCompleteBook(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel();
+        var server = helper.getLevel().getServer();
+        server.getPlayerList().getOps().add(new ServerOpListEntry(admin.getGameProfile(), 2, false));
+        server.getPlayerList().sendPlayerPermissionLevel(admin);
+
+        ResourceLocation book = ResourceLocation.fromNamespaceAndPath("aaa_stage4",
+                "core_acceptance_" + admin.getUUID().toString().replace("-", ""));
+        ResourceLocation firstGroup = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "first_group");
+        ResourceLocation secondGroup = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "second_group");
+        ResourceLocation firstChapter = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "first_chapter");
+        ResourceLocation secondChapter = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "second_chapter");
+        ResourceLocation firstQuest = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "first_quest");
+        ResourceLocation secondQuest = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "second_quest");
+        ResourceLocation task = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "checkmark_task");
+        ResourceLocation reward = ResourceLocation.fromNamespaceAndPath("aaa_stage4", "custom_reward");
+
+        try {
+            // Old acceptance runs may share the persistent GameTest workspace. Remove only
+            // this test namespace so the freshly authored book is the lexically selected one.
+            deleteTestTree(WorkspacePaths.workspace(server).resolve("data/aaa_stage4"));
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("Could not isolate stage-4 command fixture", exception);
+        }
+
+        var created = new DraftService().createEmpty(admin, book, "Stage 4 command acceptance");
+        var opened = EditSessionService.get().open(admin, created.value());
+        helper.assertTrue(created.success() && opened.success(),
+                "administrator must bootstrap the command-authored acceptance draft");
+        String session = opened.value().sessionId().toString();
+        String initialRevision = opened.value().session().draftRevision();
+
+        helper.assertValueEqual(authorCommand(server, admin, "add_group " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + firstGroup + " 0 First group"), 1,
+                "author command must add the first chapter group");
+        helper.assertValueEqual(authorCommand(server, admin, "add_group " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + secondGroup + " 1 Second group"), 1,
+                "author command must add the second chapter group");
+        helper.assertValueEqual(authorCommand(server, admin, "add_chapter " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + firstChapter + " " + firstGroup
+                + " 0 minecraft:stone First chapter"), 1,
+                "author command must add a chapter using stable IDs");
+        helper.assertValueEqual(authorCommand(server, admin, "add_chapter " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + secondChapter + " " + secondGroup
+                + " 1 minecraft:diamond Second chapter"), 1,
+                "author command must add a chapter to another group");
+        helper.assertValueEqual(authorCommand(server, admin, "add_quest " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + firstQuest + " " + firstChapter
+                + " -2.5 0 minecraft:stone First quest"), 1,
+                "author command must add a positioned quest node");
+        helper.assertValueEqual(authorCommand(server, admin, "add_quest " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + secondQuest + " " + secondChapter
+                + " 2.5 0 minecraft:diamond Second quest"), 1,
+                "author command must add a second positioned quest node");
+        helper.assertValueEqual(authorCommand(server, admin, "add_dependency " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + secondQuest + " " + firstQuest), 1,
+                "author command must add a cross-chapter dependency");
+        helper.assertValueEqual(authorCommand(server, admin, "add_task " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + firstQuest + " " + task
+                + " brnquest:checkmark false {\"title\":\"Confirm first quest\"}"), 1,
+                "author command must add a typed task with JSON string-map config");
+        helper.assertValueEqual(authorCommand(server, admin, "add_reward " + session + " " + book + " "
+                + currentRevision(admin, book) + " " + firstQuest + " " + reward
+                + " brnquest:custom manual false {}"), 1,
+                "author command must add a typed reward");
+
+        String completeRevision = currentRevision(admin, book);
+        helper.assertValueEqual(authorCommand(server, admin, "set_title " + session + " " + book + " "
+                + initialRevision + " Stale overwrite"), 0,
+                "stale command revision must not overwrite the complete draft");
+        helper.assertValueEqual(currentRevision(admin, book), completeRevision,
+                "rejected stale command must preserve the server session snapshot");
+        helper.assertTrue(authorCommandFails(server, admin, "add_task " + session + " " + book + " "
+                        + completeRevision + " " + firstQuest + " aaa_stage4:invalid brnquest:custom false {\"nested\":{}}"),
+                "nested command config must be rejected instead of being flattened ambiguously");
+        helper.assertValueEqual(currentRevision(admin, book), completeRevision,
+                "invalid command config must not mutate the draft");
+
+        helper.assertValueEqual(authorCommand(server, admin, "validate " + session + " " + book + " "
+                + completeRevision), 1, "complete command-authored draft must validate");
+        helper.assertValueEqual(authorCommand(server, admin, "diff " + session + " " + book + " "
+                + completeRevision + " workspace"), 1, "command must preview the unpublished workspace diff");
+        helper.assertValueEqual(authorCommand(server, admin, "save " + session + " " + book + " "
+                + completeRevision), 1, "command must save the complete draft");
+        helper.assertValueEqual(authorCommand(server, admin, "publish " + session + " " + book + " "
+                + completeRevision), 1, "command must publish the saved draft to workspace");
+        helper.assertTrue(!QuestBookManager.get().active().orElseThrow().book().id().equals(book),
+                "publish must not change the active task book");
+        helper.assertValueEqual(authorCommand(server, admin, "deploy --replace"), 1,
+                "command must deploy the author workspace with backup replacement");
+        helper.assertTrue(!QuestBookManager.get().active().orElseThrow().book().id().equals(book),
+                "deploy must still wait for an explicit reload");
+        helper.assertValueEqual(authorCommand(server, admin, "reload"), 1,
+                "command must request the final resource reload");
+
+        helper.succeedWhen(() -> {
+            var active = QuestBookManager.get().active().orElseThrow();
+            helper.assertValueEqual(active.book().id(), book,
+                    "reload must atomically activate the command-authored task book");
+            helper.assertValueEqual(active.book().chapterGroups().size(), 2,
+                    "active book must retain both authored chapter groups");
+            helper.assertValueEqual(active.book().chapters().size(), 2,
+                    "active book must retain both authored chapters");
+            helper.assertValueEqual(active.book().quests().size(), 2,
+                    "active book must retain both authored quests");
+            helper.assertTrue(active.quests().get(secondQuest).dependencies().contains(firstQuest)
+                            && active.quests().get(firstQuest).tasks().stream().anyMatch(value -> value.id().equals(task))
+                            && active.quests().get(firstQuest).rewards().stream().anyMatch(value -> value.id().equals(reward)),
+                    "reload must retain dependency, task, and reward content");
+        });
+    }
+
+    private static int authorCommand(net.minecraft.server.MinecraftServer server,
+                                     net.minecraft.server.level.ServerPlayer player, String suffix) {
+        try {
+            return server.getCommands().getDispatcher().execute("brnquest author " + suffix,
+                    player.createCommandSourceStack());
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException exception) {
+            throw new IllegalStateException("Author command failed to parse: " + suffix, exception);
+        }
+    }
+
+    private static boolean authorCommandFails(net.minecraft.server.MinecraftServer server,
+                                              net.minecraft.server.level.ServerPlayer player, String suffix) {
+        try {
+            server.getCommands().getDispatcher().execute("brnquest author " + suffix,
+                    player.createCommandSourceStack());
+            return false;
+        } catch (com.mojang.brigadier.exceptions.CommandSyntaxException expected) {
+            return true;
+        }
+    }
+
+    private static String currentRevision(net.minecraft.server.level.ServerPlayer player, ResourceLocation book) {
+        return EditSessionService.get().inspect(player, book).value().draftRevision();
+    }
+
+    private static void deleteTestTree(java.nio.file.Path root) throws java.io.IOException {
+        if (!java.nio.file.Files.exists(root)) return;
+        try (var paths = java.nio.file.Files.walk(root)) {
+            for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.deleteIfExists(path);
+            }
+        }
     }
 
     private static QuestDefinition quest(String path, List<ResourceLocation> dependencies,

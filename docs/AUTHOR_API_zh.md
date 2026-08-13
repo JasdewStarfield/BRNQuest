@@ -40,6 +40,8 @@
 
 任一步失败都停止后续步骤。尤其不能在 publish 失败后继续 deploy，也不能把“reload 已请求”当作“reload 已成功”。
 
+无图形界面时，`/brnquest author add_group`、`add_chapter`、`add_quest`、`add_dependency`、`add_task` 和 `add_reward` 对应上述核心创建操作。命令接受标准资源位置 ID，并在每次成功修改后回显下一步所需 revision；task/reward 配置使用不含嵌套结构的 JSON string-map。详细参数见 [`WORKSPACE_zh.md`](WORKSPACE_zh.md)。
+
 ## FTB 导入
 
 `AuthorApi.importFtbDraft` 和所有旧名称的 `import_ftb` 命令现在都只有两种结果：

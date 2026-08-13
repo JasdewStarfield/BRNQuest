@@ -52,6 +52,12 @@ config/brnquest/
 /brnquest author close <session> <revision>
 /brnquest author discard <session> <revision>
 /brnquest author set_title <session> <book> <revision> <title>
+/brnquest author add_group <session> <book> <revision> <group> <order> <title>
+/brnquest author add_chapter <session> <book> <revision> <chapter> <group> <order> <icon> <title>
+/brnquest author add_quest <session> <book> <revision> <quest> <chapter> <x> <y> <icon> <title>
+/brnquest author add_dependency <session> <book> <revision> <quest> <dependency>
+/brnquest author add_task <session> <book> <revision> <quest> <task> <type> <optional> <config-json>
+/brnquest author add_reward <session> <book> <revision> <quest> <reward> <type> <claim-policy> <team> <config-json>
 /brnquest author validate <session> <book> <revision>
 /brnquest author diff <session> <book> <revision> <saved_draft|workspace|active>
 /brnquest author save <session> <book> <revision>
@@ -63,7 +69,7 @@ config/brnquest/
 /brnquest author reload
 ```
 
-- `import_ftb` 从 `config/brnquest/imports/<source>/` 生成 workspace。已有 workspace 时拒绝覆盖。
+- `import_ftb` 从 `config/brnquest/imports/<source>/` 创建独立 `IMPORT` 草稿；不会直接修改 workspace。
 - `deploy` 只在当前世界尚无部署时复制；不会隐式 reload。
 - `deploy --replace` 是显式更新操作。旧部署先移动到世界 `brnquest-backups/brnquest-workspace.backup-<UTC时间>/`，再部署新版本；备份不会被 Minecraft 当作额外数据包发现。
 - `reload` 只重新发现并重载当前世界已经部署的 workspace，不会从 `config` 复制或覆盖文件。
@@ -71,6 +77,8 @@ config/brnquest/
 - `author deploy` 与 `author reload` 严格分离。只有 reload 成功后 active 快照和在线玩家同步才会变化。
 
 每条 `author` 命令都重新使用目标服务器的在线身份与权限；命令回显稳定结果代码，日志记录操作者、操作、对象、状态和代码。`open` 返回后续命令必须携带的 session UUID 与当前 revision。`discard` 只丢弃会话内未保存状态，不删除最后一份磁盘草稿。
+
+内容命令使用原生 `namespace:path` 资源位置参数；每次成功修改都会回显新的 `revision=`，下一条命令必须使用该值。task/reward 的 `config-json` 必须是只含原始值的 JSON 对象，例如 `{"title":"确认任务"}` 或 `{"item":"{count:1,id:\"minecraft:stone\"}","count":"4"}`；嵌套对象和数组会以 `INVALID_CONFIG_JSON` 拒绝，避免有损展开。阶段 4 命令优先覆盖无 GUI 的核心建书流程，完整复制、移动、更新和级联删除能力由同一 `DraftEditService` 提供，并在阶段 5 映射到图形编辑器。
 
 恢复必须先执行 `restore_preview`，再把回显的 `current_revision` 原样传给 `restore`；当前目标不存在时使用单个 `-`。恢复不会隐式 deploy 或 reload。完整 API 与恢复说明见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。
 

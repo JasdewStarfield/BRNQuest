@@ -30,6 +30,11 @@ public final class WorkspacePaths {
         return root(server).resolve("reports");
     }
 
+    /** Append-only machine-readable history for authoring operations. */
+    public static Path authorAudit(MinecraftServer server) {
+        return reports(server).resolve("author-audit.jsonl");
+    }
+
     /** Server-local author drafts are deliberately outside every data-pack search path. */
     public static Path drafts(MinecraftServer server) {
         return root(server).resolve("drafts");

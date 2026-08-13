@@ -123,7 +123,7 @@ public final class WorkspaceDeploymentService {
                 .thenRunAsync(() -> ProgressEngine.get().reconcileOnlinePlayers(server), server);
     }
 
-    static void validateWorkspace(Path source) throws IOException {
+    public static void validateWorkspace(Path source) throws IOException {
         if (!Files.isDirectory(source)) throw new NoWorkspaceException(source);
         try (var entries = Files.list(source)) {
             // The loader creates this directory for discoverability; empty means no authored pack yet.

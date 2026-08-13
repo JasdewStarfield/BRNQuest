@@ -1,7 +1,10 @@
 package yourscraft.jasdewstarfield.brnquest.compat.ftb;
 
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.world.level.storage.LevelResource;
+import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
+import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
+import yourscraft.jasdewstarfield.brnquest.author.DraftRepository;
+import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
@@ -12,7 +15,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import yourscraft.jasdewstarfield.brnquest.workspace.NativePackWriter;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspacePaths;
 
 import java.io.IOException;
@@ -26,11 +28,6 @@ public final class FtbImportService {
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[a-zA-Z0-9._-]+");
 
     public ImportExecution execute(MinecraftServer server, String sourceName, String namespace, String bookId, boolean dryRun) throws IOException {
-        return execute(server, sourceName, namespace, bookId, dryRun, ImportTarget.WORLD);
-    }
-
-    public ImportExecution execute(MinecraftServer server, String sourceName, String namespace, String bookId,
-                                   boolean dryRun, ImportTarget target) throws IOException {
         requireSegment(sourceName, "source");
         requireSegment(namespace, "namespace");
         requireSegment(bookId, "book_id");
@@ -44,22 +41,17 @@ public final class FtbImportService {
         FtbImportResult result = new FtbV13Importer().importBook(source, namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT));
         validateItems(server, result);
         String json = NativeBookJson.encode(result.book());
-        if (!dryRun && !result.report().hasFatal()) write(server, namespace, bookId, json, result, target);
-        return new ImportExecution(result, json, dryRun, target);
+        AuthorOperationResult<DraftSnapshot> draft = null;
+        if (!dryRun && !result.report().hasFatal()) draft = writeDraft(server, namespace, bookId, result);
+        return new ImportExecution(result, json, dryRun, ImportTarget.DRAFT, draft);
     }
 
-    private void write(MinecraftServer server, String namespace, String bookId, String json,
-                       FtbImportResult result, ImportTarget target) throws IOException {
-        if (target == ImportTarget.WORKSPACE) {
-            NativePackWriter.write(WorkspacePaths.workspace(server), namespace, bookId, json, "BRNQuest author workspace");
-            writeReport(WorkspacePaths.reports(server), namespace, bookId, result);
-            return;
-        }
-        Path world = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
-        Path pack = world.resolve("datapacks/brnquest-import-" + namespace + "-" + bookId).normalize();
-        if (!pack.startsWith(world) || Files.exists(pack)) throw new FileAlreadyExistsException(pack.toString());
-        NativePackWriter.write(pack, namespace, bookId, json, "BRNQuest deterministic import");
-        writeReport(world.resolve("brnquest-reports"), namespace, bookId, result);
+    private AuthorOperationResult<DraftSnapshot> writeDraft(MinecraftServer server, String namespace, String bookId,
+                                                             FtbImportResult result) throws IOException {
+        DraftSnapshot draft = DraftSnapshot.from(result.book(), DraftOrigin.IMPORT, "");
+        AuthorOperationResult<DraftSnapshot> created = new DraftRepository().create(server, draft);
+        writeReport(WorkspacePaths.reports(server), namespace, bookId, result);
+        return created;
     }
 
     private void writeReport(Path reports, String namespace, String bookId, FtbImportResult result) throws IOException {
@@ -132,6 +124,7 @@ public final class FtbImportService {
         result.report().add(new Diagnostic(severity, "BQF-103", "", kind + ".item", objectId, message));
     }
 
-    public enum ImportTarget { WORLD, WORKSPACE }
-    public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun, ImportTarget target) {}
+    public enum ImportTarget { DRAFT }
+    public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun, ImportTarget target,
+                                  AuthorOperationResult<DraftSnapshot> draftResult) {}
 }

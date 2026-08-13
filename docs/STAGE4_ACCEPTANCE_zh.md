@@ -104,3 +104,29 @@
 - `WorkspaceDeploymentServiceTest` 覆盖首次部署、拒绝静默覆盖、显式替换备份、无效 workspace 以及激活后失败恢复。
 - 远程管理员 GameTest 覆盖 save → publish、重复 publish、继续编辑、未保存禁止 publish、再次 save/publish，以及专服作者命令树注册。
 - 完整 JUnit：100 项通过；`runGameTestServer`：15/15 required GameTest 通过；完整 `build` 与 `git diff --check` 通过。首次 publish/deploy 在激活后发生故障时也会恢复为“未发布/未部署”状态。
+
+## 4.11 审计与恢复
+
+- 保存、发布和恢复向目标服务器 `reports/author-audit.jsonl` 追加 UTF-8 JSONL，记录 UTC 时间、操作者、操作、对象、前后 revision、状态与稳定代码；审计元数据不进入内容哈希。
+- `AuthorBackupService` 只列出 BRNQuest 管理的相对 backup ID，支持草稿、workspace 和 deployed 三类目标；任意绝对路径、盘符或路径逃逸均被拒绝。
+- 恢复前先校验备份并返回当前目标 tree revision；执行时必须回传该并发令牌。恢复也使用同文件系统 staging、完整校验与原子替换，并为被覆盖目标创建 `restore-overwritten` 备份。
+- 恢复不隐式 reload；workspace/deployed 恢复后 active 快照继续保持不变，直到管理员显式执行后续步骤。
+
+## 4.12 导入与迁移边界
+
+- `FtbImportService.ImportTarget` 收敛为 `DRAFT`。旧 `/brnquest import_ftb` 和 `/brnquest workspace import_ftb` 命令名称继续存在，但不再具备直接写 workspace/世界数据包的能力。
+- dry-run 只解析、校验和生成确定性 JSON；正式导入创建 `IMPORT` 来源草稿和机器报告。已有同 ID 草稿返回 `DRAFT_EXISTS`，源 fixture 永不修改。
+- 专服 GameTest 检查导入后草稿来源、workspace 同 ID 文件缺失以及旧世界直写数据包缺失。
+
+## 4.13 作者 API 与文档
+
+- 新增实验性 `AuthorApi`，统一暴露草稿创建、会话、稳定 ID CRUD、validate/diff/save/publish、deploy/reload、备份恢复和 FTB 草稿导入。
+- 公开 API 签名继续由 `PublicApiSnapshotTest` 锁定；调用者必须按返回的 revision 串行提交，不能上传客户端拥有的整本任务书覆盖服务器。
+- `AUTHOR_API_zh.md` 记录目录、权限、状态码、恢复流程、故障处理，以及从空任务书到首次 reload 的完整服务调用顺序。
+
+## 4.11–4.13 自动验收
+
+- 完整 JUnit：101 项通过，包括 UTF-8 JSONL 审计与更新后的公开 API 签名契约。
+- `remoteAdministratorsUseTargetServerPermissionsAndLeases` GameTest：远程权限边界、备份列表、路径逃逸拒绝、恢复预览、带并发令牌恢复、active 不变和 FTB 仅导入草稿均通过。
+- `runGameTestServer`：15/15 required GameTest 通过。
+- 完整 `build` 与 `git diff --check` 通过。

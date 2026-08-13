@@ -56,6 +56,18 @@ final class AuthorCommands {
                 .then(Commands.literal("deploy")
                         .executes(context -> deploy(context, false))
                         .then(Commands.literal("--replace").executes(context -> deploy(context, true))))
+                .then(Commands.literal("backups")
+                        .then(Commands.argument("kind", StringArgumentType.word())
+                                .executes(AuthorCommands::listBackups)))
+                .then(Commands.literal("restore_preview")
+                        .then(Commands.argument("kind", StringArgumentType.word())
+                                .then(Commands.argument("backup", StringArgumentType.word())
+                                        .executes(AuthorCommands::previewRestore))))
+                .then(Commands.literal("restore")
+                        .then(Commands.argument("kind", StringArgumentType.word())
+                                .then(Commands.argument("backup", StringArgumentType.word())
+                                        .then(Commands.argument("current_revision", StringArgumentType.word())
+                                                .executes(AuthorCommands::restore)))))
                 .then(Commands.literal("reload").executes(AuthorCommands::reload));
     }
 
@@ -213,6 +225,38 @@ final class AuthorCommands {
         return 1;
     }
 
+    private static int listBackups(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        BackupKind kind = backupKind(context);
+        if (kind == null) return 0;
+        var result = new AuthorBackupService().list(player(context), kind);
+        if (result.success()) result.value().forEach(backup -> context.getSource().sendSuccess(
+                () -> Component.literal(backup.id() + " revision=" + backup.revision()
+                        + " files=" + backup.fileCount()), false));
+        return report(context, "backup_list_" + kind.name().toLowerCase(Locale.ROOT), "", result);
+    }
+
+    private static int previewRestore(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        BackupKind kind = backupKind(context);
+        if (kind == null) return 0;
+        String backup = StringArgumentType.getString(context, "backup");
+        var result = new AuthorBackupService().preview(player(context), kind, backup);
+        if (result.success()) context.getSource().sendSuccess(() -> Component.literal(
+                "current_revision=" + printableRevision(result.value().currentRevision())
+                        + " backup_revision=" + result.value().backup().revision()
+                        + " replace=" + result.value().willReplace()), false);
+        return report(context, "backup_preview_" + kind.name().toLowerCase(Locale.ROOT), backup, result);
+    }
+
+    private static int restore(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        BackupKind kind = backupKind(context);
+        if (kind == null) return 0;
+        String backup = StringArgumentType.getString(context, "backup");
+        String expected = StringArgumentType.getString(context, "current_revision");
+        if (expected.equals("-")) expected = "";
+        var result = new AuthorBackupService().restore(player(context), kind, backup, expected);
+        return report(context, "backup_restore_" + kind.name().toLowerCase(Locale.ROOT), backup, result);
+    }
+
     private static int report(CommandContext<CommandSourceStack> context, String action, String object,
                               AuthorOperationResult<?> result) {
         Component message = Component.literal("[" + result.code() + "] " + result.message());
@@ -242,5 +286,20 @@ final class AuthorCommands {
 
     private static String revision(CommandContext<CommandSourceStack> context) {
         return StringArgumentType.getString(context, "revision");
+    }
+
+    private static BackupKind backupKind(CommandContext<CommandSourceStack> context) {
+        String value = StringArgumentType.getString(context, "kind");
+        try {
+            return BackupKind.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            context.getSource().sendFailure(Component.literal(
+                    "[INVALID_BACKUP_KIND] Expected draft, workspace, or deployed"));
+            return null;
+        }
+    }
+
+    private static String printableRevision(String revision) {
+        return revision.isBlank() ? "-" : revision;
     }
 }

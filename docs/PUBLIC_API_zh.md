@@ -1,5 +1,7 @@
 # BRNQuest 公共 API 边界
 
+作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
+
 > 当前 API 基线：`0.1.0-experimental.1`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
@@ -17,6 +19,7 @@
 | 公共面 | 当前等级 | 用途 |
 |---|---|---|
 | `api.BrnQuestApi` | `EXPERIMENTAL` | 服务端查询和权威写操作入口。 |
+| `api.AuthorApi` 及其 `author` 返回类型 | `EXPERIMENTAL` | 权限、会话和 revision 受控的作者草稿、发布与恢复入口；详见作者 API 文档。 |
 | `api.*View` | `EXPERIMENTAL` | 不可变任务书、章节、任务、task、reward 和进度投影。 |
 | `api.OperationResult` / `OperationStatus` | `EXPERIMENTAL` | 结构化区分成功、幂等无变化、拒绝、非法请求、未就绪、无权限和 revision 过期。 |
 | `task.TaskType` / `TaskTypeRegistry` | `EXPERIMENTAL` | 服务端任务类型及构造期注册。 |
@@ -29,7 +32,7 @@
 | `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断和无描述类型的原始配置后备投影。 |
 | `runtime.ExtensionRegistrationLifecycle.RegistrationState` | `EXPERIMENTAL` | common/client/script 注册窗口的只读诊断状态；关闭窗口的方法为内部 loader 操作。 |
 
-`data`、`progress`、`network`、`workspace`、`compat`、`command` 和 `platform` 包，以及 `runtime` 中除上表只读生命周期状态外的类型，当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
+除 `AuthorApi` 签名明确返回或接收的实验性作者契约外，`data`、`author`、`progress`、`network`、`workspace`、`compat`、`command` 和 `platform` 包，以及 `runtime` 中除上表只读生命周期状态外的类型，当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
 `TaskType` 和 `RewardType` 已分别改用 `TaskContext`/`TaskView` 与 `RewardContext`/`RewardView`，客户端 presentation 也只接收不可变 `TaskView`/`RewardView` 和客户端展示上下文；这些 SPI 均不再暴露 `PlayerProgress`、`TaskDefinition` 或 `RewardDefinition`。`data` 包仍是内部实现，不能因视图转换而被视为公共 API。
 

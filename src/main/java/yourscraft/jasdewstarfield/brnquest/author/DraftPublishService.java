@@ -26,7 +26,8 @@ public final class DraftPublishService {
 
     public AuthorOperationResult<DraftPublishResult> publish(ServerPlayer player, UUID sessionId,
                                                               ResourceLocation bookId, String expectedDraftRevision) {
-        return sessions.publish(player, sessionId, bookId, expectedDraftRevision, state -> {
+        AuthorOperationResult<DraftPublishResult> result = sessions.publish(player, sessionId, bookId,
+                expectedDraftRevision, state -> {
             if (state.dirty()) {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "UNSAVED_DRAFT",
                         "Save the current draft before publishing it");
@@ -51,12 +52,17 @@ public final class DraftPublishService {
                     state.snapshot(), expectedWorkspace);
             if (!published.success()) return published;
             DraftPublishResult value = published.value();
-            DraftPublishResult result = new DraftPublishResult(value.snapshot(), value.previousWorkspaceRevision(),
+            DraftPublishResult enriched = new DraftPublishResult(value.snapshot(), value.previousWorkspaceRevision(),
                     value.backup(), checked, diagnostics);
             return published.status() == AuthorOperationResult.Status.NO_CHANGE
-                    ? AuthorOperationResult.noChange(published.code(), published.message(), result)
-                    : AuthorOperationResult.success(published.code(), published.message(), result);
+                    ? AuthorOperationResult.noChange(published.code(), published.message(), enriched)
+                    : AuthorOperationResult.success(published.code(), published.message(), enriched);
         });
+        String before = result.value() == null ? "" : result.value().previousWorkspaceRevision();
+        String after = result.success() && result.value() != null
+                ? result.value().snapshot().draftRevision() : before;
+        AuthorAuditLog.record(player, "draft_publish", bookId.toString(), before, after, result);
+        return result;
     }
 
     private static RevisionCheck addWorkspaceCreationConflict(DraftSnapshot draft, RevisionCheck original) {

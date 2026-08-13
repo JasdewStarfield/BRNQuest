@@ -16,6 +16,10 @@ import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
+import yourscraft.jasdewstarfield.brnquest.author.AuthorBackupService;
+import yourscraft.jasdewstarfield.brnquest.author.BackupKind;
+import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
+import yourscraft.jasdewstarfield.brnquest.author.DraftRepository;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditService;
@@ -23,6 +27,8 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftDiffService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPersistenceService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPublishService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
+import yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportService;
+import yourscraft.jasdewstarfield.brnquest.workspace.WorkspacePaths;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
@@ -470,14 +476,53 @@ public final class BrnQuestGameTests {
                 "publish must reject unsaved in-memory changes");
         helper.assertTrue(persistence.save(firstAdmin, opened.value().sessionId(), bookId, secondRevision).success(),
                 "continued editing after publish must save against the rebased workspace revision");
-        helper.assertTrue(publisher.publish(firstAdmin, opened.value().sessionId(), bookId, secondRevision).success(),
+        var secondPublish = publisher.publish(firstAdmin, opened.value().sessionId(), bookId, secondRevision);
+        helper.assertTrue(secondPublish.success(),
                 "continued editing must publish again without a false external-workspace conflict");
+
+        AuthorBackupService backups = new AuthorBackupService();
+        String workspaceBackupId = secondPublish.value().backup().getFileName().toString();
+        helper.assertTrue(backups.list(firstAdmin, BackupKind.WORKSPACE).value().stream()
+                        .anyMatch(backup -> backup.id().equals(workspaceBackupId)),
+                "remote administrator must list target-server workspace backups by relative ID");
+        helper.assertValueEqual(backups.preview(firstAdmin, BackupKind.WORKSPACE, "../workspace").code(),
+                "BACKUP_NOT_FOUND", "backup preview must reject path traversal");
+        var restorePreview = backups.preview(firstAdmin, BackupKind.WORKSPACE, workspaceBackupId);
+        helper.assertTrue(restorePreview.success() && restorePreview.value().willReplace(),
+                "remote administrator must preview a workspace restore before mutation");
+        var restored = backups.restore(firstAdmin, BackupKind.WORKSPACE, workspaceBackupId,
+                restorePreview.value().currentRevision());
+        helper.assertTrue(restored.success() && restored.value().overwrittenBackup() != null,
+                "workspace restore must preserve the overwritten target and complete atomically");
+        helper.assertValueEqual(QuestBookManager.get().active().orElseThrow().revision(), activeBeforePublish,
+                "workspace restore must not implicitly reload the active task-book snapshot");
+
+        String importedBookPath = "import_" + firstAdmin.getUUID().toString().replace("-", "");
+        try {
+            var imported = new FtbImportService().execute(server, "eow", "brnquest", importedBookPath, false);
+            ResourceLocation importedBookId = ResourceLocation.fromNamespaceAndPath("brnquest", importedBookPath);
+            helper.assertTrue(imported.draftResult() != null && imported.draftResult().success(),
+                    "FTB import must create an isolated server draft");
+            helper.assertValueEqual(new DraftRepository().load(server, importedBookId).value().origin(),
+                    DraftOrigin.IMPORT, "imported draft must preserve IMPORT provenance");
+            helper.assertTrue(java.nio.file.Files.notExists(WorkspacePaths.workspace(server)
+                            .resolve("data/brnquest/brnquest/books/" + importedBookPath + ".json"))
+                            && java.nio.file.Files.notExists(server.getWorldPath(
+                                    net.minecraft.world.level.storage.LevelResource.ROOT)
+                                    .resolve("datapacks/brnquest-import-brnquest-" + importedBookPath)),
+                    "FTB import must not write workspace or a directly loaded world data pack");
+        } catch (java.io.IOException exception) {
+            throw new IllegalStateException("FTB draft import GameTest failed", exception);
+        }
 
         var authorCommand = server.getCommands().getDispatcher().getRoot().getChild("brnquest").getChild("author");
         helper.assertTrue(authorCommand != null && authorCommand.getChild("create") != null
                         && authorCommand.getChild("open") != null && authorCommand.getChild("validate") != null
                         && authorCommand.getChild("diff") != null && authorCommand.getChild("save") != null
                         && authorCommand.getChild("publish") != null && authorCommand.getChild("deploy") != null
+                        && authorCommand.getChild("backups") != null
+                        && authorCommand.getChild("restore_preview") != null
+                        && authorCommand.getChild("restore") != null
                         && authorCommand.getChild("reload") != null,
                 "dedicated-server dispatcher must expose the complete permission-gated author workflow");
         helper.assertTrue(authorCommand.canUse(firstAdmin.createCommandSourceStack()),

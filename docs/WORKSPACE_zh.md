@@ -57,6 +57,9 @@ config/brnquest/
 /brnquest author save <session> <book> <revision>
 /brnquest author publish <session> <book> <revision>
 /brnquest author deploy [--replace]
+/brnquest author backups <draft|workspace|deployed>
+/brnquest author restore_preview <kind> <backup-id>
+/brnquest author restore <kind> <backup-id> <current-revision|->
 /brnquest author reload
 ```
 
@@ -69,7 +72,9 @@ config/brnquest/
 
 每条 `author` 命令都重新使用目标服务器的在线身份与权限；命令回显稳定结果代码，日志记录操作者、操作、对象、状态和代码。`open` 返回后续命令必须携带的 session UUID 与当前 revision。`discard` 只丢弃会话内未保存状态，不删除最后一份磁盘草稿。
 
-原有 `/brnquest import_ftb` 保留为直接写入当前世界的兼容命令；它也从统一的 `config/brnquest/imports/<source>/` 读取。新整合包工作流应优先使用 `workspace import_ftb`。
+恢复必须先执行 `restore_preview`，再把回显的 `current_revision` 原样传给 `restore`；当前目标不存在时使用单个 `-`。恢复不会隐式 deploy 或 reload。完整 API 与恢复说明见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。
+
+原有 `/brnquest import_ftb` 与 `/brnquest workspace import_ftb` 名称继续兼容，但两者都只从统一 inbox 创建 `IMPORT` 来源草稿，不再直接写 workspace 或世界数据包。
 
 ## 更新原则
 

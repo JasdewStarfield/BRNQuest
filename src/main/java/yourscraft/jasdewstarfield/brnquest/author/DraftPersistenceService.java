@@ -25,7 +25,8 @@ public final class DraftPersistenceService {
 
     public AuthorOperationResult<DraftSaveResult> save(ServerPlayer player, UUID sessionId,
                                                         ResourceLocation bookId, String expectedDraftRevision) {
-        return sessions.persist(player, sessionId, bookId, expectedDraftRevision, state -> {
+        AuthorOperationResult<DraftSaveResult> result = sessions.persist(player, sessionId, bookId,
+                expectedDraftRevision, state -> {
             List<Diagnostic> diagnostics = AuthorValidationService.full(state.snapshot().book());
             if (AuthorValidationService.blocksCommit(diagnostics)) {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
@@ -46,11 +47,15 @@ public final class DraftPersistenceService {
                     state.savedRevision());
             if (!saved.success()) return saved;
             DraftSaveResult value = saved.value();
-            DraftSaveResult result = new DraftSaveResult(value.snapshot(), value.previousRevision(), value.backup(),
+            DraftSaveResult enriched = new DraftSaveResult(value.snapshot(), value.previousRevision(), value.backup(),
                     check, diagnostics);
             return saved.status() == AuthorOperationResult.Status.NO_CHANGE
-                    ? AuthorOperationResult.noChange(saved.code(), saved.message(), result)
-                    : AuthorOperationResult.success(saved.code(), saved.message(), result);
+                    ? AuthorOperationResult.noChange(saved.code(), saved.message(), enriched)
+                    : AuthorOperationResult.success(saved.code(), saved.message(), enriched);
         });
+        String after = result.success() && result.value() != null
+                ? result.value().snapshot().draftRevision() : expectedDraftRevision;
+        AuthorAuditLog.record(player, "draft_save", bookId.toString(), expectedDraftRevision, after, result);
+        return result;
     }
 }

@@ -73,7 +73,7 @@
 - `ClientTaskPresentation` 与 `ClientRewardPresentation` 从内部 definition 迁移到不可变 `TaskView`/`RewardView`。
 - 增加防御性复制物品栈的任务/奖励展示上下文，统一标题、进度文本、节点样式和交互提示扩展点。
 - 原生 item、checkmark、custom 展示和任务树/HUD 全部经 presentation 注册表解析；完整命名空间未知类型使用问号、完整类型 ID 且不可交互。
-- 可点击的物品目标与奖励使用单一末端 tooltip 同时显示物品名称和操作提示，避免两个悬浮层相互覆盖。
+- 物品目标与奖励始终走原生 `ItemStack` tooltip 管线，保留复杂组件属性和其他模组追加内容；非物品展示通过单一末端 tooltip 显示操作提示。
 - 新增反射签名和完整 ID 隔离测试；专服仍不引用或加载客户端 presentation 实现。
 
 ### 待人工验收

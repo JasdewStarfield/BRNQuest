@@ -351,12 +351,9 @@ public final class QuestScreen extends Screen {
                 && presentation.interactive(taskView);
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
         if (visible && mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 24) {
-            // Interactive item rows need to advertise the click without adding a second
-            // overlapping hover surface. Keep the item name and append the action hint.
-            if (!stack.isEmpty() && interactive) {
-                hoveredComponentTooltip = List.of(stack.getHoverName(),
-                        presentation.interactionHint(presentationContext, true));
-            } else if (!stack.isEmpty()) hoveredDetailStack = stack;
+            // Always delegate item tooltips to Minecraft so component data and tooltip
+            // lines injected by other mods remain intact. Text hints cover non-item rows.
+            if (!stack.isEmpty()) hoveredDetailStack = stack;
             else hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
         }
         return y + 28;
@@ -381,10 +378,8 @@ public final class QuestScreen extends Screen {
         if (visible && mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
             RewardPresentationContext presentationContext = new RewardPresentationContext(minecraft, rewardView,
                     claimable, claimed, stack);
-            // Claimable item rewards share one tooltip containing both identity and action.
-            if (!stack.isEmpty() && claimable) {
-                hoveredComponentTooltip = List.of(stack.getHoverName(), presentation.interactionHint(presentationContext));
-            } else if (!stack.isEmpty()) hoveredDetailStack = stack;
+            // Item rewards retain the complete vanilla/modded tooltip pipeline.
+            if (!stack.isEmpty()) hoveredDetailStack = stack;
             else hoveredDetailText = presentation.interactionHint(presentationContext);
         }
     }

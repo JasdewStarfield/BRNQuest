@@ -11,6 +11,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientKeyRegistry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ClientRewardPresentationRegistry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ClientTaskPresentationRegistry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestHud;
+import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycle;
 
 /** Client-only registrations are guarded at the loader boundary for dedicated-server safety. */
 public final class PlatformClientHooks {
@@ -25,6 +26,7 @@ public final class PlatformClientHooks {
         // Client extensions register during construction; rendering starts only after this freeze.
         ClientTaskPresentationRegistry.freeze();
         ClientRewardPresentationRegistry.freeze();
+        ExtensionRegistrationLifecycle.markClientFrozen();
     }
     private static void keys(RegisterKeyMappingsEvent event) { event.register(ClientKeyRegistry.create()); }
     private static void layers(RegisterGuiLayersEvent event) { event.registerAbove(VanillaGuiLayers.CHAT, QuestHud.LAYER_ID, QuestHud::render); }

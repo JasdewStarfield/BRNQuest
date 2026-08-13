@@ -139,3 +139,28 @@
 - 字段描述定向测试通过；完整 `build` 通过，JUnit 汇总为 24 个 suite、62 项测试、0 failure、0 error、0 skipped。
 - `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，12/12 required GameTest 通过，原有 task/reward Codec 与事务行为未改变。
 - 本批没有客户端编辑界面或运行时展示变化，无需人工 UI 回归；`git diff --check` 通过。
+
+## 2026-08-13 第六批：注册与 reload 生命周期
+
+> 对应计划项：3.10。本批整理既有冻结点和原子快照路径，不改变 schema、协议或客户端 UI。
+
+### 实现范围
+
+- `ExtensionRegistrationLifecycle` 统一 common 与预留 script 窗口，首次服务端资源监听器建立前一次冻结 task/reward/owner 注册表；只读状态可用于诊断。
+- client setup 在冻结 task/reward presentation 后标记客户端窗口关闭；common 生命周期不引用客户端类，专服保持隔离。
+- `QuestBookManager.install` 串行完成候选校验，并只用一次原子引用写入发布成功快照；null 候选、fatal 诊断或扩展验证异常保留上一 revision。
+- `lastReport()` 和已提交报告防御性复制，调用方后续修改不能篡改 reload 结果。
+- reload 成功日志只在实际安装成功后输出；验证失败明确记录保留旧快照。
+
+### 验证重点
+
+- fatal/null 候选保留上一快照，成功候选只发布一次完整 revision。
+- 专服在首次 reload 前关闭 common/script 窗口，且 client 窗口未被执行；所有 common 注册表状态一致。
+- 原有 reload 在线玩家对账、task/reward Codec、事件和专服启动回归继续通过。
+
+### 验证结果
+
+- 构建前 `Get-Process` 与 `gradlew --status` 确认无残留 Java、Minecraft 或 Gradle daemon。
+- reload 原子保留与诊断副本定向测试通过；完整 `build` 通过，JUnit 汇总为 24 个 suite、64 项测试、0 failure、0 error、0 skipped。
+- `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，13/13 required GameTest 通过；新增门禁确认 common/script 已冻结且 client 生命周期未在专服执行。
+- 本批没有客户端 UI 变化；此前 3.7 客户端启动已覆盖 client setup 冻结路径。`git diff --check` 通过。

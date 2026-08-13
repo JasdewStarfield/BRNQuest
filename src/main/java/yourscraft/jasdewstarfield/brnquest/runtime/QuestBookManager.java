@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator;
+import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestBookReloadedEvent;
@@ -20,14 +21,27 @@ public final class QuestBookManager {
     private QuestBookManager() {}
     public static QuestBookManager get() { return INSTANCE; }
     public Optional<QuestBookSnapshot> active() { return Optional.ofNullable(active.get()); }
-    public DiagnosticReport lastReport() { return lastReport; }
+    public DiagnosticReport lastReport() { return lastReport.copy(); }
 
-    public boolean install(QuestBookDefinition book, DiagnosticReport report) {
-        if (book != null) QuestBookValidator.validate(book, report);
-        lastReport = report;
-        if (report.hasFatal()) return false;
+    public synchronized boolean install(QuestBookDefinition book, DiagnosticReport report) {
+        DiagnosticReport working = report == null ? new DiagnosticReport() : report;
+        if (book == null) {
+            working.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-004", "", "", "",
+                    "Reload produced no task book"));
+        } else {
+            try {
+                // Decode and every registered extension validation finish before active changes.
+                QuestBookValidator.validate(book, working);
+            } catch (RuntimeException | LinkageError exception) {
+                working.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-005", "", "", "",
+                        "Extension validation failed: " + exception.getClass().getSimpleName()));
+            }
+        }
+        lastReport = working.copy();
+        if (working.hasFatal()) return false;
         QuestBookSnapshot previous = active.get();
         QuestBookSnapshot current = QuestBookSnapshot.of(book);
+        // One atomic pointer write is the only moment the new revision becomes visible.
         active.set(current);
         BrnQuestEvents.post(new QuestBookReloadedEvent(previous == null ? null : ApiViews.book(previous),
                 ApiViews.book(current)));

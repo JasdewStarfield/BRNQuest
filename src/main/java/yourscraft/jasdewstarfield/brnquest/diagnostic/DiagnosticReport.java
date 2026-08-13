@@ -17,6 +17,13 @@ public final class DiagnosticReport {
     public boolean hasFatal() { return diagnostics.stream().anyMatch(d -> d.severity() == Diagnostic.Severity.FATAL); }
     public boolean hasErrors() { return diagnostics.stream().anyMatch(d -> d.severity().ordinal() >= Diagnostic.Severity.ERROR.ordinal()); }
 
+    /** Copies the collector so later caller mutations cannot change an installed reload result. */
+    public DiagnosticReport copy() {
+        DiagnosticReport copy = new DiagnosticReport();
+        diagnostics.forEach(copy::add);
+        return copy;
+    }
+
     public String toJson() {
         return GSON.toJson(new SerializedReport(BrnQuestConstants.REPORT_SCHEMA, diagnostics()));
     }

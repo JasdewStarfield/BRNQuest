@@ -31,8 +31,12 @@ public final class QuestBookReloadListener extends SimpleJsonResourceReloadListe
         Map.Entry<ResourceLocation, JsonElement> selected = values.entrySet().stream().min(Comparator.comparing(e -> e.getKey().toString())).orElseThrow();
         try {
             QuestBookDefinition book = NativeBookJson.decode(selected.getValue().getAsJsonObject());
-            QuestBookManager.get().install(book, report);
-            BRNQuest.LOGGER.info("[BRNQuest] Loaded {} quests from {}", book.quests().size(), selected.getKey());
+            if (QuestBookManager.get().install(book, report)) {
+                BRNQuest.LOGGER.info("[BRNQuest] Loaded {} quests from {}", book.quests().size(), selected.getKey());
+            } else {
+                BRNQuest.LOGGER.error("[BRNQuest] Retaining previous quest snapshot after validation failure in {}",
+                        selected.getKey());
+            }
         } catch (Exception exception) {
             report.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-003", selected.getKey().toString(), "", "", exception.getMessage()));
             QuestBookManager.get().install(null, report);

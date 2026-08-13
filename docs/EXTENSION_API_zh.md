@@ -53,3 +53,9 @@
 任务和奖励类型可覆盖 `configFields()`，用 `ConfigFieldDescriptor` 描述 schema 1 字符串 Map。描述应使用稳定字段键，并尽量给出默认值、范围、枚举、资源注册表提示和简短帮助文本；复杂跨字段规则可以使用 `ConfigFieldValidator` 返回字段级诊断。
 
 字段描述是编辑器提示而不是新的配置 Codec。BRNQuest 始终保留完整 raw Map，未知字段不会因表单保存而自动删除；最终发布仍调用原有 `configCodec()`。返回空列表表示类型只支持原始配置后备视图，适合开放式或尚未冻结的外部配置。
+
+## 注册与 reload 顺序
+
+common task/reward/owner provider 和预留脚本窗口在首次服务端资源 reload 前一起冻结；客户端 presentation 在 client setup 冻结。注册只能发生在对应构造/setup 窗口，`/reload` 不重新执行或开放注册。冻结后的重复或迟到注册都会明确抛出错误。
+
+任务书 reload 先在候选对象上完成解码、所有已冻结类型的 Codec 校验和整本校验，只有没有 fatal 诊断时才原子替换当前快照。候选失败会更新诊断报告但保留上一 revision；成功替换后才发布只读事件并对账在线玩家。扩展不得把 reload 中获得的内部配置对象跨 revision 缓存。

@@ -21,4 +21,29 @@ class QuestBookManagerTest {
         assertFalse(QuestBookManager.get().install(null, fatal));
         assertEquals(revision, QuestBookManager.get().active().orElseThrow().revision());
     }
+
+    @Test void installedDiagnosticReportIsAnImmutableSnapshot() {
+        QuestBookDefinition valid = new QuestBookDefinition(ResourceLocation.parse("test:report"), 1, "Valid",
+                List.of(), List.of(), Map.of());
+        DiagnosticReport supplied = new DiagnosticReport();
+        assertTrue(QuestBookManager.get().install(valid, supplied));
+        supplied.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-LATE", "", "", "", "late mutation"));
+
+        assertFalse(QuestBookManager.get().lastReport().hasFatal());
+        DiagnosticReport returned = QuestBookManager.get().lastReport();
+        returned.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-RETURN", "", "", "", "returned mutation"));
+        assertFalse(QuestBookManager.get().lastReport().hasFatal());
+    }
+
+    @Test void nullBookIsAlwaysRejectedEvenWithoutCallerDiagnostic() {
+        QuestBookDefinition valid = new QuestBookDefinition(ResourceLocation.parse("test:null_guard"), 1, "Valid",
+                List.of(), List.of(), Map.of());
+        assertTrue(QuestBookManager.get().install(valid, new DiagnosticReport()));
+        String revision = QuestBookManager.get().active().orElseThrow().revision();
+
+        assertFalse(QuestBookManager.get().install(null, new DiagnosticReport()));
+        assertEquals(revision, QuestBookManager.get().active().orElseThrow().revision());
+        assertTrue(QuestBookManager.get().lastReport().diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.code().equals("BQV-004")));
+    }
 }

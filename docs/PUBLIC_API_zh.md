@@ -27,8 +27,9 @@
 | `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
 | `owner.ProgressOwner*` | `EXPERIMENTAL` | 稳定 owner 身份、成员、生命周期、归档投影及构造期 provider 注册。 |
 | `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断和无描述类型的原始配置后备投影。 |
+| `runtime.ExtensionRegistrationLifecycle.RegistrationState` | `EXPERIMENTAL` | common/client/script 注册窗口的只读诊断状态；关闭窗口的方法为内部 loader 操作。 |
 
-`data`、`progress`、`runtime`、`network`、`workspace`、`compat`、`command` 和 `platform` 包当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
+`data`、`progress`、`network`、`workspace`、`compat`、`command` 和 `platform` 包，以及 `runtime` 中除上表只读生命周期状态外的类型，当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
 `TaskType` 和 `RewardType` 已分别改用 `TaskContext`/`TaskView` 与 `RewardContext`/`RewardView`，客户端 presentation 也只接收不可变 `TaskView`/`RewardView` 和客户端展示上下文；这些 SPI 均不再暴露 `PlayerProgress`、`TaskDefinition` 或 `RewardDefinition`。`data` 包仍是内部实现，不能因视图转换而被视为公共 API。
 
@@ -102,11 +103,14 @@
 - 每次上下文写操作记录 actor、source、action、target、object、status、code 和 changed；审计日志不记录任务说明、物品 NBT 或其他非必要玩家数据。
 - 返回的视图不能跨 reload 代表“当前状态”；集成应按 ID 重新查询新 revision，不能缓存内部定义对象。
 
+注册与 reload 顺序固定为：模组构造/common setup 注册 common 与预留 script 扩展 → 首次服务端资源监听器建立前统一冻结 → 解码候选任务书 → 完成 type Codec 与整本校验 → 单次原子指针替换 → 发布 reload 事件 → 对账在线玩家并同步。客户端 presentation 在 client setup 冻结，专服不会执行或加载客户端生命周期。
+
+冻结后所有注册表明确拒绝新条目；`/reload` 不会重新开放注册窗口。候选解析、扩展校验或 fatal 校验失败时，当前有效 revision 和快照保持不变。`lastReport()` 返回防御性副本，调用方不能在提交后修改已记录的诊断。
+
 ## 后续冻结门槛
 
 以下内容完成前不把本页接口提升为 `STABLE`：
 
-- 注册与 reload 生命周期契约；
 - 仅依赖公共 API 的示例附属模组；
 - 公共签名兼容门禁和最低兼容版本文档。
 

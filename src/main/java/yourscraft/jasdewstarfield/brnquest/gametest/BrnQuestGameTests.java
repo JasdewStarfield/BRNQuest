@@ -19,9 +19,13 @@ import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviderRegistry;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycle;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,20 @@ import java.util.stream.Collectors;
 @SuppressWarnings("removal")
 public final class BrnQuestGameTests {
     private BrnQuestGameTests() {}
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void dedicatedServerFreezesCommonAndScriptRegistrationBeforeReload(GameTestHelper helper) {
+        var state = ExtensionRegistrationLifecycle.state();
+        helper.assertTrue(state.commonFrozen() && state.scriptFrozen(),
+                "common and reserved script registration must close before server reload");
+        helper.assertTrue(!state.clientFrozen(),
+                "dedicated server must not execute the client registration lifecycle");
+        helper.assertTrue(TaskTypeRegistry.isFrozen() && RewardTypeRegistry.isFrozen()
+                        && ProgressOwnerProviderRegistry.isFrozen(),
+                "all common extension registries must share the lifecycle freeze");
+        helper.succeed();
+    }
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)

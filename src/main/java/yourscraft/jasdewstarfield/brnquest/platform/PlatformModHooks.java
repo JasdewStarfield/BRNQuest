@@ -15,11 +15,9 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import yourscraft.jasdewstarfield.brnquest.command.BrnQuestCommands;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookReloadListener;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
-import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviderRegistry;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycle;
 import yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
 
 /** NeoForge event wiring kept separate from loader-neutral model and runtime code. */
@@ -40,9 +38,7 @@ public final class PlatformModHooks {
 
     private static void onReloadListeners(AddReloadListenerEvent event) {
         // Third-party construction/setup registration must finish before any book is decoded.
-        TaskTypeRegistry.freeze();
-        RewardTypeRegistry.freeze();
-        ProgressOwnerProviderRegistry.freeze();
+        ExtensionRegistrationLifecycle.freezeCommonAndScript();
         event.addListener(new QuestBookReloadListener());
     }
     private static void onServerStarted(ServerStartedEvent event) {

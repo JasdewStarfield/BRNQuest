@@ -23,6 +23,7 @@ class WorkspaceDeploymentServiceTest {
         assertTrue(Files.isDirectory(root.resolve("imports")));
         assertTrue(Files.isDirectory(root.resolve("reports")));
         assertTrue(Files.isDirectory(root.resolve("workspace")));
+        assertTrue(Files.isDirectory(root.resolve("backups")));
         assertThrows(WorkspaceDeploymentService.NoWorkspaceException.class,
                 () -> WorkspaceDeploymentService.validateWorkspace(root.resolve("workspace")));
     }

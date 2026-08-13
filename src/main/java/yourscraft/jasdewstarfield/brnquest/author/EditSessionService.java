@@ -86,6 +86,49 @@ public final class EditSessionService {
                 server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS, operation);
     }
 
+    synchronized <T> AuthorOperationResult<T> read(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
+                                                    String expectedDraftRevision,
+                                                    Function<DraftSessionState, AuthorOperationResult<T>> operation) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        Lease lease = lease(server, sessionId);
+        AuthorOperationResult<T> denied = denyLease(lease, player.getUUID(), bookId,
+                expectedDraftRevision, server.getTickCount());
+        if (denied != null) return denied;
+        lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
+        return operation.apply(lease.state());
+    }
+
+    synchronized AuthorOperationResult<DraftSaveResult> persist(ServerPlayer player, UUID sessionId,
+                                                                 ResourceLocation bookId,
+                                                                 String expectedDraftRevision,
+                                                                 Function<DraftSessionState,
+                                                                         AuthorOperationResult<DraftSaveResult>> operation) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        Lease lease = lease(server, sessionId);
+        AuthorOperationResult<DraftSaveResult> denied = denyLease(lease, player.getUUID(), bookId,
+                expectedDraftRevision, server.getTickCount());
+        if (denied != null) return denied;
+        AuthorOperationResult<DraftSaveResult> result = operation.apply(lease.state());
+        if (result.success() && result.value() != null
+                && result.value().snapshot().draftRevision().equals(lease.draft.draftRevision())) {
+            lease.savedRevision = lease.draft.draftRevision();
+            lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
+        }
+        return result;
+    }
+
     AuthorOperationResult<DraftEditResult> mutateAuthorized(Object serverKey, UUID editorId, UUID sessionId,
                                                              ResourceLocation bookId, String expectedDraftRevision,
                                                              long nowTick, long timeoutTicks,
@@ -208,6 +251,26 @@ public final class EditSessionService {
         return AuthorOperationResult.success("SESSION_AUTHORIZED", "Edit session authorized", null);
     }
 
+    private Lease lease(Object serverKey, UUID sessionId) {
+        ServerSessions state = servers.get(serverKey);
+        return state == null ? null : state.byId.get(sessionId);
+    }
+
+    private static <T> AuthorOperationResult<T> denyLease(Lease lease, UUID editorId, ResourceLocation bookId,
+                                                           String expectedRevision, long nowTick) {
+        if (lease == null || lease.expiresAtTick <= nowTick) return expired();
+        if (!lease.editorId.equals(editorId)) return forbidden();
+        if (!lease.bookId.equals(bookId)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "SESSION_BOOK_MISMATCH",
+                    "Edit session belongs to " + lease.bookId);
+        }
+        if (!lease.draft.draftRevision().equals(expectedRevision)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
+                    "Expected " + expectedRevision + " but server has " + lease.draft.draftRevision());
+        }
+        return null;
+    }
+
     private void pruneDisconnected(MinecraftServer server) {
         ServerSessions state = servers.get(server);
         if (state == null) return;
@@ -268,6 +331,7 @@ public final class EditSessionService {
         private final UUID editorId;
         private final String editorName;
         private DraftSnapshot draft;
+        private String savedRevision;
         private long expiresAtTick;
 
         private Lease(UUID sessionId, ResourceLocation bookId, UUID editorId, String editorName,
@@ -277,13 +341,16 @@ public final class EditSessionService {
             this.editorId = editorId;
             this.editorName = editorName;
             this.draft = draft;
+            this.savedRevision = draft.draftRevision();
             this.expiresAtTick = expiresAtTick;
         }
 
         private EditSessionView view() {
             return new EditSessionView(bookId, editorId, editorName, draft.baseRevision(),
-                    draft.draftRevision(), expiresAtTick);
+                    draft.draftRevision(), savedRevision, expiresAtTick);
         }
+
+        private DraftSessionState state() { return new DraftSessionState(draft, savedRevision); }
 
         private EditSessionHandle handle() {
             return new EditSessionHandle(sessionId, view());

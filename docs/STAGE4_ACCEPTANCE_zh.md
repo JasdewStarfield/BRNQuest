@@ -45,3 +45,40 @@
 - 错误或 fatal 诊断返回 `DRAFT_VALIDATION_FAILED`，结果附带诊断但仍指向原合法 snapshot；无效候选不计算 revision、不进入会话，也不广播给玩家。
 - 专服 GameTest 额外验证远程管理员成功编辑、延迟旧 revision 被拒绝、无效编辑被拒绝且服务器会话 revision 保持不变。
 - 完整 JUnit：85 项通过；`runGameTestServer`：15/15 required GameTest 通过；完整 `build` 通过。
+
+## 4.5 确定性序列化
+
+- 草稿内容继续复用 `NativeBookJson` 的稳定字段顺序、UTF-8 与 LF 输出；manifest 升级为格式 2，并显式记录草稿来源 `ACTIVE`、`WORKSPACE`、`EMPTY`、`IMPORT` 或 `UNKNOWN`。
+- 格式 1 manifest 仍可读取，缺少来源时按 `UNKNOWN` 保守处理，不会因为升级而丢弃旧服务器草稿。
+- 保存前比较规范化后的 `book.json` 与 `draft.json` 字节；内容完全相同时返回 `NO_CHANGE`，不改 revision、不创建备份，也不引入时间戳或绝对路径。
+
+## 4.6 原子保存与备份
+
+- 保存先写入目标草稿目录同级的 UUID staging 目录，文件写入后执行 `force(true)`，再从 staging 重新读取并校验任务书、manifest 和 revision。
+- 覆盖前把旧目录移动到 `config/brnquest/backups/drafts/<namespace>/<book-path>/<old-revision>-<uuid>/`；该目录不在数据包搜索路径中，不会被 Minecraft 自动加载。
+- staging 验证成功后才替换目标目录；故障注入覆盖“旧目录已移入备份、但新目录尚未激活”的窗口，并验证自动恢复旧草稿及清理 staging。若恢复本身遭遇底层文件系统故障，旧内容仍保留在备份目录中供后续恢复流程使用。
+
+## 4.7 revision 冲突控制
+
+- 编辑会话同时记录当前草稿 revision 与最后成功保存的 revision；两者不同时 `dirty=true`，成功保存后只在会话仍指向同一快照时推进保存点。
+- 保存检查 active、来源 base、会话 draft、磁盘 draft 和 workspace revision。磁盘草稿被外部修改、active/workspace 来源变化，或空白草稿创建后出现同 ID workspace 时均返回 `REVISION_CONFLICT`，不会静默覆盖。
+- 冲突结果包含完整 `RevisionVector`、稳定冲突代码、期望 revision、实际 revision 和消息，供后续命令与客户端展示；来源未知的旧草稿只执行可靠的磁盘并发检查。
+
+## 4.8 结构化差异预览
+
+- `QuestBookDiffer` 比较解码后的不可变定义，输出任务书、章节组、章节、任务节点、task 和 reward 的新增、删除、属性变化、移动/排序、依赖、类型和配置变化。
+- 任务节点在旧 ID 唯一且非空时可把 ID 变化识别为改名；无法无歧义配对时保守表示为删除和新增。
+- 差异条目按对象类型、对象 ID、变化类型和字段稳定排序。输入先经 `NativeBookJson` 解码，因此空白、缩进或 JSON 字段排列等纯格式变化不会产生语义差异。
+- 已授权远程管理员可预览当前会话相对于磁盘草稿、workspace 或 active 的差异；普通玩家不能读取草稿内容。
+
+## 4.5–4.8 边界
+
+- `save` 仅更新目标服务器草稿目录，不会 publish workspace、deploy 世界数据包、reload active 快照或向普通玩家同步；这些仍由 4.9–4.10 的显式命令和事务完成。
+- 备份恢复、审计记录和导入来源的完整工作流分别留在 4.11–4.12；本批只提供保存事务产生的可恢复备份。
+
+## 4.5–4.8 自动验收
+
+- 完整 JUnit：93 项通过，覆盖确定性保存与 `NO_CHANGE`、格式 1 manifest 兼容、备份读取、失败恢复、外部磁盘 revision 冲突、四方来源冲突和结构化 diff。
+- `remoteAdministratorsUseTargetServerPermissionsAndLeases` GameTest：远程管理员编辑后会话为 dirty，目标服务器保存成功后恢复 clean，重复保存幂等，保存后差异为空。
+- `runGameTestServer`：15/15 required GameTest 通过。
+- 完整 `build` 与 `git diff --check` 通过。

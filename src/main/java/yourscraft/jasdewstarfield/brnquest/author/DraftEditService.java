@@ -239,7 +239,7 @@ public final class DraftEditService {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                         "DRAFT_VALIDATION_FAILED", "Draft operation failed validation", result);
             }
-            DraftSnapshot candidate = DraftSnapshot.of(change.book(), current.baseRevision());
+            DraftSnapshot candidate = DraftSnapshot.from(change.book(), current.origin(), current.baseRevision());
             DraftEditResult result = new DraftEditResult(candidate, change.affectedObjects(), diagnostics);
             if (candidate.draftRevision().equals(current.draftRevision())) {
                 return AuthorOperationResult.noChange("DRAFT_UNCHANGED", "Operation made no semantic change", result);

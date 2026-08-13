@@ -19,6 +19,8 @@ import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditService;
+import yourscraft.jasdewstarfield.brnquest.author.DraftDiffService;
+import yourscraft.jasdewstarfield.brnquest.author.DraftPersistenceService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
@@ -431,6 +433,24 @@ public final class BrnQuestGameTests {
                 "invalid remote edit must be rejected before session state changes");
         helper.assertValueEqual(sessions.inspect(firstAdmin, bookId).value().draftRevision(), editedRevision,
                 "rejected edit must preserve the previous server draft revision");
+        helper.assertTrue(sessions.inspect(firstAdmin, bookId).value().dirty(),
+                "an edited remote session must report unsaved changes");
+        DraftDiffService diffs = new DraftDiffService();
+        var dirtyDiff = diffs.preview(firstAdmin, opened.value().sessionId(), bookId, editedRevision,
+                DraftDiffService.Baseline.SAVED_DRAFT);
+        helper.assertTrue(dirtyDiff.success() && !dirtyDiff.value().empty(),
+                "remote administrator must preview the session-to-disk semantic diff");
+        DraftPersistenceService persistence = new DraftPersistenceService();
+        var saved = persistence.save(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
+        var repeatedSave = persistence.save(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
+        helper.assertTrue(saved.success(), "validated remote session draft must save on the target server");
+        helper.assertTrue(!sessions.inspect(firstAdmin, bookId).value().dirty(),
+                "a successful target-server save must advance the session's saved revision");
+        helper.assertValueEqual(repeatedSave.status(), AuthorOperationResult.Status.NO_CHANGE,
+                "repeated save of identical semantic content must be idempotent");
+        helper.assertValueEqual(diffs.preview(firstAdmin, opened.value().sessionId(), bookId, editedRevision,
+                DraftDiffService.Baseline.SAVED_DRAFT).status(), AuthorOperationResult.Status.NO_CHANGE,
+                "saved draft and session must have no semantic diff");
 
         // Logout handling uses this same release path, allowing another administrator
         // to continue without waiting for the idle timeout.

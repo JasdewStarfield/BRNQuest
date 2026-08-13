@@ -30,7 +30,7 @@ public final class DraftService {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.NOT_FOUND, "NO_ACTIVE_BOOK",
                     "No active task book is available");
         }
-        return repository.create(server, DraftSnapshot.of(active.book(), active.revision()));
+        return repository.create(server, DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision()));
     }
 
     public AuthorOperationResult<DraftSnapshot> createFromWorkspace(ServerPlayer player, ResourceLocation bookId) {
@@ -50,7 +50,7 @@ public final class DraftService {
         }
         var book = new QuestBookDefinition(bookId, BrnQuestConstants.DATA_SCHEMA, title,
                 List.of(), List.of(), Map.of());
-        return repository.create(server, DraftSnapshot.of(book, ""));
+        return repository.create(server, DraftSnapshot.from(book, DraftOrigin.EMPTY, ""));
     }
 
     private static MinecraftServer authorizedServer(ServerPlayer player) {

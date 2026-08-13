@@ -35,6 +35,11 @@ public final class WorkspacePaths {
         return root(server).resolve("drafts");
     }
 
+    /** Backups stay outside workspace and datapack discovery paths. */
+    public static Path backups(MinecraftServer server) {
+        return root(server).resolve("backups");
+    }
+
     /** Creates the stable author-facing directories without manufacturing an invalid empty data pack. */
     public static void ensureAuthorDirectories(MinecraftServer server) throws IOException {
         ensureAuthorDirectories(root(server));
@@ -45,6 +50,7 @@ public final class WorkspacePaths {
         Files.createDirectories(root.resolve("workspace"));
         Files.createDirectories(root.resolve("reports"));
         Files.createDirectories(root.resolve("drafts"));
+        Files.createDirectories(root.resolve("backups"));
     }
 
     public static Path deployed(MinecraftServer server) {

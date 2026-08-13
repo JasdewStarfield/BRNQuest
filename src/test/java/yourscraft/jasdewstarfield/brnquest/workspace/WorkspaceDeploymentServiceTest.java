@@ -64,6 +64,35 @@ class WorkspaceDeploymentServiceTest {
         assertTrue(Files.notExists(target));
     }
 
+    @Test void activatedFailureRestoresPreviousWorldPackAndCleansStaging() throws Exception {
+        Path source = workspace("replacement");
+        Path target = temporary.resolve("world/datapacks/brnquest-workspace");
+        Files.createDirectories(target);
+        Files.writeString(target.resolve("old.txt"), "old", StandardCharsets.UTF_8);
+        WorkspaceDeploymentService service = new WorkspaceDeploymentService(stage -> {
+            if (stage == WorkspaceDeploymentService.TransactionStage.ACTIVATED) throw new IOException("injected");
+        });
+
+        assertThrows(IOException.class, () -> service.deployTransaction(source, target, true));
+
+        assertEquals("old", Files.readString(target.resolve("old.txt"), StandardCharsets.UTF_8));
+        try (var paths = Files.list(target.getParent())) {
+            assertTrue(paths.noneMatch(path -> path.getFileName().toString().contains(".staging-")));
+        }
+    }
+
+    @Test void failedFirstActivationLeavesNoWorldPack() throws Exception {
+        Path source = workspace("first-failure");
+        Path target = temporary.resolve("new-world/datapacks/brnquest-workspace");
+        WorkspaceDeploymentService service = new WorkspaceDeploymentService(stage -> {
+            if (stage == WorkspaceDeploymentService.TransactionStage.ACTIVATED) throw new IOException("injected");
+        });
+
+        assertThrows(IOException.class, () -> service.deployTransaction(source, target, false));
+
+        assertTrue(Files.notExists(target));
+    }
+
     private Path workspace(String title) throws IOException {
         Path source = temporary.resolve("workspace-" + title);
         Path book = source.resolve("data/test/brnquest/books/main.json");

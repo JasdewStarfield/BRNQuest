@@ -21,6 +21,7 @@ public final class BrnQuestCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("brnquest")
+                .then(AuthorCommands.build())
                 .then(Commands.literal("open").executes(ctx -> open(ctx, ""))
                         .then(Commands.argument("quest", StringArgumentType.string()).executes(ctx -> open(ctx, StringArgumentType.getString(ctx, "quest")))))
                 .then(Commands.literal("progress").requires(s -> s.hasPermission(2))
@@ -119,7 +120,6 @@ public final class BrnQuestCommands {
                 context.getSource().sendFailure(Component.literal("Workspace is already deployed; use --replace for an explicit backed-up replacement"));
                 return 0;
             }
-            service.reloadIncludingWorkspace(context.getSource().getServer());
             String backup = result.backup() == null ? "" : ", backup " + result.backup();
             context.getSource().sendSuccess(() -> Component.literal("BRNQuest workspace " + result.status().name().toLowerCase() + ": " + result.files() + " files" + backup), true);
             audit(context, "workspace_deploy", context.getSource().getTextName(), WorkspacePaths.workspace(context.getSource().getServer()).toString(), result.status().name());

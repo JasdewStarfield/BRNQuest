@@ -121,8 +121,9 @@ public final class DraftRepository {
             return AuthorOperationResult.success("DRAFT_SAVED", "Draft saved atomically",
                     new DraftSaveResult(draft, disk.draftRevision(), backup));
         } catch (Exception exception) {
-            if (backupMoved && Files.exists(backup) && !Files.exists(target)) {
+            if (backupMoved && Files.exists(backup)) {
                 try {
+                    safeDelete(target, draftsRoot);
                     move(backup, target);
                 } catch (IOException restoreFailure) {
                     exception.addSuppressed(restoreFailure);

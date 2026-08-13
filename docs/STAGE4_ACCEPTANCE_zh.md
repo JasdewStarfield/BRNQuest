@@ -82,3 +82,25 @@
 - `remoteAdministratorsUseTargetServerPermissionsAndLeases` GameTest：远程管理员编辑后会话为 dirty，目标服务器保存成功后恢复 clean，重复保存幂等，保存后差异为空。
 - `runGameTestServer`：15/15 required GameTest 通过。
 - 完整 `build` 与 `git diff --check` 通过。
+
+## 4.9 作者命令
+
+- 新增权限等级 2 的 `/brnquest author` 命令树，覆盖从 active/workspace/空任务书创建草稿、打开/查看/续租/关闭/丢弃会话、改标题、validate、diff、save、publish、deploy 和 reload。
+- 会话相关命令显式携带 session UUID、任务书 ID 和预期 draft revision；`open` 只把 secret session UUID 返回给当前操作者，`status` 不泄露 token。
+- 所有内容操作委托给 4.1–4.8 的服务端服务，不建立命令专用草稿模型；命令返回稳定结果代码并写入操作者、操作、对象、状态和代码审计日志。
+- `discard` 仅关闭内存会话并放弃未保存修改，保留磁盘草稿；阶段 5 UI 将复用相同服务调用。
+
+## 4.10 发布与部署事务
+
+- `DraftPublishService` 只接受已保存且完整校验通过的会话草稿；发布前再次检查磁盘、来源、active 和 workspace revision。非 workspace 来源不会静默覆盖已有的同 ID workspace 任务书。
+- publish 在同文件系统 UUID staging 中复制现有 workspace、替换目标任务书并重新解码验证；覆盖前把整个旧 workspace 移入 `config/brnquest/backups/workspace/`，失败时恢复旧 workspace。
+- publish 成功后会话转为 `WORKSPACE` 来源并以已发布 revision 作为新基线，因此远程管理员可以继续编辑、保存和再次发布；相同内容重复发布返回 `NO_CHANGE`。
+- deploy 使用唯一 staging，校验复制结果，并在替换世界数据包前把旧包移到世界目录外的 `brnquest-backups/`。故障注入验证即使新包已激活，失败仍恢复旧部署并清理 staging。
+- 原有和新增 deploy 命令都不再隐式 reload。只有显式 reload 成功后才切换 active 快照并对账在线玩家；fatal 校验会报告失败并保留上一 active 快照。
+
+## 4.9–4.10 自动验收
+
+- `WorkspacePublishRepositoryTest` 覆盖首次发布、重复发布幂等、保留 workspace 其他文件、覆盖备份、外部 revision 冲突和激活后失败恢复。
+- `WorkspaceDeploymentServiceTest` 覆盖首次部署、拒绝静默覆盖、显式替换备份、无效 workspace 以及激活后失败恢复。
+- 远程管理员 GameTest 覆盖 save → publish、重复 publish、继续编辑、未保存禁止 publish、再次 save/publish，以及专服作者命令树注册。
+- 完整 JUnit：100 项通过；`runGameTestServer`：15/15 required GameTest 通过；完整 `build` 与 `git diff --check` 通过。首次 publish/deploy 在激活后发生故障时也会恢复为“未发布/未部署”状态。

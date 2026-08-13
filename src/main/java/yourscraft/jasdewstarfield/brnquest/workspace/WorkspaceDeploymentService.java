@@ -14,40 +14,68 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.UUID;
 
 /** Copies the global author workspace into a world without ever silently replacing it. */
 public final class WorkspaceDeploymentService {
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss").withZone(ZoneOffset.UTC);
+    private final TransactionHook transactionHook;
+
+    public WorkspaceDeploymentService() {
+        this(stage -> {});
+    }
+
+    WorkspaceDeploymentService(TransactionHook transactionHook) {
+        this.transactionHook = transactionHook;
+    }
 
     public DeploymentResult deploy(MinecraftServer server, boolean replace) throws IOException {
-        return deploy(WorkspacePaths.workspace(server), WorkspacePaths.deployed(server), replace);
+        return deployTransaction(WorkspacePaths.workspace(server), WorkspacePaths.deployed(server), replace);
     }
 
     static DeploymentResult deploy(Path source, Path target, boolean replace) throws IOException {
+        return new WorkspaceDeploymentService().deployTransaction(source, target, replace);
+    }
+
+    DeploymentResult deployTransaction(Path source, Path target, boolean replace) throws IOException {
         validateWorkspace(source);
         if (Files.exists(target) && !replace) return new DeploymentResult(Status.ALREADY_DEPLOYED, target, null, 0);
 
         Path datapacks = target.getParent();
         Files.createDirectories(datapacks);
-        Path staging = datapacks.resolve("." + WorkspacePaths.PACK_DIRECTORY + ".staging");
-        if (Files.exists(staging)) deleteTree(staging);
-        int files = copyTree(source, staging);
-
+        // A unique sibling prevents concurrent or interrupted deployments from
+        // confusing one another, while keeping the final move on one filesystem.
+        Path staging = datapacks.resolve("." + WorkspacePaths.PACK_DIRECTORY + ".staging-" + UUID.randomUUID());
         Path backup = null;
-        if (Files.exists(target)) {
-            // Keep backups outside datapacks so Minecraft cannot discover stale copies as packs.
-            Path backupRoot = datapacks.getParent().resolve("brnquest-backups");
-            Files.createDirectories(backupRoot);
-            backup = availableBackupPath(backupRoot);
-            move(target, backup);
-        }
+        boolean previousMoved = false;
+        boolean activated = false;
         try {
+            int files = copyTree(source, staging);
+            validateWorkspace(staging);
+            transactionHook.checkpoint(TransactionStage.STAGING_WRITTEN);
+            if (Files.exists(target)) {
+                // Keep backups outside datapacks so Minecraft cannot discover stale copies as packs.
+                Path backupRoot = datapacks.getParent().resolve("brnquest-backups");
+                Files.createDirectories(backupRoot);
+                backup = availableBackupPath(backupRoot);
+                move(target, backup);
+                previousMoved = true;
+                transactionHook.checkpoint(TransactionStage.BACKUP_MOVED);
+            }
             move(staging, target);
+            activated = true;
+            transactionHook.checkpoint(TransactionStage.ACTIVATED);
+            return new DeploymentResult(backup == null ? Status.DEPLOYED : Status.REPLACED, target, backup, files);
         } catch (IOException exception) {
-            if (backup != null && Files.exists(backup) && !Files.exists(target)) move(backup, target);
+            if (previousMoved && backup != null && Files.exists(backup)) {
+                if (Files.exists(target)) deleteTree(target);
+                move(backup, target);
+            } else if (activated && Files.exists(target)) {
+                deleteTree(target);
+            }
+            if (Files.exists(staging)) deleteTree(staging);
             throw exception;
         }
-        return new DeploymentResult(backup == null ? Status.DEPLOYED : Status.REPLACED, target, backup, files);
     }
 
     private static Path availableBackupPath(Path backupRoot) {
@@ -143,6 +171,12 @@ public final class WorkspaceDeploymentService {
 
     public enum Status { DEPLOYED, REPLACED, ALREADY_DEPLOYED }
     public record DeploymentResult(Status status, Path target, Path backup, int files) {}
+    enum TransactionStage { STAGING_WRITTEN, BACKUP_MOVED, ACTIVATED }
+
+    @FunctionalInterface
+    interface TransactionHook {
+        void checkpoint(TransactionStage stage) throws IOException;
+    }
     static final class NoWorkspaceException extends IOException {
         private final Path path;
         NoWorkspaceException(Path path) { super("No workspace at " + path); this.path = path; }

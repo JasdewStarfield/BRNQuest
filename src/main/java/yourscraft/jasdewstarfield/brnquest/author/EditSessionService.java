@@ -129,6 +129,33 @@ public final class EditSessionService {
         return result;
     }
 
+    synchronized AuthorOperationResult<DraftPublishResult> publish(ServerPlayer player, UUID sessionId,
+                                                                    ResourceLocation bookId,
+                                                                    String expectedDraftRevision,
+                                                                    Function<DraftSessionState,
+                                                                            AuthorOperationResult<DraftPublishResult>> operation) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        Lease lease = lease(server, sessionId);
+        AuthorOperationResult<DraftPublishResult> denied = denyLease(lease, player.getUUID(), bookId,
+                expectedDraftRevision, server.getTickCount());
+        if (denied != null) return denied;
+        AuthorOperationResult<DraftPublishResult> result = operation.apply(lease.state());
+        if (result.success() && result.value() != null
+                && result.value().snapshot().draftRevision().equals(lease.draft.draftRevision())) {
+            // Publishing establishes a new workspace concurrency baseline without
+            // changing semantic content or the draft's saved/dirty state.
+            lease.draft = result.value().snapshot();
+            lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
+        }
+        return result;
+    }
+
     AuthorOperationResult<DraftEditResult> mutateAuthorized(Object serverKey, UUID editorId, UUID sessionId,
                                                              ResourceLocation bookId, String expectedDraftRevision,
                                                              long nowTick, long timeoutTicks,

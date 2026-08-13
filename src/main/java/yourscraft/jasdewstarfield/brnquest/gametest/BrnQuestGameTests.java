@@ -21,6 +21,7 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftDiffService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPersistenceService;
+import yourscraft.jasdewstarfield.brnquest.author.DraftPublishService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
@@ -451,6 +452,38 @@ public final class BrnQuestGameTests {
         helper.assertValueEqual(diffs.preview(firstAdmin, opened.value().sessionId(), bookId, editedRevision,
                 DraftDiffService.Baseline.SAVED_DRAFT).status(), AuthorOperationResult.Status.NO_CHANGE,
                 "saved draft and session must have no semantic diff");
+        String activeBeforePublish = QuestBookManager.get().active().orElseThrow().revision();
+        DraftPublishService publisher = new DraftPublishService();
+        var published = publisher.publish(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
+        var repeatedPublish = publisher.publish(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
+        helper.assertTrue(published.success(), "saved remote draft must publish to the target server workspace");
+        helper.assertValueEqual(repeatedPublish.status(), AuthorOperationResult.Status.NO_CHANGE,
+                "repeated publish of identical content must be idempotent");
+        helper.assertValueEqual(QuestBookManager.get().active().orElseThrow().revision(), activeBeforePublish,
+                "publish must not change the active task-book snapshot before explicit deploy and reload");
+
+        var editedAgain = edits.setBookTitle(firstAdmin, opened.value().sessionId(), bookId,
+                editedRevision, "Edited again after publish");
+        String secondRevision = editedAgain.value().snapshot().draftRevision();
+        helper.assertValueEqual(publisher.publish(firstAdmin, opened.value().sessionId(), bookId,
+                        secondRevision).code(), "UNSAVED_DRAFT",
+                "publish must reject unsaved in-memory changes");
+        helper.assertTrue(persistence.save(firstAdmin, opened.value().sessionId(), bookId, secondRevision).success(),
+                "continued editing after publish must save against the rebased workspace revision");
+        helper.assertTrue(publisher.publish(firstAdmin, opened.value().sessionId(), bookId, secondRevision).success(),
+                "continued editing must publish again without a false external-workspace conflict");
+
+        var authorCommand = server.getCommands().getDispatcher().getRoot().getChild("brnquest").getChild("author");
+        helper.assertTrue(authorCommand != null && authorCommand.getChild("create") != null
+                        && authorCommand.getChild("open") != null && authorCommand.getChild("validate") != null
+                        && authorCommand.getChild("diff") != null && authorCommand.getChild("save") != null
+                        && authorCommand.getChild("publish") != null && authorCommand.getChild("deploy") != null
+                        && authorCommand.getChild("reload") != null,
+                "dedicated-server dispatcher must expose the complete permission-gated author workflow");
+        helper.assertTrue(authorCommand.canUse(firstAdmin.createCommandSourceStack()),
+                "target-server administrator must satisfy the author command permission predicate");
+        helper.assertTrue(!authorCommand.canUse(ordinaryPlayer.createCommandSourceStack()),
+                "ordinary remote player must not discover or execute the author command tree");
 
         // Logout handling uses this same release path, allowing another administrator
         // to continue without waiting for the idle timeout.

@@ -8,7 +8,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -53,6 +56,15 @@ public final class RewardTypeRegistry {
 
     private static final class ItemReward implements RewardType<ItemRewardConfig> {
         public Codec<ItemRewardConfig> configCodec() { return ItemRewardConfig.CODEC; }
+
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(
+                    ConfigFieldDescriptor.field("item", ConfigValueType.ITEM_STACK).asRequired()
+                            .withHelp("ItemStack SNBT delivered by this reward"),
+                    ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER).withDefault("1")
+                            .withRange(1, Integer.MAX_VALUE).withHelp("Stack multiplier")
+            );
+        }
 
         public RewardResult execute(RewardContext context, ItemRewardConfig config) {
             try {

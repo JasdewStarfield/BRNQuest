@@ -114,3 +114,28 @@
 - owner 定向契约测试通过；完整 `build` 通过，JUnit 汇总为 23 个 suite、58 项测试、0 failure、0 error、0 skipped。
 - `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，12/12 required GameTest 通过并正常保存、关闭。
 - 全局搜索确认 `ProgressEngine` 不再按 `player.getUUID()` 直接获取进度或建立事务锁；`git diff --check` 通过。
+
+## 2026-08-13 第五批：编辑器字段描述 SPI
+
+> 对应计划项：3.9。本批只建立未来编辑器消费的公共描述与校验投影，不增加客户端编辑界面。
+
+### 实现范围
+
+- `TaskType` / `RewardType` 增加默认空列表的 `configFields()`，不破坏未声明编辑元数据的已有扩展类型。
+- `ConfigFieldDescriptor` 支持字段键、基础值类型、默认值、必填、范围、枚举、资源注册表约束提示、帮助文本和隔离的自定义校验器。
+- `ConfigEditorSchemas` 通过注册类型生成 task/reward 编辑投影，不硬编码类型 ID；内置 item/checkmark 提供基础字段描述。
+- `ConfigEditorSchema` 无论是否有描述都保留完整不可变 raw Map；未知类型、custom 开放配置或元数据异常使用安全 raw fallback。
+- 字段预览诊断不替代 `configCodec()` 和任务书发布校验，不能用编辑元数据绕过服务端权威验证。
+
+### 验证重点
+
+- 覆盖必填、默认值、数值范围、枚举、资源位置语法、自定义校验器和异常隔离。
+- 验证未知同路径类型不继承内置描述，raw Map 防御性复制且字段不丢失。
+- 反射检查公共编辑 SPI 不暴露内部 definition、进度或存档类型。
+
+### 验证结果
+
+- 构建前 `Get-Process` 与 `gradlew --status` 确认无残留 Java、Minecraft 或 Gradle daemon。
+- 字段描述定向测试通过；完整 `build` 通过，JUnit 汇总为 24 个 suite、62 项测试、0 failure、0 error、0 skipped。
+- `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，12/12 required GameTest 通过，原有 task/reward Codec 与事务行为未改变。
+- 本批没有客户端编辑界面或运行时展示变化，无需人工 UI 回归；`git diff --check` 通过。

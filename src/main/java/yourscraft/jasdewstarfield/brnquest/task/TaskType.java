@@ -5,6 +5,9 @@ import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
+
+import java.util.List;
 
 /** Public task extension point using immutable definition and progress projections. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
@@ -15,6 +18,8 @@ public interface TaskType<TConfig> {
     default boolean allowsManualSubmission(TConfig config) { return false; }
     default boolean acceptsQuestCompletionIntent(TConfig config) { return false; }
     default boolean reevaluateOnInventoryChange(TConfig config) { return false; }
+    /** Optional editor metadata; an empty list selects the safe raw-config fallback. */
+    default List<ConfigFieldDescriptor> configFields() { return List.of(); }
 
     default TaskSubmissionResult submit(TaskContext context, TConfig config) {
         if (!satisfied(context, config)) {

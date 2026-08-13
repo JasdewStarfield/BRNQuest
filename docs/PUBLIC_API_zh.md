@@ -26,6 +26,7 @@
 | `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
 | `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
 | `owner.ProgressOwner*` | `EXPERIMENTAL` | 稳定 owner 身份、成员、生命周期、归档投影及构造期 provider 注册。 |
+| `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断和无描述类型的原始配置后备投影。 |
 
 `data`、`progress`、`runtime`、`network`、`workspace`、`compat`、`command` 和 `platform` 包当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
@@ -83,6 +84,14 @@
 
 `claimAllRewardsResult` 逐项复用单奖励幂等事务。若中途失败，已经成功领取的奖励不会回滚，结果使用 `PARTIAL_FAILURE` 明确报告事务边界。
 
+## 编辑器字段描述
+
+- `TaskType.configFields` / `RewardType.configFields` 返回不可变 `ConfigFieldDescriptor` 列表；默认空列表明确选择 raw fallback。
+- 字段可声明稳定键、`BOOLEAN` / `INTEGER` / `DECIMAL` / `TEXT` / `ENUM` / `RESOURCE_LOCATION` / `ITEM_STACK` 类型、默认值、必填、数值范围、枚举值、目标资源注册表、帮助文本和自定义校验器。
+- `ConfigEditorSchemas.forTask` / `forReward` 只按注册类型获取描述，不按内置类型 ID 分支。字段描述或可选校验器异常被隔离，退回不丢数据的原始配置。
+- `ConfigEditorSchema.rawConfig` 始终保留完整不可变字符串 Map，包括描述外字段；未知类型、缺失模组或空描述使用 `rawFallback=true`，未来编辑器必须提供安全原始查看方式。
+- 字段诊断只用于编辑预览。发布仍必须通过服务端 type Codec 和整本任务书校验，字段描述不能绕过权威校验。
+
 ## 线程、权限与生命周期
 
 - 写操作只接受在线 `ServerPlayer`，并且必须在该玩家所在服务端线程调用。
@@ -97,7 +106,6 @@
 
 以下内容完成前不把本页接口提升为 `STABLE`：
 
-- task/reward 的编辑器字段描述 SPI；
 - 注册与 reload 生命周期契约；
 - 仅依赖公共 API 的示例附属模组；
 - 公共签名兼容门禁和最低兼容版本文档。

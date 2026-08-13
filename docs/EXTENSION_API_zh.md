@@ -47,3 +47,9 @@
 `ProgressOwnerProviderRegistry.register` 接受服务端 provider，并在首次任务书 reload 前冻结。provider 必须返回自身命名空间下的稳定 `ProgressOwnerId`，并提供不可变成员快照、生命周期和归档证据；解析结果不包含当前玩家、provider ID 不匹配或调用线程错误时，BRNQuest 不会猜测后备队伍身份。
 
 阶段 3 仅激活 `brnquest:personal`。第三方 provider 的注册用于提前验证公共签名和加载隔离，不代表共享进度已经启用；阶段 6 在候选队伍 API、迁移和归档语义通过验证前，不会提供选择外部 provider 的配置入口。
+
+## 编辑器字段描述
+
+任务和奖励类型可覆盖 `configFields()`，用 `ConfigFieldDescriptor` 描述 schema 1 字符串 Map。描述应使用稳定字段键，并尽量给出默认值、范围、枚举、资源注册表提示和简短帮助文本；复杂跨字段规则可以使用 `ConfigFieldValidator` 返回字段级诊断。
+
+字段描述是编辑器提示而不是新的配置 Codec。BRNQuest 始终保留完整 raw Map，未知字段不会因表单保存而自动删除；最终发布仍调用原有 `configCodec()`。返回空列表表示类型只支持原始配置后备视图，适合开放式或尚未冻结的外部配置。

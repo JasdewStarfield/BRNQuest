@@ -9,7 +9,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +51,10 @@ public final class TaskTypeRegistry {
 
     private static final class CheckmarkTask implements TaskType<Map<String, String>> {
         public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT)
+                    .withHelp("Optional objective title"));
+        }
         public boolean satisfied(TaskContext context, Map<String, String> config) {
             return context.progress() >= 1;
         }
@@ -89,6 +96,19 @@ public final class TaskTypeRegistry {
 
     private static final class ItemTask implements TaskType<ItemTaskConfig> {
         public Codec<ItemTaskConfig> configCodec() { return ItemTaskConfig.CODEC; }
+
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(
+                    ConfigFieldDescriptor.field("item", ConfigValueType.ITEM_STACK).asRequired()
+                            .withHelp("ItemStack SNBT matched by item and components"),
+                    ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER).withDefault("1")
+                            .withRange(1, Integer.MAX_VALUE).withHelp("Required item count"),
+                    ConfigFieldDescriptor.field("consume_items", ConfigValueType.BOOLEAN).withDefault("false")
+                            .withHelp("Consume matching items when submitted"),
+                    ConfigFieldDescriptor.field("title", ConfigValueType.TEXT)
+                            .withHelp("Optional objective title")
+            );
+        }
 
         public boolean satisfied(TaskContext context, ItemTaskConfig config) {
             if (context.progress() >= 1) return true;

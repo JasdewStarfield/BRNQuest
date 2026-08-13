@@ -39,13 +39,12 @@ class QuestViewportMathTest {
         assertEquals(false, QuestViewportMath.intersectsViewport(311, 100, 10, 100, 300, 0, 200));
     }
 
-    @Test void changingSidebarOriginKeepsGraphAtSameScreenPosition() {
-        double oldPan = 37;
-        int oldOrigin = 260;
-        int newOrigin = 112;
+    @Test void cachedGraphCenterRestoresAtAnyZoomWithoutPanelDimensions() {
+        double center = 91.25;
+        double zoom = 1.7;
 
-        double newPan = QuestViewportMath.panForStableOrigin(oldPan, oldOrigin, newOrigin);
+        double pan = QuestViewportMath.panForGraphCenter(center, zoom);
 
-        assertEquals(oldOrigin + oldPan, newOrigin + newPan, 0.000001);
+        assertEquals(center, QuestViewportMath.graphCenterForPan(pan, zoom), 0.000001);
     }
 }

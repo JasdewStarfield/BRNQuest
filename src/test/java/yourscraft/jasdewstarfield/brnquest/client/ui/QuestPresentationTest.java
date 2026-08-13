@@ -6,11 +6,15 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -50,6 +54,31 @@ class QuestPresentationTest {
                 0, 0, List.of(), List.of(foreignItem), List.of(), "LEGACY");
 
         assertEquals(QuestPresentation.VisualKind.PLACEHOLDER, QuestPresentation.visual(quest).kind());
+    }
+
+    @Test void completedQuestWithoutRewardsUsesPlainCompletionAndNoBadge() {
+        QuestDefinition quest = questWithRewards(List.of());
+
+        assertEquals(false, QuestPresentation.hasPendingReward(quest, QuestStatus.COMPLETED, Set.of()));
+        assertEquals("screen.brnquest.status.completed",
+                QuestPresentation.statusTranslationKey(quest, QuestStatus.COMPLETED, Set.of()));
+    }
+
+    @Test void completedQuestWithUnclaimedRewardUsesPendingMessageAndBadge() {
+        RewardDefinition reward = new RewardDefinition(id("book"), id("reward"), RewardTypes.ITEM,
+                Map.of("item", "{count:1,id:\"minecraft:diamond\"}"), "manual", false);
+        QuestDefinition quest = questWithRewards(List.of(reward));
+
+        assertEquals(true, QuestPresentation.hasPendingReward(quest, QuestStatus.COMPLETED, Set.of()));
+        assertEquals("screen.brnquest.status.rewards_pending",
+                QuestPresentation.statusTranslationKey(quest, QuestStatus.COMPLETED, Set.of()));
+        assertEquals(false, QuestPresentation.hasPendingReward(quest, QuestStatus.COMPLETED,
+                Set.of(reward.id().toString())));
+    }
+
+    private static QuestDefinition questWithRewards(List<RewardDefinition> rewards) {
+        return new QuestDefinition(id("book"), id("quest"), id("chapter"), "Quest", "", "", "",
+                0, 0, List.of(), List.of(), rewards, "LEGACY");
     }
 
     private ChapterDefinition chapter(ResourceLocation bookId, ResourceLocation id, ResourceLocation group, int order) {

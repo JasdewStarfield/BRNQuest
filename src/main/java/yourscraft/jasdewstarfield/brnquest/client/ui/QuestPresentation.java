@@ -6,12 +6,14 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Pure presentation rules shared by rendering and deterministic UI tests. */
 final class QuestPresentation {
@@ -63,6 +65,22 @@ final class QuestPresentation {
 
     static int requiredCount(TaskDefinition task) {
         return ClientTaskPresentationRegistry.requiredCount(ApiViews.task(task));
+    }
+
+    /** A completion badge is meaningful only while at least one real reward remains unclaimed. */
+    static boolean hasPendingReward(QuestDefinition quest, QuestStatus status, Set<String> claimedRewardIds) {
+        if (status != QuestStatus.COMPLETED) return false;
+        return quest.rewards().stream().anyMatch(reward -> !claimedRewardIds.contains(reward.id().toString()));
+    }
+
+    /** Separates plain completion from the stronger "reward waiting" message. */
+    static String statusTranslationKey(QuestDefinition quest, QuestStatus status, Set<String> claimedRewardIds) {
+        if (status == QuestStatus.COMPLETED) {
+            return hasPendingReward(quest, status, claimedRewardIds)
+                    ? "screen.brnquest.status.rewards_pending"
+                    : "screen.brnquest.status.completed";
+        }
+        return "screen.brnquest.status." + status.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}

@@ -38,12 +38,14 @@ public final class QuestScreen extends Screen {
 
     private double panX;
     private double panY;
-    private double zoom = 1.0;
+    private double zoom;
     private double navigationScroll;
     private double detailScroll;
     private int navigationContentHeight;
     private int detailContentHeight;
     private int chapterIndex;
+    private ResourceLocation rememberedChapterId;
+    private boolean rememberedChapterResolved;
     private double dragX;
     private double dragY;
     private boolean dragging;
@@ -58,6 +60,24 @@ public final class QuestScreen extends Screen {
 
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
+        QuestScreenSessionState.Snapshot remembered = QuestScreenSessionState.load();
+        zoom = remembered.zoom();
+        panX = QuestViewportMath.panForGraphCenter(remembered.centerX(), zoom);
+        panY = QuestViewportMath.panForGraphCenter(remembered.centerY(), zoom);
+        rememberedChapterId = remembered.chapterId();
+        navigationCollapsed = remembered.navigationCollapsed();
+    }
+
+    @Override
+    public void removed() {
+        // Save graph-space center coordinates rather than raw screen pixels, making
+        // restoration independent of resolution and either side panel's width.
+        ResourceLocation chapterId = currentChapterId();
+        QuestScreenSessionState.save(chapterId,
+                QuestViewportMath.graphCenterForPan(panX, zoom),
+                QuestViewportMath.graphCenterForPan(panY, zoom),
+                zoom, navigationCollapsed);
+        super.removed();
     }
 
     /** Prevents Screen.render from applying a second blur pass over the completed UI. */
@@ -81,6 +101,7 @@ public final class QuestScreen extends Screen {
 
         List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
         if (chapters.isEmpty()) return;
+        resolveRememberedChapter(chapters);
         chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
         renderNavigation(graphics, snapshot.book(), chapters.get(chapterIndex));
         renderCanvas(graphics, chapters.get(chapterIndex), mouseX, mouseY);
@@ -127,7 +148,19 @@ public final class QuestScreen extends Screen {
         int top = 0;
         int bottom = height;
         graphics.enableScissor(canvasLeft(), top, right, bottom);
-        renderGrid(graphics, right, top, bottom);
+        // Keep the graph in one fixed-resolution coordinate system. A single pose
+        // transform scales nodes, icons, lines and grid pixels together, avoiding the
+        // independent integer rounding that previously made elements wobble while zooming.
+        double graphLeft = graphX(canvasLeft());
+        double graphRight = graphX(right);
+        double graphTop = graphY(top);
+        double graphBottom = graphY(bottom);
+        double graphMouseX = graphX(mouseX);
+        double graphMouseY = graphY(mouseY);
+        graphics.pose().pushPose();
+        graphics.pose().translate((float) graphOriginX(), (float) graphOriginY(), 0.0F);
+        graphics.pose().scale((float) zoom, (float) zoom, 1.0F);
+        renderGrid(graphics, graphLeft, graphRight, graphTop, graphBottom);
 
         Map<ResourceLocation, QuestDefinition> chapterQuests = new HashMap<>();
         chapter.quests().forEach(quest -> chapterQuests.put(quest.id(), quest));
@@ -137,28 +170,36 @@ public final class QuestScreen extends Screen {
                 if (parent != null) renderDependency(graphics, parent, quest);
             }
         }
-        for (QuestDefinition quest : chapter.quests()) renderNode(graphics, quest, right, top, bottom, mouseX, mouseY);
+        for (QuestDefinition quest : chapter.quests()) {
+            renderNode(graphics, quest, graphLeft, graphRight, graphTop, graphBottom, graphMouseX, graphMouseY);
+        }
+        graphics.pose().popPose();
         graphics.disableScissor();
     }
 
-    private void renderGrid(GuiGraphics graphics, int right, int top, int bottom) {
-        int spacing = Math.max(12, (int) Math.round(34 * zoom));
-        int originX = screenX(0);
-        int originY = screenY(0);
-        int firstX = canvasLeft() + Math.floorMod(originX - canvasLeft(), spacing);
-        int firstY = top + Math.floorMod(originY - top, spacing);
-        for (int x = firstX; x < right; x += spacing) graphics.fill(x, top, x + 1, bottom, 0x243C4655);
-        for (int y = firstY; y < bottom; y += spacing) graphics.fill(canvasLeft(), y, right, y + 1, 0x243C4655);
+    private void renderGrid(GuiGraphics graphics, double left, double right, double top, double bottom) {
+        int firstX = (int) Math.floor(left / QuestViewportMath.GRID_SCALE) * (int) QuestViewportMath.GRID_SCALE;
+        int firstY = (int) Math.floor(top / QuestViewportMath.GRID_SCALE) * (int) QuestViewportMath.GRID_SCALE;
+        int drawLeft = (int) Math.floor(left) - 1;
+        int drawRight = (int) Math.ceil(right) + 1;
+        int drawTop = (int) Math.floor(top) - 1;
+        int drawBottom = (int) Math.ceil(bottom) + 1;
+        for (int x = firstX; x <= drawRight; x += (int) QuestViewportMath.GRID_SCALE) {
+            graphics.fill(x, drawTop, x + 1, drawBottom, 0x243C4655);
+        }
+        for (int y = firstY; y <= drawBottom; y += (int) QuestViewportMath.GRID_SCALE) {
+            graphics.fill(drawLeft, y, drawRight, y + 1, 0x243C4655);
+        }
     }
 
     /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
     private void renderDependency(GuiGraphics graphics, QuestDefinition parent, QuestDefinition child) {
-        int x1 = screenX(parent.x());
-        int y1 = screenY(parent.y());
-        int x2 = screenX(child.x());
-        int y2 = screenY(child.y());
-        int radius = nodeSize() / 2;
-        int thickness = Math.max(1, (int) Math.round(zoom));
+        int x1 = graphCoordinate(parent.x());
+        int y1 = graphCoordinate(parent.y());
+        int x2 = graphCoordinate(child.x());
+        int y2 = graphCoordinate(child.y());
+        int radius = NODE_BASE_SIZE / 2;
+        int thickness = 1;
         int color = 0xC0798799;
 
         if (Math.abs(x2 - x1) < radius * 2) {
@@ -180,13 +221,14 @@ public final class QuestScreen extends Screen {
         arrowHorizontal(graphics, endX, y2, direction, thickness, color);
     }
 
-    private void renderNode(GuiGraphics graphics, QuestDefinition quest, int right, int top, int bottom, int mouseX, int mouseY) {
-        int x = screenX(quest.x());
-        int y = screenY(quest.y());
-        int size = nodeSize();
+    private void renderNode(GuiGraphics graphics, QuestDefinition quest, double left, double right,
+                            double top, double bottom, double mouseX, double mouseY) {
+        int x = graphCoordinate(quest.x());
+        int y = graphCoordinate(quest.y());
+        int size = NODE_BASE_SIZE;
         int radius = size / 2;
         // Keep partially visible nodes; cull only after their entire bounds leave the canvas.
-        if (!QuestViewportMath.intersectsViewport(x, y, radius, canvasLeft(), right, top, bottom)) return;
+        if (!QuestViewportMath.intersectsViewport(x, y, radius, left, right, top, bottom)) return;
 
         QuestStatus status = status(quest);
         int color = switch (status) {
@@ -200,8 +242,11 @@ public final class QuestScreen extends Screen {
         fillChamfer(graphics, x, y, size + (selected ? 4 : 2), selected ? 0xFF91C9F4 : 0xFF222936);
         fillChamfer(graphics, x, y, size, color);
         renderQuestVisual(graphics, quest, x, y, size);
+        if (QuestPresentation.hasPendingReward(quest, status, ClientQuestState.get().claimed())) {
+            renderPendingRewardBadge(graphics, x, y, size);
+        }
 
-        if (mouseX >= canvasLeft() && mouseX < right && mouseY >= top && mouseY < bottom
+        if (mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
                 && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
             hoveredDetailText = Component.literal(questTitle(quest));
         }
@@ -253,7 +298,8 @@ public final class QuestScreen extends Screen {
         if (!quest.subtitle().isBlank()) y = drawWrapped(graphics, quest.subtitle(), contentLeft, y, contentWidth, 0xFFB7C5D8) + 4;
 
         boolean ready = canSubmit(quest, status);
-        Component statusText = Component.translatable("screen.brnquest.status." + status.name().toLowerCase(java.util.Locale.ROOT));
+        Component statusText = Component.translatable(
+                QuestPresentation.statusTranslationKey(quest, status, ClientQuestState.get().claimed()));
         graphics.drawString(font, statusText, contentLeft, y, statusColor(status), false);
         int statusTop = y;
         int statusWidth = font.width(statusText);
@@ -391,10 +437,7 @@ public final class QuestScreen extends Screen {
 
         int navigationHandleLeft = navigationCollapsed ? 0 : NAV_RIGHT + 4;
         if (mouseX >= navigationHandleLeft && mouseX <= navigationHandleLeft + NAV_HANDLE_WIDTH) {
-            int oldOrigin = screenOriginX();
             navigationCollapsed = !navigationCollapsed;
-            // The graph camera is independent of chrome width; compensate the changed layout origin.
-            panX = QuestViewportMath.panForStableOrigin(panX, oldOrigin, screenOriginX());
             return true;
         }
 
@@ -414,6 +457,8 @@ public final class QuestScreen extends Screen {
         if (navigationChoice != null) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             chapterIndex = chapters.indexOf(navigationChoice);
+            rememberedChapterId = navigationChoice.id();
+            rememberedChapterResolved = true;
             panX = 0;
             panY = 0;
             detailsOpen = false;
@@ -430,7 +475,8 @@ public final class QuestScreen extends Screen {
         }
         if (detailsOpen && selected != null) {
             QuestStatus status = status(selected);
-            Component statusText = Component.translatable("screen.brnquest.status." + status.name().toLowerCase(java.util.Locale.ROOT));
+            Component statusText = Component.translatable(
+                    QuestPresentation.statusTranslationKey(selected, status, ClientQuestState.get().claimed()));
             int statusY = detailStatusY(selected);
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
             int trackX = detailTrackX(pin);
@@ -463,9 +509,12 @@ public final class QuestScreen extends Screen {
         if (mouseX > canvasLeft() && mouseX < canvasRight) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.get(chapterIndex);
-            int radius = nodeSize() / 2 + 2;
+            double graphMouseX = graphX(mouseX);
+            double graphMouseY = graphY(mouseY);
+            int radius = NODE_BASE_SIZE / 2 + 2;
             for (QuestDefinition quest : chapter.quests()) {
-                if (Math.abs(mouseX - screenX(quest.x())) <= radius && Math.abs(mouseY - screenY(quest.y())) <= radius) {
+                if (Math.abs(graphMouseX - graphCoordinate(quest.x())) <= radius
+                        && Math.abs(graphMouseY - graphCoordinate(quest.y())) <= radius) {
                     ClientQuestState.get().selected(quest.id());
                     detailsOpen = true;
                     detailScroll = 0;
@@ -514,9 +563,9 @@ public final class QuestScreen extends Screen {
         double oldZoom = zoom;
         double nextZoom = QuestViewportMath.clampZoom(zoom + vertical * 0.10);
         if (nextZoom == oldZoom) return true;
-        // Preserve the task coordinate at the visible canvas center while zooming.
-        int canvasRight = detailsOpen ? detailLeft() : width - CANVAS_MARGIN;
-        double anchorX = (canvasLeft() + canvasRight) / 2.0;
+        // Side panels only clip the graph; the camera always zooms about the physical
+        // center of the whole Screen, regardless of their open state or width.
+        double anchorX = width / 2.0;
         double anchorY = height / 2.0;
         panX = QuestViewportMath.panForStableAnchor(anchorX, screenOriginX(), panX, oldZoom, nextZoom);
         panY = QuestViewportMath.panForStableAnchor(anchorY, height / 2.0, panY, oldZoom, nextZoom);
@@ -599,6 +648,25 @@ public final class QuestScreen extends Screen {
 
     private boolean isCompleted(QuestStatus status) {
         return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED;
+    }
+
+    /** Draws a small red notification dot above the node visual so pending rewards remain visible at every zoom level. */
+    private void renderPendingRewardBadge(GuiGraphics graphics, int nodeX, int nodeY, int nodeSize) {
+        int nodeRadius = nodeSize / 2;
+        int badgeRadius = Math.max(2, Math.min(5, (nodeSize + 3) / 5));
+        int centerX = nodeX + nodeRadius - 1;
+        int centerY = nodeY - nodeRadius + 1;
+        fillCircle(graphics, centerX, centerY, badgeRadius + 1, 0xFFFFFFFF);
+        fillCircle(graphics, centerX, centerY, badgeRadius, 0xFFFF3038);
+    }
+
+    /** Rasterizes a compact filled circle without adding a texture dependency for one badge. */
+    private void fillCircle(GuiGraphics graphics, int centerX, int centerY, int radius, int color) {
+        for (int offsetY = -radius; offsetY <= radius; offsetY++) {
+            int halfWidth = (int) Math.floor(Math.sqrt(radius * radius - offsetY * offsetY));
+            graphics.fill(centerX - halfWidth, centerY + offsetY,
+                    centerX + halfWidth + 1, centerY + offsetY + 1, color);
+        }
     }
 
     private int statusColor(QuestStatus status) {
@@ -705,16 +773,24 @@ public final class QuestScreen extends Screen {
         }
     }
 
-    private int nodeSize() {
-        return Math.max(6, Math.min(40, (int) Math.round(NODE_BASE_SIZE * zoom)));
+    private int graphCoordinate(double coordinate) {
+        return (int) Math.round(coordinate * QuestViewportMath.GRID_SCALE);
     }
 
-    private int screenX(double x) {
-        return (int) (screenOriginX() + panX + x * 34 * zoom);
+    private double graphX(double screenX) {
+        return (screenX - graphOriginX()) / zoom;
     }
 
-    private int screenY(double y) {
-        return (int) (height / 2.0 + panY + y * 34 * zoom);
+    private double graphY(double screenY) {
+        return (screenY - graphOriginY()) / zoom;
+    }
+
+    private double graphOriginX() {
+        return screenOriginX() + panX;
+    }
+
+    private double graphOriginY() {
+        return height / 2.0 + panY;
     }
 
     private int detailLeft() {
@@ -727,7 +803,28 @@ public final class QuestScreen extends Screen {
     }
 
     private int screenOriginX() {
-        return canvasLeft() + 96;
+        return width / 2;
+    }
+
+    private void resolveRememberedChapter(List<ChapterDefinition> chapters) {
+        if (rememberedChapterResolved) return;
+        if (rememberedChapterId != null) {
+            for (int index = 0; index < chapters.size(); index++) {
+                if (chapters.get(index).id().equals(rememberedChapterId)) {
+                    chapterIndex = index;
+                    break;
+                }
+            }
+        }
+        rememberedChapterResolved = true;
+    }
+
+    private ResourceLocation currentChapterId() {
+        var snapshot = ClientQuestState.get().book().orElse(null);
+        if (snapshot == null) return rememberedChapterId;
+        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
+        if (chapters.isEmpty()) return rememberedChapterId;
+        return chapters.get(Math.min(chapterIndex, chapters.size() - 1)).id();
     }
 
     private int navigationContentHeight(QuestBookDefinition book) {

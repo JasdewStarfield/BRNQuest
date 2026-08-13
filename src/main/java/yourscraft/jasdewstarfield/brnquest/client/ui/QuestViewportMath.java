@@ -28,13 +28,19 @@ final class QuestViewportMath {
         return ((rewardCount + Math.max(1, columns) - 1) / Math.max(1, columns)) * REWARD_ROW_HEIGHT;
     }
 
-    static boolean intersectsViewport(int centerX, int centerY, int radius,
-                                      int left, int right, int top, int bottom) {
+    static boolean intersectsViewport(double centerX, double centerY, double radius,
+                                      double left, double right, double top, double bottom) {
         return centerX + radius >= left && centerX - radius <= right
                 && centerY + radius >= top && centerY - radius <= bottom;
     }
 
-    static double panForStableOrigin(double pan, int oldOrigin, int newOrigin) {
-        return pan + oldOrigin - newOrigin;
+    /** Converts the screen-pixel pan into the fixed graph pixel shown at Screen center. */
+    static double graphCenterForPan(double pan, double zoom) {
+        return -pan / zoom;
+    }
+
+    /** Restores a graph-space center without depending on the current window dimensions. */
+    static double panForGraphCenter(double graphCenter, double zoom) {
+        return -graphCenter * zoom;
     }
 }

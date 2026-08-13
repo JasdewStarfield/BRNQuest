@@ -28,7 +28,7 @@
 
 `data`、`progress`、`runtime`、`network`、`workspace`、`compat`、`command` 和 `platform` 包当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
-`TaskType` 和 `RewardType` 已分别改用 `TaskContext`/`TaskView` 与 `RewardContext`/`RewardView`，不再暴露 `PlayerProgress`、`TaskDefinition` 或 `RewardDefinition`。客户端 presentation 的阶段 2 签名仍直接引用内部 definition；这项剩余泄漏属于 3.7，不能据此把整个 `data` 包视为公共 API。
+`TaskType` 和 `RewardType` 已分别改用 `TaskContext`/`TaskView` 与 `RewardContext`/`RewardView`，客户端 presentation 也只接收不可变 `TaskView`/`RewardView` 和客户端展示上下文；这些 SPI 均不再暴露 `PlayerProgress`、`TaskDefinition` 或 `RewardDefinition`。`data` 包仍是内部实现，不能因视图转换而被视为公共 API。
 
 ## 不可变查询
 

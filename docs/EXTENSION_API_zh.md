@@ -34,4 +34,10 @@
 
 客户端 presentation 只负责图标、符号、标题、进度文本、客户端预览和交互提示，不能成为进度权威来源。未注册展示的任务与奖励使用占位符，仍保留完整类型 ID 和服务端诊断。
 
+- `ClientTaskPresentation` 的静态展示方法接收不可变 `TaskView`；标题、进度和提示方法接收 `TaskPresentationContext`，其中的物品栈已防御性复制。
+- `ClientRewardPresentation` 接收不可变 `RewardView` 或 `RewardPresentationContext`，可根据仅供显示的 claimable/claimed 状态生成提示。
+- `interactive` 和 `acceptsQuestCompletionIntent` 仅控制客户端是否建立点击入口；服务端仍会按注册的 `TaskType`、当前库存、权限和 revision 重新校验。
+- 注册表按完整 `ResourceLocation` 查找。缺失 presentation 或仅路径同名时使用问号占位、完整类型 ID 标题且默认不可交互。
+- 客户端注册表在 client setup 冻结；服务端任务/奖励实现不得引用这些 `client.ui` 类。
+
 新增类型至少应覆盖：有效配置、Codec 失败诊断、完整命名空间隔离、手动/被动推进语义，以及未安装客户端展示时的占位行为。

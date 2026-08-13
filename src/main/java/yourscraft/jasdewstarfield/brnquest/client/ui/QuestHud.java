@@ -7,6 +7,7 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 
 /** Minimal tracked-quest HUD rendered only from the immutable client cache. */
@@ -43,7 +44,8 @@ public final class QuestHud {
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
-        String itemSnbt = presentation.itemSnbt(task);
+        var view = ApiViews.task(task);
+        String itemSnbt = presentation.itemSnbt(view);
         if (!itemSnbt.isBlank() && minecraft.level != null) {
             try {
                 ItemStack stack = ItemStack.parseOptional(minecraft.level.registryAccess(),
@@ -53,6 +55,8 @@ public final class QuestHud {
                 // Unknown optional-mod items remain readable through the type fallback below.
             }
         }
-        return presentation.fallbackTitle(minecraft, task, ItemStack.EMPTY).getString();
+        long stored = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
+        return presentation.title(new TaskPresentationContext(minecraft, view,
+                yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.LOCKED, stored, ItemStack.EMPTY)).getString();
     }
 }

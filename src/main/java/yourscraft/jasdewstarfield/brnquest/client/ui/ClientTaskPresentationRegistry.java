@@ -6,7 +6,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
-import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
@@ -25,7 +25,8 @@ public final class ClientTaskPresentationRegistry {
         register(TaskTypes.CHECKMARK, new CheckmarkPresentation());
         register(TaskTypes.ITEM, new ItemPresentation());
         register(TaskTypes.CUSTOM, new ClientTaskPresentation() {
-            public NodeStyle nodeStyle(TaskDefinition task) { return NodeStyle.CUSTOM; }
+            public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
+            public String symbol(TaskView task) { return "◆"; }
         });
     }
 
@@ -47,7 +48,7 @@ public final class ClientTaskPresentationRegistry {
     public static boolean isFrozen() { return frozen; }
 
     /** Schema-1 counts remain strings, so presentation parsing mirrors the authoritative codec bounds. */
-    static int requiredCount(TaskDefinition task) {
+    static int requiredCount(TaskView task) {
         String raw = task.config().getOrDefault("count", "1");
         try {
             long parsed = Long.parseLong(raw.replaceAll("[^0-9-]", ""));
@@ -58,44 +59,44 @@ public final class ClientTaskPresentationRegistry {
     }
 
     private static final class CheckmarkPresentation implements ClientTaskPresentation {
-        public NodeStyle nodeStyle(TaskDefinition task) { return NodeStyle.CHECKMARK; }
-        public String symbol(TaskDefinition task) { return "✓"; }
-        public boolean interactive(TaskDefinition task) { return true; }
-        public boolean acceptsQuestCompletionIntent(TaskDefinition task) { return true; }
-        public Component progressText(Minecraft minecraft, TaskDefinition task, boolean satisfied,
-                                      long storedProgress, ItemStack displayedItem) {
+        public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
+        public String symbol(TaskView task) { return "✓"; }
+        public boolean interactive(TaskView task) { return true; }
+        public boolean acceptsQuestCompletionIntent(TaskView task) { return true; }
+        public Component progressText(TaskPresentationContext context, boolean satisfied) {
             return Component.translatable(satisfied ? "screen.brnquest.task.checked" : "screen.brnquest.task.manual");
         }
-        public Component fallbackTitle(Minecraft minecraft, TaskDefinition task, ItemStack displayedItem) {
-            String configured = task.config().getOrDefault("title", "");
+        public Component title(TaskPresentationContext context) {
+            String configured = context.task().config().getOrDefault("title", "");
             return configured.isBlank() ? Component.translatable("screen.brnquest.task.checkmark") : Component.literal(configured);
         }
     }
 
     private static final class ItemPresentation implements ClientTaskPresentation {
-        public NodeStyle nodeStyle(TaskDefinition task) { return NodeStyle.ITEM; }
-        public String itemSnbt(TaskDefinition task) { return task.config().getOrDefault("item", ""); }
-        public boolean interactive(TaskDefinition task) { return true; }
+        public NodeStyle nodeStyle(TaskView task) { return NodeStyle.ITEM; }
+        public String itemSnbt(TaskView task) { return task.config().getOrDefault("item", ""); }
+        public boolean interactive(TaskView task) { return true; }
 
-        public boolean satisfied(Minecraft minecraft, TaskDefinition task, QuestStatus status,
-                                 long storedProgress, ItemStack displayedItem) {
-            if (ClientTaskPresentation.super.satisfied(minecraft, task, status, storedProgress, displayedItem)) return true;
-            if (displayedItem.isEmpty() || minecraft.player == null) return false;
-            return present(minecraft, displayedItem) >= requiredCount(task);
+        public boolean satisfied(TaskPresentationContext context) {
+            if (ClientTaskPresentation.super.satisfied(context)) return true;
+            if (context.displayedItem().isEmpty() || context.minecraft().player == null) return false;
+            return present(context.minecraft(), context.displayedItem()) >= requiredCount(context.task());
         }
 
-        public Component progressText(Minecraft minecraft, TaskDefinition task, boolean satisfied,
-                                      long storedProgress, ItemStack displayedItem) {
-            if (!displayedItem.isEmpty() && minecraft.player != null) {
-                return Component.literal(present(minecraft, displayedItem) + " / " + requiredCount(task));
+        public Component progressText(TaskPresentationContext context, boolean satisfied) {
+            if (!context.displayedItem().isEmpty() && context.minecraft().player != null) {
+                return Component.literal(present(context.minecraft(), context.displayedItem())
+                        + " / " + requiredCount(context.task()));
             }
-            return ClientTaskPresentation.super.progressText(minecraft, task, satisfied, storedProgress, displayedItem);
+            return ClientTaskPresentation.super.progressText(context, satisfied);
         }
 
-        public Component fallbackTitle(Minecraft minecraft, TaskDefinition task, ItemStack displayedItem) {
-            String configured = task.config().getOrDefault("title", "");
+        public Component title(TaskPresentationContext context) {
+            String configured = context.task().config().getOrDefault("title", "");
             if (!configured.isBlank()) return Component.literal(configured);
-            return displayedItem.isEmpty() ? Component.literal(task.typeId().toString()) : displayedItem.getHoverName();
+            return context.displayedItem().isEmpty()
+                    ? Component.literal(context.task().typeId().toString())
+                    : context.displayedItem().getHoverName();
         }
 
         private int present(Minecraft minecraft, ItemStack expected) {

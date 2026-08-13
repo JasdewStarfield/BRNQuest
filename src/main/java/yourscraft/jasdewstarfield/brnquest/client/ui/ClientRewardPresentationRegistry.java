@@ -3,7 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
-import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
+import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 
 import java.util.Map;
@@ -19,7 +19,7 @@ public final class ClientRewardPresentationRegistry {
 
     static {
         register(RewardTypes.ITEM, new ClientRewardPresentation() {
-            public String itemSnbt(RewardDefinition reward) { return reward.config().getOrDefault("item", ""); }
+            public String itemSnbt(RewardView reward) { return reward.config().getOrDefault("item", ""); }
         });
         register(RewardTypes.CUSTOM, FALLBACK);
     }

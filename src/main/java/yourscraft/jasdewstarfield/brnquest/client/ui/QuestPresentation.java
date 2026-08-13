@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
@@ -46,9 +47,10 @@ final class QuestPresentation {
     static QuestVisual visual(QuestDefinition quest) {
         if (!quest.icon().isBlank()) return new QuestVisual(VisualKind.ITEM, quest.icon());
         for (TaskDefinition task : quest.tasks()) {
+            var view = ApiViews.task(task);
             ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
-            String itemSnbt = presentation.itemSnbt(task);
-            VisualKind kind = switch (presentation.nodeStyle(task)) {
+            String itemSnbt = presentation.itemSnbt(view);
+            VisualKind kind = switch (presentation.nodeStyle(view)) {
                 case ITEM -> VisualKind.ITEM;
                 case CHECKMARK -> VisualKind.CHECKMARK;
                 case CUSTOM -> VisualKind.CUSTOM;
@@ -60,7 +62,7 @@ final class QuestPresentation {
     }
 
     static int requiredCount(TaskDefinition task) {
-        return ClientTaskPresentationRegistry.requiredCount(task);
+        return ClientTaskPresentationRegistry.requiredCount(ApiViews.task(task));
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}

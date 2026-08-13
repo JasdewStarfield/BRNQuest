@@ -63,3 +63,27 @@
 - 将该测试改为记录领取前实体 UUID、只统计本次领取产生的新实体；未修改奖励实现。
 - 修正后 `gradlew.bat runGameTestServer --no-configuration-cache --no-daemon --console=plain`：11/11 required GameTest 通过，专服正常保存并关闭。
 - 本批没有客户端布局和交互变化，因此无需新增人工 UI 回归。
+
+## 2026-08-13 第三批候选：客户端展示 SPI
+
+> 对应计划项：3.7。代码与自动门禁完成后仍需真实客户端人工验收，因此在回传结果前不勾选计划项。
+
+### 实现范围
+
+- `ClientTaskPresentation` 与 `ClientRewardPresentation` 从内部 definition 迁移到不可变 `TaskView`/`RewardView`。
+- 增加防御性复制物品栈的任务/奖励展示上下文，统一标题、进度文本、节点样式和交互提示扩展点。
+- 原生 item、checkmark、custom 展示和任务树/HUD 全部经 presentation 注册表解析；完整命名空间未知类型使用问号、完整类型 ID 且不可交互。
+- 可点击的物品目标与奖励使用单一末端 tooltip 同时显示物品名称和操作提示，避免两个悬浮层相互覆盖。
+- 新增反射签名和完整 ID 隔离测试；专服仍不引用或加载客户端 presentation 实现。
+
+### 待人工验收
+
+- 按 [`CLIENT_ACCEPTANCE_zh.md`](CLIENT_ACCEPTANCE_zh.md) 第 4 节重点检查 item/checkmark/custom/未知类型的标题、进度、样式、提示和点击边界。
+- 确认 UI 回归通过后，才可在主计划勾选 3.7 并记录最终提交号。
+
+### 自动验证
+
+- 构建前 `Get-Process` 与 `gradlew --status` 确认无残留 Java、Minecraft 或 Gradle daemon。
+- 客户端展示定向测试与任务树展示回归通过；完整 `build` 通过，JUnit 汇总为 22 个 suite、54 项测试、0 failure、0 error、0 skipped。
+- `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，11/11 required GameTest 通过，证明 common/server 路径未加载客户端展示实现。
+- `git diff --check` 通过。

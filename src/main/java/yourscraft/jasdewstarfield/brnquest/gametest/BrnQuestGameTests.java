@@ -9,14 +9,17 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.neoforged.fml.ModList;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviderRegistry;
@@ -38,6 +41,59 @@ import java.util.stream.Collectors;
 @SuppressWarnings("removal")
 public final class BrnQuestGameTests {
     private BrnQuestGameTests() {}
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void publicApiExampleAddonCompletesItsFullContract(GameTestHelper helper) {
+        // The same main test suite also runs with -PexcludeExampleAddon to prove the pure-core
+        // combination. In that mode there is intentionally no companion contract to execute.
+        if (!ModList.get().isLoaded("brnquest_example")) {
+            helper.succeed();
+            return;
+        }
+        var player = helper.makeMockServerPlayerInLevel();
+        ResourceLocation passiveId = ResourceLocation.fromNamespaceAndPath("brnquest_example", "marker");
+        ResourceLocation submittedId = ResourceLocation.fromNamespaceAndPath("brnquest_example", "signal");
+        ResourceLocation rewardTypeId = ResourceLocation.fromNamespaceAndPath("brnquest_example", "experience");
+        TaskDefinition passive = new TaskDefinition(id("book"), id("example_marker"), passiveId,
+                Map.of("tag", "brnquest_example_ready"), false);
+        TaskDefinition submitted = new TaskDefinition(id("book"), id("example_signal"), submittedId,
+                Map.of("title", "Send integration signal"), false);
+        RewardDefinition reward = new RewardDefinition(id("book"), id("example_experience"), rewardTypeId,
+                Map.of("amount", "3"), "manual", false);
+        QuestDefinition quest = quest("example_addon", List.of(), List.of(passive, submitted), List.of(reward));
+        install(quest);
+        // This external server state is observed passively; it does not call a BRNQuest
+        // progress mutation API and is deterministic for headless mock players.
+        player.addTag("brnquest_example_ready");
+        ProgressEngine.get().reconcile(player);
+
+        helper.assertTrue(TaskTypeRegistry.get(passiveId) != null && TaskTypeRegistry.get(submittedId) != null,
+                "example add-on task types must register through the public registry");
+        helper.assertTrue(RewardTypeRegistry.get(rewardTypeId) != null,
+                "example add-on reward type must register through the public registry");
+        helper.assertTrue(!ConfigEditorSchemas.forTask(ApiViews.task(passive)).rawFallback(),
+                "example passive task must publish editor field metadata");
+
+        var initial = BrnQuestApi.submitQuestCompletionResult(OperationContext.self(player), player,
+                quest.id().toString(), false);
+        helper.assertTrue(!initial.success(), "passive condition alone must not complete the submitted objective");
+        var completed = BrnQuestApi.completeTaskResult(OperationContext.self(player), player,
+                quest.id().toString(), submitted.id().toString());
+        helper.assertTrue(completed.success(), completed.message());
+        helper.assertTrue(player.getTags().contains("brnquest_example_observed"),
+                "example read-only event subscriber must observe completion");
+
+        int experienceBefore = player.totalExperience;
+        var firstClaim = BrnQuestApi.claimRewardResult(OperationContext.self(player), player, reward.id().toString());
+        var repeatedClaim = BrnQuestApi.claimRewardResult(OperationContext.self(player), player, reward.id().toString());
+        helper.assertTrue(firstClaim.changed(), firstClaim.message());
+        helper.assertTrue(repeatedClaim.success() && !repeatedClaim.changed(),
+                "example reward must remain idempotent through the public operation API");
+        helper.assertValueEqual(player.totalExperience - experienceBefore, 3,
+                "example reward side effect must execute exactly once");
+        helper.succeed();
+    }
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)

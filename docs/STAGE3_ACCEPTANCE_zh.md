@@ -164,3 +164,37 @@
 - reload 原子保留与诊断副本定向测试通过；完整 `build` 通过，JUnit 汇总为 24 个 suite、64 项测试、0 failure、0 error、0 skipped。
 - `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，13/13 required GameTest 通过；新增门禁确认 common/script 已冻结且 client 生命周期未在专服执行。
 - 本批没有客户端 UI 变化；此前 3.7 客户端启动已覆盖 client setup 冻结路径。`git diff --check` 通过。
+
+## 2026-08-13 第七批：示例附属模组、API 门禁与阶段收口
+
+> 对应计划项：3.11、3.12、3.13。本批不修改生产任务书、存档 schema、网络协议或现有客户端布局。
+
+### 实现范围
+
+- 增加独立 `exampleAddon` source set 和真实 NeoForge mod `brnquest_example`；默认开发运行加载，`-PexcludeExampleAddon` 可验证消费者完全缺失的纯核心组合。
+- 示例只使用公共包，覆盖被动 marker task、手动 signal task、字符串配置 Codec、经验奖励、客户端 task/reward presentation、字段描述和 `QuestCompletedEvent` 订阅。
+- 新增源码边界测试，禁止示例导入 `data`、`progress`、`runtime`、`network`、`workspace`、`command`、`platform` 或通过反射绕过 API。
+- 新增端到端 GameTest：通过公共注册表和操作 API 完成两种任务，观察只读事件，并验证奖励首次执行、重复领取幂等无变化。
+- API 基线记录为 `0.1.0-experimental.1`，首个承诺稳定版本记录为 `1.0.0`；`ApiStatus` 改为运行时保留，编译后签名快照及 SHA-256 门禁进入普通 `test`/`build`。
+- 增加 API 版本策略和示例附属模组文档；完整签名变化报告固定写入 `build/reports/public-api-signatures.actual.txt` 供人工审阅。
+
+### 3.13 验收矩阵
+
+- 核心 + 示例附属模组：模组列表确认同时加载 `brnquest` 与 `brnquest_example`，14/14 required GameTest 通过。
+- 纯核心：`-PexcludeExampleAddon` 模组列表不含示例附属模组，14/14 required GameTest 通过；示例运行契约安全跳过，其余专服测试完整执行。
+- 公共 API 与示例边界：完整 JUnit 26 个 suite、66 项测试、0 failure、0 error、0 skipped；签名基线、internal 泄漏和反射绕过检查均通过。
+- 客户端 presentation 缺失：既有完整命名空间隔离测试继续验证问号占位、完整类型 ID 和不可交互后备；示例客户端 presentation 在独立 source set 编译通过。
+- reload 失败：fatal/null 候选保留旧 revision 与快照、诊断防御性复制的契约测试继续通过。
+- 专服类加载：两种 GameTest 配置均在 `forgeserverdev` 运行；client 注册窗口未执行，示例的客户端引用由 dist guard 隔离。
+- 构建产物：默认 `build` 和 `build -PexcludeExampleAddon` 均通过；核心 JAR 搜索不到 `brnquest_example` 类或资源，示例没有混入生产发布物。
+
+### 夹具修正记录
+
+- 首轮被动条件使用模拟玩家 XP 等级，但 headless mock 生命周期会重算字段；改用确定性的服务端 scoreboard tag，仍保持“观察外部服务端状态、不调用 BRNQuest 进度写入口”的被动语义。
+- 首轮经验奖励直接使用 `Codec.INT`，与 schema 1 的字符串叶值不匹配；修正为 `Codec.STRING` 的显式整数解析，并把这一约束写入扩展文档。
+- 修正后默认与纯核心 GameTest、JUnit 和两种完整构建全部通过。
+
+### 最终检查
+
+- 每次完整 `build` 前均检查 Java/Minecraft 进程和 `gradlew --status`，没有运行中的 Gradle daemon 或残留游戏进程。
+- `git diff --check` 通过；本批没有生产 UI 行为变化，3.7 已完成人工客户端验收，因此无需重复人工布局测试。

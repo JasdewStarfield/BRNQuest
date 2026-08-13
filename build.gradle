@@ -15,6 +15,17 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent()
+
+sourceSets {
+    exampleAddon {
+        // Compile the example exactly like an external consumer: main output is a dependency,
+        // while its sources are not merged into the add-on source set.
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
 repositories {
     mavenCentral()
 }
@@ -25,7 +36,8 @@ neoForge {
     runs {
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
+                    ? "${project.mod_id},brnquest_example" : project.mod_id
         }
 
         server {
@@ -36,7 +48,8 @@ neoForge {
 
         gameTestServer {
             type = 'gameTestServer'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
+                    ? "${project.mod_id},brnquest_example" : project.mod_id
         }
 
         data {
@@ -57,6 +70,11 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
+        }
+        if (includeExampleAddon) {
+            brnquest_example {
+                sourceSet(sourceSets.exampleAddon)
+            }
         }
     }
 
@@ -122,7 +140,13 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // NeoForge tests use a transformed class loader without a conventional code source;
+    // provide an explicit project root for the public-signature contract test.
+    systemProperty 'brnquest.projectDir', projectDir.absolutePath
 }
+
+// A normal build must prove the public-only companion source still compiles.
+tasks.named('check').configure { dependsOn tasks.named('compileExampleAddonJava') }
 
 idea.module {
     downloadSources = true

@@ -1,8 +1,10 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)。本文继续说明任务与奖励类型的阶段 2 实现契约；阶段 3 冻结前这些 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.1` 基线中的 SPI 仍标记为实验性。
 
 阶段 2 的任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书继续使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
+
+schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和布尔字段应先用 `Codec.STRING` 安全解析，而不能直接假定收到 JSON number/boolean。示例附属模组的经验奖励展示了带错误结果的字符串整数 Codec。
 
 ## 注册时间
 
@@ -41,6 +43,8 @@
 - 客户端注册表在 client setup 冻结；服务端任务/奖励实现不得引用这些 `client.ui` 类。
 
 新增类型至少应覆盖：有效配置、Codec 失败诊断、完整命名空间隔离、手动/被动推进语义，以及未安装客户端展示时的占位行为。
+
+仓库内 [`EXAMPLE_ADDON_zh.md`](EXAMPLE_ADDON_zh.md) 对应一个真实独立 NeoForge 附属模组，演示被动/提交任务、幂等奖励、presentation、字段描述和只读事件的完整公共 API 用法。
 
 ## ProgressOwner provider
 

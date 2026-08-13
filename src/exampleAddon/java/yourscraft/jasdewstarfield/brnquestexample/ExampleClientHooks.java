@@ -1,0 +1,48 @@
+package yourscraft.jasdewstarfield.brnquestexample;
+
+import net.minecraft.network.chat.Component;
+import yourscraft.jasdewstarfield.brnquest.api.RewardView;
+import yourscraft.jasdewstarfield.brnquest.api.TaskView;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ClientRewardPresentation;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ClientRewardPresentationRegistry;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ClientTaskPresentation;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ClientTaskPresentationRegistry;
+import yourscraft.jasdewstarfield.brnquest.client.ui.RewardPresentationContext;
+import yourscraft.jasdewstarfield.brnquest.client.ui.TaskPresentationContext;
+
+/** Client-only presentation half of the example extension. */
+final class ExampleClientHooks {
+    private ExampleClientHooks() {}
+
+    static void register() {
+        ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.MARKER_TASK, new MarkerPresentation());
+        ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.SIGNAL_TASK, new SignalPresentation());
+        ClientRewardPresentationRegistry.register(BrnQuestExampleAddon.EXPERIENCE_REWARD,
+                new ExperiencePresentation());
+    }
+
+    private static final class MarkerPresentation implements ClientTaskPresentation {
+        public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
+        public String symbol(TaskView task) { return "M"; }
+        public Component title(TaskPresentationContext context) {
+            return Component.literal("Receive marker "
+                    + context.task().config().getOrDefault("tag", "brnquest_example_ready"));
+        }
+    }
+
+    private static final class SignalPresentation implements ClientTaskPresentation {
+        public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
+        public String symbol(TaskView task) { return "S"; }
+        public boolean interactive(TaskView task) { return true; }
+        public Component title(TaskPresentationContext context) {
+            return Component.literal(context.task().config().getOrDefault("title", "Send signal"));
+        }
+    }
+
+    private static final class ExperiencePresentation implements ClientRewardPresentation {
+        public String symbol(RewardView reward) { return "✦"; }
+        public Component title(RewardPresentationContext context) {
+            return Component.literal(context.reward().config().getOrDefault("amount", "3") + " experience");
+        }
+    }
+}

@@ -8,7 +8,9 @@ import java.lang.annotation.Target;
 
 /** Marks the compatibility promise for an API type or member. */
 @Documented
-@Retention(RetentionPolicy.CLASS)
+// Runtime retention lets the compatibility test discover the exact supported
+// surface from compiled classes instead of maintaining a second hand-written list.
+@Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.FIELD})
 public @interface ApiStatus {
     ApiStability value();

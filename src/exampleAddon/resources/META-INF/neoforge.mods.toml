@@ -1,0 +1,31 @@
+modLoader = "javafml"
+loaderVersion = "[4,5)"
+license = "MIT"
+
+[[mods]]
+modId = "brnquest_example"
+version = "1.0.0"
+displayName = "BRNQuest Example Add-on"
+authors = "BRNQuest"
+description = '''Public-API-only example companion mod used by the stage 3 compatibility gate.'''
+
+[[dependencies.brnquest_example]]
+modId = "brnquest"
+type = "required"
+versionRange = "[0.1.0-alpha.1,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.brnquest_example]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1,22)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.brnquest_example]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.22)"
+ordering = "NONE"
+side = "BOTH"

@@ -36,6 +36,28 @@ class QuestBookValidatorTest {
         assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-103")));
     }
 
+    @Test
+    void missingLegacyAliasTargetIsReported() {
+        QuestBookDefinition original = book(quest("first", List.of()));
+        QuestBookDefinition book = new QuestBookDefinition(original.id(), original.schemaVersion(), original.title(),
+                original.chapterGroups(), original.chapters(), Map.of("OLD", id("missing")));
+        DiagnosticReport report = new DiagnosticReport();
+
+        QuestBookValidator.validate(book, report);
+
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-121")));
+    }
+
+    @Test
+    void missingDependencyAlsoMakesQuestUnreachable() {
+        DiagnosticReport report = new DiagnosticReport();
+
+        QuestBookValidator.validate(book(quest("blocked", List.of(id("missing")))), report);
+
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-102")));
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-122")));
+    }
+
     private static QuestBookDefinition book(QuestDefinition... quests) {
         ResourceLocation bookId = id("book");
         ResourceLocation groupId = id("group");

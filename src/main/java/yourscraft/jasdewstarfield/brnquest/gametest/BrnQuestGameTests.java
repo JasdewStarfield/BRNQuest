@@ -18,6 +18,7 @@ import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.DraftService;
+import yourscraft.jasdewstarfield.brnquest.author.DraftEditService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
@@ -414,6 +415,22 @@ public final class BrnQuestGameTests {
                 "ordinary remote player must not open an edit session");
         helper.assertValueEqual(occupied.status(), AuthorOperationResult.Status.CONFLICT,
                 "a second remote administrator must observe the server-side writer lease");
+
+        DraftEditService edits = new DraftEditService();
+        var edited = edits.setBookTitle(firstAdmin, opened.value().sessionId(), bookId,
+                draft.draftRevision(), "Edited on target server");
+        var staleEdit = edits.setBookTitle(firstAdmin, opened.value().sessionId(), bookId,
+                draft.draftRevision(), "Stale overwrite");
+        helper.assertTrue(edited.success(), "authorized remote edit must update the server session draft");
+        helper.assertValueEqual(staleEdit.status(), AuthorOperationResult.Status.CONFLICT,
+                "a delayed remote request must not overwrite the newer draft revision");
+        String editedRevision = edited.value().snapshot().draftRevision();
+        var invalidEdit = edits.setBookTitle(firstAdmin, opened.value().sessionId(), bookId,
+                editedRevision, "");
+        helper.assertValueEqual(invalidEdit.status(), AuthorOperationResult.Status.INVALID_REQUEST,
+                "invalid remote edit must be rejected before session state changes");
+        helper.assertValueEqual(sessions.inspect(firstAdmin, bookId).value().draftRevision(), editedRevision,
+                "rejected edit must preserve the previous server draft revision");
 
         // Logout handling uses this same release path, allowing another administrator
         // to continue without waiting for the idle timeout.

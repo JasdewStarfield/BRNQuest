@@ -23,9 +23,13 @@ public record AuthorOperationResult<T>(Status status, String code, String messag
     }
 
     public static <T> AuthorOperationResult<T> failure(Status status, String code, String message) {
+        return failure(status, code, message, null);
+    }
+
+    public static <T> AuthorOperationResult<T> failure(Status status, String code, String message, T value) {
         if (status == Status.SUCCESS || status == Status.NO_CHANGE) {
             throw new IllegalArgumentException("Failure result cannot use a success status");
         }
-        return new AuthorOperationResult<>(status, code, message, null);
+        return new AuthorOperationResult<>(status, code, message, value);
     }
 }

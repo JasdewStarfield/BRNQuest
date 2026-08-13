@@ -64,6 +64,24 @@ public final class QuestBookValidator {
         Set<ResourceLocation> visiting = new HashSet<>();
         Set<ResourceLocation> visited = new HashSet<>();
         quests.keySet().forEach(id -> detectCycle(id, quests, visiting, visited, report));
+        Set<ResourceLocation> reachable = new HashSet<>();
+        boolean changed;
+        do {
+            changed = false;
+            for (QuestDefinition quest : quests.values()) {
+                if (!reachable.contains(quest.id()) && reachable.containsAll(quest.dependencies())) {
+                    reachable.add(quest.id());
+                    changed = true;
+                }
+            }
+        } while (changed);
+        quests.keySet().stream().filter(id -> !reachable.contains(id)).forEach(id ->
+                add(report, Diagnostic.Severity.ERROR, "BQV-122", id,
+                        "Quest is unreachable from a dependency root"));
+        book.legacyIds().forEach((legacyId, questId) -> {
+            if (!quests.containsKey(questId)) add(report, Diagnostic.Severity.ERROR, "BQV-121", questId,
+                    "Legacy alias " + legacyId + " targets a missing quest");
+        });
     }
 
     private static void detectCycle(ResourceLocation id, Map<ResourceLocation, QuestDefinition> quests,

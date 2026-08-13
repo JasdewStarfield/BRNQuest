@@ -69,6 +69,27 @@ class EditSessionServiceTest {
                 service.openAuthorized(server, ALICE, "Alice", draft, 16L, 5L).status());
     }
 
+    @Test void mutationSwapsTheDraftOnceAndRejectsTheOldRevision() {
+        EditSessionService service = new EditSessionService();
+        Object server = new Object();
+        DraftSnapshot original = draft("test:mutation");
+        EditSessionHandle handle = service.openAuthorized(server, ALICE, "Alice", original, 0L, 100L).value();
+        QuestBookDefinition changedBook = new QuestBookDefinition(original.book().id(), 1, "Changed",
+                List.of(), List.of(), Map.of());
+        DraftSnapshot changed = DraftSnapshot.of(changedBook, original.baseRevision());
+
+        var first = service.mutateAuthorized(server, ALICE, handle.sessionId(), original.book().id(),
+                original.draftRevision(), 1L, 100L, ignored -> AuthorOperationResult.success("OK", "changed",
+                        new DraftEditResult(changed, List.of(changedBook.id()), List.of())));
+        var stale = service.mutateAuthorized(server, ALICE, handle.sessionId(), original.book().id(),
+                original.draftRevision(), 2L, 100L, ignored -> fail("stale callback must not execute"));
+
+        assertTrue(first.success());
+        assertEquals(AuthorOperationResult.Status.CONFLICT, stale.status());
+        assertEquals("STALE_DRAFT_REVISION", stale.code());
+        assertEquals(changed.draftRevision(), service.inspectAuthorized(server, changedBook.id(), 2L).value().draftRevision());
+    }
+
     private static DraftSnapshot draft(String id) {
         QuestBookDefinition book = new QuestBookDefinition(ResourceLocation.parse(id), 1, "Book",
                 List.of(), List.of(), Map.of());

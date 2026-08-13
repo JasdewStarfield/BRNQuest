@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.function.Function;
 
 /**
  * Server-scoped single-writer leases for local or remote administrators.
@@ -70,6 +71,40 @@ public final class EditSessionService {
         return inspectAuthorized(server, bookId, server.getTickCount());
     }
 
+    synchronized AuthorOperationResult<DraftEditResult> mutate(ServerPlayer player, UUID sessionId,
+                                                                ResourceLocation bookId,
+                                                                String expectedDraftRevision,
+                                                                Function<DraftSnapshot, AuthorOperationResult<DraftEditResult>> operation) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        return mutateAuthorized(server, player.getUUID(), sessionId, bookId, expectedDraftRevision,
+                server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS, operation);
+    }
+
+    AuthorOperationResult<DraftEditResult> mutateAuthorized(Object serverKey, UUID editorId, UUID sessionId,
+                                                             ResourceLocation bookId, String expectedDraftRevision,
+                                                             long nowTick, long timeoutTicks,
+                                                             Function<DraftSnapshot, AuthorOperationResult<DraftEditResult>> operation) {
+        ServerSessions state = servers.get(serverKey);
+        if (state != null) state.prune(nowTick);
+        Lease lease = state == null ? null : state.byId.get(sessionId);
+        AuthorOperationResult<DraftEditResult> authorization = authorizeMutation(
+                lease, editorId, bookId, expectedDraftRevision, nowTick);
+        if (!authorization.success()) return authorization;
+        AuthorOperationResult<DraftEditResult> result = operation.apply(lease.draft);
+        if (result.success() && result.value() != null) {
+            // The candidate was fully built and validated before this single pointer swap.
+            lease.draft = result.value().snapshot();
+            lease.expiresAtTick = nowTick + timeoutTicks;
+        }
+        return result;
+    }
+
     public synchronized void releasePlayer(MinecraftServer server, UUID playerId) {
         releasePlayer((Object) server, playerId);
     }
@@ -97,7 +132,7 @@ public final class EditSessionService {
                     "Book is currently edited by " + existing.editorName);
         }
         Lease lease = new Lease(UUID.randomUUID(), draft.book().id(), editorId, editorName,
-                draft.baseRevision(), draft.draftRevision(), nowTick + timeoutTicks);
+                draft, nowTick + timeoutTicks);
         state.add(lease);
         return AuthorOperationResult.success("SESSION_OPENED", "Edit session opened", lease.handle());
     }
@@ -111,9 +146,9 @@ public final class EditSessionService {
         Lease lease = state.byId.get(sessionId);
         if (lease == null) return expired();
         if (!lease.editorId.equals(editorId)) return forbidden();
-        if (!lease.draftRevision.equals(expectedDraftRevision)) {
+        if (!lease.draft.draftRevision().equals(expectedDraftRevision)) {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
-                    "Expected " + expectedDraftRevision + " but server has " + lease.draftRevision);
+                    "Expected " + expectedDraftRevision + " but server has " + lease.draft.draftRevision());
         }
         lease.expiresAtTick = nowTick + timeoutTicks;
         return AuthorOperationResult.success("SESSION_RENEWED", "Edit session renewed", lease.handle());
@@ -127,7 +162,7 @@ public final class EditSessionService {
         Lease lease = state.byId.get(sessionId);
         if (lease == null) return expired();
         if (!lease.editorId.equals(editorId)) return forbidden();
-        if (!lease.draftRevision.equals(expectedDraftRevision)) {
+        if (!lease.draft.draftRevision().equals(expectedDraftRevision)) {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
                     "Close rejected because the draft revision changed");
         }
@@ -155,6 +190,22 @@ public final class EditSessionService {
         if (state == null) return;
         state.byId.values().stream().filter(lease -> lease.editorId.equals(playerId)).toList().forEach(state::remove);
         if (state.byId.isEmpty()) servers.remove(serverKey);
+    }
+
+    private static AuthorOperationResult<DraftEditResult> authorizeMutation(Lease lease, UUID editorId,
+                                                                             ResourceLocation bookId,
+                                                                             String expectedRevision, long nowTick) {
+        if (lease == null || lease.expiresAtTick <= nowTick) return expired();
+        if (!lease.editorId.equals(editorId)) return forbidden();
+        if (!lease.bookId.equals(bookId)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "SESSION_BOOK_MISMATCH",
+                    "Edit session belongs to " + lease.bookId);
+        }
+        if (!lease.draft.draftRevision().equals(expectedRevision)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
+                    "Expected " + expectedRevision + " but server has " + lease.draft.draftRevision());
+        }
+        return AuthorOperationResult.success("SESSION_AUTHORIZED", "Edit session authorized", null);
     }
 
     private void pruneDisconnected(MinecraftServer server) {
@@ -216,23 +267,22 @@ public final class EditSessionService {
         private final ResourceLocation bookId;
         private final UUID editorId;
         private final String editorName;
-        private final String baseRevision;
-        private final String draftRevision;
+        private DraftSnapshot draft;
         private long expiresAtTick;
 
         private Lease(UUID sessionId, ResourceLocation bookId, UUID editorId, String editorName,
-                      String baseRevision, String draftRevision, long expiresAtTick) {
+                      DraftSnapshot draft, long expiresAtTick) {
             this.sessionId = sessionId;
             this.bookId = bookId;
             this.editorId = editorId;
             this.editorName = editorName;
-            this.baseRevision = baseRevision;
-            this.draftRevision = draftRevision;
+            this.draft = draft;
             this.expiresAtTick = expiresAtTick;
         }
 
         private EditSessionView view() {
-            return new EditSessionView(bookId, editorId, editorName, baseRevision, draftRevision, expiresAtTick);
+            return new EditSessionView(bookId, editorId, editorName, draft.baseRevision(),
+                    draft.draftRevision(), expiresAtTick);
         }
 
         private EditSessionHandle handle() {

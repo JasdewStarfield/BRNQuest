@@ -28,3 +28,20 @@
 - `EditSessionServiceTest`：同服单写者、跨服隔离、重复打开幂等、旧 revision、过期、断线释放和重开。
 - `remoteAdministratorsUseTargetServerPermissionsAndLeases` GameTest：目标服务器 2 级管理员与普通玩家边界、服务器草稿创建、第二管理员占用冲突和断线接管。
 - `runGameTestServer`：15/15 required GameTest 通过。
+
+## 4.3 草稿 CRUD 服务
+
+- `DraftBookEditor` 只接收不可变任务书并返回新候选，不持有或修改 `QuestBookManager.active()`。
+- `DraftEditService` 为任务书标题、章节组、章节、任务节点、依赖、task 和 reward 提供稳定 ID 驱动的创建、复制、修改、排序/移动和删除入口。
+- 普通 update 不能改对象 ID，也不能借更新父容器覆盖其子对象；移动任务会同步更新 `chapterId`，保留任务内容和稳定 ID。
+- 删除被依赖任务、非空章节或非空章节组默认返回结构化冲突；名称明确的 `remove*WithContents` / `removeQuestAndReferences` 才执行级联，并返回完整受影响对象集合。
+- 每次成功操作先构造并校验完整候选，最后只替换一次会话内 `DraftSnapshot`；无效操作、旧 revision 或错误任务书不会产生部分修改。
+
+## 4.4 增量与完整校验
+
+- 每次 CRUD 对不可变候选检查所有权、重复 ID、容器与依赖引用、循环、不可达任务、legacy alias 目标、未知 task/reward type 和 type Codec。
+- 对受影响对象检查必填标题、文本上限、有限坐标，以及第三方 `ConfigFieldDescriptor` 的类型、范围、枚举和自定义 validator。
+- 显式完整校验扫描整本任务书，并附加章节组、章节和任务数量上限；诊断保留稳定代码、对象 ID 与字段路径。
+- 错误或 fatal 诊断返回 `DRAFT_VALIDATION_FAILED`，结果附带诊断但仍指向原合法 snapshot；无效候选不计算 revision、不进入会话，也不广播给玩家。
+- 专服 GameTest 额外验证远程管理员成功编辑、延迟旧 revision 被拒绝、无效编辑被拒绝且服务器会话 revision 保持不变。
+- 完整 JUnit：85 项通过；`runGameTestServer`：15/15 required GameTest 通过；完整 `build` 通过。

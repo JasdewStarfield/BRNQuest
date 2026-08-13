@@ -64,9 +64,9 @@
 - 修正后 `gradlew.bat runGameTestServer --no-configuration-cache --no-daemon --console=plain`：11/11 required GameTest 通过，专服正常保存并关闭。
 - 本批没有客户端布局和交互变化，因此无需新增人工 UI 回归。
 
-## 2026-08-13 第三批候选：客户端展示 SPI
+## 2026-08-13 第三批：客户端展示 SPI
 
-> 对应计划项：3.7。代码与自动门禁完成后仍需真实客户端人工验收，因此在回传结果前不勾选计划项。
+> 对应计划项：3.7。候选实现为 `63fa45d`，原生物品 Tooltip 兼容修正及最终验收代码为 `2f4e567`。
 
 ### 实现范围
 
@@ -76,10 +76,11 @@
 - 物品目标与奖励始终走原生 `ItemStack` tooltip 管线，保留复杂组件属性和其他模组追加内容；非物品展示通过单一末端 tooltip 显示操作提示。
 - 新增反射签名和完整 ID 隔离测试；专服仍不引用或加载客户端 presentation 实现。
 
-### 待人工验收
+### 人工验收
 
-- 按 [`CLIENT_ACCEPTANCE_zh.md`](CLIENT_ACCEPTANCE_zh.md) 第 4 节重点检查 item/checkmark/custom/未知类型的标题、进度、样式、提示和点击边界。
-- 确认 UI 回归通过后，才可在主计划勾选 3.7 并记录最终提交号。
+- 使用重新启动的 Minecraft 1.21.1 + NeoForge 21.1.216 开发客户端，按 [`CLIENT_ACCEPTANCE_zh.md`](CLIENT_ACCEPTANCE_zh.md) 检查现有 UI 体验和本批展示变化。
+- item/checkmark/custom/未知类型的标题、进度、样式、占位和点击边界验收通过，整体体验与修改前一致。
+- 首轮发现可交互物品 Tooltip 被缩减为物品名和操作提示，不利于复杂组件及其他模组 Tooltip；`2f4e567` 改为所有物品无条件走原生 `ItemStack` Tooltip 管线，复测通过。
 
 ### 自动验证
 

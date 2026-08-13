@@ -12,7 +12,7 @@
 
 - `EditSessionService` 按 `MinecraftServer` 实例隔离，同一服务器、同一任务书只允许一个写者，不同服务器互不占锁。
 - 开启、续租、关闭和查看均从目标服务器玩家列表确认连接身份，并重新检查当前权限等级 2；客户端本地 OP 信息不参与授权。
-- 会话绑定随机 token、任务书 ID、操作者 UUID/名称、基础 revision、草稿 revision 和到期 tick；默认空闲超时 5 分钟。
+- 会话绑定随机 token、任务书 ID、操作者 UUID/名称、基础 revision、草稿 revision 和到期 tick；人工验收后默认空闲超时由 5 分钟调整为 30 分钟，阶段 5 客户端仍需主动续租。
 - 续租和关闭必须提交预期草稿 revision，旧客户端返回 `STALE_DRAFT_REVISION`；其他管理员只能查看不含 token 的占用状态。
 - 玩家断线、权限撤销后被清理、服务器停止或租约超时都会释放内存会话，已落盘草稿不受影响。
 
@@ -143,3 +143,8 @@
 - 带示例附属模组的专服 GameTest：16/16；`-PexcludeExampleAddon` 纯核心专服 GameTest：16/16。
 - 完整 `build --no-configuration-cache --no-daemon --console=plain` 与 `git diff --check` 通过；构建前无 Gradle daemon 残留，唯一既存 Java 进程不是本工作树的 Gradle/Minecraft 进程。
 - 真实远程客户端的命令回显、复制 revision 和 reload 后浏览界面仍按人工流程确认，见 [`STAGE4_MANUAL_ACCEPTANCE_zh.md`](STAGE4_MANUAL_ACCEPTANCE_zh.md)。
+
+## 人工验收后修正
+
+- 修复同 `order` 章节组按不同插入顺序创建时，publish 将规范化排序误判为 staging 内容不一致的问题；staging 现在比较重新编码后的规范内容，并由 `equalOrderGroupsPublishAfterCanonicalSorting` 锁定。
+- 默认编辑会话空闲超时调整为 30 分钟，降低命令作者阅读输出和复制 ID/revision 时意外过期的概率；断线、服务器停止或权限撤销仍立即释放租约。

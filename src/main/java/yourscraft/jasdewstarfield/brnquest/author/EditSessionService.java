@@ -15,7 +15,8 @@ import java.util.function.Function;
  * Draft content never lives on the connecting client's filesystem.
  */
 public final class EditSessionService {
-    public static final long DEFAULT_IDLE_TIMEOUT_TICKS = 20L * 60L * 5L;
+    /** Thirty minutes leaves command authors time to inspect IDs while stage-5 clients still renew proactively. */
+    public static final long DEFAULT_IDLE_TIMEOUT_TICKS = 20L * 60L * 30L;
     private static final EditSessionService INSTANCE = new EditSessionService();
 
     // Weak server keys keep integrated-server restarts and GameTest servers isolated

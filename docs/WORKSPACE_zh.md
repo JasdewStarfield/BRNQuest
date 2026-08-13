@@ -78,6 +78,8 @@ config/brnquest/
 
 每条 `author` 命令都重新使用目标服务器的在线身份与权限；命令回显稳定结果代码，日志记录操作者、操作、对象、状态和代码。`open` 返回后续命令必须携带的 session UUID 与当前 revision。`discard` 只丢弃会话内未保存状态，不删除最后一份磁盘草稿。
 
+编辑会话默认在最后一次成功读取、修改、保存、发布或显式续租后保持 30 分钟；断线、服务器停止或权限撤销会立即释放。阶段 5 客户端将自动续租，命令作者长时间停留时仍可执行 `renew <session> <revision>`。
+
 内容命令使用原生 `namespace:path` 资源位置参数；每次成功修改都会回显新的 `revision=`，下一条命令必须使用该值。task/reward 的 `config-json` 必须是只含原始值的 JSON 对象，例如 `{"title":"确认任务"}` 或 `{"item":"{count:1,id:\"minecraft:stone\"}","count":"4"}`；嵌套对象和数组会以 `INVALID_CONFIG_JSON` 拒绝，避免有损展开。阶段 4 命令优先覆盖无 GUI 的核心建书流程，完整复制、移动、更新和级联删除能力由同一 `DraftEditService` 提供，并在阶段 5 映射到图形编辑器。
 
 恢复必须先执行 `restore_preview`，再把回显的 `current_revision` 原样传给 `restore`；当前目标不存在时使用单个 `-`。恢复不会隐式 deploy 或 reload。完整 API 与恢复说明见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。

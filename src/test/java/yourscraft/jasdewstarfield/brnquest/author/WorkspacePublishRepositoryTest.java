@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.author;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,23 @@ class WorkspacePublishRepositoryTest {
         assertEquals("preserve", Files.readString(workspace.resolve("notes.txt"), StandardCharsets.UTF_8));
         assertTrue(Files.isRegularFile(result.value().backup().resolve(
                 "data/test/brnquest/books/replace.json")));
+    }
+
+    @Test void equalOrderGroupsPublishAfterCanonicalSorting() {
+        ResourceLocation bookId = ResourceLocation.parse("test:equal_order");
+        // This insertion order intentionally differs from the encoder's ID tiebreaker.
+        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Equal order",
+                List.of(new ChapterGroupDefinition(bookId, ResourceLocation.parse("test:z_group"), "Z", 0),
+                        new ChapterGroupDefinition(bookId, ResourceLocation.parse("test:a_group"), "A", 0)),
+                List.of(), Map.of());
+        DraftSnapshot draft = DraftSnapshot.from(book, DraftOrigin.EMPTY, "");
+
+        var result = new WorkspacePublishRepository().publish(temporary.resolve("workspace"),
+                temporary.resolve("backups"), draft, "");
+
+        assertTrue(result.success(), () -> result.code() + ": " + result.message());
+        assertTrue(Files.isRegularFile(temporary.resolve(
+                "workspace/data/test/brnquest/books/equal_order.json")));
     }
 
     @Test void activatedFailureRestoresPreviousWorkspace() throws Exception {

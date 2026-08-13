@@ -150,7 +150,12 @@ final class WorkspacePublishRepository {
     private static void verifyBook(Path file, DraftSnapshot expected) throws IOException {
         var decoded = NativeBookJson.decode(JsonParser.parseString(
                 Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
-        if (!decoded.equals(expected.book())) throw new IOException("Staged workspace book failed verification");
+        // Group and chapter lists are canonically sorted by the encoder. Comparing record
+        // list order would reject an otherwise lossless publish when equal-order objects
+        // were created in a different session order, so verify the canonical bytes instead.
+        if (!NativeBookJson.encode(decoded).equals(NativeBookJson.encode(expected.book()))) {
+            throw new IOException("Staged workspace book failed verification");
+        }
     }
 
     private static void copyTree(Path source, Path target) throws IOException {

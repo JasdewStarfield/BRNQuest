@@ -3,18 +3,25 @@ package yourscraft.jasdewstarfield.brnquest.progress;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.common.NeoForge;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
+import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.OperationResult;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.RewardClaimedEvent;
+import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
+import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.TaskType;
+import yourscraft.jasdewstarfield.brnquest.task.TaskContext;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.*;
@@ -71,22 +78,27 @@ public final class ProgressEngine {
                 // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
                 quest.tasks().forEach(task -> {
                     TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                    if (type != null && type.acceptsQuestCompletionIntentDecoded(task)
-                            && type.submitDecoded(player, task, progress).success()) {
-                        progress.addTaskProgress(task.id().toString(), 1);
+                    TaskContext context = taskContext(player, quest, task, progress);
+                    if (type != null && TaskTypeExecutor.acceptsQuestCompletionIntent(type, context.task())
+                            && TaskTypeExecutor.submit(type, context).success()) {
+                        changeTaskProgress(player, quest, task, progress, 1);
                     }
                 });
             }
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                if (type == null || (!task.optional() && !type.satisfiedDecoded(player, task, progress))) return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
+                if (type == null || (!task.optional() && !TaskTypeExecutor.satisfied(type,
+                        taskContext(player, quest, task, progress)))) {
+                    return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
+                }
             }
             List<net.minecraft.world.item.ItemStack> inventoryBeforeConsume = player.getInventory().items.stream()
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
                 // A row submitted earlier has already applied its one-time consumption.
-                if (type != null && progress.taskProgress(task.id().toString()) < 1 && !type.consumeDecoded(player, task)) {
+                if (type != null && progress.taskProgress(task.id().toString()) < 1
+                        && !TaskTypeExecutor.consume(type, taskContext(player, quest, task, progress))) {
                     restoreMainInventory(player, inventoryBeforeConsume);
                     return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
                 }
@@ -117,17 +129,18 @@ public final class ProgressEngine {
 
             TaskType<?> type = TaskTypeRegistry.get(task.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown task type " + task.typeId());
-            if (!type.allowsManualSubmissionDecoded(task)) {
+            TaskContext context = taskContext(player, quest, task, progress);
+            if (!TaskTypeExecutor.allowsManualSubmission(type, context.task())) {
                 return OperationResult.failure("NOT_SUBMITTABLE", "Task does not accept manual submission: " + task.id());
             }
             List<net.minecraft.world.item.ItemStack> inventoryBeforeSubmit = player.getInventory().items.stream()
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
-            var submission = type.submitDecoded(player, task, progress);
+            var submission = TaskTypeExecutor.submit(type, context);
             if (!submission.success()) {
                 restoreMainInventory(player, inventoryBeforeSubmit);
                 return OperationResult.failure(submission.code(), submission.message() + ": " + task.id());
             }
-            progress.addTaskProgress(task.id().toString(), 1);
+            changeTaskProgress(player, quest, task, progress, 1);
             QuestProgressData.get(player.getServer()).setDirty();
 
             return complete(player, questId, false);
@@ -149,18 +162,23 @@ public final class ProgressEngine {
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             // Administrative/API completion intentionally bypasses task resources;
             // callers have already made an explicit server-side authority decision.
-            quest.tasks().forEach(task -> progress.addTaskProgress(task.id().toString(), Long.MAX_VALUE / 4));
+            quest.tasks().forEach(task -> {
+                if (progress.taskProgress(task.id().toString()) < 1) {
+                    changeTaskProgress(player, quest, task, progress, Long.MAX_VALUE / 4);
+                }
+            });
             return markCompleted(player, quest, progress, data);
         }));
     }
 
     public OperationResult addTaskProgress(ServerPlayer player, ResourceLocation taskId, long amount) {
         if (amount <= 0) return OperationResult.failure("INVALID_AMOUNT", "Amount must be positive");
-        boolean known = QuestBookManager.get().active().stream().flatMap(snapshot -> snapshot.book().quests().stream())
-                .flatMap(quest -> quest.tasks().stream()).anyMatch(task -> task.id().equals(taskId));
-        if (!known) return OperationResult.failure("NOT_FOUND", "Unknown task " + taskId);
+        QuestDefinition owner = QuestBookManager.get().active().stream().flatMap(snapshot -> snapshot.book().quests().stream())
+                .filter(quest -> quest.tasks().stream().anyMatch(task -> task.id().equals(taskId))).findFirst().orElse(null);
+        if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown task " + taskId);
+        TaskDefinition task = owner.tasks().stream().filter(candidate -> candidate.id().equals(taskId)).findFirst().orElseThrow();
         PlayerProgress progress = progress(player);
-        progress.addTaskProgress(taskId.toString(), amount);
+        changeTaskProgress(player, owner, task, progress, amount);
         QuestProgressData.get(player.getServer()).setDirty();
         BrnQuestNetwork.syncProgress(player, true);
         return OperationResult.success("Task progress updated");
@@ -182,10 +200,13 @@ public final class ProgressEngine {
             progress.claim(rewardId.toString());
             QuestProgressData data = QuestProgressData.get(player.getServer());
             data.setDirty();
-            var result = type.executeDecoded(player, reward);
+            var result = RewardTypeExecutor.execute(type, new RewardContext(player, owner.bookId(), owner.id(),
+                    ApiViews.reward(reward)));
             if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
             if (owner.rewards().stream().allMatch(r -> progress.isClaimed(r.id().toString()))) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
-            NeoForge.EVENT_BUS.post(new RewardClaimedEvent(player, snapshot.book().id(), rewardId));
+            BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
+                    snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
+                    BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
             BrnQuestNetwork.syncProgress(player, true);
             return OperationResult.success(result.message());
         });
@@ -226,7 +247,8 @@ public final class ProgressEngine {
         progress.completedAt(quest.id().toString(), System.currentTimeMillis());
         data.setDirty();
         reconcile(player);
-        NeoForge.EVENT_BUS.post(new QuestCompletedEvent(player, quest.bookId(), quest.id()));
+        BrnQuestEvents.post(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
+                quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
         // only the trigger differs.
         quest.rewards().stream().filter(reward -> reward.claimPolicy().equals("auto"))
@@ -238,6 +260,25 @@ public final class ProgressEngine {
     private void restoreMainInventory(ServerPlayer player, List<net.minecraft.world.item.ItemStack> snapshot) {
         for (int index = 0; index < snapshot.size(); index++) player.getInventory().items.set(index, snapshot.get(index));
         player.getInventory().setChanged();
+    }
+
+    private long changeTaskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
+                                    PlayerProgress progress, long amount) {
+        long previous = progress.taskProgress(task.id().toString());
+        long current = progress.addTaskProgress(task.id().toString(), amount);
+        if (previous != current) {
+            // Mark the authoritative world data dirty before observers see the committed value.
+            QuestProgressData.get(player.getServer()).setDirty();
+            BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
+                    quest.bookId(), quest.id(), task.id(), ApiViews.task(task), previous, current));
+        }
+        return current;
+    }
+
+    private TaskContext taskContext(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
+                                    PlayerProgress progress) {
+        return new TaskContext(player, quest.bookId(), quest.id(), ApiViews.task(task),
+                progress.taskProgress(task.id().toString()));
     }
 
     private OperationResult boundedCompletion(java.util.function.Supplier<OperationResult> operation) {

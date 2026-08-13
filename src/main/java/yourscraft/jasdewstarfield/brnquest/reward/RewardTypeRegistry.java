@@ -5,11 +5,9 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
-import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 
 import java.util.Map;
 import java.util.Objects;
@@ -25,7 +23,7 @@ public final class RewardTypeRegistry {
         register(RewardTypes.ITEM, new ItemReward());
         register(RewardTypes.CUSTOM, new RewardType<Map<String, String>>() {
             public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
-            public RewardResult execute(ServerPlayer player, RewardDefinition definition, Map<String, String> config) {
+            public RewardResult execute(RewardContext context, Map<String, String> config) {
                 return RewardResult.success("Custom reward acknowledged");
             }
         });
@@ -56,8 +54,9 @@ public final class RewardTypeRegistry {
     private static final class ItemReward implements RewardType<ItemRewardConfig> {
         public Codec<ItemRewardConfig> configCodec() { return ItemRewardConfig.CODEC; }
 
-        public RewardResult execute(ServerPlayer player, RewardDefinition definition, ItemRewardConfig config) {
+        public RewardResult execute(RewardContext context, ItemRewardConfig config) {
             try {
+                var player = context.player();
                 CompoundTag tag = TagParser.parseTag(config.item);
                 ItemStack stack = ItemStack.parseOptional(player.registryAccess(), tag);
                 int multiplier = Integer.parseInt(config.count.replaceAll("[^0-9-]", ""));
@@ -82,7 +81,7 @@ public final class RewardTypeRegistry {
             }
         }
 
-        private int matchingCount(ServerPlayer player, ItemStack expected) {
+        private int matchingCount(net.minecraft.server.level.ServerPlayer player, ItemStack expected) {
             int total = 0;
             for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
                 ItemStack candidate = player.getInventory().getItem(slot);

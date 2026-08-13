@@ -3,14 +3,16 @@ package yourscraft.jasdewstarfield.brnquest.task;
 import com.mojang.serialization.Codec;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
+import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
-import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardResult;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 
 import java.util.List;
@@ -33,12 +35,13 @@ class ExtensionRegistryTest {
     void registeredForeignTypeDecodesAndSubmitsWithoutEngineBranches() {
         TaskDefinition task = task(Map.of("target", "3"));
         TaskType<?> type = TaskTypeRegistry.get(COUNTER);
-        PlayerProgress progress = new PlayerProgress();
+        TaskView view = ApiViews.task(task);
+        TaskContext context = new TaskContext(null, task.bookId(), id("quest"), view, 0);
 
         assertNotNull(type);
-        assertTrue(type.configError(task).isEmpty());
-        assertTrue(type.allowsManualSubmissionDecoded(task));
-        assertTrue(type.submitDecoded(null, task, progress).success());
+        assertTrue(TaskTypeExecutor.configError(type, view).isEmpty());
+        assertTrue(TaskTypeExecutor.allowsManualSubmission(type, view));
+        assertTrue(TaskTypeExecutor.submit(type, context).success());
     }
 
     @Test
@@ -62,8 +65,9 @@ class ExtensionRegistryTest {
         RewardType<?> type = RewardTypeRegistry.get(COUNTER_REWARD);
 
         assertNotNull(type);
-        assertTrue(type.configError(reward).isEmpty());
-        assertTrue(type.executeDecoded(null, reward).success());
+        assertTrue(RewardTypeExecutor.configError(type, ApiViews.reward(reward)).isEmpty());
+        assertTrue(RewardTypeExecutor.execute(type,
+                new RewardContext(null, reward.bookId(), id("quest"), ApiViews.reward(reward))).success());
     }
 
     @Test
@@ -115,23 +119,23 @@ class ExtensionRegistryTest {
                 .xmap(CounterConfig::new, CounterConfig::target).codec();
 
         public Codec<CounterConfig> configCodec() { return CODEC; }
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, CounterConfig config, PlayerProgress progress) {
-            return progress.taskProgress(definition.id().toString()) >= Integer.parseInt(config.target());
+        public boolean satisfied(TaskContext context, CounterConfig config) {
+            return context.progress() >= Integer.parseInt(config.target());
         }
         public boolean allowsManualSubmission(CounterConfig config) { return true; }
-        public TaskSubmissionResult submit(ServerPlayer player, TaskDefinition definition, CounterConfig config, PlayerProgress progress) {
+        public TaskSubmissionResult submit(TaskContext context, CounterConfig config) {
             return Integer.parseInt(config.target()) > 0
                     ? TaskSubmissionResult.accepted()
                     : TaskSubmissionResult.failure("INVALID_TARGET", "Counter target must be positive");
         }
-        public Component describe(TaskDefinition definition, CounterConfig config) {
+        public Component describe(TaskView task, CounterConfig config) {
             return Component.literal("Counter target " + config.target());
         }
     }
 
     private static final class CounterReward implements RewardType<CounterConfig> {
         public Codec<CounterConfig> configCodec() { return CounterTask.CODEC; }
-        public RewardResult execute(ServerPlayer player, RewardDefinition definition, CounterConfig config) {
+        public RewardResult execute(RewardContext context, CounterConfig config) {
             return Integer.parseInt(config.target()) > 0
                     ? RewardResult.success("Counter reward executed")
                     : RewardResult.failure("Counter target must be positive");

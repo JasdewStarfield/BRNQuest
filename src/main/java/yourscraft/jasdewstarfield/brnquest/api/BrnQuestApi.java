@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.api;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIds;
@@ -20,6 +21,9 @@ import java.util.stream.Collectors;
 /** Public server API. Returned definitions and progress projections are immutable snapshots. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public final class BrnQuestApi {
+    private static final OperationContext LEGACY_CONTEXT = OperationContext.integration(
+            ResourceLocation.fromNamespaceAndPath("brnquest", "legacy_java_api"));
+
     private BrnQuestApi() {}
 
     public static boolean completeQuest(ServerPlayer player, String questId) {
@@ -27,17 +31,35 @@ public final class BrnQuestApi {
     }
 
     public static OperationResult completeQuestResult(ServerPlayer player, String questId) {
-        return execute(player, questId, "quest", (target, id) -> ProgressEngine.get().forceComplete(target, id));
+        return completeQuestResult(LEGACY_CONTEXT, player, questId);
+    }
+
+    public static OperationResult completeQuestResult(OperationContext context, ServerPlayer player, String questId) {
+        return execute(context, player, questId, "quest",
+                (target, id) -> ProgressEngine.get().forceComplete(target, id));
+    }
+
+    /** Applies a normal quest-row intent without bypassing task requirements. */
+    public static OperationResult submitQuestCompletionResult(OperationContext context, ServerPlayer player,
+                                                              String questId, boolean checkmarkIntent) {
+        return execute(context, player, questId, "quest_intent",
+                (target, id) -> ProgressEngine.get().complete(target, id, checkmarkIntent));
     }
 
     public static OperationResult completeTaskResult(ServerPlayer player, String questId, String taskId) {
-        OperationResult readiness = validateWriteContext(player);
-        if (readiness != null) return readiness;
+        return completeTaskResult(LEGACY_CONTEXT, player, questId, taskId);
+    }
+
+    public static OperationResult completeTaskResult(OperationContext context, ServerPlayer player,
+                                                     String questId, String taskId) {
+        OperationResult readiness = validateWriteContext(context, player);
+        if (readiness != null) return audited(context, player, "complete_task", taskId, readiness);
         Optional<ResourceLocation> resolvedQuest = resolve(questId);
         Optional<ResourceLocation> resolvedTask = resolve(taskId);
-        if (resolvedQuest.isEmpty()) return invalidId("quest", questId);
-        if (resolvedTask.isEmpty()) return invalidId("task", taskId);
-        return ProgressEngine.get().completeTask(player, resolvedQuest.orElseThrow(), resolvedTask.orElseThrow());
+        if (resolvedQuest.isEmpty()) return audited(context, player, "complete_task", questId, invalidId("quest", questId));
+        if (resolvedTask.isEmpty()) return audited(context, player, "complete_task", taskId, invalidId("task", taskId));
+        return audited(context, player, "complete_task", taskId,
+                ProgressEngine.get().completeTask(player, resolvedQuest.orElseThrow(), resolvedTask.orElseThrow()));
     }
 
     public static boolean isQuestCompleted(ServerPlayer player, String questId) {
@@ -52,8 +74,15 @@ public final class BrnQuestApi {
     }
 
     public static OperationResult addTaskProgressResult(ServerPlayer player, String taskId, long amount) {
-        if (amount <= 0) return OperationResult.invalid("INVALID_AMOUNT", "Amount must be positive");
-        return execute(player, taskId, "task", (target, id) -> ProgressEngine.get().addTaskProgress(target, id, amount));
+        return addTaskProgressResult(LEGACY_CONTEXT, player, taskId, amount);
+    }
+
+    public static OperationResult addTaskProgressResult(OperationContext context, ServerPlayer player,
+                                                        String taskId, long amount) {
+        if (amount <= 0) return audited(context, player, "task", taskId,
+                OperationResult.invalid("INVALID_AMOUNT", "Amount must be positive"));
+        return execute(context, player, taskId, "task",
+                (target, id) -> ProgressEngine.get().addTaskProgress(target, id, amount));
     }
 
     public static boolean claimReward(ServerPlayer player, String rewardId) {
@@ -61,19 +90,28 @@ public final class BrnQuestApi {
     }
 
     public static OperationResult claimRewardResult(ServerPlayer player, String rewardId) {
-        return execute(player, rewardId, "reward", (target, id) -> ProgressEngine.get().claim(target, id));
+        return claimRewardResult(LEGACY_CONTEXT, player, rewardId);
+    }
+
+    public static OperationResult claimRewardResult(OperationContext context, ServerPlayer player, String rewardId) {
+        return execute(context, player, rewardId, "reward", (target, id) -> ProgressEngine.get().claim(target, id));
     }
 
     /** Claims each currently available reward through the same idempotent single-reward transaction. */
     public static OperationResult claimAllRewardsResult(ServerPlayer player, String questId) {
-        OperationResult readiness = validateWriteContext(player);
-        if (readiness != null) return readiness;
+        return claimAllRewardsResult(LEGACY_CONTEXT, player, questId);
+    }
+
+    public static OperationResult claimAllRewardsResult(OperationContext context, ServerPlayer player, String questId) {
+        OperationResult readiness = validateWriteContext(context, player);
+        if (readiness != null) return audited(context, player, "claim_all", questId, readiness);
         Optional<QuestDefinition> quest = definition(questId);
-        if (quest.isEmpty()) return resolve(questId).isEmpty()
+        if (quest.isEmpty()) return audited(context, player, "claim_all", questId, resolve(questId).isEmpty()
                 ? invalidId("quest", questId)
-                : OperationResult.rejected("NOT_FOUND", "Unknown quest " + questId);
+                : OperationResult.rejected("NOT_FOUND", "Unknown quest " + questId));
         if (quest.orElseThrow().rewards().isEmpty()) {
-            return OperationResult.noChange("NO_REWARDS", "Quest has no rewards");
+            return audited(context, player, "claim_all", questId,
+                    OperationResult.noChange("NO_REWARDS", "Quest has no rewards"));
         }
 
         int changed = 0;
@@ -82,17 +120,31 @@ public final class BrnQuestApi {
             if (!result.success()) {
                 // Earlier rewards remain valid and ledgered; report the partial boundary explicitly.
                 String message = "Claimed " + changed + " rewards before failure: " + result.message();
-                return OperationResult.rejected("PARTIAL_FAILURE", message);
+                return audited(context, player, "claim_all", questId,
+                        OperationResult.rejected("PARTIAL_FAILURE", message));
             }
             if (result.changed()) changed++;
         }
-        return changed == 0
+        OperationResult result = changed == 0
                 ? OperationResult.noChange("ALREADY_CLAIMED", "All rewards were already claimed")
                 : OperationResult.success("Claimed " + changed + " rewards");
+        return audited(context, player, "claim_all", questId, result);
     }
 
     public static OperationResult toggleTrackedResult(ServerPlayer player, String questId) {
-        return execute(player, questId, "quest", (target, id) -> ProgressEngine.get().toggleTracked(target, id));
+        return toggleTrackedResult(selfContext(player), player, questId);
+    }
+
+    public static OperationResult toggleTrackedResult(OperationContext context, ServerPlayer player, String questId) {
+        return execute(context, player, questId, "quest", (target, id) -> ProgressEngine.get().toggleTracked(target, id));
+    }
+
+    public static OperationResult resetQuestResult(OperationContext context, ServerPlayer player, String questId) {
+        return execute(context, player, questId, "reset_quest", (target, id) -> {
+            if (definition(questId).isEmpty()) return OperationResult.rejected("NOT_FOUND", "Unknown quest " + questId);
+            ProgressEngine.get().reset(target, id);
+            return OperationResult.success("Quest progress reset");
+        });
     }
 
     public static boolean openQuestScreen(ServerPlayer player, String questId) {
@@ -100,18 +152,23 @@ public final class BrnQuestApi {
     }
 
     public static OperationResult openQuestScreenResult(ServerPlayer player, String questId) {
-        OperationResult readiness = validateWriteContext(player);
-        if (readiness != null) return readiness;
+        return openQuestScreenResult(selfContext(player), player, questId);
+    }
+
+    public static OperationResult openQuestScreenResult(OperationContext context, ServerPlayer player, String questId) {
+        OperationResult readiness = validateWriteContext(context, player);
+        if (readiness != null) return audited(context, player, "open_screen", questId, readiness);
         if (questId != null && !questId.isBlank()) {
             Optional<ResourceLocation> id = resolve(questId);
-            if (id.isEmpty()) return invalidId("quest", questId);
+            if (id.isEmpty()) return audited(context, player, "open_screen", questId, invalidId("quest", questId));
             if (snapshot().map(value -> value.quests().containsKey(id.orElseThrow())).orElse(false) == false) {
-                return OperationResult.rejected("NOT_FOUND", "Unknown quest " + questId);
+                return audited(context, player, "open_screen", questId,
+                        OperationResult.rejected("NOT_FOUND", "Unknown quest " + questId));
             }
         }
         BrnQuestNetwork.syncAll(player, false);
         BrnQuestNetwork.openScreen(player, questId == null ? "" : questId);
-        return OperationResult.success("Quest screen opened");
+        return audited(context, player, "open_screen", questId, OperationResult.success("Quest screen opened"));
     }
 
     public static Optional<QuestBookView> getActiveBook() {
@@ -185,18 +242,22 @@ public final class BrnQuestApi {
                 progress.completedAt(definition.id().toString()), progress.revision()));
     }
 
-    private static OperationResult execute(ServerPlayer player, String rawId, String objectType,
+    private static OperationResult execute(OperationContext context, ServerPlayer player, String rawId, String objectType,
                                            BiFunction<ServerPlayer, ResourceLocation, OperationResult> operation) {
-        OperationResult readiness = validateWriteContext(player);
-        if (readiness != null) return readiness;
+        OperationResult readiness = validateWriteContext(context, player);
+        if (readiness != null) return audited(context, player, objectType, rawId, readiness);
         Optional<ResourceLocation> id = resolve(rawId);
-        if (id.isEmpty()) return invalidId(objectType, rawId);
-        return operation.apply(player, id.orElseThrow());
+        if (id.isEmpty()) return audited(context, player, objectType, rawId, invalidId(objectType, rawId));
+        return audited(context, player, objectType, rawId, operation.apply(player, id.orElseThrow()));
     }
 
     /** Returns null only when the caller may safely enter a server progress transaction. */
-    private static OperationResult validateWriteContext(ServerPlayer player) {
+    private static OperationResult validateWriteContext(OperationContext context, ServerPlayer player) {
+        if (context == null) return OperationResult.invalid("INVALID_CONTEXT", "Operation context must not be null");
         if (player == null) return OperationResult.invalid("INVALID_PLAYER", "Player must not be null");
+        if (!context.mayModify(player)) {
+            return OperationResult.forbidden("FORBIDDEN", "Actor may not modify the target player's quest state");
+        }
         if (player.getServer() == null) return OperationResult.notReady("PLAYER_OFFLINE", "Player is not attached to a server");
         if (!player.getServer().isSameThread()) {
             return OperationResult.invalid("WRONG_THREAD", "BRNQuest write operations must run on the server thread");
@@ -205,8 +266,22 @@ public final class BrnQuestApi {
         return null;
     }
 
+    private static OperationResult audited(OperationContext context, ServerPlayer target, String action,
+                                           String objectId, OperationResult result) {
+        String actor = context == null ? "<missing>" : context.actorId();
+        String source = context == null ? "<missing>" : context.source();
+        String targetId = target == null ? "<missing>" : target.getUUID().toString();
+        BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} source={} action={} target={} object={} status={} code={} changed={}",
+                actor, source, action, targetId, String.valueOf(objectId), result.status(), result.code(), result.changed());
+        return result;
+    }
+
     private static OperationResult invalidId(String objectType, String value) {
         return OperationResult.invalid("INVALID_ID", "Invalid " + objectType + " ID " + String.valueOf(value));
+    }
+
+    private static OperationContext selfContext(ServerPlayer player) {
+        return player == null ? LEGACY_CONTEXT : OperationContext.self(player);
     }
 
     private static Optional<QuestDefinition> definition(String questId) {

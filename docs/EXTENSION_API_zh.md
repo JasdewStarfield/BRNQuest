@@ -22,7 +22,11 @@
 - 可选响应背包变化重算；
 - 在提交型任务中执行一次性消耗。
 
+任务运行方法接收不可变 `TaskContext`：包含在线服务端玩家、book/quest ID、`TaskView` 和当前 task 数值。扩展不能读取或保存 `PlayerProgress`；任何进度修改都必须通过 `BrnQuestApi` 返回到服务端事务协调器。
+
 `ProgressEngine` 不识别具体任务类型 ID。常规新类型不应要求修改进度引擎或网络协议；现有 `CompleteTaskPayload` 会把任务行意图交给注册类型重新校验。
+
+`RewardType<TConfig>` 接收不可变 `RewardContext`，其中包含玩家、book/quest ID 和 `RewardView`。领取账本在调用扩展奖励前由 BRNQuest 持久化；扩展不得自行修改领取状态，并应把一次执行所需的全部副作用放在同一次调用中。
 
 任务书 reload 成功后，BRNQuest 会在服务器线程重新对账所有在线玩家，并发送新定义和完整进度快照。新增的无前置任务因此应立即进入 `AVAILABLE`，而不是等待玩家重登。
 

@@ -1,10 +1,13 @@
 package yourscraft.jasdewstarfield.brnquest.data;
 
 import net.minecraft.resources.ResourceLocation;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -38,7 +41,7 @@ public final class QuestBookValidator {
                     if (type == null) {
                         add(report, Diagnostic.Severity.ERROR, "BQV-117", task.id(), "Unknown task type " + task.typeId());
                     } else {
-                        type.configError(task).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
+                        TaskTypeExecutor.configError(type, ApiViews.task(task)).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
                                 "BQV-119", task.id(), "Invalid task config: " + message));
                     }
                 });
@@ -48,7 +51,7 @@ public final class QuestBookValidator {
                     if (type == null) {
                         add(report, Diagnostic.Severity.ERROR, "BQV-118", reward.id(), "Unknown reward type " + reward.typeId());
                     } else {
-                        type.configError(reward).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
+                        RewardTypeExecutor.configError(type, ApiViews.reward(reward)).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
                                 "BQV-120", reward.id(), "Invalid reward config: " + message));
                     }
                 });

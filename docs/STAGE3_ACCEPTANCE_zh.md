@@ -2,7 +2,7 @@
 
 ## 2026-08-13 第一批：公共查询与操作结果
 
-> 对应计划项：3.1、3.2、3.3。实现、自动测试、文档、构建和相关 GameTest 已通过；共享计划中的正式勾选仍等待代码提交哈希。
+> 对应计划项：3.1、3.2、3.3。实现、自动测试、文档、构建和相关 GameTest 已通过，版本提交为 `263cf9a`。
 
 ### 实现范围
 
@@ -22,6 +22,7 @@
 - `gradlew.bat test --no-configuration-cache --no-daemon --console=plain`：通过。
 - JUnit 汇总：18 个 suite、45 项测试、0 failure、0 error、0 skipped。
 - `gradlew.bat build --no-configuration-cache --no-daemon --console=plain`：通过。
+- JUnit 汇总：21 个 suite、51 项测试、0 failure、0 error、0 skipped。
 - `gradlew.bat runGameTestServer --no-configuration-cache --no-daemon --console=plain`：9/9 required GameTest 通过并正常保存、关闭。
 - 两个工作树相关文件的尾随空白检查通过；版本工作树 `git diff --check` 通过。
 
@@ -32,3 +33,33 @@
 - 用公共不可变上下文替换 `TaskType`、`RewardType` 和 presentation 对内部定义/进度类型的引用。
 - ProgressOwner、编辑器字段描述、示例附属模组和公共签名兼容门禁。
 - 客户端 UI 没有变化，因此本批未要求新增人工 UI 回归。
+
+## 2026-08-13 第二批：调用上下文、事件与服务端 SPI
+
+> 对应计划项：3.4、3.5、3.6。提交哈希和最终门禁结果在本批提交后回填。
+
+### 实现范围
+
+- 增加不可变 `OperationContext`，区分玩家自助、管理员、集成和系统 authority；玩家自助操作只能修改同一 UUID。
+- 权限等级 2 的管理员命令显式建立管理员上下文；serverbound payload 使用玩家自助上下文；库存观察器使用具名系统上下文。
+- 上下文写操作统一记录必要的 actor、source、action、target、object 和结构化结果，不在审计日志写入任务文本或物品 NBT。
+- 建立 `BrnQuestEvents` 隔离事件总线和可关闭订阅；完成任务、task 进度变化、奖励领取和成功 reload 均在状态提交后发布不可变事件。
+- 建立 `ProgressOwnerChangedEvent` 的稳定载荷；个人 owner 阶段没有实际切换，事件将在 3.8 provider 生命周期启用。
+- 将 `TaskType` 改为 `TaskContext` + `TaskView`，将 `RewardType` 改为 `RewardContext` + `RewardView`。
+- 解码、内部 definition 转换和可变进度访问收回 `INTERNAL` executor，使用反射契约测试阻止 `data`/`progress` 类型重新进入公共 SPI 签名。
+- 保留完整命名空间注册、Codec 诊断、冻结后拒绝注册、任务资源消费和奖励幂等账本语义。
+
+### 明确边界
+
+- `OperationContext.integration` 仅供受信任的进程内服务端模组；它不是客户端权限提升机制，客户端不能构造或传输该对象。
+- 事件是不可取消的观察通知。监听器失败被隔离，但外部监听器自己的副作用仍由监听器负责幂等和重试。
+- 3.7 才会把客户端 presentation 从内部 definition 类型迁移到公开 view；本批不提前勾选 3.7。
+
+### 验证记录
+
+- 构建前 `Get-Process` 和 `gradlew --status` 均确认无残留 Java/Gradle 进程和 daemon。
+- `gradlew.bat build --no-configuration-cache --no-daemon --console=plain`：通过。
+- 首轮 11 项 GameTest 中新增权限/事件测试通过；既有奖励溢出测试因在玩家周围 8 格统计到并行用例的两颗钻石而失败，预期 1、实得 3。
+- 将该测试改为记录领取前实体 UUID、只统计本次领取产生的新实体；未修改奖励实现。
+- 修正后 `gradlew.bat runGameTestServer --no-configuration-cache --no-daemon --console=plain`：11/11 required GameTest 通过，专服正常保存并关闭。
+- 本批没有客户端布局和交互变化，因此无需新增人工 UI 回归。

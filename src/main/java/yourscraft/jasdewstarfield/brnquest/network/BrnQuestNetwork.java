@@ -19,6 +19,8 @@ import org.jetbrains.annotations.NotNull;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.client.ClientPayloadHandler;
+import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
@@ -123,23 +125,30 @@ public final class BrnQuestNetwork {
         });
         registrar.playToServer(CompleteCheckmarkPayload.TYPE, CompleteCheckmarkPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.questId());
-            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) ProgressEngine.get().complete(player, id, true);
+            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) {
+                BrnQuestApi.submitQuestCompletionResult(OperationContext.self(player), player, id.toString(), true);
+            }
         });
         registrar.playToServer(CompleteTaskPayload.TYPE, CompleteTaskPayload.CODEC, (payload, context) -> {
             ResourceLocation questId = ResourceLocation.tryParse(payload.questId());
             ResourceLocation taskId = ResourceLocation.tryParse(payload.taskId());
             if (context.player() instanceof ServerPlayer player && questId != null && taskId != null
                     && payload.revision().equals(currentRevision())) {
-                ProgressEngine.get().completeTask(player, questId, taskId);
+                BrnQuestApi.completeTaskResult(OperationContext.self(player), player,
+                        questId.toString(), taskId.toString());
             }
         });
         registrar.playToServer(ToggleTrackedPayload.TYPE, ToggleTrackedPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.questId());
-            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) ProgressEngine.get().toggleTracked(player, id);
+            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) {
+                BrnQuestApi.toggleTrackedResult(OperationContext.self(player), player, id.toString());
+            }
         });
         registrar.playToServer(ClaimRewardPayload.TYPE, ClaimRewardPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.rewardId());
-            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) ProgressEngine.get().claim(player, id);
+            if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) {
+                BrnQuestApi.claimRewardResult(OperationContext.self(player), player, id.toString());
+            }
         });
         registrar.playToServer(SelectQuestPayload.TYPE, SelectQuestPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer && payload.revision().equals(currentRevision()) && ResourceLocation.tryParse(payload.questId()) != null) {

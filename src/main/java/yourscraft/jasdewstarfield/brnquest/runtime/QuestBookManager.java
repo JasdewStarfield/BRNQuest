@@ -1,9 +1,12 @@
 package yourscraft.jasdewstarfield.brnquest.runtime;
 
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
+import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
+import yourscraft.jasdewstarfield.brnquest.event.QuestBookReloadedEvent;
 
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
@@ -23,7 +26,11 @@ public final class QuestBookManager {
         if (book != null) QuestBookValidator.validate(book, report);
         lastReport = report;
         if (report.hasFatal()) return false;
-        active.set(QuestBookSnapshot.of(book));
+        QuestBookSnapshot previous = active.get();
+        QuestBookSnapshot current = QuestBookSnapshot.of(book);
+        active.set(current);
+        BrnQuestEvents.post(new QuestBookReloadedEvent(previous == null ? null : ApiViews.book(previous),
+                ApiViews.book(current)));
         return true;
     }
 }

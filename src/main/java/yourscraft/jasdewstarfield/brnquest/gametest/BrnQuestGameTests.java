@@ -10,14 +10,22 @@ import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
+import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
+import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
+import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
+import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /** In-game transaction checks that need real registries, inventories, and SavedData. */
 @GameTestHolder(BRNQuest.MOD_ID)
@@ -185,6 +193,9 @@ public final class BrnQuestGameTests {
         QuestDefinition quest = quest("partial_reward_quest", List.of(), List.of(), List.of(reward));
         install(quest);
         ProgressEngine.get().forceComplete(player, quest.id());
+        Set<java.util.UUID> existingItems = helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                        new AABB(player.blockPosition()).inflate(8))
+                .stream().map(ItemEntity::getUUID).collect(Collectors.toSet());
 
         var result = ProgressEngine.get().claim(player, reward.id());
 
@@ -192,7 +203,8 @@ public final class BrnQuestGameTests {
         helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 64,
                 "inventory must accept the one available diamond");
         int dropped = helper.getLevel().getEntitiesOfClass(ItemEntity.class,
-                        new AABB(player.blockPosition()).inflate(8), entity -> entity.getItem().is(Items.DIAMOND))
+                        new AABB(player.blockPosition()).inflate(8), entity -> entity.getItem().is(Items.DIAMOND)
+                                && !existingItems.contains(entity.getUUID()))
                 .stream().mapToInt(entity -> entity.getItem().getCount()).sum();
         helper.assertValueEqual(dropped, 1, "the uninserted reward remainder must become an item entity");
         helper.succeed();
@@ -218,6 +230,48 @@ public final class BrnQuestGameTests {
         helper.assertValueEqual(ProgressEngine.get().progress(player).revision(),
                 QuestBookManager.get().active().orElseThrow().revision(),
                 "online progress revision must match the installed task book");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void selfContextCannotModifyAnotherPlayer(GameTestHelper helper) {
+        var actor = helper.makeMockServerPlayerInLevel();
+        var target = helper.makeMockServerPlayerInLevel();
+        QuestDefinition quest = quest("permission_boundary", List.of(), List.of(), List.of());
+        install(quest);
+        ProgressEngine.get().reconcile(target);
+
+        var denied = BrnQuestApi.completeQuestResult(OperationContext.self(actor), target, quest.id().toString());
+
+        helper.assertTrue(!denied.success() && denied.code().equals("FORBIDDEN"),
+                "self authority must not cross a player UUID boundary");
+        helper.assertValueEqual(ProgressEngine.get().progress(target).status(quest.id().toString()),
+                QuestStatus.AVAILABLE, "forbidden operation must not mutate target progress");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void completionPublishesImmutableObservationEvents(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition task = new TaskDefinition(id("book"), id("event_check"), id("checkmark"), Map.of(), false);
+        QuestDefinition quest = quest("event_quest", List.of(), List.of(task), List.of());
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+        AtomicInteger taskEvents = new AtomicInteger();
+        AtomicInteger questEvents = new AtomicInteger();
+
+        try (var taskSubscription = BrnQuestEvents.subscribe(TaskProgressChangedEvent.class, event -> {
+            if (event.playerId().equals(player.getUUID()) && event.taskId().equals(task.id())) taskEvents.incrementAndGet();
+        }); var questSubscription = BrnQuestEvents.subscribe(QuestCompletedEvent.class, event -> {
+            if (event.playerId().equals(player.getUUID()) && event.questId().equals(quest.id())) questEvents.incrementAndGet();
+        })) {
+            BrnQuestApi.submitQuestCompletionResult(OperationContext.self(player), player, quest.id().toString(), true);
+        }
+
+        helper.assertValueEqual(taskEvents.get(), 1, "task progress change must publish once");
+        helper.assertValueEqual(questEvents.get(), 1, "quest completion must publish once");
         helper.succeed();
     }
 

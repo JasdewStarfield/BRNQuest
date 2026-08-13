@@ -6,12 +6,9 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
-import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
-import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
 
 import java.util.Map;
 import java.util.Objects;
@@ -51,26 +48,26 @@ public final class TaskTypeRegistry {
 
     private static final class CheckmarkTask implements TaskType<Map<String, String>> {
         public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
-            return progress.taskProgress(definition.id().toString()) >= 1;
+        public boolean satisfied(TaskContext context, Map<String, String> config) {
+            return context.progress() >= 1;
         }
         public boolean allowsManualSubmission(Map<String, String> config) { return true; }
         public boolean acceptsQuestCompletionIntent(Map<String, String> config) { return true; }
-        public TaskSubmissionResult submit(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
+        public TaskSubmissionResult submit(TaskContext context, Map<String, String> config) {
             return TaskSubmissionResult.accepted();
         }
-        public Component describe(TaskDefinition definition, Map<String, String> config) {
-            return Component.literal(config.getOrDefault("title", definition.typeId().toString()));
+        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, Map<String, String> config) {
+            return Component.literal(config.getOrDefault("title", task.typeId().toString()));
         }
     }
 
     private static final class ProgressTask implements TaskType<Map<String, String>> {
         public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
-            return progress.taskProgress(definition.id().toString()) >= 1;
+        public boolean satisfied(TaskContext context, Map<String, String> config) {
+            return context.progress() >= 1;
         }
-        public Component describe(TaskDefinition definition, Map<String, String> config) {
-            return Component.literal(config.getOrDefault("title", definition.typeId().toString()));
+        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, Map<String, String> config) {
+            return Component.literal(config.getOrDefault("title", task.typeId().toString()));
         }
     }
 
@@ -93,21 +90,21 @@ public final class TaskTypeRegistry {
     private static final class ItemTask implements TaskType<ItemTaskConfig> {
         public Codec<ItemTaskConfig> configCodec() { return ItemTaskConfig.CODEC; }
 
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, ItemTaskConfig config, PlayerProgress progress) {
-            if (progress.taskProgress(definition.id().toString()) >= 1) return true;
-            ItemStack expected = expected(player, config);
+        public boolean satisfied(TaskContext context, ItemTaskConfig config) {
+            if (context.progress() >= 1) return true;
+            ItemStack expected = expected(context.player(), config);
             if (expected.isEmpty()) return false;
             int required = requiredCount(config, expected);
-            return player.getInventory().items.stream()
+            return context.player().getInventory().items.stream()
                     .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
                     .mapToInt(ItemStack::getCount).sum() >= required;
         }
 
-        public boolean consume(ServerPlayer player, TaskDefinition definition, ItemTaskConfig config) {
+        public boolean consume(TaskContext context, ItemTaskConfig config) {
             if (!config.consumesItems()) return true;
-            ItemStack expected = expected(player, config);
+            ItemStack expected = expected(context.player(), config);
             int remaining = requiredCount(config, expected);
-            for (ItemStack stack : player.getInventory().items) {
+            for (ItemStack stack : context.player().getInventory().items) {
                 if (ItemStack.isSameItemSameComponents(stack, expected)) {
                     int removed = Math.min(remaining, stack.getCount());
                     stack.shrink(removed);
@@ -120,7 +117,7 @@ public final class TaskTypeRegistry {
 
         public boolean allowsManualSubmission(ItemTaskConfig config) { return true; }
         public boolean reevaluateOnInventoryChange(ItemTaskConfig config) { return !config.consumesItems(); }
-        public Component describe(TaskDefinition definition, ItemTaskConfig config) {
+        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, ItemTaskConfig config) {
             return Component.literal(config.title.isBlank() ? config.item : config.title);
         }
 
@@ -133,7 +130,7 @@ public final class TaskTypeRegistry {
             }
         }
 
-        private ItemStack expected(ServerPlayer player, ItemTaskConfig config) {
+        private ItemStack expected(net.minecraft.server.level.ServerPlayer player, ItemTaskConfig config) {
             try {
                 CompoundTag tag = TagParser.parseTag(config.item);
                 return ItemStack.parseOptional(player.registryAccess(), tag);

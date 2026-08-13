@@ -23,11 +23,12 @@
 | `reward.RewardType` / `RewardTypeRegistry` | `EXPERIMENTAL` | 服务端幂等奖励类型及构造期注册。 |
 | `client.ui.ClientTaskPresentation*` | `EXPERIMENTAL` | 可选客户端 task 展示。 |
 | `client.ui.ClientRewardPresentation*` | `EXPERIMENTAL` | 可选客户端 reward 展示。 |
-| `event.QuestCompletedEvent` / `RewardClaimedEvent` | `EXPERIMENTAL` | 当前阶段已有的只读服务端事件。 |
+| `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
+| `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
 
 `data`、`progress`、`runtime`、`network`、`workspace`、`compat`、`command` 和 `platform` 包当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
-当前 `TaskType`、`RewardType` 和客户端 presentation 的阶段 2 签名仍直接引用 `TaskDefinition`、`RewardDefinition` 或 `PlayerProgress`。这是 3.1 盘点确认的过渡性泄漏，不代表整个 `data`/`progress` 包转为公共 API；阶段 3.6 和 3.7 必须用专用不可变上下文替换这些依赖后，相关 SPI 才能提升为 `STABLE`。
+`TaskType` 和 `RewardType` 已分别改用 `TaskContext`/`TaskView` 与 `RewardContext`/`RewardView`，不再暴露 `PlayerProgress`、`TaskDefinition` 或 `RewardDefinition`。客户端 presentation 的阶段 2 签名仍直接引用内部 definition；这项剩余泄漏属于 3.7，不能据此把整个 `data` 包视为公共 API。
 
 ## 不可变查询
 
@@ -75,17 +76,32 @@
 
 - 写操作只接受在线 `ServerPlayer`，并且必须在该玩家所在服务端线程调用。
 - API 不会把错误线程调用静默调度到未来 tick，因为这会让返回结果与实际提交时机不一致。
-- 当前 Java API 视为受信任服务端集成入口；玩家命令和网络 payload 仍在各自入口执行权限与服务端重校验。
-- 跨玩家管理员操作所需的显式 actor/audit 上下文仍属于阶段 3 后续工作，在该契约完成前不承诺为稳定 API。
+- 正式写入口接受 `OperationContext`；玩家自助 authority 只能修改同一 UUID，管理员上下文只能由权限等级 2 的命令源建立，集成和系统上下文必须声明稳定来源 ID。
+- 兼容期无上下文包装使用明确的 `brnquest:legacy_java_api` 集成来源并写入审计日志；新集成不得继续依赖这一包装。
+- 网络 payload 使用玩家自助上下文并继续由服务端校验 revision、对象和资源；管理员命令使用管理员上下文。
+- 每次上下文写操作记录 actor、source、action、target、object、status、code 和 changed；审计日志不记录任务说明、物品 NBT 或其他非必要玩家数据。
 - 返回的视图不能跨 reload 代表“当前状态”；集成应按 ID 重新查询新 revision，不能缓存内部定义对象。
 
 ## 后续冻结门槛
 
 以下内容完成前不把本页接口提升为 `STABLE`：
 
-- 完整只读事件集及观察者异常隔离；
 - ProgressOwner SPI；
 - task/reward 的编辑器字段描述 SPI；
 - 注册与 reload 生命周期契约；
 - 仅依赖公共 API 的示例附属模组；
 - 公共签名兼容门禁和最低兼容版本文档。
+
+## 只读事件
+
+通过 `BrnQuestEvents.subscribe` 订阅：
+
+- `QuestCompletedEvent`；
+- `TaskProgressChangedEvent`；
+- `RewardClaimedEvent`；
+- `QuestBookReloadedEvent`；
+- `ProgressOwnerChangedEvent`。
+
+事件不可取消，只在对应状态提交后发布，并携带稳定 ID 和不可变 view。监听器按注册顺序独立调用；单个监听器抛出的运行时异常或链接错误会被记录，但不会阻止后续监听器，也不会回滚合法任务事务。关闭 `EventSubscription` 后不再接收事件。
+
+当前只启用个人进度 owner，因此尚无自然的 owner 切换；`ProgressOwnerChangedEvent` 的载荷契约已建立，阶段 3.8 接入 provider 生命周期时才会产生实际事件。

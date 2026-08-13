@@ -1,6 +1,9 @@
 package yourscraft.jasdewstarfield.brnquest.task;
 
 import net.minecraft.server.level.ServerPlayer;
+import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
+import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
@@ -24,11 +27,12 @@ public final class ItemTaskMonitor {
                 // Task types opt into this trigger; inventory observation therefore stays
                 // independent of built-in IDs and never consumes submission-only items.
                 .filter(q -> q.tasks().stream().anyMatch(ItemTaskMonitor::observesInventory))
-                .forEach(q -> ProgressEngine.get().complete(player, q.id(), false));
+                .forEach(q -> BrnQuestApi.submitQuestCompletionResult(
+                        OperationContext.system("brnquest:inventory_monitor"), player, q.id().toString(), false));
     }
 
     private static boolean observesInventory(yourscraft.jasdewstarfield.brnquest.data.TaskDefinition task) {
         TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-        return type != null && type.reevaluateOnInventoryChangeDecoded(task);
+        return type != null && TaskTypeExecutor.reevaluateOnInventoryChange(type, ApiViews.task(task));
     }
 }

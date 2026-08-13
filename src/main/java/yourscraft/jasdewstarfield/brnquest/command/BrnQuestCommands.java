@@ -9,6 +9,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportService;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
@@ -80,27 +81,24 @@ public final class BrnQuestCommands {
     private static int progressComplete(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         var player = EntityArgument.getPlayer(context, "player");
         String quest = StringArgumentType.getString(context, "quest");
-        var result = BrnQuestApi.completeQuestResult(player, quest);
-        audit(context, "complete", player.getScoreboardName(), quest, result.message());
+        var actor = OperationContext.administrator(context.getSource()).orElseThrow();
+        var result = BrnQuestApi.completeQuestResult(actor, player, quest);
         return result.success() ? 1 : 0;
     }
 
     private static int progressReset(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         var player = EntityArgument.getPlayer(context, "player");
         String quest = StringArgumentType.getString(context, "quest");
-        var id = BrnQuestApi.getQuest(quest).map(view -> view.id()).orElse(null);
-        if (id == null) return 0;
-        yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine.get().reset(player, id);
-        audit(context, "reset", player.getScoreboardName(), quest, "reset");
-        return 1;
+        var actor = OperationContext.administrator(context.getSource()).orElseThrow();
+        return BrnQuestApi.resetQuestResult(actor, player, quest).success() ? 1 : 0;
     }
 
     private static int rewardClaim(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         var player = EntityArgument.getPlayer(context, "player");
         String reward = StringArgumentType.getString(context, "reward");
-        boolean success = BrnQuestApi.claimReward(player, reward);
-        audit(context, "claim", player.getScoreboardName(), reward, success ? "success" : "failure");
-        return success ? 1 : 0;
+        var actor = OperationContext.administrator(context.getSource()).orElseThrow();
+        var result = BrnQuestApi.claimRewardResult(actor, player, reward);
+        return result.success() ? 1 : 0;
     }
 
     private static void audit(CommandContext<CommandSourceStack> context, String action, String player, String object, String result) {

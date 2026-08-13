@@ -12,6 +12,8 @@ import net.neoforged.neoforge.event.entity.player.ItemEntityPickupEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerDestroyItemEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.command.BrnQuestCommands;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookReloadListener;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
@@ -28,11 +30,13 @@ public final class PlatformModHooks {
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onReloadListeners);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onCommands);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onLogin);
+        NeoForge.EVENT_BUS.addListener(PlatformModHooks::onLogout);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onItemPickup);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onItemCrafted);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onItemDestroyed);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onPlayerTick);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onServerStarted);
+        NeoForge.EVENT_BUS.addListener(PlatformModHooks::onServerStopped);
         if (FMLEnvironment.dist == Dist.CLIENT) PlatformClientHooks.register(modEventBus);
     }
 
@@ -55,6 +59,15 @@ public final class PlatformModHooks {
             // revision differs, avoiding an unconditional duplicate book transfer.
             BrnQuestNetwork.syncAll(player, true);
         }
+    }
+    private static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player && player.getServer() != null) {
+            // A remote administrator must not keep a server-side write lease after disconnecting.
+            EditSessionService.get().releasePlayer(player.getServer(), player.getUUID());
+        }
+    }
+    private static void onServerStopped(ServerStoppedEvent event) {
+        EditSessionService.get().clearServer(event.getServer());
     }
 
     private static void onItemPickup(ItemEntityPickupEvent.Post event) { if (event.getPlayer() instanceof net.minecraft.server.level.ServerPlayer player) ItemTaskMonitor.mark(player); }

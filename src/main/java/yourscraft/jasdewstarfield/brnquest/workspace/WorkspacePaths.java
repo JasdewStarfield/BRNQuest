@@ -30,6 +30,11 @@ public final class WorkspacePaths {
         return root(server).resolve("reports");
     }
 
+    /** Server-local author drafts are deliberately outside every data-pack search path. */
+    public static Path drafts(MinecraftServer server) {
+        return root(server).resolve("drafts");
+    }
+
     /** Creates the stable author-facing directories without manufacturing an invalid empty data pack. */
     public static void ensureAuthorDirectories(MinecraftServer server) throws IOException {
         ensureAuthorDirectories(root(server));
@@ -39,6 +44,7 @@ public final class WorkspacePaths {
         Files.createDirectories(root.resolve("imports"));
         Files.createDirectories(root.resolve("workspace"));
         Files.createDirectories(root.resolve("reports"));
+        Files.createDirectories(root.resolve("drafts"));
     }
 
     public static Path deployed(MinecraftServer server) {

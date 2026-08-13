@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.gametest;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.players.ServerOpListEntry;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -14,6 +15,10 @@ import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
+import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
+import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
+import yourscraft.jasdewstarfield.brnquest.author.DraftService;
+import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
@@ -370,6 +375,52 @@ public final class BrnQuestGameTests {
 
         helper.assertValueEqual(taskEvents.get(), 1, "task progress change must publish once");
         helper.assertValueEqual(questEvents.get(), 1, "quest completion must publish once");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void remoteAdministratorsUseTargetServerPermissionsAndLeases(GameTestHelper helper) {
+        var firstAdmin = helper.makeMockServerPlayerInLevel();
+        var secondAdmin = helper.makeMockServerPlayerInLevel();
+        var ordinaryPlayer = helper.makeMockServerPlayerInLevel();
+        var server = helper.getLevel().getServer();
+        // Operator state belongs to the target server. A connecting client's local
+        // configuration is never accepted as proof of authoring authority.
+        // GameTestServer reports operator-user-permission-level 0, unlike a normal
+        // dedicated server. Seed explicit level-2 OP entries to model its real policy.
+        server.getPlayerList().getOps().add(new ServerOpListEntry(firstAdmin.getGameProfile(), 2, false));
+        server.getPlayerList().getOps().add(new ServerOpListEntry(secondAdmin.getGameProfile(), 2, false));
+        server.getPlayerList().sendPlayerPermissionLevel(firstAdmin);
+        server.getPlayerList().sendPlayerPermissionLevel(secondAdmin);
+        server.getPlayerList().deop(ordinaryPlayer.getGameProfile());
+        ResourceLocation bookId = id("remote_author_" + firstAdmin.getUUID().toString().replace("-", ""));
+        DraftService drafts = new DraftService();
+        var deniedDraft = drafts.createEmpty(ordinaryPlayer, bookId, "Remote authoring");
+        var createdDraft = drafts.createEmpty(firstAdmin, bookId, "Remote authoring");
+        helper.assertValueEqual(deniedDraft.status(), AuthorOperationResult.Status.FORBIDDEN,
+                "ordinary remote player must not create a server draft");
+        helper.assertTrue(createdDraft.success(), "remote administrator must create a draft on the target server");
+        DraftSnapshot draft = createdDraft.value();
+        EditSessionService sessions = EditSessionService.get();
+
+        var opened = sessions.open(firstAdmin, draft);
+        var denied = sessions.open(ordinaryPlayer, draft);
+        var occupied = sessions.open(secondAdmin, draft);
+
+        helper.assertTrue(opened.success(), "connected target-server administrator must open an edit session: "
+                + opened.status() + "/" + opened.code());
+        helper.assertValueEqual(denied.status(), AuthorOperationResult.Status.FORBIDDEN,
+                "ordinary remote player must not open an edit session");
+        helper.assertValueEqual(occupied.status(), AuthorOperationResult.Status.CONFLICT,
+                "a second remote administrator must observe the server-side writer lease");
+
+        // Logout handling uses this same release path, allowing another administrator
+        // to continue without waiting for the idle timeout.
+        sessions.releasePlayer(server, firstAdmin.getUUID());
+        helper.assertTrue(sessions.open(secondAdmin, draft).success(),
+                "disconnect release must make the server-side draft available");
+        sessions.releasePlayer(server, secondAdmin.getUUID());
         helper.succeed();
     }
 

@@ -3,8 +3,10 @@ package yourscraft.jasdewstarfield.brnquest.gametest;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.AABB;
 import net.neoforged.neoforge.gametest.GameTestHolder;
 import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
@@ -106,6 +108,53 @@ public final class BrnQuestGameTests {
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)
+    public static void identicalConsumingRowsCannotOverspendInventory(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition first = consumingStoneTask("first_consumer", 4);
+        TaskDefinition second = consumingStoneTask("second_consumer", 4);
+        QuestDefinition quest = quest("shared_inventory_budget", List.of(), List.of(first, second), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.STONE, 6));
+        ProgressEngine.get().reconcile(player);
+
+        var firstResult = ProgressEngine.get().completeTask(player, quest.id(), first.id());
+        var secondResult = ProgressEngine.get().completeTask(player, quest.id(), second.id());
+
+        helper.assertTrue(!firstResult.success(), "the first row remains partial while its sibling is incomplete");
+        helper.assertTrue(!secondResult.success(), "the second row must be rejected after the first spends four items");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2,
+                "two consuming rows must share the authoritative server inventory budget");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(first.id().toString()), 1L,
+                "the accepted first row must remain submitted");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(second.id().toString()), 0L,
+                "the rejected second row must not gain progress");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void repeatedSubmissionOfSameRowConsumesOnlyOnce(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition item = consumingStoneTask("idempotent_consumer", 4);
+        TaskDefinition check = new TaskDefinition(id("book"), id("pending_check"), id("checkmark"), Map.of(), false);
+        QuestDefinition quest = quest("duplicate_submission", List.of(), List.of(item, check), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.STONE, 6));
+        ProgressEngine.get().reconcile(player);
+
+        ProgressEngine.get().completeTask(player, quest.id(), item.id());
+        var duplicate = ProgressEngine.get().completeTask(player, quest.id(), item.id());
+
+        helper.assertTrue(duplicate.success(), "a duplicate task command must be an idempotent successful no-op");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2,
+                "repeating one submitted row must not consume its items twice");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(item.id().toString()), 1L,
+                "duplicate delivery must not increment the task ledger twice");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
     public static void duplicateRewardClaimIsIdempotent(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel();
         RewardDefinition reward = new RewardDefinition(id("book"), id("diamond_reward"), id("item"),
@@ -122,10 +171,66 @@ public final class BrnQuestGameTests {
         helper.succeed();
     }
 
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void partialInventoryFitDropsOnlyRewardRemainder(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        // Fill every main slot, leaving room for exactly one of the two rewarded diamonds.
+        for (int slot = 0; slot < player.getInventory().items.size(); slot++) {
+            player.getInventory().items.set(slot, new ItemStack(Items.COBBLESTONE, 64));
+        }
+        player.getInventory().items.set(0, new ItemStack(Items.DIAMOND, 63));
+        RewardDefinition reward = new RewardDefinition(id("book"), id("partial_reward"), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:diamond\"}", "count", "2"), "manual", false);
+        QuestDefinition quest = quest("partial_reward_quest", List.of(), List.of(), List.of(reward));
+        install(quest);
+        ProgressEngine.get().forceComplete(player, quest.id());
+
+        var result = ProgressEngine.get().claim(player, reward.id());
+
+        helper.assertTrue(result.success(), result.message());
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 64,
+                "inventory must accept the one available diamond");
+        int dropped = helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                        new AABB(player.blockPosition()).inflate(8), entity -> entity.getItem().is(Items.DIAMOND))
+                .stream().mapToInt(entity -> entity.getItem().getCount()).sum();
+        helper.assertValueEqual(dropped, 1, "the uninserted reward remainder must become an item entity");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void onlinePlayersReconcileAfterTaskBookRevisionChanges(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        QuestDefinition original = quest("original", List.of(), List.of(), List.of());
+        install(original);
+        ProgressEngine.get().reconcile(player);
+
+        QuestDefinition added = quest("added_after_reload", List.of(), List.of(), List.of());
+        install(original, added);
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(added.id().toString()), QuestStatus.LOCKED,
+                "new definitions start absent from an old player progress map");
+
+        ProgressEngine.get().reconcileOnlinePlayers(helper.getLevel().getServer());
+
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(added.id().toString()), QuestStatus.AVAILABLE,
+                "online reload reconciliation must make an unblocked new quest immediately available");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).revision(),
+                QuestBookManager.get().active().orElseThrow().revision(),
+                "online progress revision must match the installed task book");
+        helper.succeed();
+    }
+
     private static QuestDefinition quest(String path, List<ResourceLocation> dependencies,
                                          List<TaskDefinition> tasks, List<RewardDefinition> rewards) {
         return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", "", "", 0, 0,
                 dependencies, tasks, rewards, path.toUpperCase(java.util.Locale.ROOT));
+    }
+
+    private static TaskDefinition consumingStoneTask(String path, int count) {
+        return new TaskDefinition(id("book"), id(path), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", Integer.toString(count),
+                        "consume_items", "1b"), false);
     }
 
     private static void install(QuestDefinition... quests) {

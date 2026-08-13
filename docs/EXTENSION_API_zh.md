@@ -1,0 +1,31 @@
+# BRNQuest 阶段 2 扩展入口
+
+阶段 2 的任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书继续使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
+
+## 注册时间
+
+- 服务端任务和奖励类型应在模组构造或 common setup 期间调用 `TaskTypeRegistry.register`、`RewardTypeRegistry.register`。
+- 两个服务端注册表会在首次服务端资源 reload 监听器建立前冻结；冻结后注册会明确失败。
+- 客户端展示应在客户端构造期间调用 `ClientTaskPresentationRegistry.register`、`ClientRewardPresentationRegistry.register`，并在 client setup 时冻结。
+- 类型必须使用完整 `ResourceLocation`；`example:item` 不会继承 `brnquest:item` 的行为或展示。
+
+## 任务类型职责
+
+`TaskType<TConfig>` 负责：
+
+- 声明并解码配置 Codec；
+- 判断服务端权威完成状态；
+- 声明是否接受任务行手动提交；
+- 可选接受任务级完成意图；
+- 可选响应背包变化重算；
+- 在提交型任务中执行一次性消耗。
+
+`ProgressEngine` 不识别具体任务类型 ID。常规新类型不应要求修改进度引擎或网络协议；现有 `CompleteTaskPayload` 会把任务行意图交给注册类型重新校验。
+
+任务书 reload 成功后，BRNQuest 会在服务器线程重新对账所有在线玩家，并发送新定义和完整进度快照。新增的无前置任务因此应立即进入 `AVAILABLE`，而不是等待玩家重登。
+
+## 客户端展示
+
+客户端 presentation 只负责图标、符号、标题、进度文本、客户端预览和交互提示，不能成为进度权威来源。未注册展示的任务与奖励使用占位符，仍保留完整类型 ID 和服务端诊断。
+
+新增类型至少应覆盖：有效配置、Codec 失败诊断、完整命名空间隔离、手动/被动推进语义，以及未安装客户端展示时的占位行为。

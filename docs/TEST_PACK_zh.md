@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\validation\prepare-acceptance-w
 /brnquest open
 ```
 
-部署命令也会备份世界中原有的 BRNQuest workspace 数据包。`validate` 应报告 `14 quests` 和 revision；自动 fixture 测试另外固定 3 个章节组、24 个章节、14 个任务且无诊断。旧世界可能保留相同 ID 的进度；需要重测某个任务时使用 `/brnquest progress reset <玩家> <任务ID>`，或直接创建新世界。
+部署命令也会备份世界中原有的 BRNQuest workspace 数据包。`validate` 应报告 `15 quests` 和 revision，并且只出现两条刻意保留的未知类型诊断：`BQV-117`（`missing_test_mod:counter`）与 `BQV-118`（`missing_test_mod:token`）。自动 fixture 测试固定 3 个章节组、24 个章节、15 个任务及这两条诊断，不允许出现额外问题。旧世界可能保留相同 ID 的进度；需要重测某个任务时使用 `/brnquest progress reset <玩家> <任务ID>`，或直接创建新世界。
 
 ## 覆盖矩阵
 
@@ -43,6 +43,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\validation\prepare-acceptance-w
 | 04 / 跨章节 | “未解锁”悬浮中显示来源章节与任务名称 |
 | 05 / 画布边界 | 部分可见节点、抽屉/把手裁剪、50%–200% 中心缩放 |
 | 06 / 自定义类型 | 已注册 custom 类型的安全占位和管理员完成路径 |
+| 06 / 未知类型占位 | 未注册任务/奖励显示问号、完整类型 ID，并产生预期 BQV-117/BQV-118 诊断 |
 | 章节滚动压力 | 18 个空章节确保左栏能滚动到底并保持紧凑布局 |
 
-这套数据刻意不包含未知注册类型或缺失模组物品，以保证标准验收的诊断结果为零。未知类型与缺失引用仍应由专门的自动化负面 fixture 验证。
+未知类型任务是这套标准验收包中唯一刻意保留的负面案例。它不得阻止任务书加载，也不得被静默删除；除上述两条预期诊断外，标准验收不应产生其他诊断。

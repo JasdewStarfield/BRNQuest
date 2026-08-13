@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.workspace;
 
 import net.minecraft.server.MinecraftServer;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
+import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -78,7 +79,20 @@ public final class WorkspaceDeploymentService {
         repository.reload();
         var selected = new ArrayList<>(repository.getSelectedIds());
         if (repository.isAvailable(WorkspacePaths.PACK_ID) && !selected.contains(WorkspacePaths.PACK_ID)) selected.add(WorkspacePaths.PACK_ID);
-        return server.reloadResources(selected);
+        return reloadAndReconcile(server, selected);
+    }
+
+    /** Reloads the current pack selection and refreshes every online player's derived quest state. */
+    public java.util.concurrent.CompletableFuture<Void> reloadSelected(MinecraftServer server) {
+        return reloadAndReconcile(server, server.getPackRepository().getSelectedIds());
+    }
+
+    private java.util.concurrent.CompletableFuture<Void> reloadAndReconcile(MinecraftServer server,
+                                                                            java.util.Collection<String> selected) {
+        // Resource application completes before this server-executor continuation, ensuring
+        // reconciliation observes the newly installed immutable task-book snapshot.
+        return server.reloadResources(selected)
+                .thenRunAsync(() -> ProgressEngine.get().reconcileOnlinePlayers(server), server);
     }
 
     static void validateWorkspace(Path source) throws IOException {

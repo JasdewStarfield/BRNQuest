@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.task;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
@@ -10,45 +12,98 @@ import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
 
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Extensible task registry with server-authoritative built-ins. */
+/** Extensible task registry with a construction-time registration window. */
 public final class TaskTypeRegistry {
     private static final Map<ResourceLocation, TaskType<?>> TYPES = new ConcurrentHashMap<>();
+    private static volatile boolean frozen;
+
     static {
-        register(ResourceLocation.fromNamespaceAndPath("brnquest", "checkmark"), new ProgressTask());
-        register(ResourceLocation.fromNamespaceAndPath("brnquest", "custom"), new ProgressTask());
-        register(ResourceLocation.fromNamespaceAndPath("brnquest", "item"), new ItemTask());
+        register(TaskTypes.CHECKMARK, new CheckmarkTask());
+        register(TaskTypes.CUSTOM, new ProgressTask());
+        register(TaskTypes.ITEM, new ItemTask());
     }
+
     private TaskTypeRegistry() {}
-    public static void register(ResourceLocation id, TaskType<?> type) {
-        if (TYPES.putIfAbsent(java.util.Objects.requireNonNull(id), java.util.Objects.requireNonNull(type)) != null) {
+
+    /**
+     * Registers a type during mod construction or common setup.
+     * The registry is frozen before the first server resource reload.
+     */
+    public static synchronized void register(ResourceLocation id, TaskType<?> type) {
+        if (frozen) throw new IllegalStateException("Task type registry is already frozen");
+        if (TYPES.putIfAbsent(Objects.requireNonNull(id), Objects.requireNonNull(type)) != null) {
             throw new IllegalArgumentException("Task type is already registered: " + id);
         }
     }
+
     public static TaskType<?> get(ResourceLocation id) { return TYPES.get(id); }
 
-    private static final class ProgressTask implements TaskType<Map<String, String>> {
-        public com.mojang.serialization.Codec<Map<String, String>> configCodec() { return com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.STRING); }
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, PlayerProgress progress) { return progress.taskProgress(definition.id().toString()) >= 1; }
-        public Component describe(TaskDefinition definition) { return Component.literal(definition.typeId().toString()); }
+    /** Closes the public registration window before task books are decoded. */
+    public static synchronized void freeze() { frozen = true; }
+
+    public static boolean isFrozen() { return frozen; }
+
+    private static final class CheckmarkTask implements TaskType<Map<String, String>> {
+        public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+        public boolean satisfied(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
+            return progress.taskProgress(definition.id().toString()) >= 1;
+        }
+        public boolean allowsManualSubmission(Map<String, String> config) { return true; }
+        public boolean acceptsQuestCompletionIntent(Map<String, String> config) { return true; }
+        public TaskSubmissionResult submit(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
+            return TaskSubmissionResult.accepted();
+        }
+        public Component describe(TaskDefinition definition, Map<String, String> config) {
+            return Component.literal(config.getOrDefault("title", definition.typeId().toString()));
+        }
     }
 
-    private static final class ItemTask implements TaskType<Map<String, String>> {
-        public com.mojang.serialization.Codec<Map<String, String>> configCodec() { return com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.STRING); }
-        public boolean satisfied(ServerPlayer player, TaskDefinition definition, PlayerProgress progress) {
+    private static final class ProgressTask implements TaskType<Map<String, String>> {
+        public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+        public boolean satisfied(ServerPlayer player, TaskDefinition definition, Map<String, String> config, PlayerProgress progress) {
+            return progress.taskProgress(definition.id().toString()) >= 1;
+        }
+        public Component describe(TaskDefinition definition, Map<String, String> config) {
+            return Component.literal(config.getOrDefault("title", definition.typeId().toString()));
+        }
+    }
+
+    /** Typed runtime view of the stable schema-1 string map for item objectives. */
+    private record ItemTaskConfig(String item, String count, String consumeItems, String consume, String title) {
+        private static final Codec<ItemTaskConfig> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.STRING.fieldOf("item").forGetter(ItemTaskConfig::item),
+                Codec.STRING.optionalFieldOf("count", "1").forGetter(ItemTaskConfig::count),
+                Codec.STRING.optionalFieldOf("consume_items", "").forGetter(ItemTaskConfig::consumeItems),
+                Codec.STRING.optionalFieldOf("consume", "false").forGetter(ItemTaskConfig::consume),
+                Codec.STRING.optionalFieldOf("title", "").forGetter(ItemTaskConfig::title)
+        ).apply(instance, ItemTaskConfig::new));
+
+        boolean consumesItems() {
+            String value = consumeItems.isBlank() ? consume : consumeItems;
+            return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+        }
+    }
+
+    private static final class ItemTask implements TaskType<ItemTaskConfig> {
+        public Codec<ItemTaskConfig> configCodec() { return ItemTaskConfig.CODEC; }
+
+        public boolean satisfied(ServerPlayer player, TaskDefinition definition, ItemTaskConfig config, PlayerProgress progress) {
             if (progress.taskProgress(definition.id().toString()) >= 1) return true;
-            ItemStack expected = expected(player, definition);
+            ItemStack expected = expected(player, config);
             if (expected.isEmpty()) return false;
-            int required = requiredCount(definition, expected);
-            return player.getInventory().items.stream().filter(stack -> ItemStack.isSameItemSameComponents(stack, expected)).mapToInt(ItemStack::getCount).sum() >= required;
+            int required = requiredCount(config, expected);
+            return player.getInventory().items.stream()
+                    .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
+                    .mapToInt(ItemStack::getCount).sum() >= required;
         }
 
-        public boolean consume(ServerPlayer player, TaskDefinition definition) {
-            String consume = definition.config().getOrDefault("consume_items", definition.config().getOrDefault("consume", "false"));
-            if (!"true".equalsIgnoreCase(consume) && !"1b".equalsIgnoreCase(consume)) return true;
-            ItemStack expected = expected(player, definition);
-            int remaining = requiredCount(definition, expected);
+        public boolean consume(ServerPlayer player, TaskDefinition definition, ItemTaskConfig config) {
+            if (!config.consumesItems()) return true;
+            ItemStack expected = expected(player, config);
+            int remaining = requiredCount(config, expected);
             for (ItemStack stack : player.getInventory().items) {
                 if (ItemStack.isSameItemSameComponents(stack, expected)) {
                     int removed = Math.min(remaining, stack.getCount());
@@ -60,25 +115,28 @@ public final class TaskTypeRegistry {
             return false;
         }
 
-        public Component describe(TaskDefinition definition) { return Component.literal(definition.config().getOrDefault("item", "item")); }
+        public boolean allowsManualSubmission(ItemTaskConfig config) { return true; }
+        public boolean reevaluateOnInventoryChange(ItemTaskConfig config) { return !config.consumesItems(); }
+        public Component describe(TaskDefinition definition, ItemTaskConfig config) {
+            return Component.literal(config.title.isBlank() ? config.item : config.title);
+        }
 
-        private int requiredCount(TaskDefinition definition, ItemStack expected) {
-            String raw = definition.config().getOrDefault("count", Integer.toString(expected.getCount()));
+        private int requiredCount(ItemTaskConfig config, ItemStack expected) {
             try {
-                long parsed = Long.parseLong(raw.replaceAll("[^0-9-]", ""));
+                long parsed = Long.parseLong(config.count.replaceAll("[^0-9-]", ""));
                 return (int) Math.max(1, Math.min(Integer.MAX_VALUE, parsed));
             } catch (NumberFormatException ignored) {
                 return Math.max(1, expected.getCount());
             }
         }
 
-        private ItemStack expected(ServerPlayer player, TaskDefinition definition) {
+        private ItemStack expected(ServerPlayer player, ItemTaskConfig config) {
             try {
-                String snbt = definition.config().get("item");
-                if (snbt == null) return ItemStack.EMPTY;
-                CompoundTag tag = TagParser.parseTag(snbt);
+                CompoundTag tag = TagParser.parseTag(config.item);
                 return ItemStack.parseOptional(player.registryAccess(), tag);
-            } catch (Exception ignored) { return ItemStack.EMPTY; }
+            } catch (Exception ignored) {
+                return ItemStack.EMPTY;
+            }
         }
     }
 }

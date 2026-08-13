@@ -21,15 +21,14 @@ public final class ItemTaskMonitor {
         var progress = ProgressEngine.get().progress(player);
         snapshot.book().quests().stream()
                 .filter(q -> progress.status(q.id().toString()) == QuestStatus.AVAILABLE || progress.status(q.id().toString()) == QuestStatus.ACTIVE)
-                .filter(q -> q.tasks().stream().anyMatch(t -> t.typeId().getPath().equals("item")))
-                // Submission tasks consume inventory only after an explicit intent;
-                // dirty-event observation must never take items automatically.
-                .filter(q -> q.tasks().stream().filter(t -> t.typeId().getPath().equals("item")).noneMatch(ItemTaskMonitor::consumesItems))
+                // Task types opt into this trigger; inventory observation therefore stays
+                // independent of built-in IDs and never consumes submission-only items.
+                .filter(q -> q.tasks().stream().anyMatch(ItemTaskMonitor::observesInventory))
                 .forEach(q -> ProgressEngine.get().complete(player, q.id(), false));
     }
 
-    private static boolean consumesItems(yourscraft.jasdewstarfield.brnquest.data.TaskDefinition task) {
-        String raw = task.config().getOrDefault("consume_items", task.config().getOrDefault("consume", "false"));
-        return "true".equalsIgnoreCase(raw) || "1b".equalsIgnoreCase(raw);
+    private static boolean observesInventory(yourscraft.jasdewstarfield.brnquest.data.TaskDefinition task) {
+        TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+        return type != null && type.reevaluateOnInventoryChangeDecoded(task);
     }
 }

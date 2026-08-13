@@ -325,22 +325,25 @@ public final class QuestScreen extends Screen {
 
     private int renderTask(GuiGraphics graphics, QuestDefinition quest, TaskDefinition task, QuestStatus status,
                            int x, int y, int width, int mouseX, int mouseY) {
+        ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
         boolean satisfied = taskSatisfied(task, status);
         graphics.fill(x, y, x + width, y + 24, satisfied ? 0x663B6749 : 0x66343D49);
-        ItemStack stack = task.typeId().getPath().equals("item") ? item(task.id(), task.config().getOrDefault("item", "")) : ItemStack.EMPTY;
+        String itemSnbt = presentation.itemSnbt(task);
+        ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
         if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
-        else graphics.drawCenteredString(font, task.typeId().getPath().equals("checkmark") ? "✓" : "?", x + 11, y + 8, 0xFFFFFFFF);
+        else graphics.drawCenteredString(font, presentation.symbol(task), x + 11, y + 8, 0xFFFFFFFF);
 
         String title = task.config().getOrDefault("title", "");
-        if (title.isBlank()) title = !stack.isEmpty() ? stack.getHoverName().getString() : task.typeId().getPath();
+        if (title.isBlank()) title = presentation.fallbackTitle(minecraft, task, stack).getString();
         graphics.drawString(font, Component.literal(title), x + 24, y + 3, satisfied ? 0xFF8BE2A0 : 0xFFFFFFFF, false);
         String progress = taskProgressText(task, stack, satisfied);
         graphics.drawString(font, Component.literal(progress), x + 24, y + 13, 0xFFABB7C6, false);
         if (task.optional()) graphics.drawString(font, Component.translatable("screen.brnquest.optional"), x + width - 38, y + 13, 0xFF9AA6B5, false);
         boolean visible = y >= DETAIL_CONTENT_TOP && y + 24 <= height - DETAIL_CONTENT_BOTTOM_MARGIN;
         boolean submitted = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
-        boolean interactive = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !submitted
-                && (task.typeId().getPath().equals("checkmark") || task.typeId().getPath().equals("item"));
+        boolean pending = ClientQuestState.get().isTaskSubmissionPending(task.id().toString());
+        boolean interactive = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !submitted && !pending
+                && presentation.interactive(task);
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
         if (visible && mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 24) {
             if (!stack.isEmpty()) hoveredDetailStack = stack;
@@ -352,9 +355,11 @@ public final class QuestScreen extends Screen {
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
         boolean claimed = ClientQuestState.get().claimed().contains(reward.id().toString());
         boolean claimable = isCompleted(status) && !claimed;
-        ItemStack stack = reward.typeId().getPath().equals("item") ? item(reward.id(), reward.config().getOrDefault("item", "")) : ItemStack.EMPTY;
+        ClientRewardPresentation presentation = ClientRewardPresentationRegistry.get(reward.typeId());
+        String itemSnbt = presentation.itemSnbt(reward);
+        ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
         if (!stack.isEmpty()) graphics.renderItem(stack, x + 4, y + 4);
-        else graphics.drawCenteredString(font, "?", x + 12, y + 8, 0xFFFFFFFF);
+        else graphics.drawCenteredString(font, presentation.symbol(reward), x + 12, y + 8, 0xFFFFFFFF);
         if (claimable) {
             graphics.fill(x + 2, y + 2, x + 22, y + 3, 0xFFE6B55B);
             graphics.fill(x + 2, y + 21, x + 22, y + 22, 0xFFE6B55B);
@@ -364,7 +369,7 @@ public final class QuestScreen extends Screen {
         if (claimable && visible) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
         if (visible && mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
             String title = reward.config().getOrDefault("title", "");
-            if (title.isBlank()) title = !stack.isEmpty() ? stack.getHoverName().getString() : reward.typeId().getPath();
+            if (title.isBlank()) title = !stack.isEmpty() ? stack.getHoverName().getString() : reward.typeId().toString();
             if (!stack.isEmpty()) hoveredDetailStack = stack;
             else hoveredDetailText = Component.literal(title);
         }
@@ -427,7 +432,12 @@ public final class QuestScreen extends Screen {
             }
             for (TaskHitbox hitbox : taskHitboxes) {
                 if (hitbox.contains(mouseX, mouseY)) {
-                    BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), hitbox.quest().id().toString(), hitbox.task().id().toString());
+                    String taskId = hitbox.task().id().toString();
+                    // Disable the row until the authoritative response arrives, preventing a
+                    // fast double click from enqueueing the same consumption intent twice.
+                    if (ClientQuestState.get().beginTaskSubmission(taskId)) {
+                        BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), hitbox.quest().id().toString(), taskId);
+                    }
                     return true;
                 }
             }
@@ -533,33 +543,22 @@ public final class QuestScreen extends Screen {
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return false;
         return quest.tasks().stream().filter(task -> !task.optional()).allMatch(task ->
-                task.typeId().getPath().equals("checkmark") || taskSatisfied(task, status));
+                ClientTaskPresentationRegistry.get(task.typeId()).acceptsQuestCompletionIntent(task)
+                        || taskSatisfied(task, status));
     }
 
     private boolean taskSatisfied(TaskDefinition task, QuestStatus status) {
-        if (isCompleted(status)) return true;
-        if (ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1) return true;
-        if (!task.typeId().getPath().equals("item")) return false;
-        ItemStack expected = item(task.id(), task.config().getOrDefault("item", ""));
-        if (expected.isEmpty() || minecraft.player == null) return false;
-        int present = minecraft.player.getInventory().items.stream()
-                .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
-                .mapToInt(ItemStack::getCount).sum();
-        return present >= QuestPresentation.requiredCount(task);
+        ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        String itemSnbt = presentation.itemSnbt(task);
+        ItemStack displayedItem = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
+        long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
+        return presentation.satisfied(minecraft, task, status, storedProgress, displayedItem);
     }
 
     private String taskProgressText(TaskDefinition task, ItemStack expected, boolean satisfied) {
-        if (task.typeId().getPath().equals("checkmark")) {
-            return Component.translatable(satisfied ? "screen.brnquest.task.checked" : "screen.brnquest.task.manual").getString();
-        }
-        if (task.typeId().getPath().equals("item") && !expected.isEmpty() && minecraft.player != null) {
-            int present = minecraft.player.getInventory().items.stream()
-                    .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
-                    .mapToInt(ItemStack::getCount).sum();
-            return present + " / " + QuestPresentation.requiredCount(task);
-        }
         long progress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
-        return progress + " / 1";
+        return ClientTaskPresentationRegistry.get(task.typeId())
+                .progressText(minecraft, task, satisfied, progress, expected).getString();
     }
 
     private QuestStatus status(QuestDefinition quest) {
@@ -622,9 +621,11 @@ public final class QuestScreen extends Screen {
         if (!generated) return quest.title();
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
-        ItemStack stack = task.typeId().getPath().equals("item") ? item(task.id(), task.config().getOrDefault("item", "")) : ItemStack.EMPTY;
-        if (!stack.isEmpty()) return stack.getHoverName().getString();
-        return task.typeId().getPath().equals("checkmark") ? Component.translatable("screen.brnquest.task.checkmark").getString() : quest.title();
+        ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        String itemSnbt = presentation.itemSnbt(task);
+        ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
+        String fallback = presentation.fallbackTitle(minecraft, task, stack).getString();
+        return fallback.equals(task.typeId().toString()) ? quest.title() : fallback;
     }
 
     private int detailStatusY(QuestDefinition quest) {

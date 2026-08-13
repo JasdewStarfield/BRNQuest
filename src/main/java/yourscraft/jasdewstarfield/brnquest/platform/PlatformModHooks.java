@@ -16,7 +16,9 @@ import yourscraft.jasdewstarfield.brnquest.command.BrnQuestCommands;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookReloadListener;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspaceDeploymentService;
 
 /** NeoForge event wiring kept separate from loader-neutral model and runtime code. */
@@ -35,7 +37,12 @@ public final class PlatformModHooks {
         if (FMLEnvironment.dist == Dist.CLIENT) PlatformClientHooks.register(modEventBus);
     }
 
-    private static void onReloadListeners(AddReloadListenerEvent event) { event.addListener(new QuestBookReloadListener()); }
+    private static void onReloadListeners(AddReloadListenerEvent event) {
+        // Third-party construction/setup registration must finish before any book is decoded.
+        TaskTypeRegistry.freeze();
+        RewardTypeRegistry.freeze();
+        event.addListener(new QuestBookReloadListener());
+    }
     private static void onServerStarted(ServerStartedEvent event) {
         // The initial resource load has already completed at this lifecycle point.
         // A newly copied workspace is therefore followed by one explicit reload.

@@ -44,7 +44,7 @@ public final class BrnQuestCommands {
                                                         .executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), false, FtbImportService.ImportTarget.WORKSPACE))
                                                         .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), true, FtbImportService.ImportTarget.WORKSPACE))))))))
                 .then(Commands.literal("reload").requires(s -> s.hasPermission(2)).executes(ctx -> {
-                    ctx.getSource().getServer().reloadResources(ctx.getSource().getServer().getPackRepository().getSelectedIds());
+                    new WorkspaceDeploymentService().reloadSelected(ctx.getSource().getServer());
                     ctx.getSource().sendSuccess(() -> Component.literal("BRNQuest reload requested"), true);
                     return 1;
                 }))

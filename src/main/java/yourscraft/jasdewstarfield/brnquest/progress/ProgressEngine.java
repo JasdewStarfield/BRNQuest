@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.progress;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.common.NeoForge;
 import yourscraft.jasdewstarfield.brnquest.api.OperationResult;
@@ -46,6 +47,16 @@ public final class ProgressEngine {
         data.setDirty();
     }
 
+    /** Reconciles every connected player after a successfully installed task-book revision. */
+    public void reconcileOnlinePlayers(MinecraftServer server) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            reconcile(player);
+            // A reload can change both definitions and status availability, so send a full
+            // definition/progress pair instead of relying on an incremental progress delta.
+            BrnQuestNetwork.syncAll(player, false);
+        }
+    }
+
     public OperationResult complete(ServerPlayer player, ResourceLocation questId, boolean checkmarkIntent) {
         return boundedCompletion(() -> synchronizedPlayer(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
@@ -56,17 +67,26 @@ public final class ProgressEngine {
             QuestStatus status = progress.status(questId.toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.success("Quest already completed");
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
-            if (checkmarkIntent) quest.tasks().stream().filter(t -> t.typeId().getPath().equals("checkmark")).forEach(t -> progress.addTaskProgress(t.id().toString(), 1));
+            if (checkmarkIntent) {
+                // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
+                quest.tasks().forEach(task -> {
+                    TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+                    if (type != null && type.acceptsQuestCompletionIntentDecoded(task)
+                            && type.submitDecoded(player, task, progress).success()) {
+                        progress.addTaskProgress(task.id().toString(), 1);
+                    }
+                });
+            }
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                if (type == null || (!task.optional() && !type.satisfied(player, task, progress))) return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
+                if (type == null || (!task.optional() && !type.satisfiedDecoded(player, task, progress))) return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
             }
             List<net.minecraft.world.item.ItemStack> inventoryBeforeConsume = player.getInventory().items.stream()
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
                 // A row submitted earlier has already applied its one-time consumption.
-                if (type != null && progress.taskProgress(task.id().toString()) < 1 && !type.consume(player, task)) {
+                if (type != null && progress.taskProgress(task.id().toString()) < 1 && !type.consumeDecoded(player, task)) {
                     restoreMainInventory(player, inventoryBeforeConsume);
                     return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
                 }
@@ -77,42 +97,46 @@ public final class ProgressEngine {
 
     /** Applies one task-row intent, then lets the normal transaction decide whether the quest can finish. */
     public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId) {
-        return synchronizedPlayer(player, () -> {
+        OperationResult result = synchronizedPlayer(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
             if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest " + questId);
             TaskDefinition task = quest.tasks().stream().filter(candidate -> candidate.id().equals(taskId)).findFirst().orElse(null);
             if (task == null) return OperationResult.failure("NOT_FOUND", "Task does not belong to quest " + taskId);
             PlayerProgress progress = progress(player);
+            // Submission is an idempotent command. Check the per-task ledger before quest
+            // status so a retransmission after quest completion is also a successful no-op.
+            if (progress.taskProgress(taskId.toString()) >= 1) {
+                return OperationResult.success("Task already submitted");
+            }
             QuestStatus status = progress.status(questId.toString());
             if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) {
                 return OperationResult.failure("LOCKED", "Quest is not available");
             }
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
 
-            if (task.typeId().getPath().equals("checkmark")) {
-                progress.addTaskProgress(task.id().toString(), 1);
-                QuestProgressData.get(player.getServer()).setDirty();
-            } else {
-                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                if (type == null || !type.satisfied(player, task, progress)) {
-                    return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
-                }
-                List<net.minecraft.world.item.ItemStack> inventoryBeforeConsume = player.getInventory().items.stream()
-                        .map(net.minecraft.world.item.ItemStack::copy).toList();
-                if (!type.consume(player, task)) {
-                    restoreMainInventory(player, inventoryBeforeConsume);
-                    return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
-                }
-                progress.addTaskProgress(task.id().toString(), 1);
-                QuestProgressData.get(player.getServer()).setDirty();
+            TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+            if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown task type " + task.typeId());
+            if (!type.allowsManualSubmissionDecoded(task)) {
+                return OperationResult.failure("NOT_SUBMITTABLE", "Task does not accept manual submission: " + task.id());
             }
+            List<net.minecraft.world.item.ItemStack> inventoryBeforeSubmit = player.getInventory().items.stream()
+                    .map(net.minecraft.world.item.ItemStack::copy).toList();
+            var submission = type.submitDecoded(player, task, progress);
+            if (!submission.success()) {
+                restoreMainInventory(player, inventoryBeforeSubmit);
+                return OperationResult.failure(submission.code(), submission.message() + ": " + task.id());
+            }
+            progress.addTaskProgress(task.id().toString(), 1);
+            QuestProgressData.get(player.getServer()).setDirty();
 
-            OperationResult result = complete(player, questId, false);
-            // A checked row remains useful progress even while sibling rows are incomplete.
-            if (!result.success()) BrnQuestNetwork.syncProgress(player, true);
-            return result;
+            return complete(player, questId, false);
         });
+        // A response is sent for both accepted and rejected intents so the client can clear
+        // its pending-click guard. Full inventory state avoids stale counts on paused screens.
+        BrnQuestNetwork.syncProgress(player, true);
+        player.inventoryMenu.broadcastFullState();
+        return result;
     }
 
     public OperationResult forceComplete(ServerPlayer player, ResourceLocation questId) {
@@ -158,7 +182,7 @@ public final class ProgressEngine {
             progress.claim(rewardId.toString());
             QuestProgressData data = QuestProgressData.get(player.getServer());
             data.setDirty();
-            var result = type.execute(player, reward);
+            var result = type.executeDecoded(player, reward);
             if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
             if (owner.rewards().stream().allMatch(r -> progress.isClaimed(r.id().toString()))) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
             NeoForge.EVENT_BUS.post(new RewardClaimedEvent(player, snapshot.book().id(), rewardId));

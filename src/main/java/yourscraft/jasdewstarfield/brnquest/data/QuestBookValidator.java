@@ -34,11 +34,23 @@ public final class QuestBookValidator {
                 if (quests.putIfAbsent(quest.id(), quest) != null) add(report, Diagnostic.Severity.FATAL, "BQV-101", quest.id(), "Duplicate quest ID");
                 quest.tasks().forEach(task -> {
                     if (!typedIds.add(task.id())) add(report, Diagnostic.Severity.FATAL, "BQV-116", task.id(), "Duplicate task/reward ID");
-                    if (TaskTypeRegistry.get(task.typeId()) == null) add(report, Diagnostic.Severity.ERROR, "BQV-117", task.id(), "Unknown task type " + task.typeId());
+                    var type = TaskTypeRegistry.get(task.typeId());
+                    if (type == null) {
+                        add(report, Diagnostic.Severity.ERROR, "BQV-117", task.id(), "Unknown task type " + task.typeId());
+                    } else {
+                        type.configError(task).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
+                                "BQV-119", task.id(), "Invalid task config: " + message));
+                    }
                 });
                 quest.rewards().forEach(reward -> {
                     if (!typedIds.add(reward.id())) add(report, Diagnostic.Severity.FATAL, "BQV-116", reward.id(), "Duplicate task/reward ID");
-                    if (RewardTypeRegistry.get(reward.typeId()) == null) add(report, Diagnostic.Severity.ERROR, "BQV-118", reward.id(), "Unknown reward type " + reward.typeId());
+                    var type = RewardTypeRegistry.get(reward.typeId());
+                    if (type == null) {
+                        add(report, Diagnostic.Severity.ERROR, "BQV-118", reward.id(), "Unknown reward type " + reward.typeId());
+                    } else {
+                        type.configError(reward).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
+                                "BQV-120", reward.id(), "Invalid reward config: " + message));
+                    }
                 });
             });
         });

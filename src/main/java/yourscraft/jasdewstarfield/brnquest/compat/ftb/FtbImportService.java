@@ -5,6 +5,8 @@ import net.minecraft.world.level.storage.LevelResource;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
@@ -87,9 +89,9 @@ public final class FtbImportService {
 
     private void validateItems(MinecraftServer server, FtbImportResult result) {
         for (QuestDefinition quest : result.book().quests()) {
-            quest.tasks().stream().filter(task -> task.typeId().getPath().equals("item"))
+            quest.tasks().stream().filter(task -> TaskTypes.ITEM.equals(task.typeId()))
                     .forEach(task -> validateItem(server, result, task.config().get("item"), task.id().toString(), "task"));
-            quest.rewards().stream().filter(reward -> reward.typeId().getPath().equals("item"))
+            quest.rewards().stream().filter(reward -> RewardTypes.ITEM.equals(reward.typeId()))
                     .forEach(reward -> validateItem(server, result, reward.config().get("item"), reward.id().toString(), "reward"));
         }
     }

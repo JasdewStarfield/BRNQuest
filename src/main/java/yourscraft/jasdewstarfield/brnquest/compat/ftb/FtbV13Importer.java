@@ -8,6 +8,7 @@ import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -134,7 +135,7 @@ public final class FtbV13Importer {
         TaskDefinition first = tasks.getFirst();
         String custom = first.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
-        if (first.typeId().getPath().equals("item")) {
+        if (TaskTypes.ITEM.equals(first.typeId())) {
             try {
                 CompoundTag item = net.minecraft.nbt.TagParser.parseTag(first.config().getOrDefault("item", ""));
                 String itemId = item.getString("id");
@@ -143,7 +144,7 @@ public final class FtbV13Importer {
                 // Malformed item data already receives its importer diagnostic; retain the legacy fallback here.
             }
         }
-        return first.typeId().getPath().equals("checkmark") ? "Check objective" : fallback;
+        return TaskTypes.CHECKMARK.equals(first.typeId()) ? "Check objective" : fallback;
     }
 
     private List<TaskDefinition> readTasks(ListTag list, ResourceLocation bookId, String namespace,

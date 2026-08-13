@@ -24,6 +24,7 @@ public final class ClientQuestState {
     private Map<String, QuestStatus> statuses = Map.of();
     private Map<String, Long> taskProgress = Map.of();
     private Set<String> claimed = Set.of();
+    private final Set<String> pendingTaskSubmissions = new HashSet<>();
     private ResourceLocation selected;
 
     private ClientQuestState() {}
@@ -35,6 +36,11 @@ public final class ClientQuestState {
     public ResourceLocation selected() { return selected; }
     public void selected(ResourceLocation selected) { this.selected = selected; }
     public String revision() { return book == null ? "" : book.revision(); }
+
+    /** Returns false when the same task row already has an unanswered submission in flight. */
+    public boolean beginTaskSubmission(String taskId) { return pendingTaskSubmissions.add(taskId); }
+
+    public boolean isTaskSubmissionPending(String taskId) { return pendingTaskSubmissions.contains(taskId); }
 
     public void begin(String revision, int chunkCount, int decodedBytes) {
         if (chunkCount < 1 || decodedBytes < 0 || decodedBytes > BrnQuestConstants.MAX_BOOK_BYTES) throw new IllegalArgumentException("Unsafe book manifest");
@@ -64,6 +70,9 @@ public final class ClientQuestState {
         statuses = wire.quests() == null ? Map.of() : Map.copyOf(wire.quests());
         taskProgress = wire.tasks() == null ? Map.of() : Map.copyOf(wire.tasks());
         claimed = wire.claimed() == null ? Set.of() : Set.copyOf(wire.claimed());
+        // The server sends a progress response for every task submission, including rejected
+        // attempts, so receipt is the acknowledgement that makes task rows clickable again.
+        pendingTaskSubmissions.clear();
     }
 
     public Optional<ResourceLocation> trackedQuest() {

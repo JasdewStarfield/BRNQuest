@@ -29,8 +29,12 @@ class NativeAcceptanceFixtureTest {
         assertEquals(ResourceLocation.parse("brnquest_test:acceptance"), book.id());
         assertEquals(3, book.chapterGroups().size());
         assertEquals(24, book.chapters().size());
-        assertEquals(14, book.quests().size());
-        assertTrue(report.diagnostics().isEmpty(), report::toJson);
+        assertEquals(15, book.quests().size());
+        assertEquals(2, report.diagnostics().size(), report::toJson);
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-117")
+                && diagnostic.objectId().equals("brnquest_test:unknown_task")), report::toJson);
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-118")
+                && diagnostic.objectId().equals("brnquest_test:unknown_reward")), report::toJson);
 
         QuestDefinition submit = quest(book, "brnquest_test:submit_stone");
         assertEquals("true", submit.tasks().getFirst().config().get("consume_items"));
@@ -44,6 +48,9 @@ class NativeAcceptanceFixtureTest {
                 quest(book, "brnquest_test:cross_target").dependencies().getFirst());
         assertEquals(ResourceLocation.parse("brnquest:custom"),
                 quest(book, "brnquest_test:custom_api").tasks().getFirst().typeId());
+        QuestDefinition unknown = quest(book, "brnquest_test:unknown_types");
+        assertEquals(ResourceLocation.parse("missing_test_mod:counter"), unknown.tasks().getFirst().typeId());
+        assertEquals(ResourceLocation.parse("missing_test_mod:token"), unknown.rewards().getFirst().typeId());
     }
 
     @Test

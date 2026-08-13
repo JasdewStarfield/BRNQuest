@@ -295,6 +295,23 @@
           "rewards": [
             { "id": "brnquest_test:custom_api_reward", "type": "brnquest:custom", "config": { "title": "自定义奖励确认" }, "claim_policy": "manual", "team_reward": false }
           ]
+        },
+        {
+          "id": "brnquest_test:unknown_types",
+          "title": "未知类型占位",
+          "subtitle": "未注册命名空间的安全降级",
+          "description": "该任务故意声明未注册的任务和奖励类型。详情行应显示问号占位与完整类型 ID，任务书仍可浏览；/brnquest validate 应明确报告 BQV-117 和 BQV-118，而不是静默丢弃定义。",
+          "icon": "",
+          "x": 3.0,
+          "y": 0.0,
+          "legacy_id": "TEST_UNKNOWN_TYPES",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:unknown_task", "type": "missing_test_mod:counter", "config": {}, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:unknown_reward", "type": "missing_test_mod:token", "config": {}, "claim_policy": "manual", "team_reward": false }
+          ]
         }
       ]
     },

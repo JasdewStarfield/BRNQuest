@@ -46,23 +46,21 @@ final class QuestPresentation {
     static QuestVisual visual(QuestDefinition quest) {
         if (!quest.icon().isBlank()) return new QuestVisual(VisualKind.ITEM, quest.icon());
         for (TaskDefinition task : quest.tasks()) {
-            if (task.typeId().getPath().equals("item") && !task.config().getOrDefault("item", "").isBlank()) {
-                return new QuestVisual(VisualKind.ITEM, task.config().get("item"));
-            }
-            if (task.typeId().getPath().equals("checkmark")) return new QuestVisual(VisualKind.CHECKMARK, "");
-            if (task.typeId().getPath().equals("custom")) return new QuestVisual(VisualKind.CUSTOM, "");
+            ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+            String itemSnbt = presentation.itemSnbt(task);
+            VisualKind kind = switch (presentation.nodeStyle(task)) {
+                case ITEM -> VisualKind.ITEM;
+                case CHECKMARK -> VisualKind.CHECKMARK;
+                case CUSTOM -> VisualKind.CUSTOM;
+                case PLACEHOLDER -> VisualKind.PLACEHOLDER;
+            };
+            if (kind != VisualKind.PLACEHOLDER) return new QuestVisual(kind, itemSnbt);
         }
         return new QuestVisual(VisualKind.PLACEHOLDER, "");
     }
 
     static int requiredCount(TaskDefinition task) {
-        String raw = task.config().getOrDefault("count", "1");
-        try {
-            long parsed = Long.parseLong(raw.replaceAll("[^0-9-]", ""));
-            return (int) Math.max(1, Math.min(Integer.MAX_VALUE, parsed));
-        } catch (NumberFormatException ignored) {
-            return 1;
-        }
+        return ClientTaskPresentationRegistry.requiredCount(task);
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}

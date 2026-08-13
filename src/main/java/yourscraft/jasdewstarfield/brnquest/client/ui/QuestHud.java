@@ -42,17 +42,17 @@ public final class QuestHud {
         if (!generated || task == null) return current;
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
-        if (task.typeId().getPath().equals("item") && minecraft.level != null) {
+        ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        String itemSnbt = presentation.itemSnbt(task);
+        if (!itemSnbt.isBlank() && minecraft.level != null) {
             try {
                 ItemStack stack = ItemStack.parseOptional(minecraft.level.registryAccess(),
-                        TagParser.parseTag(task.config().getOrDefault("item", "")));
+                        TagParser.parseTag(itemSnbt));
                 if (!stack.isEmpty()) return stack.getHoverName().getString();
             } catch (Exception ignored) {
                 // Unknown optional-mod items remain readable through the type fallback below.
             }
         }
-        return task.typeId().getPath().equals("checkmark")
-                ? net.minecraft.network.chat.Component.translatable("screen.brnquest.task.checkmark").getString()
-                : task.typeId().getPath();
+        return presentation.fallbackTitle(minecraft, task, ItemStack.EMPTY).getString();
     }
 }

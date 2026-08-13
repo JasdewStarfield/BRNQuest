@@ -7,6 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
 import java.util.Map;
@@ -31,13 +32,24 @@ class QuestPresentationTest {
     @Test void defaultVisualUsesFirstTaskAndNeverAReward() {
         ResourceLocation bookId = id("book");
         ResourceLocation chapterId = id("chapter");
-        var item = new TaskDefinition(bookId, id("task"), id("item"),
+        var item = new TaskDefinition(bookId, id("task"), TaskTypes.ITEM,
                 Map.of("item", "{count:1,id:\"minecraft:rope\"}"), false);
         var quest = new QuestDefinition(bookId, id("quest"), chapterId, "Quest", "", "", "",
                 0, 0, List.of(), List.of(item), List.of(), "LEGACY");
 
         assertEquals(QuestPresentation.VisualKind.ITEM, QuestPresentation.visual(quest).kind());
         assertEquals(item.config().get("item"), QuestPresentation.visual(quest).itemSnbt());
+    }
+
+    @Test void samePathFromForeignNamespaceUsesPlaceholderPresentation() {
+        ResourceLocation bookId = id("book");
+        ResourceLocation chapterId = id("chapter");
+        var foreignItem = new TaskDefinition(bookId, id("task"), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:stone\"}"), false);
+        var quest = new QuestDefinition(bookId, id("quest"), chapterId, "Quest", "", "", "",
+                0, 0, List.of(), List.of(foreignItem), List.of(), "LEGACY");
+
+        assertEquals(QuestPresentation.VisualKind.PLACEHOLDER, QuestPresentation.visual(quest).kind());
     }
 
     private ChapterDefinition chapter(ResourceLocation bookId, ResourceLocation id, ResourceLocation group, int order) {

@@ -8,6 +8,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
 
@@ -16,6 +18,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Extensible task registry with a construction-time registration window. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public final class TaskTypeRegistry {
     private static final Map<ResourceLocation, TaskType<?>> TYPES = new ConcurrentHashMap<>();
     private static volatile boolean frozen;

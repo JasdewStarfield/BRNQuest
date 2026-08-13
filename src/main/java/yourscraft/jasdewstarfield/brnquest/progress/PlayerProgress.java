@@ -23,6 +23,7 @@ public final class PlayerProgress {
     public boolean claim(String id) { return claimedRewards.add(id); }
     public boolean isClaimed(String id) { return claimedRewards.contains(id); }
     public void completedAt(String id, long time) { completionTimes.put(id, time); }
+    public long completedAt(String id) { return completionTimes.getOrDefault(id, 0L); }
     public String revision() { return revision; }
     public void revision(String revision) { this.revision = revision; }
     public Map<String, QuestStatus> questsView() { return Map.copyOf(quests); }

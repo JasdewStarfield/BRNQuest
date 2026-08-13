@@ -33,3 +33,7 @@ The current manual client acceptance procedure is documented in
 Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. As features are introduced, keep stable API, data/import, progress, task, reward, team, network, client, integration, command, and diagnostics concerns in separate packages as specified by the shared design document.
 
 Task/reward extension registration, freeze timing, typed schema-1 config decoding, and client presentation boundaries are documented in [`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md).
+
+阶段 3 的公共面分级、不可变查询和结构化操作结果见
+[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)；逐批验收证据见
+[`docs/STAGE3_ACCEPTANCE_zh.md`](docs/STAGE3_ACCEPTANCE_zh.md)。

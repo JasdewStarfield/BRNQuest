@@ -3,6 +3,8 @@ package yourscraft.jasdewstarfield.brnquest.task;
 import com.mojang.serialization.Codec;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec;
 import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
@@ -10,6 +12,7 @@ import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
 import java.util.Optional;
 
 /** Public task extension point for config decoding, tracking and read-only descriptions. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public interface TaskType<TConfig> {
     Codec<TConfig> configCodec();
     boolean satisfied(ServerPlayer player, TaskDefinition definition, TConfig config, PlayerProgress progress);

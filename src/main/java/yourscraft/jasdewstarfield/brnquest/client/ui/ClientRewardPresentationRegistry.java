@@ -1,6 +1,8 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 
@@ -9,6 +11,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Client reward presentation registry frozen with the task presentation registry. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public final class ClientRewardPresentationRegistry {
     private static final Map<ResourceLocation, ClientRewardPresentation> PRESENTATIONS = new ConcurrentHashMap<>();
     private static final ClientRewardPresentation FALLBACK = new ClientRewardPresentation() {};

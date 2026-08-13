@@ -65,7 +65,7 @@ public final class ProgressEngine {
             QuestProgressData data = QuestProgressData.get(player.getServer());
             PlayerProgress progress = data.get(player.getUUID());
             QuestStatus status = progress.status(questId.toString());
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.success("Quest already completed");
+            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
             if (checkmarkIntent) {
                 // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
@@ -107,7 +107,7 @@ public final class ProgressEngine {
             // Submission is an idempotent command. Check the per-task ledger before quest
             // status so a retransmission after quest completion is also a successful no-op.
             if (progress.taskProgress(taskId.toString()) >= 1) {
-                return OperationResult.success("Task already submitted");
+                return OperationResult.noChange("ALREADY_SUBMITTED", "Task already submitted");
             }
             QuestStatus status = progress.status(questId.toString());
             if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) {
@@ -146,7 +146,7 @@ public final class ProgressEngine {
             QuestProgressData data = QuestProgressData.get(player.getServer());
             PlayerProgress progress = data.get(player.getUUID());
             QuestStatus status = progress.status(questId.toString());
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.success("Quest already completed");
+            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             // Administrative/API completion intentionally bypasses task resources;
             // callers have already made an explicit server-side authority decision.
             quest.tasks().forEach(task -> progress.addTaskProgress(task.id().toString(), Long.MAX_VALUE / 4));
@@ -174,7 +174,7 @@ public final class ProgressEngine {
             if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown reward");
             PlayerProgress progress = progress(player);
             if (progress.status(owner.id().toString()).ordinal() < QuestStatus.COMPLETED.ordinal()) return OperationResult.failure("LOCKED", "Quest is incomplete");
-            if (progress.isClaimed(rewardId.toString())) return OperationResult.success("Reward already claimed");
+            if (progress.isClaimed(rewardId.toString())) return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
             RewardDefinition reward = owner.rewards().stream().filter(r -> r.id().equals(rewardId)).findFirst().orElseThrow();
             RewardType<?> type = RewardTypeRegistry.get(reward.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown reward type");

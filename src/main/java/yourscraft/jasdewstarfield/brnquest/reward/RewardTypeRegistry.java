@@ -7,6 +7,8 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 
 import java.util.Map;
@@ -14,6 +16,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Built-in and third-party rewards share one decoded execution path. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public final class RewardTypeRegistry {
     private static final Map<ResourceLocation, RewardType<?>> TYPES = new ConcurrentHashMap<>();
     private static volatile boolean frozen;

@@ -3,10 +3,13 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 
 /** Client-only presentation contract paired with a server task type by full ID. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public interface ClientTaskPresentation {
     enum NodeStyle { ITEM, CHECKMARK, CUSTOM, PLACEHOLDER }
 

@@ -4,6 +4,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
@@ -13,6 +15,7 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Client presentation registry; registration closes during client setup. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public final class ClientTaskPresentationRegistry {
     private static final Map<ResourceLocation, ClientTaskPresentation> PRESENTATIONS = new ConcurrentHashMap<>();
     private static final ClientTaskPresentation FALLBACK = new ClientTaskPresentation() {};

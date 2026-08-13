@@ -6,7 +6,12 @@ import java.util.Map;
 import java.util.Set;
 
 /** Immutable projection of one player's progress for public API consumers. */
-public record ProgressView(ResourceLocation bookId, ResourceLocation questId, QuestStatus status, Map<String, Long> taskProgress,
-                           Set<String> claimedRewards, String revision) {
-    public ProgressView { taskProgress = Map.copyOf(taskProgress); claimedRewards = Set.copyOf(claimedRewards); }
+@ApiStatus(ApiStability.EXPERIMENTAL)
+public record ProgressView(ResourceLocation bookId, ResourceLocation questId, QuestStatus status,
+                           Map<ResourceLocation, Long> taskProgress, Set<ResourceLocation> claimedRewards,
+                           long completedAtEpochMillis, String revision) {
+    public ProgressView {
+        taskProgress = Map.copyOf(taskProgress);
+        claimedRewards = Set.copyOf(claimedRewards);
+    }
 }

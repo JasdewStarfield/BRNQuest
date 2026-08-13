@@ -2,12 +2,15 @@ package yourscraft.jasdewstarfield.brnquest.reward;
 
 import com.mojang.serialization.Codec;
 import net.minecraft.server.level.ServerPlayer;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
+import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec;
 
 import java.util.Optional;
 
 /** Public reward extension point with a declared immutable config codec. */
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public interface RewardType<TConfig> {
     Codec<TConfig> configCodec();
     RewardResult execute(ServerPlayer player, RewardDefinition definition, TConfig config);

@@ -1,5 +1,7 @@
 # BRNQuest 原生验收任务包
 
+> `runGameTestServer` 使用独立的 `run/gametest/` 游戏目录。每次启动前只重置该目录下的 BRNQuest 配置和测试世界，并从 `src/test/resources/fixtures/ftb_v13/eow/` 重新铺设固定导入 fixture；手工客户端/专服使用的 `run/` 目录不会再被自动测试写入。
+
 此测试包用于日常客户端和服务端回归。它只使用 BRNQuest 原生 schema 和原版物品，因此比 EOW 导入结果更适合复现单一功能问题；EOW fixture 继续用于 FTB 格式 13 导入兼容验收。
 
 ## 准备工作区

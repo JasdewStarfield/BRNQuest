@@ -17,6 +17,17 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent()
 
+// Keep automated server state separate from the client/server directory used for manual acceptance.
+def gameTestRunDirectory = layout.projectDirectory.dir('run/gametest')
+def resetGameTestBrnQuestState = tasks.register('resetGameTestBrnQuestState', Delete) {
+    delete gameTestRunDirectory.dir('config/brnquest'), gameTestRunDirectory.dir('world')
+}
+def prepareGameTestFixture = tasks.register('prepareGameTestFixture', Sync) {
+    dependsOn resetGameTestBrnQuestState
+    from layout.projectDirectory.dir('src/test/resources/fixtures/ftb_v13/eow')
+    into gameTestRunDirectory.dir('config/brnquest/imports/eow')
+}
+
 sourceSets {
     exampleAddon {
         // Compile the example exactly like an external consumer: main output is a dependency,
@@ -48,6 +59,9 @@ neoForge {
 
         gameTestServer {
             type = 'gameTestServer'
+            gameDirectory = gameTestRunDirectory
+            // IDE and Gradle launches receive the same deterministic fixture and isolated workspace.
+            taskBefore prepareGameTestFixture
             systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
                     ? "${project.mod_id},brnquest_example" : project.mod_id
         }

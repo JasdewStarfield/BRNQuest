@@ -41,3 +41,9 @@
 - 客户端注册表在 client setup 冻结；服务端任务/奖励实现不得引用这些 `client.ui` 类。
 
 新增类型至少应覆盖：有效配置、Codec 失败诊断、完整命名空间隔离、手动/被动推进语义，以及未安装客户端展示时的占位行为。
+
+## ProgressOwner provider
+
+`ProgressOwnerProviderRegistry.register` 接受服务端 provider，并在首次任务书 reload 前冻结。provider 必须返回自身命名空间下的稳定 `ProgressOwnerId`，并提供不可变成员快照、生命周期和归档证据；解析结果不包含当前玩家、provider ID 不匹配或调用线程错误时，BRNQuest 不会猜测后备队伍身份。
+
+阶段 3 仅激活 `brnquest:personal`。第三方 provider 的注册用于提前验证公共签名和加载隔离，不代表共享进度已经启用；阶段 6 在候选队伍 API、迁移和归档语义通过验证前，不会提供选择外部 provider 的配置入口。

@@ -14,6 +14,8 @@ import yourscraft.jasdewstarfield.brnquest.event.RewardClaimedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
@@ -26,22 +28,24 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.*;
 
-/** Server-thread transaction coordinator for personal progress and idempotent reward claims. */
+/** Server-thread transaction coordinator for owner-scoped progress and idempotent reward claims. */
 public final class ProgressEngine {
     private static final ProgressEngine INSTANCE = new ProgressEngine();
     private static final int MAX_CHAIN_OPERATIONS = 256;
     private static final ThreadLocal<Integer> COMPLETION_DEPTH = ThreadLocal.withInitial(() -> 0);
-    private final Map<UUID, Object> locks = new WeakHashMap<>();
+    private final Map<ProgressOwnerId, Object> locks = new WeakHashMap<>();
     private ProgressEngine() {}
     public static ProgressEngine get() { return INSTANCE; }
 
-    public PlayerProgress progress(ServerPlayer player) { return QuestProgressData.get(player.getServer()).get(player.getUUID()); }
+    public PlayerProgress progress(ServerPlayer player) {
+        return QuestProgressData.get(player.getServer()).get(ProgressOwnerService.require(player));
+    }
 
     public void reconcile(ServerPlayer player) {
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
         QuestProgressData data = QuestProgressData.get(player.getServer());
-        PlayerProgress progress = data.get(player.getUUID());
+        PlayerProgress progress = data.get(ProgressOwnerService.require(player));
         Set<String> current = new HashSet<>();
         for (QuestDefinition quest : snapshot.book().quests()) {
             current.add(quest.id().toString());
@@ -65,12 +69,12 @@ public final class ProgressEngine {
     }
 
     public OperationResult complete(ServerPlayer player, ResourceLocation questId, boolean checkmarkIntent) {
-        return boundedCompletion(() -> synchronizedPlayer(player, () -> {
+        return boundedCompletion(() -> synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
             if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest " + questId);
             QuestProgressData data = QuestProgressData.get(player.getServer());
-            PlayerProgress progress = data.get(player.getUUID());
+            PlayerProgress progress = data.get(ProgressOwnerService.require(player));
             QuestStatus status = progress.status(questId.toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
@@ -109,7 +113,7 @@ public final class ProgressEngine {
 
     /** Applies one task-row intent, then lets the normal transaction decide whether the quest can finish. */
     public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId) {
-        OperationResult result = synchronizedPlayer(player, () -> {
+        OperationResult result = synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
             if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest " + questId);
@@ -153,11 +157,11 @@ public final class ProgressEngine {
     }
 
     public OperationResult forceComplete(ServerPlayer player, ResourceLocation questId) {
-        return boundedCompletion(() -> synchronizedPlayer(player, () -> {
+        return boundedCompletion(() -> synchronizedOwner(player, () -> {
             var quest = QuestBookManager.get().active().map(s -> s.quests().get(questId)).orElse(null);
             if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest");
             QuestProgressData data = QuestProgressData.get(player.getServer());
-            PlayerProgress progress = data.get(player.getUUID());
+            PlayerProgress progress = data.get(ProgressOwnerService.require(player));
             QuestStatus status = progress.status(questId.toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             // Administrative/API completion intentionally bypasses task resources;
@@ -185,7 +189,7 @@ public final class ProgressEngine {
     }
 
     public OperationResult claim(ServerPlayer player, ResourceLocation rewardId) {
-        return synchronizedPlayer(player, () -> {
+        return synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             if (snapshot == null) return OperationResult.failure("NO_BOOK", "No active book");
             QuestDefinition owner = snapshot.book().quests().stream().filter(q -> q.rewards().stream().anyMatch(r -> r.id().equals(rewardId))).findFirst().orElse(null);
@@ -289,9 +293,11 @@ public final class ProgressEngine {
         finally { COMPLETION_DEPTH.set(depth); }
     }
 
-    private <T> T synchronizedPlayer(ServerPlayer player, java.util.function.Supplier<T> operation) {
+    private <T> T synchronizedOwner(ServerPlayer player, java.util.function.Supplier<T> operation) {
+        ProgressOwnerId owner = ProgressOwnerService.require(player);
         Object lock;
-        synchronized (locks) { lock = locks.computeIfAbsent(player.getUUID(), ignored -> new Object()); }
+        // Shared providers will serialize all members through the same stable owner key.
+        synchronized (locks) { lock = locks.computeIfAbsent(owner, ignored -> new Object()); }
         synchronized (lock) { return operation.get(); }
     }
 }

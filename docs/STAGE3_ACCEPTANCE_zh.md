@@ -88,3 +88,29 @@
 - 客户端展示定向测试与任务树展示回归通过；完整 `build` 通过，JUnit 汇总为 22 个 suite、54 项测试、0 failure、0 error、0 skipped。
 - `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，11/11 required GameTest 通过，证明 common/server 路径未加载客户端展示实现。
 - `git diff --check` 通过。
+
+## 2026-08-13 第四批：ProgressOwner SPI
+
+> 对应计划项：3.8。实现保持 schema 1 和个人进度体验不变；本批没有客户端展示变化，无需新增人工 UI 回归。
+
+### 实现范围
+
+- 增加由完整 provider ID 与稳定 UUID 组成的 `ProgressOwnerId`，以及不可变 owner、生命周期和归档投影。
+- 增加构造期 `ProgressOwnerProviderRegistry`；provider 描述玩家解析、成员关系、生命周期和归档查询，并在首次任务书 reload 前冻结。
+- 唯一激活的 `brnquest:personal` provider 使用玩家 UUID 作为 owner UUID，只返回玩家本人，始终为 `ACTIVE`。
+- 进度存取和事务锁先解析 owner；`ProgressView` 显式携带 owner ID。schema 1 仍使用原有 `players` NBT 字段和 UUID 键，不发生存档迁移。
+- 外部 provider 当前只允许注册和契约验证，不提供激活入口；不根据队长 UUID、显示名或可变队名猜测共享 owner。
+- `ProgressOwnerChangedEvent` 改为携带前后两个 `ProgressOwnerId`，但个人阶段没有合法切换，因此不会发布伪事件。
+
+### 验证重点
+
+- 公共 SPI 不泄漏 `PlayerProgress`、`QuestProgressData` 或其他内部存档类型，集合投影防御性复制。
+- 完整 provider ID 隔离、重复注册拒绝、reload 前冻结和冻结后拒绝注册。
+- GameTest 验证个人 owner 的 provider、UUID、成员和生命周期，并回归既有进度、奖励、权限和事件事务。
+
+### 验证结果
+
+- 构建前 `Get-Process` 与 `gradlew --status` 确认无残留 Java、Minecraft 或 Gradle daemon。
+- owner 定向契约测试通过；完整 `build` 通过，JUnit 汇总为 23 个 suite、58 项测试、0 failure、0 error、0 skipped。
+- `runGameTestServer` 在纯 Minecraft + NeoForge + BRNQuest 专服环境完成，12/12 required GameTest 通过并正常保存、关闭。
+- 全局搜索确认 `ProgressEngine` 不再按 `player.getUUID()` 直接获取进度或建立事务锁；`git diff --check` 通过。

@@ -25,6 +25,7 @@
 | `client.ui.ClientRewardPresentation*` | `EXPERIMENTAL` | 可选客户端 reward 展示。 |
 | `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
 | `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
+| `owner.ProgressOwner*` | `EXPERIMENTAL` | 稳定 owner 身份、成员、生命周期、归档投影及构造期 provider 注册。 |
 
 `data`、`progress`、`runtime`、`network`、`workspace`、`compat`、`command` 和 `platform` 包当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
 
@@ -40,11 +41,21 @@
 - `getQuests` / `getQuest`；
 - `getTask`；
 - `getReward`；
+- `getProgressOwner`；
 - `getProgress`。
 
 集合、配置 Map 和嵌套视图均为不可变副本。查询保留作者顺序、完整命名空间类型 ID、未知类型配置和 legacy alias，不返回 Codec DTO、运行时索引、SavedData 或可变集合。无效或未知 ID 返回空结果，不抛出 ID 解析异常。
 
-任务书定义快照可以安全读取；玩家进度存储只允许在服务端线程读取。因此 `getProgress` 在玩家无服务器或调用线程错误时返回空结果。
+任务书定义快照可以安全读取；owner 和进度存储只允许在服务端线程读取。因此 `getProgressOwner` / `getProgress` 在玩家无服务器、调用线程错误或无法安全解析 owner 时返回空结果。`ProgressView` 显式携带本次投影对应的 `ProgressOwnerId`。
+
+## ProgressOwner
+
+- `ProgressOwnerId` 由完整 provider `ResourceLocation` 和稳定 UUID 组成；不得使用显示名、可变队名或猜测的队长 UUID 代替稳定身份。
+- `ProgressOwnerProvider` 负责在线玩家解析、成员快照、`ACTIVE` / `ARCHIVED` / `UNAVAILABLE` 生命周期和归档证据查询。
+- provider 在模组构造或 common setup 注册，并在首次任务书 reload 前与服务端 task/reward 注册表一起冻结；完整命名空间同路径不继承内置语义。
+- 阶段 3 唯一激活的 provider 是 `brnquest:personal`：owner UUID 等于玩家 UUID，成员仅包含本人，始终为 `ACTIVE`，不会生成伪归档。
+- 其他 provider 目前可以编译、注册和接受契约测试，但不会被选择为生效 owner。启用共享 provider 必须等阶段 6 明确迁移、退出、换队、解散、奖励和 orphan 语义后进行。
+- schema 1 继续在 NBT 的 `players` 字段按个人 owner UUID 读写，不修改现有世界存档格式；所有事务锁和存储访问已先经过 owner 解析。
 
 ## 写操作结果
 
@@ -86,7 +97,6 @@
 
 以下内容完成前不把本页接口提升为 `STABLE`：
 
-- ProgressOwner SPI；
 - task/reward 的编辑器字段描述 SPI；
 - 注册与 reload 生命周期契约；
 - 仅依赖公共 API 的示例附属模组；
@@ -104,4 +114,4 @@
 
 事件不可取消，只在对应状态提交后发布，并携带稳定 ID 和不可变 view。监听器按注册顺序独立调用；单个监听器抛出的运行时异常或链接错误会被记录，但不会阻止后续监听器，也不会回滚合法任务事务。关闭 `EventSubscription` 后不再接收事件。
 
-当前只启用个人进度 owner，因此尚无自然的 owner 切换；`ProgressOwnerChangedEvent` 的载荷契约已建立，阶段 3.8 接入 provider 生命周期时才会产生实际事件。
+当前只启用个人进度 owner，因此尚无自然的 owner 切换，也不会为了制造事件而伪造切换。`ProgressOwnerChangedEvent` 使用前后两个稳定 `ProgressOwnerId`；未来只有在 provider 启用、迁移与归档事务安全提交后才发布。

@@ -7,6 +7,9 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIds;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerView;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
@@ -225,11 +228,19 @@ public final class BrnQuestApi {
                 .findFirst().map(ApiViews::reward);
     }
 
+    /** Returns the current immutable owner without exposing the mutable progress store. */
+    public static Optional<ProgressOwnerView> getProgressOwner(ServerPlayer player) {
+        return ProgressOwnerService.resolve(player);
+    }
+
     /** Progress storage is server-thread-only even though the returned projection is immutable. */
     public static Optional<ProgressView> getProgress(ServerPlayer player, String questId) {
         if (player == null || player.getServer() == null || !player.getServer().isSameThread()) return Optional.empty();
         Optional<QuestDefinition> quest = definition(questId);
         if (quest.isEmpty()) return Optional.empty();
+        Optional<ProgressOwnerView> owner = ProgressOwnerService.resolve(player)
+                .filter(value -> value.lifecycle() == ProgressOwnerLifecycle.ACTIVE);
+        if (owner.isEmpty()) return Optional.empty();
         var progress = ProgressEngine.get().progress(player);
         QuestDefinition definition = quest.orElseThrow();
         Map<ResourceLocation, Long> taskProgress = definition.tasks().stream().collect(Collectors.toUnmodifiableMap(
@@ -237,7 +248,7 @@ public final class BrnQuestApi {
         Set<ResourceLocation> claimedRewards = definition.rewards().stream()
                 .filter(reward -> progress.isClaimed(reward.id().toString()))
                 .map(reward -> reward.id()).collect(Collectors.toUnmodifiableSet());
-        return Optional.of(new ProgressView(definition.bookId(), definition.id(),
+        return Optional.of(new ProgressView(owner.orElseThrow().id(), definition.bookId(), definition.id(),
                 progress.status(definition.id().toString()), taskProgress, claimedRewards,
                 progress.completedAt(definition.id().toString()), progress.revision()));
     }

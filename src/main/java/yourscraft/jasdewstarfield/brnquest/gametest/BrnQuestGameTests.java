@@ -17,6 +17,8 @@ import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
+import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
@@ -32,6 +34,28 @@ import java.util.stream.Collectors;
 @SuppressWarnings("removal")
 public final class BrnQuestGameTests {
     private BrnQuestGameTests() {}
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void personalOwnerUsesStablePlayerIdentity(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        QuestDefinition quest = quest("personal_owner", List.of(), List.of(), List.of());
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+        var owner = BrnQuestApi.getProgressOwner(player).orElseThrow();
+
+        helper.assertValueEqual(owner.id().providerId(), ProgressOwnerProviders.PERSONAL,
+                "stage 3 must activate only the personal owner provider");
+        helper.assertValueEqual(owner.id().ownerId(), player.getUUID(),
+                "personal owner ID must equal the durable player UUID");
+        helper.assertValueEqual(owner.members(), Set.of(player.getUUID()),
+                "personal owner membership must contain only the player");
+        helper.assertValueEqual(owner.lifecycle(), ProgressOwnerLifecycle.ACTIVE,
+                "personal owners must remain active instead of producing synthetic archives");
+        helper.assertValueEqual(BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow().owner(), owner.id(),
+                "public progress projections must identify their authoritative owner");
+        helper.succeed();
+    }
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)

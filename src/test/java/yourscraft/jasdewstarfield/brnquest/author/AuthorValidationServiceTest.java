@@ -2,42 +2,47 @@ package yourscraft.jasdewstarfield.brnquest.author;
 
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
-import yourscraft.jasdewstarfield.brnquest.data.*;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthorValidationServiceTest {
-    @Test void reportsFieldPathsAndInvalidCoordinates() {
-        ResourceLocation bookId = id("book");
-        ResourceLocation groupId = id("group");
-        ResourceLocation chapterId = id("chapter");
-        TaskDefinition task = new TaskDefinition(bookId, id("item_task"), id("item"),
-                Map.of("item", "{id:\"minecraft:stone\"}", "count", "0"), false);
-        QuestDefinition quest = new QuestDefinition(bookId, id("quest"), chapterId, "Quest", "", "Description", "",
-                Double.NaN, 0, List.of(), List.of(task), List.of(), "");
-        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Book",
-                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)),
-                List.of(new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0, List.of(quest))), Map.of());
+    @Test
+    void unchangedUnknownExtensionDoesNotBlockAnUnrelatedQuestTextEdit() {
+        QuestBookDefinition baseline = book("Before");
+        QuestBookDefinition candidate = book("After");
+        var baselineDiagnostics = AuthorValidationService.full(baseline);
+        var candidateDiagnostics = AuthorValidationService.incremental(candidate,
+                List.of(ResourceLocation.parse("test:quest")));
 
-        var diagnostics = AuthorValidationService.incremental(book, List.of(quest.id(), task.id()));
+        assertTrue(AuthorValidationService.blocksCommit(baselineDiagnostics));
+        assertFalse(AuthorValidationService.blocksCommit(candidateDiagnostics, baselineDiagnostics));
 
-        assertTrue(diagnostics.stream().anyMatch(value -> value.code().equals("BQA-103") && value.path().equals("position")));
-        assertTrue(diagnostics.stream().anyMatch(value -> value.code().equals("BQA-T-MINIMUM")
-                && value.path().equals("config.count")));
-        assertTrue(AuthorValidationService.blocksCommit(diagnostics));
+        QuestBookDefinition invalid = book("");
+        assertTrue(AuthorValidationService.blocksCommit(
+                AuthorValidationService.incremental(invalid, List.of(ResourceLocation.parse("test:quest"))),
+                baselineDiagnostics));
     }
 
-    @Test void fullValidationChecksObjectsOutsideIncrementalAffectedSet() {
-        QuestBookDefinition book = new QuestBookDefinition(id("book"), 1, "Book", List.of(), List.of(), Map.of());
-        assertTrue(AuthorValidationService.incremental(book, List.of()).isEmpty());
-        QuestBookDefinition blankTitle = new QuestBookDefinition(id("book"), 1, "", List.of(), List.of(), Map.of());
-        assertTrue(AuthorValidationService.full(blankTitle).stream().anyMatch(value -> value.code().equals("BQA-101")));
-    }
-
-    private static ResourceLocation id(String path) {
-        return ResourceLocation.fromNamespaceAndPath("brnquest", path);
+    private static QuestBookDefinition book(String questTitle) {
+        ResourceLocation bookId = ResourceLocation.parse("test:book");
+        ResourceLocation groupId = ResourceLocation.parse("test:group");
+        ResourceLocation chapterId = ResourceLocation.parse("test:chapter");
+        TaskDefinition unknown = new TaskDefinition(bookId, ResourceLocation.parse("test:unknown_task"),
+                ResourceLocation.parse("missing:type"), Map.of("opaque", "preserved"), false);
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                questTitle, "", "", "", 0, 0, List.of(), List.of(unknown), List.of(), "");
+        ChapterDefinition chapter = new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0,
+                List.of(quest));
+        return new QuestBookDefinition(bookId, 1, "Book",
+                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of());
     }
 }

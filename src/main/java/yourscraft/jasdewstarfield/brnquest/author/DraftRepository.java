@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /** Reads and creates server-local drafts without exposing them as Minecraft resources. */
@@ -56,6 +57,31 @@ public final class DraftRepository {
 
     public AuthorOperationResult<DraftSnapshot> load(MinecraftServer server, ResourceLocation bookId) {
         return load(WorkspacePaths.drafts(server), bookId);
+    }
+
+    /** Lists only drafts that can be decoded and safely opened by the author service. */
+    public AuthorOperationResult<List<DraftCatalogEntry>> list(MinecraftServer server) {
+        return list(WorkspacePaths.drafts(server));
+    }
+
+    AuthorOperationResult<List<DraftCatalogEntry>> list(Path draftsRoot) {
+        Path root = draftsRoot.toAbsolutePath().normalize();
+        if (!Files.exists(root)) {
+            return AuthorOperationResult.success("DRAFT_CATALOG_EMPTY", "No server drafts exist", List.of());
+        }
+        try (var paths = Files.walk(root)) {
+            List<DraftCatalogEntry> entries = paths
+                    .filter(path -> path.getFileName().toString().equals(MANIFEST_FILE))
+                    .map(Path::getParent)
+                    .map(directory -> catalogEntry(root, directory))
+                    .filter(java.util.Objects::nonNull)
+                    .sorted(Comparator.comparing(entry -> entry.bookId().toString()))
+                    .toList();
+            return AuthorOperationResult.success("DRAFT_CATALOG", "Server draft catalog loaded", entries);
+        } catch (IOException exception) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE,
+                    "DRAFT_CATALOG_FAILED", exception.getMessage());
+        }
     }
 
     AuthorOperationResult<DraftSnapshot> load(Path draftsRoot, ResourceLocation bookId) {
@@ -198,6 +224,23 @@ public final class DraftRepository {
 
     AuthorOperationResult<DraftSnapshot> readDirectoryForTest(Path directory, ResourceLocation bookId) {
         return readDirectory(directory, bookId);
+    }
+
+    private DraftCatalogEntry catalogEntry(Path root, Path directory) {
+        Path relative = root.relativize(directory.toAbsolutePath().normalize());
+        if (relative.getNameCount() < 2) return null;
+        String namespace = relative.getName(0).toString();
+        StringBuilder path = new StringBuilder();
+        for (int index = 1; index < relative.getNameCount(); index++) {
+            if (!path.isEmpty()) path.append('/');
+            path.append(relative.getName(index));
+        }
+        ResourceLocation bookId = ResourceLocation.tryBuild(namespace, path.toString());
+        if (bookId == null) return null;
+        AuthorOperationResult<DraftSnapshot> loaded = load(root, bookId);
+        if (!loaded.success()) return null;
+        DraftSnapshot draft = loaded.value();
+        return new DraftCatalogEntry(bookId, draft.book().title(), draft.draftRevision(), draft.origin());
     }
 
     private static void writeDirectory(Path directory, DraftSnapshot draft) throws IOException {

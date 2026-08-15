@@ -24,6 +24,13 @@ public final class AuthorApi {
         return new DraftService().createEmpty(actor, bookId, title);
     }
 
+    /** Lists drafts from the connected target server; client-local files never participate. */
+    public static AuthorOperationResult<List<DraftCatalogEntry>> catalog(ServerPlayer actor) {
+        AuthorOperationResult<List<DraftCatalogEntry>> denied = requireAdministrator(actor);
+        if (denied != null) return denied;
+        return new DraftRepository().list(actor.getServer());
+    }
+
     /** Stable entry point for ID-based chapter, quest, task, reward, and dependency mutations. */
     public static DraftEditService editor() {
         return new DraftEditService();

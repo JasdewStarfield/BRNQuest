@@ -29,7 +29,7 @@ import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Protocol 1 payloads; client messages contain intent and are revalidated on the server. */
+/** Protocol 2 payloads; client messages contain intent and are revalidated on the server. */
 @EventBusSubscriber(modid = BRNQuest.MOD_ID)
 public final class BrnQuestNetwork {
     private static final Gson GSON = new Gson();
@@ -162,6 +162,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, ProgressDeltaPayload.TYPE, ProgressDeltaPayload.CODEC, ClientDelegate::delta);
         registerClient(registrar, QuestToastPayload.TYPE, QuestToastPayload.CODEC, ClientDelegate::toast);
         registerClient(registrar, OpenScreenPayload.TYPE, OpenScreenPayload.CODEC, ClientDelegate::open);
+        AuthoringNetwork.register(registrar);
     }
 
     public static void syncAll(ServerPlayer player, boolean revisionMatches) {
@@ -206,7 +207,7 @@ public final class BrnQuestNetwork {
     public static void selectQuest(String revision, String questId) { PacketDistributor.sendToServer(new SelectQuestPayload(revision, questId)); }
 
     private static String currentRevision() { return QuestBookManager.get().active().map(s -> s.revision()).orElse(""); }
-    private static void send(ServerPlayer player, CustomPacketPayload payload) {
+    static void send(ServerPlayer player, CustomPacketPayload payload) {
         // Mock players and clients without the negotiated channel must not make
         // otherwise server-only progress operations fail.
         if (player.connection != null && NetworkRegistry.hasChannel(player.connection, payload.type().id())) {

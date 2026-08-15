@@ -9,7 +9,9 @@ import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
 
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Author-time validation facade used identically by commands and future UI requests. */
@@ -55,6 +57,33 @@ public final class AuthorValidationService {
 
     public static boolean blocksCommit(List<Diagnostic> diagnostics) {
         return diagnostics.stream().anyMatch(value -> value.severity().ordinal() >= Diagnostic.Severity.ERROR.ordinal());
+    }
+
+    /** Allows unchanged legacy/extension diagnostics while rejecting every newly introduced blocking issue. */
+    public static boolean blocksCommit(List<Diagnostic> candidate, List<Diagnostic> baseline) {
+        Map<DiagnosticFingerprint, Integer> acceptedCounts = new HashMap<>();
+        baseline.stream().filter(AuthorValidationService::blocking).forEach(diagnostic ->
+                acceptedCounts.merge(DiagnosticFingerprint.of(diagnostic), 1, Integer::sum));
+        for (Diagnostic diagnostic : candidate) {
+            if (!blocking(diagnostic)) continue;
+            DiagnosticFingerprint fingerprint = DiagnosticFingerprint.of(diagnostic);
+            int accepted = acceptedCounts.getOrDefault(fingerprint, 0);
+            if (accepted == 0) return true;
+            acceptedCounts.put(fingerprint, accepted - 1);
+        }
+        return false;
+    }
+
+    private static boolean blocking(Diagnostic diagnostic) {
+        return diagnostic.severity().ordinal() >= Diagnostic.Severity.ERROR.ordinal();
+    }
+
+    private record DiagnosticFingerprint(Diagnostic.Severity severity, String code, String file, String path,
+                                         String objectId, String message) {
+        static DiagnosticFingerprint of(Diagnostic diagnostic) {
+            return new DiagnosticFingerprint(diagnostic.severity(), diagnostic.code(), diagnostic.file(),
+                    diagnostic.path(), diagnostic.objectId(), diagnostic.message());
+        }
     }
 
     private static DiagnosticReport structural(QuestBookDefinition book) {

@@ -13,6 +13,7 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
 import net.neoforged.fml.ModList;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
+import yourscraft.jasdewstarfield.brnquest.api.AuthorApi;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.OperationContext;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
@@ -411,6 +412,13 @@ public final class BrnQuestGameTests {
         helper.assertValueEqual(deniedDraft.status(), AuthorOperationResult.Status.FORBIDDEN,
                 "ordinary remote player must not create a server draft");
         helper.assertTrue(createdDraft.success(), "remote administrator must create a draft on the target server");
+        var deniedCatalog = AuthorApi.catalog(ordinaryPlayer);
+        var administratorCatalog = AuthorApi.catalog(firstAdmin);
+        helper.assertValueEqual(deniedCatalog.status(), AuthorOperationResult.Status.FORBIDDEN,
+                "ordinary remote player must not receive the server draft catalog");
+        helper.assertTrue(administratorCatalog.success()
+                        && administratorCatalog.value().stream().anyMatch(entry -> entry.bookId().equals(bookId)),
+                "remote administrator must receive the target server draft catalog");
         DraftSnapshot draft = createdDraft.value();
         EditSessionService sessions = EditSessionService.get();
 

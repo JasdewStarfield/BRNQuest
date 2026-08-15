@@ -65,6 +65,23 @@ class DraftRepositoryTest {
         assertThrows(UnsupportedOperationException.class, () -> snapshot.book().chapters().add(null));
     }
 
+    @Test void catalogListsNestedValidDraftsInStableBookIdOrder() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        Path drafts = tempDirectory.resolve("drafts");
+        DraftSnapshot later = DraftSnapshot.from(book("test:zeta", "Zeta"), DraftOrigin.ACTIVE, "active");
+        DraftSnapshot earlier = DraftSnapshot.from(book("example:path/to/book", "Nested"), DraftOrigin.EMPTY, "");
+        assertTrue(repository.create(drafts, later).success());
+        assertTrue(repository.create(drafts, earlier).success());
+
+        AuthorOperationResult<List<DraftCatalogEntry>> result = repository.list(drafts);
+
+        assertTrue(result.success());
+        assertEquals(List.of("example:path/to/book", "test:zeta"), result.value().stream()
+                .map(entry -> entry.bookId().toString()).toList());
+        assertEquals("Nested", result.value().getFirst().title());
+        assertEquals(DraftOrigin.EMPTY, result.value().getFirst().origin());
+    }
+
     @Test void loadsVersionOneManifestAsUnknownOrigin() throws Exception {
         DraftRepository repository = new DraftRepository();
         QuestBookDefinition book = book("test:legacy", "Legacy");

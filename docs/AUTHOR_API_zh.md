@@ -13,6 +13,8 @@
 
 `yourscraft.jasdewstarfield.brnquest.api.AuthorApi` 提供：
 
+- `catalog(player)`：以目标服务器权限等级 2 为边界，返回按完整任务书 ID 稳定排序的可打开草稿目录；客户端本地文件不参与目录生成。
+
 - `createEmpty`、`createFromActive`、`createFromWorkspace`；
 - `open`、`renew`、`close`；
 - `editor()`：取得稳定 ID 驱动的 `DraftEditService`，编辑章节组、章节、任务、依赖、task 和 reward；

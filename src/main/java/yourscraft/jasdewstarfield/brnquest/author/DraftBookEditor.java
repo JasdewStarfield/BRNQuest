@@ -39,6 +39,24 @@ public final class DraftBookEditor {
         return replaceGroup(book, groupId, ignored -> replacement);
     }
 
+    public static AuthorOperationResult<DraftChange> moveGroup(QuestBookDefinition book, ResourceLocation groupId,
+                                                                int targetIndex) {
+        List<ChapterGroupDefinition> ordered = book.chapterGroups().stream()
+                .sorted(java.util.Comparator.comparingInt(ChapterGroupDefinition::order)
+                        .thenComparing(group -> group.id().toString())).toList();
+        int source = indexOf(ordered, groupId, ChapterGroupDefinition::id);
+        if (source < 0) return notFound("GROUP_NOT_FOUND", groupId);
+        List<ChapterGroupDefinition> moved = new ArrayList<>(ordered);
+        ChapterGroupDefinition value = moved.remove(source);
+        moved.add(Math.max(0, Math.min(targetIndex, moved.size())), value);
+        List<ChapterGroupDefinition> normalized = new ArrayList<>();
+        for (int index = 0; index < moved.size(); index++) {
+            ChapterGroupDefinition group = moved.get(index);
+            normalized.add(new ChapterGroupDefinition(group.bookId(), group.id(), group.title(), index));
+        }
+        return changed(withGroups(book, normalized), groupId);
+    }
+
     public static AuthorOperationResult<DraftChange> removeGroup(QuestBookDefinition book, ResourceLocation groupId) {
         List<ResourceLocation> children = book.chapters().stream().filter(c -> c.groupId().equals(groupId)).map(ChapterDefinition::id).toList();
         if (!children.isEmpty()) return conflict("GROUP_NOT_EMPTY", groupId + " contains " + children);
@@ -101,6 +119,29 @@ public final class DraftBookEditor {
         return replaceChapter(book, chapterId, ignored -> safe, chapterId);
     }
 
+    public static AuthorOperationResult<DraftChange> moveChapterOrder(QuestBookDefinition book,
+                                                                       ResourceLocation chapterId,
+                                                                       int targetIndex) {
+        ChapterDefinition source = chapter(book, chapterId);
+        if (source == null) return notFound("CHAPTER_NOT_FOUND", chapterId);
+        List<ChapterDefinition> siblings = book.chapters().stream()
+                .filter(chapter -> chapter.groupId().equals(source.groupId()))
+                .sorted(java.util.Comparator.comparingInt(ChapterDefinition::order)
+                        .thenComparing(chapter -> chapter.id().toString())).toList();
+        int sourceIndex = indexOf(siblings, chapterId, ChapterDefinition::id);
+        List<ChapterDefinition> moved = new ArrayList<>(siblings);
+        ChapterDefinition value = moved.remove(sourceIndex);
+        moved.add(Math.max(0, Math.min(targetIndex, moved.size())), value);
+        Map<ResourceLocation, Integer> orders = new java.util.HashMap<>();
+        for (int index = 0; index < moved.size(); index++) orders.put(moved.get(index).id(), index);
+        List<ChapterDefinition> normalized = book.chapters().stream().map(chapter -> {
+            Integer order = orders.get(chapter.id());
+            return order == null ? chapter : new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(),
+                    chapter.title(), chapter.icon(), order, chapter.quests());
+        }).toList();
+        return changed(withChapters(book, normalized), chapterId);
+    }
+
     public static AuthorOperationResult<DraftChange> removeChapter(QuestBookDefinition book, ResourceLocation chapterId) {
         ChapterDefinition old = chapter(book, chapterId);
         if (old == null) return notFound("CHAPTER_NOT_FOUND", chapterId);
@@ -158,6 +199,30 @@ public final class DraftBookEditor {
                 location.chapter.quests().get(location.index).rewards(), replacement.legacyId());
         return replaceQuest(book, location, ignored -> safe, questId);
     }
+
+    /** Commits a multi-selection drag as one revision instead of one stale-prone request per node. */
+    public static AuthorOperationResult<DraftChange> updateQuestPositions(QuestBookDefinition book,
+                                                                           Map<ResourceLocation, Position> positions) {
+        if (positions == null || positions.isEmpty()) return invalid("POSITIONS_REQUIRED", "At least one position is required");
+        if (positions.values().stream().anyMatch(position -> position == null
+                || !Double.isFinite(position.x()) || !Double.isFinite(position.y()))) {
+            return invalid("INVALID_QUEST_POSITION", "Quest coordinates must be finite");
+        }
+        if (positions.keySet().stream().anyMatch(id -> quest(book, id) == null)) {
+            return invalid("QUEST_NOT_FOUND", "Every moved quest must exist in the current draft");
+        }
+        List<ChapterDefinition> chapters = book.chapters().stream().map(chapter -> new ChapterDefinition(
+                chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(),
+                chapter.quests().stream().map(quest -> {
+                    Position position = positions.get(quest.id());
+                    return position == null ? quest : new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
+                            quest.title(), quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
+                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
+                }).toList())).toList();
+        return changed(withChapters(book, chapters), positions.keySet().toArray(ResourceLocation[]::new));
+    }
+
+    public record Position(double x, double y) {}
 
     public static AuthorOperationResult<DraftChange> moveQuest(QuestBookDefinition book, ResourceLocation questId,
                                                                 ResourceLocation targetChapterId, int targetIndex) {

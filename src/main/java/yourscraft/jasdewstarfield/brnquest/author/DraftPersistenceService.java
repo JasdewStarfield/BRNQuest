@@ -28,9 +28,15 @@ public final class DraftPersistenceService {
         AuthorOperationResult<DraftSaveResult> result = sessions.persist(player, sessionId, bookId,
                 expectedDraftRevision, state -> {
             List<Diagnostic> diagnostics = AuthorValidationService.full(state.snapshot().book());
-            if (AuthorValidationService.blocksCommit(diagnostics)) {
+            AuthorOperationResult<DraftSnapshot> savedBaseline = repository.load(player.getServer(), bookId);
+            if (!savedBaseline.success()) {
+                return AuthorOperationResult.failure(savedBaseline.status(), savedBaseline.code(),
+                        savedBaseline.message());
+            }
+            List<Diagnostic> baselineDiagnostics = AuthorValidationService.full(savedBaseline.value().book());
+            if (AuthorValidationService.blocksCommit(diagnostics, baselineDiagnostics)) {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
-                        "DRAFT_VALIDATION_FAILED", "Draft must pass full validation before save",
+                        "DRAFT_VALIDATION_FAILED", "Draft introduced a new validation error",
                         new DraftSaveResult(state.snapshot(), state.savedRevision(), null, null, diagnostics));
             }
             AuthorOperationResult<RevisionCheck> inspected = revisions.inspect(player.getServer(), state);

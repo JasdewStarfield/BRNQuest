@@ -3,11 +3,13 @@ package yourscraft.jasdewstarfield.brnquest.platform;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.common.NeoForge;
 import yourscraft.jasdewstarfield.brnquest.client.ClientKeyRegistry;
+import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ClientRewardPresentationRegistry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ClientTaskPresentationRegistry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestHud;
@@ -21,6 +23,7 @@ public final class PlatformClientHooks {
         bus.addListener(PlatformClientHooks::keys);
         bus.addListener(PlatformClientHooks::layers);
         NeoForge.EVENT_BUS.addListener(PlatformClientHooks::tick);
+        NeoForge.EVENT_BUS.addListener(PlatformClientHooks::logout);
     }
     private static void setup(FMLClientSetupEvent event) {
         // Client extensions register during construction; rendering starts only after this freeze.
@@ -31,4 +34,7 @@ public final class PlatformClientHooks {
     private static void keys(RegisterKeyMappingsEvent event) { event.register(ClientKeyRegistry.create()); }
     private static void layers(RegisterGuiLayersEvent event) { event.registerAbove(VanillaGuiLayers.CHAT, QuestHud.LAYER_ID, QuestHud::render); }
     private static void tick(ClientTickEvent.Post event) { ClientKeyRegistry.tick(); }
+    private static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
+        ClientEditorState.get().disconnected();
+    }
 }

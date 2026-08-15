@@ -77,6 +77,35 @@ class DraftBookEditorTest {
         assertFalse(AuthorValidationService.blocksCommit(AuthorValidationService.full(result.value().book())));
     }
 
+    @Test void reordersStructureAndCommitsMultipleNodePositionsAtomically() {
+        QuestBookDefinition book = emptyBook();
+        ChapterGroupDefinition firstGroup = new ChapterGroupDefinition(id("book"), id("first_group"), "First", 0);
+        ChapterGroupDefinition secondGroup = new ChapterGroupDefinition(id("book"), id("second_group"), "Second", 1);
+        book = value(DraftBookEditor.addGroup(book, firstGroup));
+        book = value(DraftBookEditor.addGroup(book, secondGroup));
+        ChapterDefinition first = new ChapterDefinition(id("book"), id("first"), firstGroup.id(), "First", "", 0, List.of());
+        ChapterDefinition second = new ChapterDefinition(id("book"), id("second"), firstGroup.id(), "Second", "", 1, List.of());
+        book = value(DraftBookEditor.addChapter(book, first));
+        book = value(DraftBookEditor.addChapter(book, second));
+        book = value(DraftBookEditor.addQuest(book, first.id(), quest("root", first.id(), List.of())));
+        book = value(DraftBookEditor.addQuest(book, first.id(), quest("child", first.id(), List.of())));
+
+        book = value(DraftBookEditor.moveGroup(book, secondGroup.id(), 0));
+        book = value(DraftBookEditor.moveChapterOrder(book, second.id(), 0));
+        book = value(DraftBookEditor.updateQuestPositions(book, Map.of(
+                id("root"), new DraftBookEditor.Position(3.5, -2.0),
+                id("child"), new DraftBookEditor.Position(5.0, 7.25))));
+
+        assertEquals(0, book.chapterGroups().stream().filter(group -> group.id().equals(secondGroup.id()))
+                .findFirst().orElseThrow().order());
+        assertEquals(0, book.chapters().stream().filter(chapter -> chapter.id().equals(second.id()))
+                .findFirst().orElseThrow().order());
+        assertEquals(3.5, book.quests().stream().filter(quest -> quest.id().equals(id("root")))
+                .findFirst().orElseThrow().x());
+        assertEquals(7.25, book.quests().stream().filter(quest -> quest.id().equals(id("child")))
+                .findFirst().orElseThrow().y());
+    }
+
     private static QuestBookDefinition bookWithDependency() {
         QuestBookDefinition book = emptyBook();
         ChapterGroupDefinition group = new ChapterGroupDefinition(id("book"), id("group"), "Group", 0);

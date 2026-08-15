@@ -72,6 +72,25 @@ public final class EditSessionService {
         return inspectAuthorized(server, bookId, server.getTickCount());
     }
 
+    /** Returns the authoritative in-memory draft only to the lease owner. */
+    public synchronized AuthorOperationResult<DraftSnapshot> snapshot(ServerPlayer player, UUID sessionId,
+                                                                       ResourceLocation bookId,
+                                                                       String expectedDraftRevision) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        Lease lease = lease(server, sessionId);
+        AuthorOperationResult<DraftSnapshot> denied = denyLease(lease, player.getUUID(), bookId,
+                expectedDraftRevision, server.getTickCount());
+        if (denied != null) return denied;
+        lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
+        return AuthorOperationResult.success("SESSION_SNAPSHOT", "Edit-session draft loaded", lease.draft);
+    }
+
     synchronized AuthorOperationResult<DraftEditResult> mutate(ServerPlayer player, UUID sessionId,
                                                                 ResourceLocation bookId,
                                                                 String expectedDraftRevision,

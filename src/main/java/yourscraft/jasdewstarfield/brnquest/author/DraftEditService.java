@@ -43,6 +43,13 @@ public final class DraftEditService {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateGroup(book, groupId, group));
     }
 
+    public AuthorOperationResult<DraftEditResult> moveGroup(ServerPlayer player, UUID sessionId,
+                                                             ResourceLocation bookId, String revision,
+                                                             ResourceLocation groupId, int targetIndex) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.moveGroup(book, groupId, targetIndex));
+    }
+
     public AuthorOperationResult<DraftEditResult> removeGroup(ServerPlayer player, UUID sessionId,
                                                                ResourceLocation bookId, String revision,
                                                                ResourceLocation groupId) {
@@ -74,6 +81,13 @@ public final class DraftEditService {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateChapter(book, chapterId, chapter));
     }
 
+    public AuthorOperationResult<DraftEditResult> moveChapterOrder(ServerPlayer player, UUID sessionId,
+                                                                    ResourceLocation bookId, String revision,
+                                                                    ResourceLocation chapterId, int targetIndex) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.moveChapterOrder(book, chapterId, targetIndex));
+    }
+
     public AuthorOperationResult<DraftEditResult> removeChapter(ServerPlayer player, UUID sessionId,
                                                                  ResourceLocation bookId, String revision,
                                                                  ResourceLocation chapterId) {
@@ -103,6 +117,14 @@ public final class DraftEditService {
                                                                ResourceLocation bookId, String revision,
                                                                ResourceLocation questId, QuestDefinition quest) {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateQuest(book, questId, quest));
+    }
+
+    public AuthorOperationResult<DraftEditResult> updateQuestPositions(ServerPlayer player, UUID sessionId,
+                                                                        ResourceLocation bookId, String revision,
+                                                                        java.util.Map<ResourceLocation,
+                                                                                DraftBookEditor.Position> positions) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.updateQuestPositions(book, positions));
     }
 
     public AuthorOperationResult<DraftEditResult> moveQuest(ServerPlayer player, UUID sessionId,
@@ -231,9 +253,11 @@ public final class DraftEditService {
                 return AuthorOperationResult.failure(changed.status(), changed.code(), changed.message());
             }
             DraftChange change = changed.value();
+            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> baselineDiagnostics =
+                    AuthorValidationService.full(current.book());
             List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics =
                     AuthorValidationService.incremental(change.book(), change.affectedObjects());
-            if (AuthorValidationService.blocksCommit(diagnostics)) {
+            if (AuthorValidationService.blocksCommit(diagnostics, baselineDiagnostics)) {
                 // Invalid candidates never receive a revision and never enter session state.
                 DraftEditResult result = new DraftEditResult(current, change.affectedObjects(), diagnostics);
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,

@@ -31,11 +31,38 @@ public final class PlayerProgress {
     public Set<String> claimedRewardsView() { return Set.copyOf(claimedRewards); }
     public Set<String> orphanedQuestIds() { return Set.copyOf(orphanedQuestIds); }
     public void orphan(String id) { orphanedQuestIds.add(id); }
+    /** Moves quest-level state across a canonical ID alias without touching stable task/reward ledgers. */
+    public boolean migrateQuestId(String oldId, String newId) {
+        if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        QuestStatus oldStatus = quests.remove(oldId);
+        Long oldCompletion = completionTimes.remove(oldId);
+        boolean changed = oldStatus != null || oldCompletion != null || orphanedQuestIds.remove(oldId);
+        if (oldStatus != null) {
+            QuestStatus current = quests.get(newId);
+            quests.put(newId, current == null || statusRank(oldStatus) > statusRank(current) ? oldStatus : current);
+        }
+        if (oldCompletion != null) {
+            completionTimes.merge(newId, oldCompletion, (current, migrated) ->
+                    current == 0L ? migrated : migrated == 0L ? current : Math.min(current, migrated));
+        }
+        return changed;
+    }
     public void resetQuest(String questId, Collection<String> taskIds, Collection<String> rewardIds) {
         quests.remove(questId);
         completionTimes.remove(questId);
         taskIds.forEach(taskProgress::remove);
         claimedRewards.removeAll(rewardIds);
+    }
+
+    private static int statusRank(QuestStatus status) {
+        return switch (status) {
+            case REWARD_CLAIMED -> 5;
+            case COMPLETED -> 4;
+            case ACTIVE -> 3;
+            case AVAILABLE -> 2;
+            case LOCKED -> 1;
+            case UNAVAILABLE -> 0;
+        };
     }
 
     public CompoundTag save() {

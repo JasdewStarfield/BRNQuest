@@ -106,6 +106,41 @@ class DraftBookEditorTest {
                 .findFirst().orElseThrow().y());
     }
 
+    @Test void explicitQuestRenamePreservesOrderAndUpdatesReferencesAndMigrationAliasAtomically() {
+        QuestBookDefinition book = bookWithDependency();
+        book = value(DraftBookEditor.addQuest(book, id("chapter"),
+                quest("last", id("chapter"), List.of(id("child")))));
+        QuestDefinition replacement = new QuestDefinition(id("book"), id("renamed"), id("chapter"),
+                "Renamed", "Subtitle", "Updated", "minecraft:diamond", 99, 99,
+                List.of(), List.of(), List.of(), "");
+
+        QuestBookDefinition renamed = value(DraftBookEditor.updateQuestBasics(
+                book, id("root"), replacement));
+
+        assertEquals(List.of(id("renamed"), id("child"), id("last")),
+                renamed.chapters().getFirst().quests().stream().map(QuestDefinition::id).toList());
+        QuestDefinition updated = renamed.quests().stream()
+                .filter(quest -> quest.id().equals(id("renamed"))).findFirst().orElseThrow();
+        assertEquals("Renamed", updated.title());
+        assertEquals("minecraft:diamond", updated.icon());
+        assertEquals(0, updated.x(), "Property editing must not overwrite graph coordinates");
+        assertEquals(List.of(id("renamed")), renamed.quests().stream()
+                .filter(quest -> quest.id().equals(id("child"))).findFirst().orElseThrow().dependencies());
+        assertEquals(id("renamed"), renamed.legacyIds().get("brnquest:root"));
+    }
+
+    @Test void questRenameRejectsAnExistingStableIdWithoutChangingTheBook() {
+        QuestBookDefinition book = bookWithDependency();
+        QuestDefinition duplicate = new QuestDefinition(id("book"), id("child"), id("chapter"),
+                "Duplicate", "", "", "", 0, 0, List.of(), List.of(), List.of(), "");
+
+        AuthorOperationResult<DraftChange> result = DraftBookEditor.updateQuestBasics(
+                book, id("root"), duplicate);
+
+        assertEquals("DUPLICATE_QUEST_ID", result.code());
+        assertFalse(result.success());
+    }
+
     private static QuestBookDefinition bookWithDependency() {
         QuestBookDefinition book = emptyBook();
         ChapterGroupDefinition group = new ChapterGroupDefinition(id("book"), id("group"), "Group", 0);

@@ -200,6 +200,61 @@ public final class DraftBookEditor {
         return replaceQuest(book, location, ignored -> safe, questId);
     }
 
+    /**
+     * Applies basic properties and an optional stable-ID rename as one draft revision.
+     * The serialized sibling position is deliberately preserved because graph coordinates,
+     * rather than file order, define the author- and player-facing layout.
+     */
+    public static AuthorOperationResult<DraftChange> updateQuestBasics(QuestBookDefinition book,
+                                                                        ResourceLocation questId,
+                                                                        QuestDefinition replacement) {
+        QuestLocation location = questLocation(book, questId);
+        if (location == null) return notFound("QUEST_NOT_FOUND", questId);
+        if (replacement == null || !replacement.bookId().equals(book.id())
+                || !replacement.chapterId().equals(location.chapter.id())) {
+            return invalid("QUEST_CONTAINER_MISMATCH", "Quest ownership cannot change in a basic-property update");
+        }
+        ResourceLocation replacementId = replacement.id();
+        if (!replacementId.equals(questId) && quest(book, replacementId) != null) {
+            return conflict("DUPLICATE_QUEST_ID", replacementId);
+        }
+
+        List<ResourceLocation> affected = new ArrayList<>();
+        affected.add(questId);
+        if (!replacementId.equals(questId)) affected.add(replacementId);
+        List<ChapterDefinition> chapters = new ArrayList<>();
+        for (ChapterDefinition chapter : book.chapters()) {
+            List<QuestDefinition> quests = new ArrayList<>();
+            for (QuestDefinition current : chapter.quests()) {
+                List<ResourceLocation> dependencies = current.dependencies().stream()
+                        .map(id -> id.equals(questId) ? replacementId : id).toList();
+                if (!dependencies.equals(current.dependencies()) && !affected.contains(current.id())) {
+                    affected.add(current.id());
+                }
+                if (current.id().equals(questId)) {
+                    quests.add(new QuestDefinition(book.id(), replacementId, chapter.id(), replacement.title(),
+                            replacement.subtitle(), replacement.description(), replacement.icon(),
+                            current.x(), current.y(), dependencies, current.tasks(), current.rewards(),
+                            current.legacyId()));
+                } else {
+                    quests.add(copyQuest(current, dependencies, current.tasks(), current.rewards()));
+                }
+            }
+            chapters.add(withQuests(chapter, quests));
+        }
+
+        Map<String, ResourceLocation> aliases = new java.util.TreeMap<>(book.legacyIds());
+        if (!replacementId.equals(questId)) {
+            aliases.replaceAll((alias, target) -> target.equals(questId) ? replacementId : target);
+            // Renaming back to a former alias must not leave a meaningless A -> A mapping.
+            aliases.entrySet().removeIf(entry -> entry.getKey().equals(entry.getValue().toString()));
+            aliases.put(questId.toString(), replacementId);
+        }
+        QuestBookDefinition changed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
+                book.chapterGroups(), chapters, aliases);
+        return changed(changed, affected.toArray(ResourceLocation[]::new));
+    }
+
     /** Commits a multi-selection drag as one revision instead of one stale-prone request per node. */
     public static AuthorOperationResult<DraftChange> updateQuestPositions(QuestBookDefinition book,
                                                                            Map<ResourceLocation, Position> positions) {

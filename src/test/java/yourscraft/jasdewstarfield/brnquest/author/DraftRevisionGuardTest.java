@@ -34,6 +34,23 @@ class DraftRevisionGuardTest {
         assertFalse(check.hasConflicts());
     }
 
+    @Test void activeDraftMayReplaceWorkspaceOnlyWhenWorkspaceStillMatchesItsBase() {
+        DraftSnapshot draft = DraftSnapshot.from(book(), DraftOrigin.ACTIVE, "shared-base");
+        RevisionVector matchingVector = new RevisionVector("shared-base", "shared-base",
+                draft.draftRevision(), draft.draftRevision(), "shared-base");
+        RevisionCheck matching = DraftPublishService.addWorkspaceCreationConflict(draft,
+                new RevisionCheck(matchingVector, List.of()));
+        assertFalse(matching.hasConflicts(), "An unchanged source workspace is safe to replace");
+
+        RevisionVector divergentVector = new RevisionVector("shared-base", "shared-base",
+                draft.draftRevision(), draft.draftRevision(), "other-workspace");
+        RevisionCheck divergent = DraftPublishService.addWorkspaceCreationConflict(draft,
+                new RevisionCheck(divergentVector, List.of()));
+        assertEquals("WORKSPACE_ALREADY_EXISTS", divergent.conflicts().getFirst().code());
+        assertEquals("shared-base", divergent.conflicts().getFirst().expectedRevision());
+        assertEquals("other-workspace", divergent.conflicts().getFirst().actualRevision());
+    }
+
     private static QuestBookDefinition book() {
         return new QuestBookDefinition(ResourceLocation.parse("test:book"), 1, "Book",
                 List.of(), List.of(), Map.of());

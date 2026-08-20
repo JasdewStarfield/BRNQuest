@@ -35,6 +35,10 @@ public final class QuestBookValidator {
             chapter.quests().forEach(quest -> {
                 if (!quest.bookId().equals(book.id()) || !quest.chapterId().equals(chapter.id())) add(report, Diagnostic.Severity.FATAL, "BQV-115", quest.id(), "Quest ownership does not match its container");
                 if (quests.putIfAbsent(quest.id(), quest) != null) add(report, Diagnostic.Severity.FATAL, "BQV-101", quest.id(), "Duplicate quest ID");
+                if (QuestIconValue.isTexture(quest.icon()) && QuestIconValue.textureId(quest.icon()).isEmpty()) {
+                    add(report, Diagnostic.Severity.ERROR, "BQV-123", quest.id(),
+                            "Texture icon must contain a valid ResourceLocation");
+                }
                 quest.tasks().forEach(task -> {
                     if (!typedIds.add(task.id())) add(report, Diagnostic.Severity.FATAL, "BQV-116", task.id(), "Duplicate task/reward ID");
                     var type = TaskTypeRegistry.get(task.typeId());

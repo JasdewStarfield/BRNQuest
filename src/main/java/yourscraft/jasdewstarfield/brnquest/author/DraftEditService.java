@@ -119,6 +119,14 @@ public final class DraftEditService {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateQuest(book, questId, quest));
     }
 
+    /** Server-authoritative basic-property transaction, including explicit stable-ID rename semantics. */
+    public AuthorOperationResult<DraftEditResult> updateQuestBasics(ServerPlayer player, UUID sessionId,
+                                                                     ResourceLocation bookId, String revision,
+                                                                     ResourceLocation questId, QuestDefinition quest) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.updateQuestBasics(book, questId, quest));
+    }
+
     public AuthorOperationResult<DraftEditResult> updateQuestPositions(ServerPlayer player, UUID sessionId,
                                                                         ResourceLocation bookId, String revision,
                                                                         java.util.Map<ResourceLocation,

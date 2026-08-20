@@ -146,6 +146,31 @@ class ClientEditorStateTest {
         assertEquals("After", state.draft().orElseThrow().book().title());
     }
 
+    @Test void publishPipelineCanStartFromDirtyDraftAndReturnsToSavedEditingState() {
+        ResourceLocation bookId = ResourceLocation.parse("test:publish");
+        QuestBookSnapshot before = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Before",
+                List.of(), List.of(), Map.of()));
+        QuestBookSnapshot after = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "After",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, before, before.revision());
+        acceptTransfer("UPDATE", sessionId, after, before.revision());
+
+        assertTrue(state.beginPublish().isPresent());
+        assertEquals(ClientEditorState.Mode.PUBLISHING, state.mode());
+        var applied = new AuthoringNetwork.SessionResponseWire("PUBLISH", "SUCCESS", "PUBLISH_APPLY_COMPLETE", "ok",
+                sessionId.toString(), bookId.toString(), "", after.revision(), after.revision(),
+                36_000L, 0, 0);
+        state.acceptSession(GSON.toJson(applied));
+
+        assertEquals(ClientEditorState.Mode.EDITING, state.mode());
+        assertFalse(state.dirty());
+        assertEquals("PUBLISH_APPLY_COMPLETE", state.statusCode());
+    }
+
     @Test void mismatchedDraftRevisionIsRejectedWithoutEnteringEditMode() {
         ResourceLocation bookId = ResourceLocation.parse("test:mismatch");
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Mismatch",

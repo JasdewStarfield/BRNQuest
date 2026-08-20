@@ -46,6 +46,11 @@ public final class ProgressEngine {
         if (snapshot == null) return;
         QuestProgressData data = QuestProgressData.get(player.getServer());
         PlayerProgress progress = data.get(ProgressOwnerService.require(player));
+        // Canonical quest renames are published as aliases; migrate quest-level state before
+        // availability and orphan checks so an intentional rename does not reset player progress.
+        snapshot.book().legacyIds().forEach((oldId, newId) -> {
+            if (snapshot.quests().containsKey(newId)) progress.migrateQuestId(oldId, newId.toString());
+        });
         Set<String> current = new HashSet<>();
         for (QuestDefinition quest : snapshot.book().quests()) {
             current.add(quest.id().toString());

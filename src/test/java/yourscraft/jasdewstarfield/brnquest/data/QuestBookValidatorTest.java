@@ -58,6 +58,19 @@ class QuestBookValidatorTest {
         assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-122")));
     }
 
+    @Test
+    void malformedExplicitTextureIconIsRejected() {
+        QuestDefinition valid = quest("textured", List.of());
+        QuestDefinition malformed = new QuestDefinition(valid.bookId(), valid.id(), valid.chapterId(), valid.title(),
+                valid.subtitle(), valid.description(), "texture:not a resource location", valid.x(), valid.y(),
+                valid.dependencies(), valid.tasks(), valid.rewards(), valid.legacyId());
+        DiagnosticReport report = new DiagnosticReport();
+
+        QuestBookValidator.validate(book(malformed), report);
+
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-123")));
+    }
+
     private static QuestBookDefinition book(QuestDefinition... quests) {
         ResourceLocation bookId = id("book");
         ResourceLocation groupId = id("group");

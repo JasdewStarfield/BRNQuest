@@ -37,4 +37,29 @@ class EditorComponentGeometryTest {
         host.close();
         assertEquals(EditorOverlayHost.Kind.NONE, host.active());
     }
+
+    @Test void pickerMapsOnlyVisibleTwoLineRowsToAbsoluteEntries() {
+        UiRect bounds = new UiRect(100, 50, 500, 252);
+
+        assertEquals(6, EditorPickerList.visibleRows(bounds));
+        assertEquals(-1, EditorPickerList.entryAt(bounds, 3, 20, 120, 60));
+        assertEquals(3, EditorPickerList.entryAt(bounds, 3, 20, 120, 72));
+        assertEquals(8, EditorPickerList.entryAt(bounds, 3, 20, 120, 221));
+        assertEquals(-1, EditorPickerList.entryAt(bounds, 3, 5, 120, 221));
+    }
+
+    @Test void compactPropertyRowsReserveStableLabelAndFieldColumns() {
+        EditorPropertyFormLayout.Row first = EditorPropertyFormLayout.row(177, 48, 226, 78);
+        EditorPropertyFormLayout.Row fifth = EditorPropertyFormLayout.row(177, 136, 226, 78);
+
+        assertEquals(new UiRect(177, 48, 255, 66), first.label());
+        assertEquals(new UiRect(255, 48, 403, 66), first.field());
+        assertEquals(154, fifth.field().bottom(), "Five compact rows must stay above the action buttons at 720p scale");
+    }
+
+    @Test void bottomStatusUsesTheFixedToolbarRatherThanTheOpenNavigationDrawer() {
+        QuestScreenLayout screen = new QuestScreenLayout(1280, 720, false, false);
+
+        assertEquals(892, screen.bottomStatusMaximumWidth(900));
+    }
 }

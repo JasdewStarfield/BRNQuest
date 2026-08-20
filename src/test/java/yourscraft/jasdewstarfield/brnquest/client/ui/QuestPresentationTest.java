@@ -6,6 +6,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
@@ -54,6 +55,18 @@ class QuestPresentationTest {
                 0, 0, List.of(), List.of(foreignItem), List.of(), "LEGACY");
 
         assertEquals(QuestPresentation.VisualKind.PLACEHOLDER, QuestPresentation.visual(quest).kind());
+    }
+
+    @Test void explicitTextureIconBypassesItemSnbtPresentation() {
+        ResourceLocation texture = ResourceLocation.parse("brnquest_test:textures/gui/custom_icon.png");
+        var quest = new QuestDefinition(id("book"), id("quest"), id("chapter"), "Quest", "", "",
+                QuestIconValue.texture(texture), 0, 0, List.of(), List.of(), List.of(), "");
+
+        QuestPresentation.QuestVisual visual = QuestPresentation.visual(quest);
+
+        assertEquals(QuestPresentation.VisualKind.TEXTURE, visual.kind());
+        assertEquals(texture, QuestIconValue.textureId(visual.value()).orElseThrow());
+        assertEquals("", visual.itemSnbt());
     }
 
     @Test void completedQuestWithoutRewardsUsesPlainCompletionAndNoBadge() {

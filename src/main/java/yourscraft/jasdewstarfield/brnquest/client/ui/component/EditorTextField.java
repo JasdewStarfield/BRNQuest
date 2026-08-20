@@ -16,11 +16,18 @@ public final class EditorTextField extends EditBox {
     }
 
     public void show(UiRect bounds, boolean enabled) {
+        boolean geometryChanged = !visible || getX() != bounds.left() || getY() != bounds.top()
+                || getWidth() != bounds.width();
         setX(bounds.left());
         setY(bounds.top());
         setWidth(bounds.width());
         setVisible(true);
         active = enabled;
+        if (geometryChanged) {
+            // setValue() may run while a hidden field still has its 10px constructor width.
+            // Re-applying the cursor after sizing makes EditBox recompute its horizontal text viewport.
+            setCursorPosition(getCursorPosition());
+        }
     }
 
     public void hide() {

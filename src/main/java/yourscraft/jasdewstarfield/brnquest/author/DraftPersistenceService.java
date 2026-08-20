@@ -45,8 +45,9 @@ public final class DraftPersistenceService {
             }
             RevisionCheck check = inspected.value();
             if (check.hasConflicts()) {
+                RevisionConflict first = check.conflicts().getFirst();
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "REVISION_CONFLICT",
-                        "Draft save rejected by revision guard",
+                        "Draft save rejected by revision guard: " + first.code() + " - " + first.message(),
                         new DraftSaveResult(state.snapshot(), state.savedRevision(), null, check, diagnostics));
             }
             AuthorOperationResult<DraftSaveResult> saved = repository.save(player.getServer(), state.snapshot(),

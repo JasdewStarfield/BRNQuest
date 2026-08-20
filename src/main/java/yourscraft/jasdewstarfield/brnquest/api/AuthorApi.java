@@ -50,7 +50,7 @@ public final class AuthorApi {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                     "PLAYER_NOT_CONNECTED", "Editor must be connected to the target server");
         }
-        AuthorOperationResult<DraftSnapshot> loaded = new DraftRepository().load(actor.getServer(), bookId);
+        AuthorOperationResult<DraftSnapshot> loaded = new DraftRepository().loadForEditing(actor.getServer(), bookId);
         if (!loaded.success()) return failureLike(loaded);
         return EditSessionService.get().open(actor, loaded.value());
     }

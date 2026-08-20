@@ -59,6 +59,35 @@ public final class DraftRepository {
         return load(WorkspacePaths.drafts(server), bookId);
     }
 
+    /**
+     * Loads a draft for a new edit lease and restores the workspace baseline when
+     * the same content was published by an earlier session. The exact revision
+     * equality makes this a metadata repair, never an implicit content merge.
+     */
+    public AuthorOperationResult<DraftSnapshot> loadForEditing(MinecraftServer server, ResourceLocation bookId) {
+        return loadForEditing(WorkspacePaths.drafts(server), WorkspacePaths.workspace(server), bookId);
+    }
+
+    AuthorOperationResult<DraftSnapshot> loadForEditing(Path draftsRoot, Path workspaceRoot,
+                                                         ResourceLocation bookId) {
+        AuthorOperationResult<DraftSnapshot> loaded = load(draftsRoot, bookId);
+        if (!loaded.success()) return loaded;
+        DraftSnapshot draft = loaded.value();
+        AuthorOperationResult<DraftSnapshot> workspace = readWorkspace(workspaceRoot, bookId);
+        if (!workspace.success()) {
+            return workspace.status() == AuthorOperationResult.Status.NOT_FOUND ? loaded : failureLike(workspace);
+        }
+        if (!draft.draftRevision().equals(workspace.value().draftRevision())) return loaded;
+        if (draft.origin() == DraftOrigin.WORKSPACE
+                && draft.baseRevision().equals(workspace.value().draftRevision())) return loaded;
+        // This also advances a previously published WORKSPACE draft after a later
+        // publish: its manifest base names the prior workspace while its content
+        // and the current workspace already share the new revision.
+        DraftSnapshot rebased = DraftSnapshot.from(draft.book(), DraftOrigin.WORKSPACE, draft.draftRevision());
+        return AuthorOperationResult.success("DRAFT_WORKSPACE_BASELINE_RESTORED",
+                "Draft content matches workspace; restored its published baseline", rebased);
+    }
+
     /** Lists only drafts that can be decoded and safely opened by the author service. */
     public AuthorOperationResult<List<DraftCatalogEntry>> list(MinecraftServer server) {
         return list(WorkspacePaths.drafts(server));

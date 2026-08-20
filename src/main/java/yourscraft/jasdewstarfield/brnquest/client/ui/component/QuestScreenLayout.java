@@ -46,6 +46,11 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
         return y >= content().top() && y < content().bottom();
     }
 
+    /** The fixed bottom bar is fully usable; side drawers end above it and must not constrain status text. */
+    public int bottomStatusMaximumWidth(int leadingButtonLeft) {
+        return Math.max(40, leadingButtonLeft - 8);
+    }
+
     public UiRect centeredDialog(int preferredWidth, int minimumWidth, int horizontalMargin, int dialogHeight) {
         int dialogWidth = Math.min(preferredWidth, Math.max(minimumWidth, width - horizontalMargin * 2));
         int left = (width - dialogWidth) / 2;

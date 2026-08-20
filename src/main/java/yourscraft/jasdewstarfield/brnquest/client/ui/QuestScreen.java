@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -11,7 +12,9 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPickerList;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorScrollbar;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
@@ -23,6 +26,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
@@ -58,6 +62,8 @@ public final class QuestScreen extends Screen {
     private static final int EDITOR_CATALOG_SEARCH_HEIGHT = 18;
     private static final int EDITOR_BUTTON_WIDTH = 96;
     private static final int EDITOR_SAVE_BUTTON_WIDTH = 72;
+    private static final int EDITOR_PUBLISH_BUTTON_WIDTH = 92;
+    private static final int DEPENDENCY_ROW_HEIGHT = 32;
 
     private double panX;
     private double panY;
@@ -83,10 +89,24 @@ public final class QuestScreen extends Screen {
     private EditorTextField questTitleField;
     private EditorTextField questSubtitleField;
     private EditorTextField questDescriptionField;
+    private EditorTextField questIdField;
+    private EditorTextField questIconField;
+    private String questEditorOriginalIconItemId = "";
+    private IconEditorMode questEditorIconMode = IconEditorMode.ITEM;
+    private IconEditorMode questEditorOriginalIconMode = IconEditorMode.ITEM;
+    private String questEditorItemIconValue = "";
+    private String questEditorTextureIconValue = "";
     private EditorTextField structureIdField;
     private EditorTextField structureTitleField;
     private boolean questEditorOpen;
     private ResourceLocation questEditorQuestId;
+    private Component questEditorMessage;
+    private boolean dependencyEditorOpen;
+    private ResourceLocation dependencyEditorQuestId;
+    private int dependencyScroll;
+    private String dependencyFilter = "";
+    private int dependencyPickerScroll;
+    private Component dependencyEditorMessage;
     private ResourceLocation discardSwitchTarget;
     private boolean discardClosesScreen;
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
@@ -113,6 +133,7 @@ public final class QuestScreen extends Screen {
     private final Map<ResourceLocation, ItemStack> itemCache = new HashMap<>();
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
+    private final List<DependencyHitbox> dependencyHitboxes = new ArrayList<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
@@ -130,6 +151,8 @@ public final class QuestScreen extends Screen {
         questTitleField = editorField("screen.brnquest.editor.quest.title", 256);
         questSubtitleField = editorField("screen.brnquest.editor.quest.subtitle", 256);
         questDescriptionField = editorField("screen.brnquest.editor.quest.description", 32_768);
+        questIdField = editorField("screen.brnquest.editor.quest.id", 256);
+        questIconField = editorField("screen.brnquest.editor.quest.icon", 256);
         structureIdField = editorField("screen.brnquest.editor.structure.id", 256);
         structureTitleField = editorField("screen.brnquest.editor.structure.title", 256);
         serverContextId = currentServerContext();
@@ -174,8 +197,10 @@ public final class QuestScreen extends Screen {
         ClientEditorState editor = ClientEditorState.get();
         editor.tick();
         if (questEditorOpen && !editor.editing()) closeQuestEditor();
+        if (dependencyEditorOpen && !editor.editing()) closeDependencyEditor();
         if ((!editor.editing() && switch (editorOverlays.active()) {
-                case CONTEXT_MENU, STRUCTURE_FORM, DELETE_CONFIRMATION -> true;
+                case CONTEXT_MENU, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
+                        PUBLISH_CONFIRMATION -> true;
                 default -> false;
             }) || (!editor.allowed() && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
             closeActiveEditorOverlay();
@@ -374,6 +399,12 @@ public final class QuestScreen extends Screen {
 
     private void renderQuestVisual(GuiGraphics graphics, QuestDefinition quest, int x, int y, int size) {
         QuestPresentation.QuestVisual visual = QuestPresentation.visual(quest);
+        if (visual.kind() == QuestPresentation.VisualKind.TEXTURE) {
+            QuestIconValue.textureId(visual.value()).ifPresent(texture ->
+                    graphics.blit(texture, x - size / 2, y - size / 2, 0.0F, 0.0F,
+                            size, size, size, size));
+            return;
+        }
         if (visual.kind() == QuestPresentation.VisualKind.ITEM) {
             ItemStack stack = item(quest.id(), visual.itemSnbt());
             if (!stack.isEmpty()) {
@@ -414,6 +445,12 @@ public final class QuestScreen extends Screen {
             detailContentHeight = 0;
             detailScroll = 0;
             renderQuestPropertyEditor(graphics, quest);
+            return;
+        }
+        if (editing && dependencyEditorOpen && quest.id().equals(dependencyEditorQuestId)) {
+            detailContentHeight = 0;
+            detailScroll = 0;
+            renderDependencyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         int contentLeft = left + 10;
@@ -491,9 +528,11 @@ public final class QuestScreen extends Screen {
                 detailContentHeight, viewportHeight, detailScroll);
 
         if (editing) {
-            UiRect edit = questPropertyButtonBounds();
-            EditorButton.render(graphics, font, edit,
-                    Component.translatable("screen.brnquest.editor.quest.edit"),
+            EditorButton.render(graphics, font, questPropertyButtonBounds(),
+                    Component.translatable("screen.brnquest.editor.quest.properties"),
+                    0xFF385A72, 0xFFFFFFFF, 5);
+            EditorButton.render(graphics, font, questDependencyButtonBounds(),
+                    Component.translatable("screen.brnquest.editor.dependency.edit"),
                     0xFF385A72, 0xFFFFFFFF, 5);
         }
 
@@ -581,16 +620,38 @@ public final class QuestScreen extends Screen {
             case DISCARD_CONFIRMATION -> {
                 return handleDiscardConfirmationClick(mouseX, mouseY, button);
             }
+            case QUEST_RENAME_CONFIRMATION -> {
+                return handleQuestRenameConfirmationClick(mouseX, mouseY, button);
+            }
+            case PUBLISH_CONFIRMATION -> {
+                return handlePublishConfirmationClick(mouseX, mouseY, button);
+            }
             case CONTEXT_MENU -> {
                 return handleEditContextClick(mouseX, mouseY, button, snapshot.book());
+            }
+            case DEPENDENCY_PICKER -> {
+                return handleDependencyPickerClick(mouseX, mouseY, button);
             }
             default -> { }
         }
         if (handleEditorChromeClick(mouseX, mouseY, button, snapshot.book())) return true;
 
+        if (dependencyEditorOpen && mouseX >= detailLeft()) {
+            return handleDependencyEditorClick(mouseX, mouseY, button);
+        }
+
         if (questEditorOpen && mouseX >= detailLeft()) {
+            if (button == 0 && questIconModeBounds().contains(mouseX, mouseY)) {
+                rememberCurrentIconInput();
+                questEditorIconMode = questEditorIconMode == IconEditorMode.ITEM
+                        ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
+                questIconField.setValue(questEditorIconMode == IconEditorMode.ITEM
+                        ? questEditorItemIconValue : questEditorTextureIconValue);
+                setFocused(questIconField);
+                return true;
+            }
             if (button == 0 && questEditorSaveBounds().contains(mouseX, mouseY)) {
-                submitQuestPropertyEdit();
+                prepareQuestPropertyEdit();
                 return true;
             }
             if (button == 0 && questEditorCancelBounds().contains(mouseX, mouseY)) {
@@ -651,7 +712,7 @@ public final class QuestScreen extends Screen {
             panY = 0;
             detailsOpen = false;
             detailScroll = 0;
-            closeQuestEditor();
+            closeQuestEditingPanels();
             return true;
         }
         // Group headings and empty navigation space belong to the left panel and
@@ -664,10 +725,14 @@ public final class QuestScreen extends Screen {
                 && mouseY >= TOP_TOOLBAR_HEIGHT && mouseY <= TOP_TOOLBAR_HEIGHT + 16) {
             detailsOpen = false;
             detailScroll = 0;
-            closeQuestEditor();
+            closeQuestEditingPanels();
             return true;
         }
         if (detailsOpen && selected != null) {
+            if (ClientEditorState.get().editing() && questDependencyButtonBounds().contains(mouseX, mouseY)) {
+                openDependencyEditor(selected);
+                return true;
+            }
             if (ClientEditorState.get().editing() && questPropertyButtonBounds().contains(mouseX, mouseY)) {
                 openQuestEditor(selected);
                 return true;
@@ -733,7 +798,7 @@ public final class QuestScreen extends Screen {
                     ClientQuestState.get().selected(hit.id());
                 }
                 if (button == 0) {
-                    closeQuestEditor();
+                    closeQuestEditingPanels();
                     detailsOpen = true;
                     detailScroll = 0;
                     if (!ClientEditorState.get().editing()) {
@@ -792,6 +857,13 @@ public final class QuestScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) {
+            int maximum = Math.max(0, dependencyCandidates().size()
+                    - EditorPickerList.visibleRows(dependencyPickerBounds()));
+            dependencyPickerScroll = Math.max(0, Math.min(maximum,
+                    dependencyPickerScroll - (int) Math.signum(vertical)));
+            return true;
+        }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) && editorCatalogBounds().contains(x, y)) {
             int visibleRows = editorCatalogVisibleRows();
             int maximum = Math.max(0, editorCatalogEntries().size() - visibleRows);
@@ -800,6 +872,14 @@ public final class QuestScreen extends Screen {
         }
         // Any open editor overlay owns wheel input, even outside its visible bounds.
         if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) return true;
+        if (dependencyEditorOpen && x >= detailLeft()) {
+            QuestDefinition quest = selectedQuest();
+            int maximum = quest == null ? 0 : Math.max(0,
+                    quest.dependencies().size() - dependencyVisibleRows());
+            dependencyScroll = Math.max(0, Math.min(maximum,
+                    dependencyScroll - (int) Math.signum(vertical)));
+            return true;
+        }
         if (!navigationCollapsed && x >= NAV_LEFT && x <= NAV_RIGHT + NAV_HANDLE_WIDTH + 4 && isContentY(y)) {
             navigationScroll = QuestViewportMath.clampScroll(navigationScroll - vertical * 24,
                     navigationContentHeight, navigationViewportHeight());
@@ -835,10 +915,20 @@ public final class QuestScreen extends Screen {
             closeQuestEditor();
             return true;
         }
+        if (keyCode == 256 && dependencyEditorOpen) {
+            closeDependencyEditor();
+            return true;
+        }
         if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
                 && !catalogFilter.isEmpty()) {
             catalogFilter = catalogFilter.substring(0, catalogFilter.length() - 1);
             catalogScroll = 0;
+            return true;
+        }
+        if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
+                && !dependencyFilter.isEmpty()) {
+            dependencyFilter = dependencyFilter.substring(0, dependencyFilter.length() - 1);
+            dependencyPickerScroll = 0;
             return true;
         }
         if (editorOverlays.active() != EditorOverlayHost.Kind.NONE
@@ -857,6 +947,12 @@ public final class QuestScreen extends Screen {
                 && !Character.isISOControl(codePoint) && catalogFilter.length() < 48) {
             catalogFilter += codePoint;
             catalogScroll = 0;
+            return true;
+        }
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
+                && !Character.isISOControl(codePoint) && dependencyFilter.length() < 48) {
+            dependencyFilter += codePoint;
+            dependencyPickerScroll = 0;
             return true;
         }
         if (editorOverlays.active() != EditorOverlayHost.Kind.NONE
@@ -932,12 +1028,22 @@ public final class QuestScreen extends Screen {
                     ? "screen.brnquest.editor.save" : "screen.brnquest.editor.saved");
             EditorButton.render(graphics, font, save, label,
                     enabled ? 0xEF3E735A : 0xD02A323E, enabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
+
+            UiRect publish = editorPublishButtonBounds();
+            boolean publishEnabled = !editor.busy() && !questEditorOpen && !dependencyEditorOpen
+                    && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
+            EditorButton.render(graphics, font, publish,
+                    Component.translatable("screen.brnquest.editor.publish"),
+                    publishEnabled ? 0xEFA06432 : 0xD02A323E,
+                    publishEnabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
         }
 
         Component status = editorStatus();
         if (status != null) {
-            UiRect leadingButton = editor.hasLease() ? editorSaveButtonBounds() : editorButtonBounds();
-            int maximumWidth = Math.max(40, leadingButton.left() - canvasLeft() - 8);
+            UiRect leadingButton = editor.hasLease() ? editorPublishButtonBounds() : editorButtonBounds();
+            // The navigation drawer occupies only the middle region. Measuring from
+            // canvasLeft incorrectly collapsed bottom-bar errors to the word "Editor".
+            int maximumWidth = layout().bottomStatusMaximumWidth(leadingButton.left());
             String statusText = font.plainSubstrByWidth(status.getString(), maximumWidth - 10);
             int statusWidth = Math.min(maximumWidth, font.width(statusText) + 10);
             int left = 4;
@@ -945,15 +1051,30 @@ public final class QuestScreen extends Screen {
             graphics.fill(left, top, left + statusWidth, top + EDITOR_CHROME_HEIGHT, 0xE0202632);
             graphics.drawString(font, Component.literal(statusText), left + 5, top + 4,
                     editor.mode() == ClientEditorState.Mode.ERROR ? 0xFFFF8B8B : 0xFFB7C5D8, false);
+            if (editor.mode() == ClientEditorState.Mode.ERROR
+                    && new UiRect(left, top, left + statusWidth, top + EDITOR_CHROME_HEIGHT).contains(mouseX, mouseY)) {
+                hoveredComponentTooltip = List.of(Component.literal(editor.statusCode()),
+                        Component.literal(editor.statusMessage()));
+            }
         }
 
+        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) {
+            // Opaque overlays own hover state; hidden canvas/detail rows must not
+            // leak a tooltip through the picker, menu, or confirmation surface.
+            hoveredDetailStack = ItemStack.EMPTY;
+            hoveredDetailText = null;
+            hoveredComponentTooltip = List.of();
+        }
         switch (editorOverlays.active()) {
             case CATALOG -> {
                 if (editor.allowed()) renderEditorCatalog(graphics, mouseX, mouseY);
             }
             case CONTEXT_MENU -> renderEditContextMenu(graphics);
+            case DEPENDENCY_PICKER -> renderDependencyPicker(graphics, mouseX, mouseY);
             case DISCARD_CONFIRMATION -> renderDiscardConfirmation(graphics);
             case DELETE_CONFIRMATION -> renderDeleteConfirmation(graphics);
+            case QUEST_RENAME_CONFIRMATION -> renderQuestRenameConfirmation(graphics);
+            case PUBLISH_CONFIRMATION -> renderPublishConfirmation(graphics);
             default -> { }
         }
         graphics.pose().popPose();
@@ -1073,6 +1194,11 @@ public final class QuestScreen extends Screen {
             }
             case CONTEXT_MENU -> closeEditContext();
             case STRUCTURE_FORM -> closeStructureForm();
+            case DEPENDENCY_PICKER -> {
+                dependencyFilter = "";
+                dependencyPickerScroll = 0;
+                editorOverlays.close();
+            }
             case DELETE_CONFIRMATION -> {
                 deleteKind = DeleteKind.NONE;
                 deleteTarget = null;
@@ -1084,6 +1210,8 @@ public final class QuestScreen extends Screen {
                 discardClosesScreen = false;
                 editorOverlays.close();
             }
+            case QUEST_RENAME_CONFIRMATION -> editorOverlays.close();
+            case PUBLISH_CONFIRMATION -> editorOverlays.close();
             case NONE -> { }
         }
     }
@@ -1122,7 +1250,7 @@ public final class QuestScreen extends Screen {
 
     private void openStructureForm(StructureFormKind kind, ResourceLocation target, ResourceLocation parent,
                                    double x, double y) {
-        closeQuestEditor();
+        closeQuestEditingPanels();
         closeActiveEditorOverlay();
         QuestBookDefinition book = displaySnapshot().book();
         structureFormKind = kind;
@@ -1284,7 +1412,10 @@ public final class QuestScreen extends Screen {
                 sendMutation(action, target, null, null, "", 0, 0, 0, List.of());
                 if (action.equals("DELETE_QUEST")) {
                     editorSelection.remove(target);
-                    if (target.equals(editorSelectedQuest)) editorSelectedQuest = null;
+                    if (target.equals(editorSelectedQuest)) {
+                        editorSelectedQuest = null;
+                        closeQuestEditingPanels();
+                    }
                     detailsOpen = false;
                 }
             }
@@ -1467,6 +1598,13 @@ public final class QuestScreen extends Screen {
                     AuthoringNetwork.saveSession(request.sessionId(), editor.bookId(), request.draftRevision()));
             return true;
         }
+        if (editor.hasLease() && editorPublishButtonBounds().contains(mouseX, mouseY)) {
+            if (!editor.busy() && !questEditorOpen && !dependencyEditorOpen && !structureFormOpen()) {
+                closeActiveEditorOverlay();
+                editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
+            }
+            return true;
+        }
         return false;
     }
 
@@ -1478,17 +1616,241 @@ public final class QuestScreen extends Screen {
             case RECEIVING_DRAFT -> Component.translatable("screen.brnquest.editor.draft.loading");
             case MUTATING -> Component.translatable("screen.brnquest.editor.draft.mutating");
             case SAVING -> Component.translatable("screen.brnquest.editor.draft.saving");
+            case PUBLISHING -> Component.translatable("screen.brnquest.editor.draft.publishing");
             case EDITING -> {
                 long seconds = editor.remainingLeaseTicks() / 20L;
                 String time = "%d:%02d".formatted(seconds / 60L, seconds % 60L);
-                yield Component.translatable(editor.dirty()
-                        ? "screen.brnquest.editor.status.dirty" : "screen.brnquest.editor.status.saved", time);
+                if ("PUBLISH_APPLY_COMPLETE".equals(editor.statusCode())) {
+                    yield Component.translatable("screen.brnquest.editor.status.published", time);
+                }
+                yield Component.translatable(editor.dirty() ? "screen.brnquest.editor.status.dirty"
+                        : "screen.brnquest.editor.status.saved", time);
             }
             case CLOSING -> Component.translatable("screen.brnquest.editor.session.closing");
-            case ERROR -> editor.allowed()
-                    ? Component.translatable("screen.brnquest.editor.status.error", editor.statusCode()) : null;
+            case ERROR -> editor.allowed() ? Component.translatable("screen.brnquest.editor.status.error_detail",
+                    editor.statusCode(), editor.statusMessage()) : null;
             case VIEW -> null;
         };
+    }
+
+    private void renderDependencyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
+        dependencyHitboxes.clear();
+        int left = detailLeft() + 10;
+        int panelRight = width - 10;
+        graphics.fill(detailLeft() + 4, TOP_TOOLBAR_HEIGHT + 4, width - 4,
+                height - BOTTOM_TOOLBAR_HEIGHT - 4, 0xFF202632);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.heading"),
+                left, TOP_TOOLBAR_HEIGHT + 12, 0xFFFFFFFF, false);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.direction"),
+                left, TOP_TOOLBAR_HEIGHT + 27, 0xFF9FB0C2, false);
+
+        QuestBookSnapshot snapshot = displaySnapshot();
+        int visibleRows = dependencyVisibleRows();
+        int maximumScroll = Math.max(0, quest.dependencies().size() - visibleRows);
+        dependencyScroll = Math.max(0, Math.min(maximumScroll, dependencyScroll));
+        int listTop = dependencyListTop();
+        int listBottom = listTop + visibleRows * DEPENDENCY_ROW_HEIGHT;
+        graphics.enableScissor(detailLeft() + 4, listTop, width - 4, listBottom);
+        if (quest.dependencies().isEmpty()) {
+            graphics.drawCenteredString(font,
+                    Component.translatable("screen.brnquest.editor.dependency.empty"),
+                    (left + panelRight) / 2, listTop + 8, 0xFF9AA6B5);
+        }
+        for (int row = 0; row < visibleRows && dependencyScroll + row < quest.dependencies().size(); row++) {
+            ResourceLocation dependencyId = quest.dependencies().get(dependencyScroll + row);
+            QuestDefinition dependency = snapshot == null ? null : snapshot.quests().get(dependencyId);
+            int top = listTop + row * DEPENDENCY_ROW_HEIGHT;
+            UiRect rowBounds = new UiRect(left, top, panelRight, top + DEPENDENCY_ROW_HEIGHT - 2);
+            UiRect remove = new UiRect(panelRight - 20, top + 5, panelRight - 2, top + 23);
+            graphics.fill(rowBounds.left(), rowBounds.top(), rowBounds.right(), rowBounds.bottom(), 0xA02A323E);
+            String dependencyTitle = dependency == null ? dependencyId.toString() : questTitle(dependency);
+            String direction = Component.translatable("screen.brnquest.editor.dependency.edge",
+                    dependencyTitle, questTitle(quest)).getString();
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(direction, rowBounds.width() - 30)),
+                    rowBounds.left() + 5, top + 4, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, false);
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
+                            dependencyId.toString(), rowBounds.width() - 30)),
+                    rowBounds.left() + 5, top + 16, 0xFF9FB0C2, false);
+            EditorButton.render(graphics, font, remove, Component.literal("×"),
+                    ClientEditorState.get().busy() ? 0xFF343D49 : 0xFF723E46, 0xFFFFFFFF, 5);
+            dependencyHitboxes.add(new DependencyHitbox(remove, dependencyId));
+            if (rowBounds.contains(mouseX, mouseY) && !remove.contains(mouseX, mouseY)) {
+                hoveredComponentTooltip = dependency == null
+                        ? List.of(Component.literal(dependencyId.toString()),
+                                Component.translatable("screen.brnquest.editor.dependency.missing"))
+                        : List.of(Component.literal(dependencyTitle), Component.literal(dependencyId.toString()),
+                                Component.translatable("screen.brnquest.editor.dependency.edge",
+                                        dependencyTitle, questTitle(quest)));
+            } else if (remove.contains(mouseX, mouseY)) {
+                hoveredDetailText = Component.translatable("screen.brnquest.editor.dependency.remove");
+            }
+        }
+        graphics.disableScissor();
+        EditorScrollbar.render(graphics, width - 8, listTop, listBottom,
+                quest.dependencies().size() * DEPENDENCY_ROW_HEIGHT,
+                visibleRows * DEPENDENCY_ROW_HEIGHT, dependencyScroll * (double) DEPENDENCY_ROW_HEIGHT);
+
+        if (dependencyEditorMessage != null) {
+            String visible = font.plainSubstrByWidth(dependencyEditorMessage.getString(), DETAIL_WIDTH - 24);
+            graphics.drawString(font, Component.literal(visible), left, dependencyAddBounds().top() - 12,
+                    0xFFFFA070, false);
+        }
+        EditorButton.render(graphics, font, dependencyAddBounds(),
+                Component.translatable("screen.brnquest.editor.dependency.add"),
+                ClientEditorState.get().busy() ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 5);
+        EditorButton.render(graphics, font, dependencyDoneBounds(), Component.translatable("gui.done"),
+                0xFF343D49, 0xFFFFFFFF, 5);
+    }
+
+    private boolean handleDependencyEditorClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return true;
+        if (dependencyDoneBounds().contains(mouseX, mouseY)) {
+            closeDependencyEditor();
+            return true;
+        }
+        if (dependencyAddBounds().contains(mouseX, mouseY)) {
+            if (!ClientEditorState.get().busy()) openDependencyPicker();
+            return true;
+        }
+        if (!ClientEditorState.get().busy()) {
+            for (DependencyHitbox hitbox : dependencyHitboxes) {
+                if (hitbox.removeBounds().contains(mouseX, mouseY)) {
+                    sendMutation("REMOVE_DEPENDENCY", dependencyEditorQuestId, null,
+                            hitbox.dependencyId(), "", 0, 0, 0, List.of());
+                    dependencyEditorMessage = null;
+                    return true;
+                }
+            }
+        }
+        return true;
+    }
+
+    private void openDependencyEditor(QuestDefinition quest) {
+        closeQuestEditor();
+        closeActiveEditorOverlay();
+        dependencyEditorOpen = true;
+        dependencyEditorQuestId = quest.id();
+        dependencyScroll = 0;
+        dependencyEditorMessage = null;
+    }
+
+    private void closeDependencyEditor() {
+        dependencyEditorOpen = false;
+        dependencyEditorQuestId = null;
+        dependencyScroll = 0;
+        dependencyEditorMessage = null;
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) closeActiveEditorOverlay();
+    }
+
+    private void closeQuestEditingPanels() {
+        closeQuestEditor();
+        closeDependencyEditor();
+    }
+
+    private void openDependencyPicker() {
+        if (!dependencyEditorOpen || dependencyEditorQuestId == null) return;
+        closeActiveEditorOverlay();
+        dependencyFilter = "";
+        dependencyPickerScroll = 0;
+        dependencyEditorMessage = null;
+        editorOverlays.show(EditorOverlayHost.Kind.DEPENDENCY_PICKER);
+    }
+
+    private void renderDependencyPicker(GuiGraphics graphics, int mouseX, int mouseY) {
+        List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
+        UiRect bounds = dependencyPickerBounds();
+        int visibleRows = EditorPickerList.visibleRows(bounds);
+        dependencyPickerScroll = Math.max(0, Math.min(Math.max(0, candidates.size() - visibleRows),
+                dependencyPickerScroll));
+        List<EditorPickerList.Entry> entries = candidates.stream().map(candidate -> new EditorPickerList.Entry(
+                Component.literal((candidate.createsCycle() ? "⚠ " : "") + candidate.title()),
+                dependencyCandidateSubtitle(candidate),
+                candidate.createsCycle() ? EditorPickerList.Tone.WARNING : EditorPickerList.Tone.NORMAL)).toList();
+        Component searchText = dependencyFilter.isBlank()
+                ? Component.translatable("screen.brnquest.editor.dependency.search_hint")
+                : Component.literal("⌕ " + dependencyFilter);
+        graphics.fill(0, 0, width, height, 0x66000000);
+        EditorPickerList.render(graphics, font, bounds, searchText, dependencyFilter.isBlank(),
+                entries, dependencyPickerScroll, mouseX, mouseY);
+        if (entries.isEmpty()) {
+            graphics.drawCenteredString(font,
+                    Component.translatable("screen.brnquest.editor.dependency.no_candidates"),
+                    bounds.centerX(), bounds.top() + EditorPickerList.SEARCH_HEIGHT + 10, 0xFF9AA6B5);
+        }
+        int hovered = EditorPickerList.entryAt(bounds, dependencyPickerScroll, entries.size(), mouseX, mouseY);
+        if (hovered >= 0) {
+            QuestDependencyEditorModel.Candidate candidate = candidates.get(hovered);
+            hoveredComponentTooltip = List.of(Component.literal(candidate.title()),
+                    Component.literal(candidate.questId().toString()),
+                    Component.translatable(candidate.createsCycle()
+                            ? "screen.brnquest.editor.dependency.cycle_warning"
+                            : "screen.brnquest.editor.dependency.click_to_add"));
+        }
+    }
+
+    static Component dependencyCandidateSubtitle(QuestDependencyEditorModel.Candidate candidate) {
+        if (!candidate.createsCycle()) {
+            return Component.literal(candidate.chapterTitle() + " · " + candidate.questId());
+        }
+        // Minecraft 1.21.1 rejects ResourceLocation as a translatable argument; pass its stable text form.
+        return Component.translatable("screen.brnquest.editor.dependency.cycle_entry",
+                candidate.questId().toString());
+    }
+
+    private boolean handleDependencyPickerClick(double mouseX, double mouseY, int button) {
+        if (button != 0) {
+            closeActiveEditorOverlay();
+            return true;
+        }
+        UiRect bounds = dependencyPickerBounds();
+        if (!bounds.contains(mouseX, mouseY)) {
+            closeActiveEditorOverlay();
+            return true;
+        }
+        List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
+        int index = EditorPickerList.entryAt(bounds, dependencyPickerScroll, candidates.size(), mouseX, mouseY);
+        if (index < 0) return true;
+        QuestDependencyEditorModel.Candidate candidate = candidates.get(index);
+        if (candidate.createsCycle()) {
+            dependencyEditorMessage = Component.translatable("screen.brnquest.editor.dependency.cycle_warning");
+            return true;
+        }
+        if (!ClientEditorState.get().busy()) {
+            sendMutation("ADD_DEPENDENCY", dependencyEditorQuestId, null,
+                    candidate.questId(), "", 0, 0, 0, List.of());
+            dependencyEditorMessage = null;
+            closeActiveEditorOverlay();
+        }
+        return true;
+    }
+
+    private List<QuestDependencyEditorModel.Candidate> dependencyCandidates() {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null || dependencyEditorQuestId == null) return List.of();
+        return QuestDependencyEditorModel.candidates(snapshot.book(), dependencyEditorQuestId, dependencyFilter);
+    }
+
+    private UiRect dependencyPickerBounds() {
+        int maximumHeight = Math.max(EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT + 4,
+                height - TOP_TOOLBAR_HEIGHT - BOTTOM_TOOLBAR_HEIGHT - 16);
+        int desiredHeight = EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT * 8 + 4;
+        return layout().centeredDialog(480, 300, 20, Math.min(desiredHeight, maximumHeight));
+    }
+
+    private int dependencyListTop() {
+        return TOP_TOOLBAR_HEIGHT + 44;
+    }
+
+    private int dependencyVisibleRows() {
+        return Math.max(1, (dependencyAddBounds().top() - 16 - dependencyListTop()) / DEPENDENCY_ROW_HEIGHT);
+    }
+
+    private UiRect dependencyAddBounds() {
+        return questPropertyButtonBounds();
+    }
+
+    private UiRect dependencyDoneBounds() {
+        return questDependencyButtonBounds();
     }
 
     private EditorTextField editorField(String translationKey, int maximumLength) {
@@ -1496,30 +1858,70 @@ public final class QuestScreen extends Screen {
         return addRenderableWidget(field);
     }
 
-    /** Uses the middle section of the existing detail drawer as a property form. */
+    /** Uses the middle section of the existing detail drawer as a compact property form. */
     private void renderQuestPropertyEditor(GuiGraphics graphics, QuestDefinition quest) {
         int left = detailLeft() + 10;
         int fieldWidth = DETAIL_WIDTH - 24;
-        int top = TOP_TOOLBAR_HEIGHT + 30;
+        int fieldTop = TOP_TOOLBAR_HEIGHT + 20;
+        int pitch = 22;
         graphics.fill(detailLeft() + 4, TOP_TOOLBAR_HEIGHT + 4, width - 4,
                 height - BOTTOM_TOOLBAR_HEIGHT - 4, 0xFF202632);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.heading"), left, top - 10,
-                0xFFFFFFFF, false);
-        positionEditorField(questTitleField, left, top + 10, fieldWidth);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.title"), left, top,
-                0xFF9FB0C2, false);
-        positionEditorField(questSubtitleField, left, top + 42, fieldWidth);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.subtitle"), left, top + 32,
-                0xFF9FB0C2, false);
-        positionEditorField(questDescriptionField, left, top + 74, fieldWidth);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.description"), left, top + 64,
-                0xFF9FB0C2, false);
-        graphics.drawString(font, Component.literal(quest.id().toString()), left, top + 100, 0xFF7F8B99, false);
+        Component heading = questEditorMessage == null
+                ? Component.translatable("screen.brnquest.editor.quest.heading") : questEditorMessage;
+        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(heading.getString(), fieldWidth)),
+                left, TOP_TOOLBAR_HEIGHT + 7, questEditorMessage == null ? 0xFFFFFFFF : 0xFFFF8B8B, false);
+        renderQuestEditorField(graphics, questIdField, "screen.brnquest.editor.quest.id",
+                left, fieldTop, fieldWidth);
+        renderQuestEditorField(graphics, questTitleField, "screen.brnquest.editor.quest.title",
+                left, fieldTop + pitch, fieldWidth);
+        renderQuestEditorField(graphics, questSubtitleField, "screen.brnquest.editor.quest.subtitle",
+                left, fieldTop + pitch * 2, fieldWidth);
+        renderQuestEditorField(graphics, questDescriptionField, "screen.brnquest.editor.quest.description",
+                left, fieldTop + pitch * 3, fieldWidth);
+        renderQuestIconEditorField(graphics,
+                left, fieldTop + pitch * 4, fieldWidth);
 
         EditorButton.render(graphics, font, questEditorCancelBounds(), Component.translatable("gui.cancel"),
                 0xFF343D49, 0xFFFFFFFF, 5);
         EditorButton.render(graphics, font, questEditorSaveBounds(), Component.translatable("gui.done"),
                 ClientEditorState.get().busy() ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 5);
+    }
+
+    private void renderQuestEditorField(GuiGraphics graphics, EditorTextField field, String labelKey,
+                                        int left, int top, int width) {
+        int labelWidth = 78;
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, labelWidth);
+        String label = font.plainSubstrByWidth(Component.translatable(labelKey).getString(), row.label().width() - 4);
+        graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
+                0xFF9FB0C2, false);
+        field.show(row.field(), !ClientEditorState.get().busy());
+    }
+
+    /** Shows an ordinary item ID while retaining the native SNBT representation behind the form. */
+    private void renderQuestIconEditorField(GuiGraphics graphics, int left, int top, int width) {
+        int labelWidth = 48;
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, labelWidth);
+        String label = font.plainSubstrByWidth(Component.translatable("screen.brnquest.editor.quest.icon").getString(),
+                row.label().width() - 4);
+        graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
+                0xFF9FB0C2, false);
+        UiRect mode = new UiRect(row.field().left(), row.field().top(), row.field().left() + 42, row.field().bottom());
+        EditorButton.render(graphics, font, mode, Component.translatable(questEditorIconMode.translationKey),
+                0xFF343D49, 0xFFFFFFFF, 3);
+        UiRect input = new UiRect(mode.right() + 3, row.field().top(), row.field().right() - 22, row.field().bottom());
+        questIconField.show(input, !ClientEditorState.get().busy());
+        ResourceLocation iconId = ResourceLocation.tryParse(questIconField.getValue().strip());
+        if (questEditorIconMode == IconEditorMode.ITEM
+                && iconId != null && BuiltInRegistries.ITEM.containsKey(iconId)) {
+            graphics.renderItem(BuiltInRegistries.ITEM.get(iconId).getDefaultInstance(), row.field().right() - 18,
+                    row.field().top() + 1);
+        } else if (questEditorIconMode == IconEditorMode.TEXTURE && iconId != null) {
+            graphics.blit(iconId, row.field().right() - 18, row.field().top() + 1,
+                    0.0F, 0.0F, 16, 16, 16, 16);
+        } else {
+            graphics.drawCenteredString(font, questIconField.getValue().isBlank() ? "−" : "?",
+                    row.field().right() - 10, row.field().top() + 5, 0xFF9FB0C2);
+        }
     }
 
     private void positionEditorField(EditorTextField field, int x, int y, int fieldWidth) {
@@ -1528,36 +1930,138 @@ public final class QuestScreen extends Screen {
 
     private void openQuestEditor(QuestDefinition quest) {
         if (ClientEditorState.get().busy()) return;
+        closeDependencyEditor();
         questEditorOpen = true;
         questEditorQuestId = quest.id();
+        questEditorMessage = null;
+        questIdField.setValue(quest.id().toString());
         questTitleField.setValue(quest.title());
         questSubtitleField.setValue(quest.subtitle());
         questDescriptionField.setValue(quest.description());
-        setFocused(questTitleField);
+        questEditorIconMode = QuestIconValue.isTexture(quest.icon()) ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
+        questEditorOriginalIconMode = questEditorIconMode;
+        questEditorOriginalIconItemId = questEditorIconMode == IconEditorMode.TEXTURE
+                ? QuestIconValue.textureId(quest.icon()).map(ResourceLocation::toString).orElse("")
+                : iconItemId(quest.icon());
+        questEditorItemIconValue = questEditorIconMode == IconEditorMode.ITEM ? questEditorOriginalIconItemId : "";
+        questEditorTextureIconValue = questEditorIconMode == IconEditorMode.TEXTURE
+                ? questEditorOriginalIconItemId : "";
+        questIconField.setValue(questEditorOriginalIconItemId);
+        setFocused(questIdField);
     }
 
-    private void submitQuestPropertyEdit() {
+    private void prepareQuestPropertyEdit() {
+        ResourceLocation replacementId = ResourceLocation.tryParse(questIdField.getValue());
+        if (replacementId == null) {
+            questEditorMessage = Component.translatable("screen.brnquest.editor.quest.invalid_id");
+            return;
+        }
+        String iconItemId = questIconField.getValue().strip();
+        ResourceLocation parsedIcon = iconItemId.isEmpty() ? null : ResourceLocation.tryParse(iconItemId);
+        if (!iconItemId.isEmpty() && (parsedIcon == null || (questEditorIconMode == IconEditorMode.ITEM
+                && !BuiltInRegistries.ITEM.containsKey(parsedIcon)))) {
+            questEditorMessage = Component.translatable(questEditorIconMode == IconEditorMode.ITEM
+                    ? "screen.brnquest.editor.quest.invalid_icon" : "screen.brnquest.editor.quest.invalid_texture");
+            return;
+        }
+        questEditorMessage = null;
+        if (!replacementId.equals(questEditorQuestId)) {
+            closeActiveEditorOverlay();
+            editorOverlays.show(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION);
+            return;
+        }
+        submitQuestPropertyEdit(replacementId);
+    }
+
+    private void submitQuestPropertyEdit(ResourceLocation replacementId) {
         ClientEditorState editor = ClientEditorState.get();
         if (editor.busy() || editor.sessionId() == null || editor.bookId() == null || questEditorQuestId == null) return;
         if (!editor.beginMutation()) return;
+        ResourceLocation oldId = questEditorQuestId;
+        // Icon rendering is cached by quest ID; invalidate both sides of a rename before the new draft arrives.
+        itemCache.remove(oldId);
+        itemCache.remove(replacementId);
         AuthoringNetwork.updateQuest(editor.sessionId(), editor.bookId(), editor.draftRevision(), questEditorQuestId,
-                questTitleField.getValue(), questSubtitleField.getValue(), questDescriptionField.getValue());
-        closeQuestEditor();
+                replacementId, questTitleField.getValue(), questSubtitleField.getValue(),
+                questDescriptionField.getValue(), questEditorIconMode.name(), questIconField.getValue().strip(),
+                questEditorIconMode == questEditorOriginalIconMode
+                        && questIconField.getValue().strip().equals(questEditorOriginalIconItemId));
+        editorSelectedQuest = replacementId;
+        closeQuestEditingPanels();
+        editorOverlays.close();
     }
 
     private void closeQuestEditor() {
         questEditorOpen = false;
         questEditorQuestId = null;
+        questEditorMessage = null;
+        questEditorOriginalIconItemId = "";
+        questEditorIconMode = IconEditorMode.ITEM;
+        questEditorOriginalIconMode = IconEditorMode.ITEM;
+        questEditorItemIconValue = "";
+        questEditorTextureIconValue = "";
         setFocused(null);
-        for (EditorTextField field : List.of(questTitleField, questSubtitleField, questDescriptionField)) {
+        for (EditorTextField field : List.of(questIdField, questTitleField, questSubtitleField,
+                questDescriptionField, questIconField)) {
             if (field == null) continue;
             field.hide();
         }
     }
 
+    private static String iconItemId(String iconSnbt) {
+        if (iconSnbt == null || iconSnbt.isBlank()) return "";
+        try {
+            return TagParser.parseTag(iconSnbt).getString("id");
+        } catch (Exception ignored) {
+            // Unknown legacy icon data stays untouched until the author selects a replacement item.
+            return "";
+        }
+    }
+
+    /** Retains each mode's in-progress value so comparing item and texture choices is non-destructive. */
+    private void rememberCurrentIconInput() {
+        if (questEditorIconMode == IconEditorMode.ITEM) {
+            questEditorItemIconValue = questIconField.getValue();
+        } else {
+            questEditorTextureIconValue = questIconField.getValue();
+        }
+    }
+
+    private void renderQuestRenameConfirmation(GuiGraphics graphics) {
+        long references = displaySnapshot() == null || questEditorQuestId == null ? 0L
+                : displaySnapshot().book().quests().stream()
+                .filter(quest -> quest.dependencies().contains(questEditorQuestId)).count();
+        EditorConfirmDialog.render(graphics, font, layout(),
+                Component.translatable("screen.brnquest.editor.quest.rename.warning"),
+                Component.translatable("screen.brnquest.editor.quest.rename.impact", references), 0xFFFFC06A,
+                Component.translatable("gui.cancel"),
+                Component.translatable("screen.brnquest.editor.quest.rename.confirm"));
+    }
+
+    private boolean handleQuestRenameConfirmationClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return true;
+        EditorConfirmDialog.Action action = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
+        if (action == EditorConfirmDialog.Action.CANCEL) {
+            editorOverlays.close();
+            return true;
+        }
+        if (action == EditorConfirmDialog.Action.CONFIRM) {
+            ResourceLocation replacementId = ResourceLocation.tryParse(questIdField.getValue());
+            if (replacementId != null) submitQuestPropertyEdit(replacementId);
+        }
+        return true;
+    }
+
     private UiRect questPropertyButtonBounds() {
         int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
-        return new UiRect(detailLeft() + 10, bottom - 20, width - 10, bottom);
+        int center = detailLeft() + DETAIL_WIDTH / 2;
+        return new UiRect(detailLeft() + 10, bottom - 20, center - 4, bottom);
+    }
+
+    private UiRect questDependencyButtonBounds() {
+        int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
+        int center = detailLeft() + DETAIL_WIDTH / 2;
+        return new UiRect(center + 4, bottom - 20, width - 10, bottom);
     }
 
     private UiRect questEditorCancelBounds() {
@@ -1568,6 +2072,13 @@ public final class QuestScreen extends Screen {
     private UiRect questEditorSaveBounds() {
         int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
         return new UiRect(detailLeft() + 124, bottom - 20, width - 10, bottom);
+    }
+
+    private UiRect questIconModeBounds() {
+        int left = detailLeft() + 10;
+        int top = TOP_TOOLBAR_HEIGHT + 20 + 22 * 4;
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, DETAIL_WIDTH - 24, 48);
+        return new UiRect(row.field().left(), row.field().top(), row.field().left() + 42, row.field().bottom());
     }
 
     private UiRect editorTitleBounds() {
@@ -1589,8 +2100,37 @@ public final class QuestScreen extends Screen {
         return new UiRect(exit.left() - EDITOR_SAVE_BUTTON_WIDTH - 4, exit.top(), exit.left() - 4, exit.bottom());
     }
 
+    private UiRect editorPublishButtonBounds() {
+        UiRect save = editorSaveButtonBounds();
+        return new UiRect(save.left() - EDITOR_PUBLISH_BUTTON_WIDTH - 4, save.top(), save.left() - 4, save.bottom());
+    }
+
+    private void renderPublishConfirmation(GuiGraphics graphics) {
+        EditorConfirmDialog.render(graphics, font, layout(),
+                Component.translatable("screen.brnquest.editor.publish.warning"),
+                Component.translatable("screen.brnquest.editor.publish.steps"), 0xFFFFC06A,
+                Component.translatable("gui.cancel"),
+                Component.translatable("screen.brnquest.editor.publish.confirm"));
+    }
+
+    private boolean handlePublishConfirmationClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return true;
+        EditorConfirmDialog.Action action = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
+        if (action == EditorConfirmDialog.Action.CANCEL) {
+            editorOverlays.close();
+            return true;
+        }
+        if (action == EditorConfirmDialog.Action.CONFIRM) {
+            editorOverlays.close();
+            ClientEditorState editor = ClientEditorState.get();
+            editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
+                    request.sessionId(), editor.bookId(), request.draftRevision()));
+        }
+        return true;
+    }
+
     private void requestDiscardConfirmation(ResourceLocation switchTarget, boolean closeScreen) {
-        closeQuestEditor();
+        closeQuestEditingPanels();
         closeActiveEditorOverlay();
         discardSwitchTarget = switchTarget;
         discardClosesScreen = closeScreen;
@@ -2053,7 +2593,20 @@ public final class QuestScreen extends Screen {
         }
     }
 
+    private record DependencyHitbox(UiRect removeBounds, ResourceLocation dependencyId) {}
+
     private record ContextAction(String action, String translationKey, boolean dangerous) {}
+
+    private enum IconEditorMode {
+        ITEM("screen.brnquest.editor.quest.icon_mode.item"),
+        TEXTURE("screen.brnquest.editor.quest.icon_mode.texture");
+
+        private final String translationKey;
+
+        IconEditorMode(String translationKey) {
+            this.translationKey = translationKey;
+        }
+    }
 
     private enum ContextKind { NONE, CANVAS, NODE, GROUP, CHAPTER }
 

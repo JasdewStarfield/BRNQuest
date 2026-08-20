@@ -33,4 +33,19 @@ class PlayerProgressTest {
         assertFalse(progress.isClaimed("test:reward"));
         assertTrue(progress.isClaimed("test:other_reward"));
     }
+
+    @Test void canonicalRenameMigratesQuestStateButKeepsStableNestedLedgers() {
+        PlayerProgress progress = new PlayerProgress();
+        progress.status("test:old", QuestStatus.COMPLETED);
+        progress.completedAt("test:old", 42L);
+        progress.addTaskProgress("test:task", 3L);
+        progress.claim("test:reward");
+
+        assertTrue(progress.migrateQuestId("test:old", "test:new"));
+        assertEquals(QuestStatus.LOCKED, progress.status("test:old"));
+        assertEquals(QuestStatus.COMPLETED, progress.status("test:new"));
+        assertEquals(42L, progress.completedAt("test:new"));
+        assertEquals(3L, progress.taskProgress("test:task"));
+        assertTrue(progress.isClaimed("test:reward"));
+    }
 }

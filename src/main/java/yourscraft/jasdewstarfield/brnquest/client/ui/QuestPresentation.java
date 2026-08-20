@@ -5,6 +5,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 
@@ -47,6 +48,7 @@ final class QuestPresentation {
     }
 
     static QuestVisual visual(QuestDefinition quest) {
+        if (QuestIconValue.isTexture(quest.icon())) return new QuestVisual(VisualKind.TEXTURE, quest.icon());
         if (!quest.icon().isBlank()) return new QuestVisual(VisualKind.ITEM, quest.icon());
         for (TaskDefinition task : quest.tasks()) {
             var view = ApiViews.task(task);
@@ -84,6 +86,8 @@ final class QuestPresentation {
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}
-    record QuestVisual(VisualKind kind, String itemSnbt) {}
-    enum VisualKind { ITEM, CHECKMARK, CUSTOM, PLACEHOLDER }
+    record QuestVisual(VisualKind kind, String value) {
+        String itemSnbt() { return kind == VisualKind.ITEM ? value : ""; }
+    }
+    enum VisualKind { ITEM, TEXTURE, CHECKMARK, CUSTOM, PLACEHOLDER }
 }

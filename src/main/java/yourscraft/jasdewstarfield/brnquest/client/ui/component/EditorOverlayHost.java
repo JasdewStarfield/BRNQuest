@@ -5,7 +5,10 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
  * in QuestScreen, while mutual exclusion is explicit and reusable.
  */
 public final class EditorOverlayHost {
-    public enum Kind { NONE, CATALOG, CONTEXT_MENU, STRUCTURE_FORM, DELETE_CONFIRMATION, DISCARD_CONFIRMATION }
+    public enum Kind {
+        NONE, CATALOG, CONTEXT_MENU, STRUCTURE_FORM, DEPENDENCY_PICKER,
+        DELETE_CONFIRMATION, DISCARD_CONFIRMATION, QUEST_RENAME_CONFIRMATION, PUBLISH_CONFIRMATION
+    }
 
     private Kind active = Kind.NONE;
 

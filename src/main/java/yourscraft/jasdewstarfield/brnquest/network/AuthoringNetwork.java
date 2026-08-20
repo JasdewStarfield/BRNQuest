@@ -6,6 +6,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
@@ -28,6 +29,7 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
@@ -93,6 +95,18 @@ public final class AuthoringNetwork {
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    /** One confirmed request drives the existing save, publish, backup-deploy, and reload boundaries. */
+    public record PublishApplyPayload(String sessionId, String bookId, String draftRevision)
+            implements CustomPacketPayload {
+        public static final Type<PublishApplyPayload> TYPE = AuthoringNetwork.type("editor_publish_apply");
+        public static final StreamCodec<ByteBuf, PublishApplyPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::sessionId,
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::bookId,
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::draftRevision,
+                PublishApplyPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public record UpdateQuestPayload(String json) implements CustomPacketPayload {
         public static final Type<UpdateQuestPayload> TYPE = AuthoringNetwork.type("editor_quest_update");
         public static final StreamCodec<ByteBuf, UpdateQuestPayload> CODEC = StreamCodec.composite(
@@ -148,7 +162,8 @@ public final class AuthoringNetwork {
                                       int chunks, int decodedBytes) {}
 
     public record QuestUpdateWire(String sessionId, String bookId, String draftRevision, String questId,
-                                  String title, String subtitle, String description) {}
+                                  String replacementQuestId, String title, String subtitle,
+                                  String description, String iconKind, String iconValue, boolean preserveIcon) {}
 
     public record PositionWire(String questId, double x, double y) {}
 
@@ -175,6 +190,11 @@ public final class AuthoringNetwork {
         registrar.playToServer(SaveSessionPayload.TYPE, SaveSessionPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) {
                 save(player, payload.sessionId(), payload.bookId(), payload.draftRevision());
+            }
+        });
+        registrar.playToServer(PublishApplyPayload.TYPE, PublishApplyPayload.CODEC, (payload, context) -> {
+            if (context.player() instanceof ServerPlayer player) {
+                publishAndApply(player, payload.sessionId(), payload.bookId(), payload.draftRevision());
             }
         });
         registrar.playToServer(UpdateQuestPayload.TYPE, UpdateQuestPayload.CODEC, (payload, context) -> {
@@ -212,10 +232,17 @@ public final class AuthoringNetwork {
         PacketDistributor.sendToServer(new SaveSessionPayload(sessionId.toString(), bookId.toString(), draftRevision));
     }
 
+    public static void publishAndApply(UUID sessionId, ResourceLocation bookId, String draftRevision) {
+        PacketDistributor.sendToServer(new PublishApplyPayload(sessionId.toString(), bookId.toString(), draftRevision));
+    }
+
     public static void updateQuest(UUID sessionId, ResourceLocation bookId, String draftRevision,
-                                   ResourceLocation questId, String title, String subtitle, String description) {
+                                   ResourceLocation questId, ResourceLocation replacementQuestId,
+                                   String title, String subtitle, String description, String iconKind, String iconValue,
+                                   boolean preserveIcon) {
         QuestUpdateWire wire = new QuestUpdateWire(sessionId.toString(), bookId.toString(), draftRevision,
-                questId.toString(), title, subtitle, description);
+                questId.toString(), replacementQuestId.toString(), title, subtitle, description,
+                iconKind, iconValue, preserveIcon);
         PacketDistributor.sendToServer(new UpdateQuestPayload(GSON.toJson(wire)));
     }
 
@@ -331,7 +358,12 @@ public final class AuthoringNetwork {
         var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
         if (!saved.success()) {
             String message = saved.message();
-            if (saved.value() != null && !saved.value().diagnostics().isEmpty()) {
+            if (saved.value() != null && saved.value().revisionCheck() != null
+                    && saved.value().revisionCheck().hasConflicts()) {
+                var first = saved.value().revisionCheck().conflicts().getFirst();
+                message += ": expected " + shortRevision(first.expectedRevision())
+                        + ", actual " + shortRevision(first.actualRevision());
+            } else if (saved.value() != null && !saved.value().diagnostics().isEmpty()) {
                 var first = saved.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.message();
             }
@@ -346,6 +378,72 @@ public final class AuthoringNetwork {
         sendSession(player, "SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
     }
 
+    /**
+     * Runs the author-facing one-stop operation without weakening any existing server-side gate.
+     * Later-stage failures explicitly report that earlier durable stages may already have completed.
+     */
+    private static void publishAndApply(ServerPlayer player, String rawSessionId, String rawBookId,
+                                        String draftRevision) {
+        UUID sessionId = parseUuid(rawSessionId);
+        ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
+        if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
+            sendFailure(player, "PUBLISH", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_PUBLISH_REQUEST", "Incomplete publish request");
+            return;
+        }
+        var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
+        if (!saved.success()) {
+            sendFailure(player, "PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
+            return;
+        }
+        var published = AuthorApi.publish(player, sessionId, bookId, draftRevision);
+        if (!published.success()) {
+            String message = "Draft was saved, but publish failed: " + published.message();
+            if (published.value() != null && published.value().revisionCheck() != null
+                    && published.value().revisionCheck().hasConflicts()) {
+                var first = published.value().revisionCheck().conflicts().getFirst();
+                message += ": expected " + shortRevision(first.expectedRevision())
+                        + ", actual " + shortRevision(first.actualRevision());
+            } else if (published.value() != null && !published.value().diagnostics().isEmpty()) {
+                var first = published.value().diagnostics().getFirst();
+                message += ": " + first.code() + " " + first.objectId() + " — " + first.message();
+            }
+            sendFailure(player, "PUBLISH", published.status(), published.code(),
+                    message);
+            return;
+        }
+        var deployed = AuthorApi.deploy(player, true);
+        if (!deployed.success()) {
+            sendFailure(player, "PUBLISH", deployed.status(), deployed.code(),
+                    "Workspace publish completed, but deployment failed: " + deployed.message());
+            return;
+        }
+        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
+        if (!renewed.success()) {
+            sendFailure(player, "PUBLISH", renewed.status(), renewed.code(),
+                    "Workspace was deployed, but the edit lease could not be renewed: " + renewed.message());
+            return;
+        }
+        AuthorApi.reload(player).whenComplete((reloaded, error) -> player.getServer().execute(() -> {
+            if (error != null) {
+                sendFailure(player, "PUBLISH", AuthorOperationResult.Status.IO_FAILURE, "RELOAD_FAILED",
+                        "Workspace was deployed, but reload failed: " + error.getMessage());
+            } else if (!reloaded.success()) {
+                sendFailure(player, "PUBLISH", reloaded.status(), reloaded.code(),
+                        "Workspace was deployed, but reload failed: " + reloaded.message());
+            } else {
+                sendSession(player, "PUBLISH", AuthorOperationResult.Status.SUCCESS, "PUBLISH_APPLY_COMPLETE",
+                        "Draft published, deployed with backup, and reloaded", renewed.value(), 0, 0);
+            }
+        }));
+    }
+
+    /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
+    private static String shortRevision(String revision) {
+        if (revision == null || revision.isBlank()) return "<none>";
+        return revision.length() <= 12 ? revision : revision.substring(0, 12);
+    }
+
     private static void updateQuest(ServerPlayer player, String json) {
         QuestUpdateWire wire;
         try {
@@ -358,8 +456,10 @@ public final class AuthoringNetwork {
         UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
         ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
         ResourceLocation questId = wire == null ? null : ResourceLocation.tryParse(wire.questId());
-        if (sessionId == null || bookId == null || questId == null || wire.draftRevision() == null
-                || wire.title() == null || wire.subtitle() == null || wire.description() == null) {
+        ResourceLocation replacementQuestId = wire == null ? null : ResourceLocation.tryParse(wire.replacementQuestId());
+        if (sessionId == null || bookId == null || questId == null || replacementQuestId == null
+                || wire.draftRevision() == null || wire.title() == null || wire.subtitle() == null
+                || wire.description() == null || wire.iconKind() == null || wire.iconValue() == null) {
             sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_QUEST_UPDATE", "Incomplete quest update request");
             return;
@@ -374,10 +474,33 @@ public final class AuthoringNetwork {
                     current.success() ? "Selected quest no longer exists" : current.message());
             return;
         }
-        QuestDefinition replacement = new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
-                wire.title(), wire.subtitle(), wire.description(), quest.icon(), quest.x(), quest.y(),
+        String icon = quest.icon();
+        if (!wire.preserveIcon()) {
+            ResourceLocation iconId = wire.iconValue().isBlank() ? null : ResourceLocation.tryParse(wire.iconValue());
+            if ("ITEM".equals(wire.iconKind())) {
+                if (!wire.iconValue().isBlank() && (iconId == null || !BuiltInRegistries.ITEM.containsKey(iconId))) {
+                    sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                            "INVALID_ICON_ITEM", "Icon item must be a registered item ID");
+                    return;
+                }
+                icon = iconId == null ? "" : "{id:\"" + iconId + "\",count:1}";
+            } else if ("TEXTURE".equals(wire.iconKind())) {
+                if (!wire.iconValue().isBlank() && iconId == null) {
+                    sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                            "INVALID_ICON_TEXTURE", "Icon texture must be a ResourceLocation");
+                    return;
+                }
+                icon = iconId == null ? "" : QuestIconValue.texture(iconId);
+            } else {
+                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                        "INVALID_ICON_KIND", "Unknown quest icon kind");
+                return;
+            }
+        }
+        QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
+                wire.title(), wire.subtitle(), wire.description(), icon, quest.x(), quest.y(),
                 quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
-        var updated = AuthorApi.editor().updateQuest(player, sessionId, bookId, wire.draftRevision(), questId,
+        var updated = AuthorApi.editor().updateQuestBasics(player, sessionId, bookId, wire.draftRevision(), questId,
                 replacement);
         if (!updated.success()) {
             String message = updated.message();
@@ -421,9 +544,9 @@ public final class AuthoringNetwork {
             sendFailure(player, "MUTATE", current.status(), current.code(), current.message());
             return;
         }
-        ResourceLocation targetId = ResourceLocation.tryParse(wire.targetId());
-        ResourceLocation parentId = ResourceLocation.tryParse(wire.parentId());
-        ResourceLocation sourceId = ResourceLocation.tryParse(wire.sourceId());
+        ResourceLocation targetId = parseId(wire.targetId());
+        ResourceLocation parentId = parseId(wire.parentId());
+        ResourceLocation sourceId = parseId(wire.sourceId());
         var editor = AuthorApi.editor();
         AuthorOperationResult<DraftEditResult> result;
         try {
@@ -458,6 +581,10 @@ public final class AuthoringNetwork {
                         wire.draftRevision(), requireId(targetId));
                 case "MOVE_QUESTS" -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
                         decodePositions(wire.positions()));
+                case "ADD_DEPENDENCY" -> editor.addDependency(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), requireId(sourceId));
+                case "REMOVE_DEPENDENCY" -> editor.removeDependency(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId), requireId(sourceId));
                 default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                         "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
             };
@@ -492,6 +619,11 @@ public final class AuthoringNetwork {
     private static ResourceLocation requireId(ResourceLocation id) {
         if (id == null) throw new IllegalArgumentException("A valid namespaced ID is required");
         return id;
+    }
+
+    /** Optional mutation slots use empty strings; malformed clients may omit them entirely. */
+    private static ResourceLocation parseId(String raw) {
+        return raw == null || raw.isBlank() ? null : ResourceLocation.tryParse(raw);
     }
 
     private static ChapterDefinition chapterReplacement(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,

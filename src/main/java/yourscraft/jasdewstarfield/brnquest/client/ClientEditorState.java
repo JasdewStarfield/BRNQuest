@@ -23,7 +23,9 @@ public final class ClientEditorState {
     private static final int RENEW_INTERVAL_TICKS = 20 * 30;
     private static final ClientEditorState INSTANCE = new ClientEditorState();
 
-    public enum Mode { VIEW, CATALOG_LOADING, OPENING, RECEIVING_DRAFT, EDITING, MUTATING, SAVING, CLOSING, ERROR }
+    public enum Mode {
+        VIEW, CATALOG_LOADING, OPENING, RECEIVING_DRAFT, EDITING, MUTATING, SAVING, PUBLISHING, CLOSING, ERROR
+    }
 
     public record CatalogEntry(ResourceLocation bookId, String title, String draftRevision, DraftOrigin origin) {}
     public record LeaseRequest(UUID sessionId, String draftRevision) {}
@@ -115,8 +117,7 @@ public final class ClientEditorState {
 
     /** Starts a close, optionally retaining a server book to open after acknowledgement. */
     public synchronized Optional<LeaseRequest> beginClose(ResourceLocation openAfterClose) {
-        if (!hasSession() || mode == Mode.RECEIVING_DRAFT || mode == Mode.MUTATING
-                || mode == Mode.SAVING || mode == Mode.CLOSING) return Optional.empty();
+        if (!hasSession() || busy()) return Optional.empty();
         pendingBookId = openAfterClose;
         mode = Mode.CLOSING;
         statusCode = openAfterClose == null ? "SESSION_CLOSING" : "SESSION_SWITCHING";
@@ -127,6 +128,14 @@ public final class ClientEditorState {
         if (!editing() || !dirty() || busy()) return Optional.empty();
         mode = Mode.SAVING;
         statusCode = "DRAFT_SAVING";
+        return Optional.of(new LeaseRequest(sessionId, draftRevision));
+    }
+
+    /** Starts the confirmed save/publish/deploy/reload pipeline; dirty drafts are saved by the server first. */
+    public synchronized Optional<LeaseRequest> beginPublish() {
+        if (!editing() || busy()) return Optional.empty();
+        mode = Mode.PUBLISHING;
+        statusCode = "DRAFT_PUBLISHING";
         return Optional.of(new LeaseRequest(sessionId, draftRevision));
     }
 
@@ -174,6 +183,10 @@ public final class ClientEditorState {
                 yield Optional.empty();
             }
             case "SAVE" -> {
+                acceptSaved(response);
+                yield Optional.empty();
+            }
+            case "PUBLISH" -> {
                 acceptSaved(response);
                 yield Optional.empty();
             }
@@ -293,7 +306,7 @@ public final class ClientEditorState {
     public synchronized boolean hasLease() { return hasSession(); }
     public synchronized boolean busy() {
         return mode == Mode.OPENING || mode == Mode.RECEIVING_DRAFT || mode == Mode.MUTATING
-                || mode == Mode.SAVING || mode == Mode.CLOSING;
+                || mode == Mode.SAVING || mode == Mode.PUBLISHING || mode == Mode.CLOSING;
     }
     public synchronized boolean dirty() {
         return !draftRevision.isBlank() && !draftRevision.equals(savedRevision);

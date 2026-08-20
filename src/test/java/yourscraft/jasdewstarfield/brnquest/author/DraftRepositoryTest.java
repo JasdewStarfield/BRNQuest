@@ -65,6 +65,73 @@ class DraftRepositoryTest {
         assertThrows(UnsupportedOperationException.class, () -> snapshot.book().chapters().add(null));
     }
 
+    @Test void openingPublishedContentRestoresItsWorkspaceConcurrencyBaseline() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        QuestBookDefinition book = book("test:published", "Published");
+        DraftSnapshot staleManifest = DraftSnapshot.from(book, DraftOrigin.ACTIVE, "old-active");
+        Path drafts = tempDirectory.resolve("drafts");
+        Path workspace = tempDirectory.resolve("workspace");
+        assertTrue(repository.create(drafts, staleManifest).success());
+        Path workspaceBook = workspace.resolve("data/test/brnquest/books/published.json");
+        Files.createDirectories(workspaceBook.getParent());
+        Files.writeString(workspaceBook, NativeBookJson.encode(book), StandardCharsets.UTF_8);
+
+        AuthorOperationResult<DraftSnapshot> loaded = repository.loadForEditing(drafts, workspace, book.id());
+
+        assertTrue(loaded.success());
+        assertEquals("DRAFT_WORKSPACE_BASELINE_RESTORED", loaded.code());
+        assertEquals(DraftOrigin.WORKSPACE, loaded.value().origin());
+        assertEquals(loaded.value().draftRevision(), loaded.value().baseRevision());
+
+        DraftSnapshot edited = DraftSnapshot.from(book("test:published", "Edited again"),
+                loaded.value().origin(), loaded.value().baseRevision());
+        AuthorOperationResult<DraftSaveResult> saved = repository.save(drafts, tempDirectory.resolve("backups"),
+                edited, loaded.value().draftRevision());
+        assertTrue(saved.success(), "A reopened published draft must remain saveable");
+        DraftSnapshot persisted = repository.load(drafts, book.id()).value();
+        assertEquals(DraftOrigin.WORKSPACE, persisted.origin());
+        assertEquals(loaded.value().draftRevision(), persisted.baseRevision());
+    }
+
+    @Test void openingDivergentWorkspaceNeverRebasesOrMergesTheDraft() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        QuestBookDefinition draftBook = book("test:divergent", "Draft");
+        DraftSnapshot draft = DraftSnapshot.from(draftBook, DraftOrigin.ACTIVE, "active-base");
+        Path drafts = tempDirectory.resolve("drafts");
+        Path workspace = tempDirectory.resolve("workspace");
+        assertTrue(repository.create(drafts, draft).success());
+        Path workspaceBook = workspace.resolve("data/test/brnquest/books/divergent.json");
+        Files.createDirectories(workspaceBook.getParent());
+        Files.writeString(workspaceBook, NativeBookJson.encode(book("test:divergent", "Other")),
+                StandardCharsets.UTF_8);
+
+        DraftSnapshot loaded = repository.loadForEditing(drafts, workspace, draftBook.id()).value();
+
+        assertEquals(DraftOrigin.ACTIVE, loaded.origin());
+        assertEquals("active-base", loaded.baseRevision());
+        assertEquals(draftBook, loaded.book());
+    }
+
+    @Test void reopeningAfterAnotherPublishAdvancesAnExistingWorkspaceBaseline() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        QuestBookDefinition republishedBook = book("test:republished", "Second publish");
+        DraftSnapshot staleWorkspaceBaseline = DraftSnapshot.from(republishedBook,
+                DraftOrigin.WORKSPACE, "previous-workspace");
+        Path drafts = tempDirectory.resolve("drafts");
+        Path workspace = tempDirectory.resolve("workspace");
+        assertTrue(repository.create(drafts, staleWorkspaceBaseline).success());
+        Path workspaceBook = workspace.resolve("data/test/brnquest/books/republished.json");
+        Files.createDirectories(workspaceBook.getParent());
+        Files.writeString(workspaceBook, NativeBookJson.encode(republishedBook), StandardCharsets.UTF_8);
+
+        DraftSnapshot loaded = repository.loadForEditing(drafts, workspace, republishedBook.id()).value();
+
+        assertEquals(DraftOrigin.WORKSPACE, loaded.origin());
+        assertEquals(loaded.draftRevision(), loaded.baseRevision(),
+                "A repeated publish must advance the workspace concurrency baseline");
+        assertNotEquals("previous-workspace", loaded.baseRevision());
+    }
+
     @Test void catalogListsNestedValidDraftsInStableBookIdOrder() throws Exception {
         DraftRepository repository = new DraftRepository();
         Path drafts = tempDirectory.resolve("drafts");

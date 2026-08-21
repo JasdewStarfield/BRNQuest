@@ -82,7 +82,7 @@ public final class DraftBookEditor {
         affected.addAll(quests);
         affected.addAll(dependencyReferrers(book, quests));
         return changed(new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), remainingGroups,
-                remainingChapters, book.legacyIds()), affected.toArray(ResourceLocation[]::new));
+                remainingChapters, pruned.legacyIds()), affected.toArray(ResourceLocation[]::new));
     }
 
     public static AuthorOperationResult<DraftChange> addChapter(QuestBookDefinition book, ChapterDefinition chapter) {
@@ -245,7 +245,9 @@ public final class DraftBookEditor {
 
         Map<String, ResourceLocation> aliases = new java.util.TreeMap<>(book.legacyIds());
         if (!replacementId.equals(questId)) {
-            aliases.replaceAll((alias, target) -> target.equals(questId) ? replacementId : target);
+            // Typed aliases use an explicit prefix and must not be rewritten by an unrelated quest rename.
+            aliases.replaceAll((alias, target) -> !alias.startsWith("@task:") && !alias.startsWith("@reward:")
+                    && target.equals(questId) ? replacementId : target);
             // Renaming back to a former alias must not leave a meaningless A -> A mapping.
             aliases.entrySet().removeIf(entry -> entry.getKey().equals(entry.getValue().toString()));
             aliases.put(questId.toString(), replacementId);
@@ -354,12 +356,18 @@ public final class DraftBookEditor {
 
     public static AuthorOperationResult<DraftChange> updateTask(QuestBookDefinition book, ResourceLocation questId,
                                                                  ResourceLocation taskId, TaskDefinition replacement) {
-        if (replacement == null || !replacement.id().equals(taskId) || !replacement.bookId().equals(book.id())) return invalid("STABLE_ID_REQUIRED", "Task ID cannot change");
-        return editTyped(book, questId, taskId, replacement, true);
+        if (replacement == null || !replacement.bookId().equals(book.id())) {
+            return invalid("TASK_BOOK_MISMATCH", "Task belongs to another book");
+        }
+        if (!replacement.id().equals(taskId) && typedIdExists(book, replacement.id())) {
+            return conflict("DUPLICATE_TYPED_ID", replacement.id());
+        }
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, replacement, true);
+        return renamedTyped(updated, "@task:", taskId, replacement.id());
     }
 
     public static AuthorOperationResult<DraftChange> removeTask(QuestBookDefinition book, ResourceLocation questId, ResourceLocation taskId) {
-        return editTyped(book, questId, taskId, null, true);
+        return prunedAliases(editTyped(book, questId, taskId, null, true));
     }
 
     public static AuthorOperationResult<DraftChange> moveTask(QuestBookDefinition book, ResourceLocation questId,
@@ -384,12 +392,18 @@ public final class DraftBookEditor {
 
     public static AuthorOperationResult<DraftChange> updateReward(QuestBookDefinition book, ResourceLocation questId,
                                                                    ResourceLocation rewardId, RewardDefinition replacement) {
-        if (replacement == null || !replacement.id().equals(rewardId) || !replacement.bookId().equals(book.id())) return invalid("STABLE_ID_REQUIRED", "Reward ID cannot change");
-        return editTyped(book, questId, rewardId, replacement, false);
+        if (replacement == null || !replacement.bookId().equals(book.id())) {
+            return invalid("REWARD_BOOK_MISMATCH", "Reward belongs to another book");
+        }
+        if (!replacement.id().equals(rewardId) && typedIdExists(book, replacement.id())) {
+            return conflict("DUPLICATE_TYPED_ID", replacement.id());
+        }
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, replacement, false);
+        return renamedTyped(updated, "@reward:", rewardId, replacement.id());
     }
 
     public static AuthorOperationResult<DraftChange> removeReward(QuestBookDefinition book, ResourceLocation questId, ResourceLocation rewardId) {
-        return editTyped(book, questId, rewardId, null, false);
+        return prunedAliases(editTyped(book, questId, rewardId, null, false));
     }
 
     public static AuthorOperationResult<DraftChange> moveReward(QuestBookDefinition book, ResourceLocation questId,
@@ -505,7 +519,15 @@ public final class DraftBookEditor {
             return withQuests(chapter, quests);
         }).toList();
         Map<String, ResourceLocation> aliases = new java.util.TreeMap<>(book.legacyIds());
-        aliases.entrySet().removeIf(entry -> removedQuestIds.contains(entry.getValue()));
+        Set<ResourceLocation> remainingTasks = chapters.stream().flatMap(chapter -> chapter.quests().stream())
+                .flatMap(quest -> quest.tasks().stream()).map(TaskDefinition::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> remainingRewards = chapters.stream().flatMap(chapter -> chapter.quests().stream())
+                .flatMap(quest -> quest.rewards().stream()).map(RewardDefinition::id)
+                .collect(java.util.stream.Collectors.toSet());
+        aliases.entrySet().removeIf(entry -> removedQuestIds.contains(entry.getValue())
+                || entry.getKey().startsWith("@task:") && !remainingTasks.contains(entry.getValue())
+                || entry.getKey().startsWith("@reward:") && !remainingRewards.contains(entry.getValue()));
         return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), book.chapterGroups(), chapters, aliases);
     }
 
@@ -550,6 +572,42 @@ public final class DraftBookEditor {
     private static boolean typedIdExists(QuestBookDefinition book, ResourceLocation id) {
         return book.quests().stream().anyMatch(quest -> quest.tasks().stream().anyMatch(task -> task.id().equals(id))
                 || quest.rewards().stream().anyMatch(reward -> reward.id().equals(id)));
+    }
+
+    /** Records typed-object renames in schema-1 legacy_ids so reload can migrate player ledgers. */
+    private static AuthorOperationResult<DraftChange> renamedTyped(AuthorOperationResult<DraftChange> updated,
+                                                                    String prefix, ResourceLocation oldId,
+                                                                    ResourceLocation newId) {
+        if (!updated.success() || oldId.equals(newId)) return updated;
+        QuestBookDefinition book = updated.value().book();
+        Map<String, ResourceLocation> aliases = new java.util.TreeMap<>(book.legacyIds());
+        aliases.replaceAll((alias, target) -> alias.startsWith(prefix) && target.equals(oldId) ? newId : target);
+        aliases.entrySet().removeIf(entry -> entry.getKey().equals(prefix + entry.getValue()));
+        aliases.put(prefix + oldId, newId);
+        QuestBookDefinition renamed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
+                book.chapterGroups(), book.chapters(), aliases);
+        return changed(renamed, oldId, newId);
+    }
+
+    private static AuthorOperationResult<DraftChange> prunedAliases(AuthorOperationResult<DraftChange> updated) {
+        if (!updated.success()) return updated;
+        DraftChange change = updated.value();
+        QuestBookDefinition book = change.book();
+        Set<ResourceLocation> quests = book.quests().stream().map(QuestDefinition::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> tasks = book.quests().stream().flatMap(quest -> quest.tasks().stream())
+                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> rewards = book.quests().stream().flatMap(quest -> quest.rewards().stream())
+                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
+        Map<String, ResourceLocation> aliases = new java.util.TreeMap<>(book.legacyIds());
+        aliases.entrySet().removeIf(entry -> entry.getKey().startsWith("@task:")
+                ? !tasks.contains(entry.getValue()) : entry.getKey().startsWith("@reward:")
+                ? !rewards.contains(entry.getValue()) : !quests.contains(entry.getValue()));
+        if (aliases.equals(book.legacyIds())) return updated;
+        QuestBookDefinition pruned = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
+                book.chapterGroups(), book.chapters(), aliases);
+        return AuthorOperationResult.success("DRAFT_CHANGED", "Draft candidate changed",
+                new DraftChange(pruned, change.affectedObjects()));
     }
 
     private static <T> List<T> append(List<T> source, T value) {

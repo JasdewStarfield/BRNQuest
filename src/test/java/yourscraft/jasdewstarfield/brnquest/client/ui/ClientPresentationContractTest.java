@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
@@ -25,6 +26,8 @@ class ClientPresentationContractTest {
         assertEquals(ClientTaskPresentation.NodeStyle.ITEM,
                 ClientTaskPresentationRegistry.get(item.typeId()).nodeStyle(item));
         assertEquals(item.config().get("item"), ClientTaskPresentationRegistry.get(item.typeId()).itemSnbt(item));
+        assertEquals(Component.translatable("screen.brnquest.type.task.item"),
+                ClientTaskPresentationRegistry.get(item.typeId()).typeName(item));
         assertTrue(ClientTaskPresentationRegistry.get(item.typeId()).interactive(item));
         assertEquals(ClientTaskPresentation.NodeStyle.CHECKMARK,
                 ClientTaskPresentationRegistry.get(checkmark.typeId()).nodeStyle(checkmark));
@@ -42,6 +45,8 @@ class ClientPresentationContractTest {
 
         assertEquals(item.config().get("item"),
                 ClientRewardPresentationRegistry.get(item.typeId()).itemSnbt(item));
+        assertEquals(Component.translatable("screen.brnquest.type.reward.item"),
+                ClientRewardPresentationRegistry.get(item.typeId()).typeName(item));
         assertEquals("?", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).symbol(foreignSamePath));
         assertEquals("", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).itemSnbt(foreignSamePath));
     }

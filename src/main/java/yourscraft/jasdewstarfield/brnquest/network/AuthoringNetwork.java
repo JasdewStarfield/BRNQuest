@@ -7,7 +7,9 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.network.PacketDistributor;
@@ -29,10 +31,12 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -169,7 +173,8 @@ public final class AuthoringNetwork {
 
     public record EditorMutationWire(String sessionId, String bookId, String draftRevision, String action,
                                      String targetId, String parentId, String sourceId, String title,
-                                     int targetIndex, double x, double y, List<PositionWire> positions) {}
+                                     int targetIndex, double x, double y, List<PositionWire> positions,
+                                     Map<String, String> config) {}
 
     static void register(PayloadRegistrar registrar) {
         registrar.playToServer(RequestCatalogPayload.TYPE, RequestCatalogPayload.CODEC, (payload, context) -> {
@@ -585,6 +590,33 @@ public final class AuthoringNetwork {
                         requireId(targetId), requireId(sourceId));
                 case "REMOVE_DEPENDENCY" -> editor.removeDependency(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId), requireId(sourceId));
+                case "ADD_TASK" -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                typedMutationConfig(player, sourceId, wire.config()), false));
+                case "UPDATE_TASK" -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskReplacement(player, current.value().book(),
+                                parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
+                case "COPY_TASK" -> editor.copyTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskCopy(current.value().book(),
+                                parentId, sourceId, requireId(targetId)));
+                case "MOVE_TASK" -> editor.moveTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case "DELETE_TASK" -> editor.removeTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
+                case "ADD_REWARD" -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                typedMutationConfig(player, sourceId, wire.config()), "manual", false));
+                case "UPDATE_REWARD" -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardReplacement(player, current.value().book(),
+                                parentId, sourceId, requireId(targetId), wire.config(), boundedClaimPolicy(wire.title()),
+                                wire.targetIndex() != 0));
+                case "COPY_REWARD" -> editor.copyReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardCopy(current.value().book(),
+                                parentId, sourceId, requireId(targetId)));
+                case "MOVE_REWARD" -> editor.moveReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case "DELETE_REWARD" -> editor.removeReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
                 default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                         "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
             };
@@ -654,6 +686,31 @@ public final class AuthoringNetwork {
         }
         return new QuestDefinition(book.id(), targetId, source.chapterId(), title, source.subtitle(),
                 source.description(), source.icon(), x, y, source.dependencies(), tasks, rewards, "");
+    }
+
+    /** Copies opaque extension data on the server; the client never reconstructs unknown task config. */
+    private static TaskDefinition taskCopy(QuestBookDefinition book, ResourceLocation questId,
+                                           ResourceLocation sourceId, ResourceLocation targetId) {
+        QuestDefinition quest = requireQuest(book, questId);
+        TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Source task no longer exists"));
+        return new TaskDefinition(book.id(), targetId, source.typeId(), source.config(), source.optional());
+    }
+
+    /** Copies claim semantics and opaque extension data without client-side decoding. */
+    private static RewardDefinition rewardCopy(QuestBookDefinition book, ResourceLocation questId,
+                                                ResourceLocation sourceId, ResourceLocation targetId) {
+        QuestDefinition quest = requireQuest(book, questId);
+        RewardDefinition source = quest.rewards().stream().filter(reward -> reward.id().equals(sourceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Source reward no longer exists"));
+        return new RewardDefinition(book.id(), targetId, source.typeId(), source.config(),
+                source.claimPolicy(), source.teamReward());
+    }
+
+    private static QuestDefinition requireQuest(QuestBookDefinition book, ResourceLocation questId) {
+        if (questId == null) throw new IllegalArgumentException("Quest ID is required");
+        return book.quests().stream().filter(quest -> quest.id().equals(questId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected quest no longer exists"));
     }
 
     private static ResourceLocation nestedCopyId(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
@@ -735,6 +792,72 @@ public final class AuthoringNetwork {
     private static String boundedTitle(String title) {
         String value = title == null ? "" : title;
         return value.length() <= 256 ? value : value.substring(0, 256);
+    }
+
+    /** Mutation JSON is untrusted even though the complete candidate is validated before commit. */
+    static Map<String, String> boundedConfig(Map<String, String> config) {
+        if (config == null || config.isEmpty()) return Map.of();
+        if (config.size() > 64) throw new IllegalArgumentException("Typed config exceeds 64 fields");
+        Map<String, String> bounded = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : config.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || key.isBlank() || key.length() > 128 || value == null || value.length() > 65_536) {
+                throw new IllegalArgumentException("Typed config contains an invalid field");
+            }
+            bounded.put(key, value);
+        }
+        return Map.copyOf(bounded);
+    }
+
+    private static Map<String, String> typedMutationConfig(ServerPlayer player, ResourceLocation typeId,
+                                                           Map<String, String> config) {
+        Map<String, String> bounded = boundedConfig(config);
+        if (!TaskTypes.ITEM.equals(typeId)) return bounded;
+        String itemSnbt = bounded.get("item");
+        try {
+            ItemStack stack = itemSnbt == null ? ItemStack.EMPTY
+                    : ItemStack.parseOptional(player.registryAccess(), TagParser.parseTag(itemSnbt));
+            if (stack.isEmpty()) throw new IllegalArgumentException("Item config must contain a registered item");
+            Map<String, String> normalized = new LinkedHashMap<>(bounded);
+            // Quantity belongs to the separate config field; the identity stack stays count one.
+            normalized.put("item", stack.copyWithCount(1).save(player.registryAccess()).toString());
+            return Map.copyOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("Item config contains invalid ItemStack SNBT");
+        }
+    }
+
+    private static TaskDefinition taskReplacement(ServerPlayer player, QuestBookDefinition book,
+                                                  ResourceLocation questId, ResourceLocation sourceId,
+                                                  ResourceLocation replacementId, Map<String, String> config,
+                                                  boolean optional) {
+        QuestDefinition quest = requireQuest(book, questId);
+        TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected task no longer exists"));
+        return new TaskDefinition(book.id(), replacementId, source.typeId(),
+                typedMutationConfig(player, source.typeId(), config), optional);
+    }
+
+    private static RewardDefinition rewardReplacement(ServerPlayer player, QuestBookDefinition book,
+                                                       ResourceLocation questId, ResourceLocation sourceId,
+                                                       ResourceLocation replacementId, Map<String, String> config,
+                                                       String claimPolicy, boolean teamReward) {
+        QuestDefinition quest = requireQuest(book, questId);
+        RewardDefinition source = quest.rewards().stream().filter(reward -> reward.id().equals(sourceId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected reward no longer exists"));
+        return new RewardDefinition(book.id(), replacementId, source.typeId(),
+                typedMutationConfig(player, source.typeId(), config), claimPolicy, teamReward);
+    }
+
+    private static String boundedClaimPolicy(String policy) {
+        String value = policy == null ? "" : policy.strip();
+        if (value.isEmpty() || value.length() > 64) {
+            throw new IllegalArgumentException("Reward claim policy must contain 1-64 characters");
+        }
+        return value;
     }
 
     private static UUID parseUuid(String value) {

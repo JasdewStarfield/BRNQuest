@@ -47,6 +47,20 @@ public final class PlayerProgress {
         }
         return changed;
     }
+    /** Moves accumulated task progress when an author explicitly renames the stable task ID. */
+    public boolean migrateTaskId(String oldId, String newId) {
+        if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        Long oldProgress = taskProgress.remove(oldId);
+        if (oldProgress == null) return false;
+        taskProgress.merge(newId, oldProgress, Math::max);
+        return true;
+    }
+    /** Preserves idempotent reward claims across an explicit stable reward-ID rename. */
+    public boolean migrateRewardId(String oldId, String newId) {
+        if (oldId == null || newId == null || oldId.equals(newId) || !claimedRewards.remove(oldId)) return false;
+        claimedRewards.add(newId);
+        return true;
+    }
     public void resetQuest(String questId, Collection<String> taskIds, Collection<String> rewardIds) {
         quests.remove(questId);
         completionTimes.remove(questId);

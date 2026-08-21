@@ -27,6 +27,9 @@ public final class ClientTaskPresentationRegistry {
         register(TaskTypes.CUSTOM, new ClientTaskPresentation() {
             public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
             public String symbol(TaskView task) { return "◆"; }
+            public Component typeName(TaskView task) {
+                return Component.translatable("screen.brnquest.type.task.custom");
+            }
         });
     }
 
@@ -61,6 +64,9 @@ public final class ClientTaskPresentationRegistry {
     private static final class CheckmarkPresentation implements ClientTaskPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
         public String symbol(TaskView task) { return "✓"; }
+        public Component typeName(TaskView task) {
+            return Component.translatable("screen.brnquest.type.task.checkmark");
+        }
         public boolean interactive(TaskView task) { return true; }
         public boolean acceptsQuestCompletionIntent(TaskView task) { return true; }
         public Component progressText(TaskPresentationContext context, boolean satisfied) {
@@ -75,6 +81,9 @@ public final class ClientTaskPresentationRegistry {
     private static final class ItemPresentation implements ClientTaskPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.ITEM; }
         public String itemSnbt(TaskView task) { return task.config().getOrDefault("item", ""); }
+        public Component typeName(TaskView task) {
+            return Component.translatable("screen.brnquest.type.task.item");
+        }
         public boolean interactive(TaskView task) { return true; }
 
         public boolean satisfied(TaskPresentationContext context) {

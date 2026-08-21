@@ -7,6 +7,7 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.ClientHooks;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
@@ -29,9 +30,15 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -64,6 +71,8 @@ public final class QuestScreen extends Screen {
     private static final int EDITOR_SAVE_BUTTON_WIDTH = 72;
     private static final int EDITOR_PUBLISH_BUTTON_WIDTH = 92;
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
+    private static final int TYPED_ROW_HEIGHT = 38;
+    private static final int MAX_TYPED_CONFIG_FIELDS = 8;
 
     private double panX;
     private double panY;
@@ -107,6 +116,24 @@ public final class QuestScreen extends Screen {
     private String dependencyFilter = "";
     private int dependencyPickerScroll;
     private Component dependencyEditorMessage;
+    private boolean typedEditorOpen;
+    private TypedKind typedEditorKind = TypedKind.TASK;
+    private ResourceLocation typedEditorQuestId;
+    private int typedEditorScroll;
+    private int typedTypePickerScroll;
+    private Component typedEditorMessage;
+    private boolean typedPropertyOpen;
+    private ResourceLocation typedPropertyOriginalId;
+    private ResourceLocation typedPropertyTypeId;
+    private ConfigEditorSchema typedPropertySchema;
+    private Map<String, String> typedPropertyOriginalConfig = Map.of();
+    private EditorTextField typedPropertyIdField;
+    private EditorTextField typedPropertyClaimPolicyField;
+    private final List<EditorTextField> typedPropertyConfigFields = new ArrayList<>();
+    private boolean typedPropertyOptional;
+    private boolean typedPropertyTeamReward;
+    private boolean typedPropertyRenameArmed;
+    private Component typedPropertyMessage;
     private ResourceLocation discardSwitchTarget;
     private boolean discardClosesScreen;
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
@@ -134,6 +161,7 @@ public final class QuestScreen extends Screen {
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
     private final List<DependencyHitbox> dependencyHitboxes = new ArrayList<>();
+    private final List<TypedEditorHitbox> typedEditorHitboxes = new ArrayList<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
@@ -155,6 +183,12 @@ public final class QuestScreen extends Screen {
         questIconField = editorField("screen.brnquest.editor.quest.icon", 256);
         structureIdField = editorField("screen.brnquest.editor.structure.id", 256);
         structureTitleField = editorField("screen.brnquest.editor.structure.title", 256);
+        typedPropertyIdField = editorField("screen.brnquest.editor.typed.property.id", 256);
+        typedPropertyClaimPolicyField = editorField("screen.brnquest.editor.typed.property.claim_policy", 64);
+        typedPropertyConfigFields.clear();
+        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
+            typedPropertyConfigFields.add(editorField("screen.brnquest.editor.typed.property.config", 65_536));
+        }
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
             catalogRequested = true;
@@ -453,6 +487,12 @@ public final class QuestScreen extends Screen {
             renderDependencyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
+        if (editing && typedEditorOpen && quest.id().equals(typedEditorQuestId)) {
+            detailContentHeight = 0;
+            detailScroll = 0;
+            renderTypedEditor(graphics, quest, mouseX, mouseY);
+            return;
+        }
         int contentLeft = left + 10;
         int contentWidth = DETAIL_WIDTH - 24;
         int viewportHeight = detailViewportHeight();
@@ -530,6 +570,12 @@ public final class QuestScreen extends Screen {
         if (editing) {
             EditorButton.render(graphics, font, questPropertyButtonBounds(),
                     Component.translatable("screen.brnquest.editor.quest.properties"),
+                    0xFF385A72, 0xFFFFFFFF, 5);
+            EditorButton.render(graphics, font, questTaskButtonBounds(),
+                    Component.translatable("screen.brnquest.editor.typed.tasks"),
+                    0xFF385A72, 0xFFFFFFFF, 5);
+            EditorButton.render(graphics, font, questRewardButtonBounds(),
+                    Component.translatable("screen.brnquest.editor.typed.rewards"),
                     0xFF385A72, 0xFFFFFFFF, 5);
             EditorButton.render(graphics, font, questDependencyButtonBounds(),
                     Component.translatable("screen.brnquest.editor.dependency.edit"),
@@ -632,12 +678,19 @@ public final class QuestScreen extends Screen {
             case DEPENDENCY_PICKER -> {
                 return handleDependencyPickerClick(mouseX, mouseY, button);
             }
+            case TYPED_TYPE_PICKER -> {
+                return handleTypedTypePickerClick(mouseX, mouseY, button);
+            }
             default -> { }
         }
         if (handleEditorChromeClick(mouseX, mouseY, button, snapshot.book())) return true;
 
         if (dependencyEditorOpen && mouseX >= detailLeft()) {
             return handleDependencyEditorClick(mouseX, mouseY, button);
+        }
+
+        if (typedEditorOpen && mouseX >= detailLeft()) {
+            return handleTypedEditorClick(mouseX, mouseY, button);
         }
 
         if (questEditorOpen && mouseX >= detailLeft()) {
@@ -731,6 +784,14 @@ public final class QuestScreen extends Screen {
         if (detailsOpen && selected != null) {
             if (ClientEditorState.get().editing() && questDependencyButtonBounds().contains(mouseX, mouseY)) {
                 openDependencyEditor(selected);
+                return true;
+            }
+            if (ClientEditorState.get().editing() && questTaskButtonBounds().contains(mouseX, mouseY)) {
+                openTypedEditor(selected, TypedKind.TASK);
+                return true;
+            }
+            if (ClientEditorState.get().editing() && questRewardButtonBounds().contains(mouseX, mouseY)) {
+                openTypedEditor(selected, TypedKind.REWARD);
                 return true;
             }
             if (ClientEditorState.get().editing() && questPropertyButtonBounds().contains(mouseX, mouseY)) {
@@ -864,6 +925,13 @@ public final class QuestScreen extends Screen {
                     dependencyPickerScroll - (int) Math.signum(vertical)));
             return true;
         }
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) {
+            int maximum = Math.max(0, typedTypeCandidates().size()
+                    - EditorPickerList.visibleRows(typedTypePickerBounds()));
+            typedTypePickerScroll = Math.max(0, Math.min(maximum,
+                    typedTypePickerScroll - (int) Math.signum(vertical)));
+            return true;
+        }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) && editorCatalogBounds().contains(x, y)) {
             int visibleRows = editorCatalogVisibleRows();
             int maximum = Math.max(0, editorCatalogEntries().size() - visibleRows);
@@ -878,6 +946,14 @@ public final class QuestScreen extends Screen {
                     quest.dependencies().size() - dependencyVisibleRows());
             dependencyScroll = Math.max(0, Math.min(maximum,
                     dependencyScroll - (int) Math.signum(vertical)));
+            return true;
+        }
+        if (typedEditorOpen && x >= detailLeft()) {
+            QuestDefinition quest = selectedQuest();
+            int count = quest == null ? 0 : typedEditorKind.size(quest);
+            int maximum = Math.max(0, count - typedEditorVisibleRows());
+            typedEditorScroll = Math.max(0, Math.min(maximum,
+                    typedEditorScroll - (int) Math.signum(vertical)));
             return true;
         }
         if (!navigationCollapsed && x >= NAV_LEFT && x <= NAV_RIGHT + NAV_HANDLE_WIDTH + 4 && isContentY(y)) {
@@ -917,6 +993,14 @@ public final class QuestScreen extends Screen {
         }
         if (keyCode == 256 && dependencyEditorOpen) {
             closeDependencyEditor();
+            return true;
+        }
+        if (keyCode == 256 && typedPropertyOpen) {
+            closeTypedPropertyEditor();
+            return true;
+        }
+        if (keyCode == 256 && typedEditorOpen) {
+            closeTypedEditor();
             return true;
         }
         if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
@@ -1030,7 +1114,7 @@ public final class QuestScreen extends Screen {
                     enabled ? 0xEF3E735A : 0xD02A323E, enabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
 
             UiRect publish = editorPublishButtonBounds();
-            boolean publishEnabled = !editor.busy() && !questEditorOpen && !dependencyEditorOpen
+            boolean publishEnabled = !editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
                     && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
             EditorButton.render(graphics, font, publish,
                     Component.translatable("screen.brnquest.editor.publish"),
@@ -1071,6 +1155,7 @@ public final class QuestScreen extends Screen {
             }
             case CONTEXT_MENU -> renderEditContextMenu(graphics);
             case DEPENDENCY_PICKER -> renderDependencyPicker(graphics, mouseX, mouseY);
+            case TYPED_TYPE_PICKER -> renderTypedTypePicker(graphics, mouseX, mouseY);
             case DISCARD_CONFIRMATION -> renderDiscardConfirmation(graphics);
             case DELETE_CONFIRMATION -> renderDeleteConfirmation(graphics);
             case QUEST_RENAME_CONFIRMATION -> renderQuestRenameConfirmation(graphics);
@@ -1197,6 +1282,11 @@ public final class QuestScreen extends Screen {
             case DEPENDENCY_PICKER -> {
                 dependencyFilter = "";
                 dependencyPickerScroll = 0;
+                editorOverlays.close();
+            }
+            case TYPED_TYPE_PICKER -> {
+                // Esc, outside clicks and the visible close button share this path.
+                typedTypePickerScroll = 0;
                 editorOverlays.close();
             }
             case DELETE_CONFIRMATION -> {
@@ -1450,13 +1540,20 @@ public final class QuestScreen extends Screen {
     private void sendMutation(String action, ResourceLocation target, ResourceLocation parent,
                               ResourceLocation source, String title, int targetIndex,
                               double x, double y, List<AuthoringNetwork.PositionWire> positions) {
+        sendMutation(action, target, parent, source, title, targetIndex, x, y, positions, Map.of());
+    }
+
+    private void sendMutation(String action, ResourceLocation target, ResourceLocation parent,
+                              ResourceLocation source, String title, int targetIndex,
+                              double x, double y, List<AuthoringNetwork.PositionWire> positions,
+                              Map<String, String> config) {
         ClientEditorState editor = ClientEditorState.get();
         if (!editor.editing() || editor.sessionId() == null || editor.bookId() == null
                 || !editor.beginMutation()) return;
         AuthoringNetwork.mutate(new AuthoringNetwork.EditorMutationWire(editor.sessionId().toString(),
                 editor.bookId().toString(), editor.draftRevision(), action,
                 target == null ? "" : target.toString(), parent == null ? "" : parent.toString(),
-                source == null ? "" : source.toString(), title, targetIndex, x, y, positions));
+                source == null ? "" : source.toString(), title, targetIndex, x, y, positions, config));
     }
 
     private ResourceLocation suggestId(QuestBookDefinition book, String stem) {
@@ -1464,7 +1561,11 @@ public final class QuestScreen extends Screen {
         Set<ResourceLocation> ids = new java.util.HashSet<>();
         book.chapterGroups().forEach(value -> ids.add(value.id()));
         book.chapters().forEach(value -> ids.add(value.id()));
-        book.quests().forEach(value -> ids.add(value.id()));
+        book.quests().forEach(value -> {
+            ids.add(value.id());
+            value.tasks().forEach(task -> ids.add(task.id()));
+            value.rewards().forEach(reward -> ids.add(reward.id()));
+        });
         for (int suffix = 1; suffix < 10_000; suffix++) {
             ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(namespace, stem + "_" + suffix);
             if (!ids.contains(candidate)) return candidate;
@@ -1599,7 +1700,8 @@ public final class QuestScreen extends Screen {
             return true;
         }
         if (editor.hasLease() && editorPublishButtonBounds().contains(mouseX, mouseY)) {
-            if (!editor.busy() && !questEditorOpen && !dependencyEditorOpen && !structureFormOpen()) {
+            if (!editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
+                    && !structureFormOpen()) {
                 closeActiveEditorOverlay();
                 editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
             }
@@ -1631,6 +1733,564 @@ public final class QuestScreen extends Screen {
                     editor.statusCode(), editor.statusMessage()) : null;
             case VIEW -> null;
         };
+    }
+
+    private void renderTypedEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
+        if (typedPropertyOpen) {
+            renderTypedPropertyEditor(graphics, quest);
+            return;
+        }
+        typedEditorHitboxes.clear();
+        int left = detailLeft() + 10;
+        int right = width - 10;
+        graphics.fill(detailLeft() + 4, TOP_TOOLBAR_HEIGHT + 4, width - 4,
+                height - BOTTOM_TOOLBAR_HEIGHT - 4, 0xFF202632);
+        graphics.drawString(font, Component.translatable(typedEditorKind.headingKey()),
+                left, TOP_TOOLBAR_HEIGHT + 12, 0xFFFFFFFF, false);
+        int count = typedEditorKind.size(quest);
+        int visibleRows = typedEditorVisibleRows();
+        typedEditorScroll = Math.max(0, Math.min(Math.max(0, count - visibleRows), typedEditorScroll));
+        int listTop = typedEditorListTop();
+        int listBottom = listTop + visibleRows * TYPED_ROW_HEIGHT;
+        graphics.enableScissor(detailLeft() + 4, listTop, width - 4, listBottom);
+        if (count == 0) {
+            graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.typed.empty"),
+                    (left + right) / 2, listTop + 8, 0xFF9AA6B5);
+        }
+        for (int row = 0; row < visibleRows && typedEditorScroll + row < count; row++) {
+            int index = typedEditorScroll + row;
+            TypedValue value = typedEditorKind.value(quest, index);
+            int top = listTop + row * TYPED_ROW_HEIGHT;
+            UiRect rowBounds = new UiRect(left, top, right, top + TYPED_ROW_HEIGHT - 2);
+            int actionWidth = 18;
+            UiRect delete = new UiRect(right - actionWidth, top + 9, right, top + 27);
+            UiRect down = new UiRect(delete.left() - actionWidth - 2, top + 9, delete.left() - 2, top + 27);
+            UiRect up = new UiRect(down.left() - actionWidth - 2, top + 9, down.left() - 2, top + 27);
+            UiRect copy = new UiRect(up.left() - actionWidth - 2, top + 9, up.left() - 2, top + 27);
+            UiRect edit = new UiRect(copy.left() - actionWidth - 2, top + 9, copy.left() - 2, top + 27);
+            graphics.fill(rowBounds.left(), rowBounds.top(), rowBounds.right(), rowBounds.bottom(), 0xA02A323E);
+            TypedRowPresentation rowPresentation = typedRowPresentation(quest, index);
+            if (!rowPresentation.stack().isEmpty()) {
+                graphics.renderItem(rowPresentation.stack(), rowBounds.left() + 4, top + 10);
+            } else {
+                graphics.drawCenteredString(font, rowPresentation.symbol(), rowBounds.left() + 12, top + 14,
+                        0xFFFFFFFF);
+            }
+            int textLeft = rowBounds.left() + 26;
+            int textWidth = Math.max(8, edit.left() - textLeft - 4);
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
+                            rowPresentation.typeName().getString(), textWidth)),
+                    textLeft, top + 4, 0xFFFFFFFF, false);
+            boolean known = typedEditorKind.known(value.typeId());
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(value.id().toString(), textWidth)),
+                    textLeft, top + 18, known ? 0xFF9FB0C2 : 0xFFFFA070, false);
+            EditorButton.render(graphics, font, edit, Component.literal("✎"), 0xFF385A72, 0xFFFFFFFF, 3);
+            EditorButton.render(graphics, font, copy, Component.literal("⧉"), 0xFF385A72, 0xFFFFFFFF, 3);
+            EditorButton.render(graphics, font, up, Component.literal("↑"),
+                    index == 0 ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 3);
+            EditorButton.render(graphics, font, down, Component.literal("↓"),
+                    index + 1 >= count ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 3);
+            EditorButton.render(graphics, font, delete, Component.literal("×"), 0xFF723E46, 0xFFFFFFFF, 3);
+            typedEditorHitboxes.add(new TypedEditorHitbox(value.id(), index, rowBounds, edit, copy, up, down, delete));
+            if (rowBounds.contains(mouseX, mouseY)) {
+                hoveredComponentTooltip = new ArrayList<>(List.of(rowPresentation.typeName(),
+                        Component.literal(value.id().toString()), Component.literal(value.typeId().toString())));
+                if (!known) hoveredComponentTooltip.add(Component.translatable(
+                        "screen.brnquest.editor.typed.unknown_preserved"));
+            }
+        }
+        graphics.disableScissor();
+        EditorScrollbar.render(graphics, width - 8, listTop, listBottom,
+                count * TYPED_ROW_HEIGHT, visibleRows * TYPED_ROW_HEIGHT,
+                typedEditorScroll * (double) TYPED_ROW_HEIGHT);
+        if (typedEditorMessage != null) {
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
+                            typedEditorMessage.getString(), DETAIL_WIDTH - 24)),
+                    left, typedEditorAddBounds().top() - 12, 0xFFFFA070, false);
+        }
+        EditorButton.render(graphics, font, typedEditorAddBounds(),
+                Component.translatable("screen.brnquest.editor.typed.add"),
+                ClientEditorState.get().busy() ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 5);
+        EditorButton.render(graphics, font, typedEditorDoneBounds(), Component.translatable("gui.done"),
+                0xFF343D49, 0xFFFFFFFF, 5);
+    }
+
+    private boolean handleTypedEditorClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return true;
+        if (typedPropertyOpen) return handleTypedPropertyEditorClick(mouseX, mouseY);
+        if (typedEditorDoneBounds().contains(mouseX, mouseY)) {
+            closeTypedEditor();
+            return true;
+        }
+        if (typedEditorAddBounds().contains(mouseX, mouseY)) {
+            if (!ClientEditorState.get().busy()) {
+                typedTypePickerScroll = 0;
+                typedEditorMessage = null;
+                editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
+            }
+            return true;
+        }
+        if (ClientEditorState.get().busy()) return true;
+        QuestBookSnapshot snapshot = displaySnapshot();
+        QuestDefinition quest = selectedQuest();
+        if (snapshot == null || quest == null) return true;
+        for (TypedEditorHitbox hitbox : typedEditorHitboxes) {
+            String prefix = typedEditorKind.actionPrefix();
+            if (hitbox.edit().contains(mouseX, mouseY)) {
+                openTypedPropertyEditor(quest, hitbox.id());
+                return true;
+            }
+            if (hitbox.copy().contains(mouseX, mouseY)) {
+                ResourceLocation copyId = suggestId(snapshot.book(), typedEditorKind.idStem() + "_copy");
+                sendMutation("COPY_" + prefix, copyId, quest.id(), hitbox.id(), "", 0, 0, 0, List.of());
+                return true;
+            }
+            if (hitbox.up().contains(mouseX, mouseY) && hitbox.index() > 0) {
+                sendMutation("MOVE_" + prefix, hitbox.id(), quest.id(), null, "",
+                        hitbox.index() - 1, 0, 0, List.of());
+                return true;
+            }
+            if (hitbox.down().contains(mouseX, mouseY)
+                    && hitbox.index() + 1 < typedEditorKind.size(quest)) {
+                sendMutation("MOVE_" + prefix, hitbox.id(), quest.id(), null, "",
+                        hitbox.index() + 1, 0, 0, List.of());
+                return true;
+            }
+            if (hitbox.delete().contains(mouseX, mouseY)) {
+                sendMutation("DELETE_" + prefix, hitbox.id(), quest.id(), null, "", 0, 0, 0, List.of());
+                return true;
+            }
+            if (hitbox.row().contains(mouseX, mouseY)) {
+                openTypedPropertyEditor(quest, hitbox.id());
+                return true;
+            }
+        }
+        return true;
+    }
+
+    private TypedRowPresentation typedRowPresentation(QuestDefinition quest, int index) {
+        if (typedEditorKind == TypedKind.TASK) {
+            TaskDefinition task = quest.tasks().get(index);
+            var view = ApiViews.task(task);
+            var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+            String snbt = presentation.itemSnbt(view);
+            return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
+                    snbt.isBlank() ? ItemStack.EMPTY : item(task.id(), snbt));
+        }
+        RewardDefinition reward = quest.rewards().get(index);
+        var view = ApiViews.reward(reward);
+        var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
+        String snbt = presentation.itemSnbt(view);
+        return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
+                snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt));
+    }
+
+    private void openTypedPropertyEditor(QuestDefinition quest, ResourceLocation typedId) {
+        TypedEntry entry = typedEditorKind.entry(quest, typedId);
+        if (entry == null || ClientEditorState.get().busy()) return;
+        typedPropertyOpen = true;
+        typedPropertyOriginalId = entry.id();
+        typedPropertyTypeId = entry.typeId();
+        typedPropertyOriginalConfig = entry.config();
+        typedPropertyOptional = entry.optional();
+        typedPropertyTeamReward = entry.teamReward();
+        typedPropertyRenameArmed = false;
+        typedPropertyMessage = null;
+        typedPropertyIdField.setValue(entry.id().toString());
+        typedPropertyClaimPolicyField.setValue(entry.claimPolicy());
+        typedPropertySchema = typedEditorKind == TypedKind.TASK
+                ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
+                : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
+        for (int index = 0; index < typedPropertyConfigFields.size(); index++) {
+            String value = index < typedPropertySchema.fields().size()
+                    ? entry.config().getOrDefault(typedPropertySchema.fields().get(index).key(),
+                    typedPropertySchema.fields().get(index).defaultValue().orElse("")) : "";
+            typedPropertyConfigFields.get(index).setValue(value);
+        }
+        setFocused(typedPropertyIdField);
+    }
+
+    private void renderTypedPropertyEditor(GuiGraphics graphics, QuestDefinition quest) {
+        int left = detailLeft() + 10;
+        int width = DETAIL_WIDTH - 24;
+        graphics.fill(detailLeft() + 4, TOP_TOOLBAR_HEIGHT + 4, this.width - 4,
+                height - BOTTOM_TOOLBAR_HEIGHT - 4, 0xFF202632);
+        Component heading = typedPropertyMessage == null
+                ? Component.translatable("screen.brnquest.editor.typed.property.heading") : typedPropertyMessage;
+        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(heading.getString(), width)),
+                left, TOP_TOOLBAR_HEIGHT + 7, typedPropertyMessage == null ? 0xFFFFFFFF : 0xFFFFA070, false);
+
+        int top = TOP_TOOLBAR_HEIGHT + 20;
+        renderTypedReadOnlyRow(graphics, "screen.brnquest.editor.typed.property.type",
+                typedTypeName(quest, typedPropertyOriginalId), left, top, width);
+        renderTypedTextRow(graphics, typedPropertyIdField, "screen.brnquest.editor.typed.property.id",
+                left, top + 22, width);
+
+        typedPropertyConfigFields.forEach(EditorTextField::hide);
+        typedPropertyClaimPolicyField.hide();
+        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        int visibleFields = Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS);
+        for (int index = 0; index < visibleFields; index++) {
+            ConfigFieldDescriptor descriptor = fields.get(index);
+            int rowTop = top + 44 + index * 22;
+            renderTypedConfigRow(graphics, descriptor, index, left, rowTop, width);
+        }
+        int semanticsTop = top + 44 + visibleFields * 22;
+        if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
+            graphics.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
+                    left, semanticsTop + 5, 0xFFFFA070, false);
+            semanticsTop += 22;
+        }
+        if (typedEditorKind == TypedKind.TASK) {
+            renderTypedToggleRow(graphics, "screen.brnquest.editor.typed.property.optional",
+                    typedPropertyOptional, left, semanticsTop, width);
+        } else {
+            renderTypedTextRow(graphics, typedPropertyClaimPolicyField,
+                    "screen.brnquest.editor.typed.property.claim_policy", left, semanticsTop, width);
+            renderTypedToggleRow(graphics, "screen.brnquest.editor.typed.property.team_reward",
+                    typedPropertyTeamReward, left, semanticsTop + 22, width);
+        }
+
+        EditorButton.render(graphics, font, typedPropertyCancelBounds(), Component.translatable("gui.cancel"),
+                0xFF343D49, 0xFFFFFFFF, 5);
+        Component done = Component.translatable(typedPropertyRenameArmed
+                ? "screen.brnquest.editor.typed.property.confirm_rename" : "gui.done");
+        EditorButton.render(graphics, font, typedPropertyDoneBounds(), done,
+                ClientEditorState.get().busy() ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 5);
+    }
+
+    private Component typedTypeName(QuestDefinition quest, ResourceLocation typedId) {
+        TypedEntry entry = typedEditorKind.entry(quest, typedId);
+        if (entry == null) return Component.literal(typedPropertyTypeId == null ? "" : typedPropertyTypeId.toString());
+        return typedEditorKind == TypedKind.TASK
+                ? ClientTaskPresentationRegistry.get(entry.typeId()).typeName(ApiViews.task(entry.task()))
+                : ClientRewardPresentationRegistry.get(entry.typeId()).typeName(ApiViews.reward(entry.reward()));
+    }
+
+    private void renderTypedReadOnlyRow(GuiGraphics graphics, String labelKey, Component value,
+                                        int left, int top, int width) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
+        drawTypedLabel(graphics, labelKey, row.label());
+        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(value.getString(), row.field().width())),
+                row.field().left(), row.field().top() + 5, 0xFFFFFFFF, false);
+    }
+
+    private void renderTypedTextRow(GuiGraphics graphics, EditorTextField field, String labelKey,
+                                    int left, int top, int width) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
+        drawTypedLabel(graphics, labelKey, row.label());
+        field.show(row.field(), !ClientEditorState.get().busy());
+    }
+
+    private void renderTypedConfigRow(GuiGraphics graphics, ConfigFieldDescriptor descriptor, int index,
+                                      int left, int top, int width) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
+        drawTypedLabel(graphics, typedConfigLabel(descriptor.key()), row.label());
+        EditorTextField field = typedPropertyConfigFields.get(index);
+        if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
+            EditorButton.render(graphics, font, row.field(), booleanValue(field.getValue())
+                            ? Component.translatable("options.on") : Component.translatable("options.off"),
+                    0xFF343D49, 0xFFFFFFFF, 3);
+        } else if (descriptor.valueType() == ConfigValueType.ENUM) {
+            EditorButton.render(graphics, font, row.field(), Component.literal(field.getValue()),
+                    0xFF343D49, 0xFFFFFFFF, 3);
+        } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
+            EditorButton.render(graphics, font, row.field(),
+                    Component.translatable("screen.brnquest.editor.typed.property.select_item"),
+                    0xFF343D49, 0xFFFFFFFF, 3);
+            ItemStack stack = item(typedPropertyOriginalId, field.getValue());
+            if (!stack.isEmpty()) graphics.renderItem(stack, row.field().right() - 17, row.field().top() + 1);
+        } else {
+            field.show(row.field(), !ClientEditorState.get().busy());
+        }
+    }
+
+    private void renderTypedToggleRow(GuiGraphics graphics, String labelKey, boolean value,
+                                      int left, int top, int width) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
+        drawTypedLabel(graphics, labelKey, row.label());
+        EditorButton.render(graphics, font, row.field(), value
+                        ? Component.translatable("options.on") : Component.translatable("options.off"),
+                0xFF343D49, 0xFFFFFFFF, 3);
+    }
+
+    private void drawTypedLabel(GuiGraphics graphics, String labelKey, UiRect bounds) {
+        String label = font.plainSubstrByWidth(Component.translatable(labelKey).getString(), bounds.width() - 4);
+        graphics.drawString(font, Component.literal(label), bounds.left(), bounds.top() + 5, 0xFF9FB0C2, false);
+    }
+
+    private String typedConfigLabel(String key) {
+        return switch (key) {
+            case "item" -> "screen.brnquest.editor.config.item";
+            case "count" -> "screen.brnquest.editor.config.count";
+            case "consume_items" -> "screen.brnquest.editor.config.consume_items";
+            case "title" -> "screen.brnquest.editor.config.title";
+            default -> key;
+        };
+    }
+
+    private boolean handleTypedPropertyEditorClick(double mouseX, double mouseY) {
+        if (typedPropertyCancelBounds().contains(mouseX, mouseY)) {
+            closeTypedPropertyEditor();
+            return true;
+        }
+        if (typedPropertyDoneBounds().contains(mouseX, mouseY)) {
+            prepareTypedPropertyEdit();
+            return true;
+        }
+        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
+            ConfigFieldDescriptor descriptor = fields.get(index);
+            UiRect bounds = typedPropertyConfigBounds(index);
+            if (!bounds.contains(mouseX, mouseY)) continue;
+            EditorTextField field = typedPropertyConfigFields.get(index);
+            if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
+                field.setValue(Boolean.toString(!booleanValue(field.getValue())));
+                return true;
+            }
+            if (descriptor.valueType() == ConfigValueType.ENUM) {
+                List<String> values = descriptor.allowedValues();
+                int current = Math.max(0, values.indexOf(field.getValue()));
+                field.setValue(values.get((current + 1) % values.size()));
+                return true;
+            }
+            if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
+                openTypedPropertyItemSelector(index);
+                return true;
+            }
+        }
+        int semanticsTop = typedPropertySemanticsTop();
+        if (typedEditorKind == TypedKind.TASK
+                && typedPropertySemanticBounds(semanticsTop).contains(mouseX, mouseY)) {
+            typedPropertyOptional = !typedPropertyOptional;
+            return true;
+        }
+        if (typedEditorKind == TypedKind.REWARD
+                && typedPropertySemanticBounds(semanticsTop + 22).contains(mouseX, mouseY)) {
+            typedPropertyTeamReward = !typedPropertyTeamReward;
+            return true;
+        }
+        super.mouseClicked(mouseX, mouseY, 0);
+        return true;
+    }
+
+    private void openTypedPropertyItemSelector(int fieldIndex) {
+        if (minecraft == null) return;
+        ClientHooks.pushGuiLayer(minecraft, new EditorItemSelectorScreen(stack -> {
+            if (minecraft.level == null || fieldIndex >= typedPropertyConfigFields.size()) return;
+            typedPropertyConfigFields.get(fieldIndex).setValue(
+                    stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
+            itemCache.remove(typedPropertyOriginalId);
+        }));
+    }
+
+    private void prepareTypedPropertyEdit() {
+        ResourceLocation replacementId = ResourceLocation.tryParse(typedPropertyIdField.getValue().strip());
+        if (replacementId == null) {
+            typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.invalid_id");
+            return;
+        }
+        Map<String, String> config = new LinkedHashMap<>(typedPropertyOriginalConfig);
+        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
+            String key = fields.get(index).key();
+            String value = typedPropertyConfigFields.get(index).getValue().strip();
+            if (value.isEmpty()) config.remove(key); else config.put(key, value);
+        }
+        var issues = ConfigEditorSchemas.validate(fields, config);
+        if (!issues.isEmpty()) {
+            typedPropertyMessage = Component.literal(issues.getFirst().fieldKey() + ": " + issues.getFirst().message());
+            return;
+        }
+        if (!replacementId.equals(typedPropertyOriginalId) && !typedPropertyRenameArmed) {
+            typedPropertyRenameArmed = true;
+            typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
+            return;
+        }
+        if (typedEditorKind == TypedKind.REWARD && typedPropertyClaimPolicyField.getValue().isBlank()) {
+            typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.claim_required");
+            return;
+        }
+        sendMutation("UPDATE_" + typedEditorKind.actionPrefix(), replacementId, typedEditorQuestId,
+                typedPropertyOriginalId, typedEditorKind == TypedKind.REWARD
+                        ? typedPropertyClaimPolicyField.getValue().strip() : "",
+                typedEditorKind == TypedKind.TASK ? (typedPropertyOptional ? 1 : 0)
+                        : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config);
+        itemCache.remove(typedPropertyOriginalId);
+        itemCache.remove(replacementId);
+        closeTypedPropertyEditor();
+    }
+
+    private void closeTypedPropertyEditor() {
+        typedPropertyOpen = false;
+        typedPropertyOriginalId = null;
+        typedPropertyTypeId = null;
+        typedPropertySchema = null;
+        typedPropertyOriginalConfig = Map.of();
+        typedPropertyMessage = null;
+        typedPropertyRenameArmed = false;
+        setFocused(null);
+        if (typedPropertyIdField != null) typedPropertyIdField.hide();
+        if (typedPropertyClaimPolicyField != null) typedPropertyClaimPolicyField.hide();
+        typedPropertyConfigFields.forEach(EditorTextField::hide);
+    }
+
+    private int typedPropertySemanticsTop() {
+        int fields = typedPropertySchema == null ? 0
+                : Math.min(typedPropertySchema.fields().size(), MAX_TYPED_CONFIG_FIELDS);
+        return TOP_TOOLBAR_HEIGHT + 20 + 44 + fields * 22
+                + (typedPropertySchema != null && typedPropertySchema.rawFallback() ? 22 : 0);
+    }
+
+    private UiRect typedPropertyConfigBounds(int index) {
+        int left = detailLeft() + 10;
+        return EditorPropertyFormLayout.row(left, TOP_TOOLBAR_HEIGHT + 20 + 44 + index * 22,
+                DETAIL_WIDTH - 24, 68).field();
+    }
+
+    private UiRect typedPropertySemanticBounds(int top) {
+        return EditorPropertyFormLayout.row(detailLeft() + 10, top, DETAIL_WIDTH - 24, 68).field();
+    }
+
+    private UiRect typedPropertyCancelBounds() { return questEditorCancelBounds(); }
+    private UiRect typedPropertyDoneBounds() { return questEditorSaveBounds(); }
+
+    private static boolean booleanValue(String value) {
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+    }
+
+    private void openTypedEditor(QuestDefinition quest, TypedKind kind) {
+        closeQuestEditor();
+        closeDependencyEditor();
+        closeActiveEditorOverlay();
+        typedEditorOpen = true;
+        typedEditorKind = kind;
+        typedEditorQuestId = quest.id();
+        typedEditorScroll = 0;
+        typedEditorMessage = null;
+    }
+
+    private void closeTypedEditor() {
+        closeTypedPropertyEditor();
+        typedEditorOpen = false;
+        typedEditorQuestId = null;
+        typedEditorScroll = 0;
+        typedEditorMessage = null;
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) closeActiveEditorOverlay();
+    }
+
+    private void renderTypedTypePicker(GuiGraphics graphics, int mouseX, int mouseY) {
+        List<ResourceLocation> candidates = typedTypeCandidates();
+        UiRect bounds = typedTypePickerBounds();
+        int visibleRows = EditorPickerList.visibleRows(bounds);
+        typedTypePickerScroll = Math.max(0, Math.min(Math.max(0, candidates.size() - visibleRows),
+                typedTypePickerScroll));
+        List<EditorPickerList.Entry> entries = candidates.stream().map(type -> new EditorPickerList.Entry(
+                Component.literal(type.toString()), Component.translatable(typedEditorKind.addable(type)
+                        ? typedEditorKind.itemBacked(type)
+                                ? "screen.brnquest.editor.typed.click_to_select_item"
+                                : "screen.brnquest.editor.typed.click_to_add"
+                        : "screen.brnquest.editor.typed.requires_config"),
+                typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING)).toList();
+        EditorPickerList.render(graphics, font, bounds,
+                Component.translatable("screen.brnquest.editor.typed.type_heading"), false, entries,
+                typedTypePickerScroll, mouseX, mouseY);
+        EditorButton.render(graphics, font, typedTypePickerCloseBounds(), Component.literal("×"),
+                0xFF343D49, 0xFFFFFFFF, 2);
+    }
+
+    private boolean handleTypedTypePickerClick(double mouseX, double mouseY, int button) {
+        if (button == 0 && typedTypePickerCloseBounds().contains(mouseX, mouseY)) {
+            closeActiveEditorOverlay();
+            return true;
+        }
+        if (button != 0 || !typedTypePickerBounds().contains(mouseX, mouseY)) {
+            closeActiveEditorOverlay();
+            return true;
+        }
+        List<ResourceLocation> candidates = typedTypeCandidates();
+        int index = EditorPickerList.entryAt(typedTypePickerBounds(), typedTypePickerScroll,
+                candidates.size(), mouseX, mouseY);
+        if (index < 0) return true;
+        ResourceLocation typeId = candidates.get(index);
+        if (!typedEditorKind.addable(typeId)) {
+            typedEditorMessage = Component.translatable("screen.brnquest.editor.typed.requires_config");
+            closeActiveEditorOverlay();
+            return true;
+        }
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null || typedEditorQuestId == null) return true;
+        if (typedEditorKind.itemBacked(typeId)) {
+            closeActiveEditorOverlay();
+            openItemSelector(typeId);
+            return true;
+        }
+        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
+        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
+                "", 0, 0, 0, List.of());
+        closeActiveEditorOverlay();
+        return true;
+    }
+
+    private void openItemSelector(ResourceLocation typeId) {
+        if (minecraft == null) return;
+        // A modal GUI layer keeps this QuestScreen alive underneath the selector. Esc can
+        // then use NeoForge's normal popGuiLayer path without closing the editing lease.
+        ClientHooks.pushGuiLayer(minecraft,
+                new EditorItemSelectorScreen(stack -> addSelectedItem(typeId, stack)));
+    }
+
+    private void addSelectedItem(ResourceLocation typeId, ItemStack stack) {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null || typedEditorQuestId == null || minecraft == null || minecraft.level == null
+                || stack.isEmpty()) return;
+        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
+        // Store a count-one ItemStack; the separate count field remains the author-facing quantity.
+        String itemSnbt = stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString();
+        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
+                "", 0, 0, 0, List.of(), Map.of("item", itemSnbt, "count", "1"));
+    }
+
+    private List<ResourceLocation> typedTypeCandidates() {
+        java.util.SortedSet<ResourceLocation> ids = new java.util.TreeSet<>(
+                java.util.Comparator.comparing(ResourceLocation::toString));
+        ids.addAll(typedEditorKind.builtIns());
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot != null) snapshot.book().quests().forEach(quest -> {
+            if (typedEditorKind == TypedKind.TASK) quest.tasks().forEach(task -> ids.add(task.typeId()));
+            else quest.rewards().forEach(reward -> ids.add(reward.typeId()));
+        });
+        return List.copyOf(ids);
+    }
+
+    private int typedEditorListTop() { return TOP_TOOLBAR_HEIGHT + 34; }
+
+    private int typedEditorVisibleRows() {
+        return Math.max(1, (typedEditorAddBounds().top() - 16 - typedEditorListTop()) / TYPED_ROW_HEIGHT);
+    }
+
+    private UiRect typedEditorAddBounds() {
+        int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
+        int center = detailLeft() + DETAIL_WIDTH / 2;
+        return new UiRect(detailLeft() + 10, bottom - 20, center - 4, bottom);
+    }
+
+    private UiRect typedEditorDoneBounds() {
+        int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
+        int center = detailLeft() + DETAIL_WIDTH / 2;
+        return new UiRect(center + 4, bottom - 20, width - 10, bottom);
+    }
+
+    private UiRect typedTypePickerBounds() {
+        int desiredHeight = EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT * 6 + 4;
+        int maximumHeight = Math.max(EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT + 4,
+                height - TOP_TOOLBAR_HEIGHT - BOTTOM_TOOLBAR_HEIGHT - 16);
+        return layout().centeredDialog(430, 260, 20, Math.min(desiredHeight, maximumHeight));
+    }
+
+    private UiRect typedTypePickerCloseBounds() {
+        UiRect picker = typedTypePickerBounds();
+        return new UiRect(picker.right() - 18, picker.top() + 2, picker.right() - 2, picker.top() + 16);
     }
 
     private void renderDependencyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
@@ -1727,6 +2387,7 @@ public final class QuestScreen extends Screen {
 
     private void openDependencyEditor(QuestDefinition quest) {
         closeQuestEditor();
+        closeTypedEditor();
         closeActiveEditorOverlay();
         dependencyEditorOpen = true;
         dependencyEditorQuestId = quest.id();
@@ -1745,6 +2406,7 @@ public final class QuestScreen extends Screen {
     private void closeQuestEditingPanels() {
         closeQuestEditor();
         closeDependencyEditor();
+        closeTypedEditor();
     }
 
     private void openDependencyPicker() {
@@ -1931,6 +2593,7 @@ public final class QuestScreen extends Screen {
     private void openQuestEditor(QuestDefinition quest) {
         if (ClientEditorState.get().busy()) return;
         closeDependencyEditor();
+        closeTypedEditor();
         questEditorOpen = true;
         questEditorQuestId = quest.id();
         questEditorMessage = null;
@@ -2054,14 +2717,32 @@ public final class QuestScreen extends Screen {
 
     private UiRect questPropertyButtonBounds() {
         int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
-        int center = detailLeft() + DETAIL_WIDTH / 2;
-        return new UiRect(detailLeft() + 10, bottom - 20, center - 4, bottom);
+        return questEditorTabBounds(0, bottom);
+    }
+
+    private UiRect questTaskButtonBounds() {
+        int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
+        return questEditorTabBounds(1, bottom);
+    }
+
+    private UiRect questRewardButtonBounds() {
+        int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
+        return questEditorTabBounds(2, bottom);
     }
 
     private UiRect questDependencyButtonBounds() {
         int bottom = height - BOTTOM_TOOLBAR_HEIGHT - 6;
-        int center = detailLeft() + DETAIL_WIDTH / 2;
-        return new UiRect(center + 4, bottom - 20, width - 10, bottom);
+        return questEditorTabBounds(3, bottom);
+    }
+
+    private UiRect questEditorTabBounds(int index, int bottom) {
+        int left = detailLeft() + 10;
+        int available = width - 10 - left;
+        int gap = 3;
+        int tabWidth = (available - gap * 3) / 4;
+        int tabLeft = left + index * (tabWidth + gap);
+        int tabRight = index == 3 ? width - 10 : tabLeft + tabWidth;
+        return new UiRect(tabLeft, bottom - 20, tabRight, bottom);
     }
 
     private UiRect questEditorCancelBounds() {
@@ -2595,6 +3276,26 @@ public final class QuestScreen extends Screen {
 
     private record DependencyHitbox(UiRect removeBounds, ResourceLocation dependencyId) {}
 
+    private record TypedEditorHitbox(ResourceLocation id, int index, UiRect row, UiRect edit, UiRect copy,
+                                     UiRect up, UiRect down, UiRect delete) {}
+
+    private record TypedValue(ResourceLocation id, ResourceLocation typeId) {}
+
+    private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack) {}
+
+    private record TypedEntry(ResourceLocation id, ResourceLocation typeId, Map<String, String> config,
+                              boolean optional, String claimPolicy, boolean teamReward,
+                              TaskDefinition task, RewardDefinition reward) {
+        static TypedEntry task(TaskDefinition task) {
+            return new TypedEntry(task.id(), task.typeId(), task.config(), task.optional(), "", false, task, null);
+        }
+
+        static TypedEntry reward(RewardDefinition reward) {
+            return new TypedEntry(reward.id(), reward.typeId(), reward.config(), false,
+                    reward.claimPolicy(), reward.teamReward(), null, reward);
+        }
+    }
+
     private record ContextAction(String action, String translationKey, boolean dangerous) {}
 
     private enum IconEditorMode {
@@ -2611,6 +3312,66 @@ public final class QuestScreen extends Screen {
     private enum ContextKind { NONE, CANVAS, NODE, GROUP, CHAPTER }
 
     private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
+
+    private enum TypedKind {
+        TASK("TASK", "task", "screen.brnquest.editor.typed.tasks_heading"),
+        REWARD("REWARD", "reward", "screen.brnquest.editor.typed.rewards_heading");
+
+        private final String actionPrefix;
+        private final String idStem;
+        private final String headingKey;
+
+        TypedKind(String actionPrefix, String idStem, String headingKey) {
+            this.actionPrefix = actionPrefix;
+            this.idStem = idStem;
+            this.headingKey = headingKey;
+        }
+
+        String actionPrefix() { return actionPrefix; }
+        String idStem() { return idStem; }
+        String headingKey() { return headingKey; }
+
+        int size(QuestDefinition quest) {
+            return this == TASK ? quest.tasks().size() : quest.rewards().size();
+        }
+
+        TypedValue value(QuestDefinition quest, int index) {
+            if (this == TASK) {
+                TaskDefinition task = quest.tasks().get(index);
+                return new TypedValue(task.id(), task.typeId());
+            }
+            RewardDefinition reward = quest.rewards().get(index);
+            return new TypedValue(reward.id(), reward.typeId());
+        }
+
+        TypedEntry entry(QuestDefinition quest, ResourceLocation id) {
+            if (this == TASK) {
+                return quest.tasks().stream().filter(task -> task.id().equals(id))
+                        .findFirst().map(TypedEntry::task).orElse(null);
+            }
+            return quest.rewards().stream().filter(reward -> reward.id().equals(id))
+                    .findFirst().map(TypedEntry::reward).orElse(null);
+        }
+
+        List<ResourceLocation> builtIns() {
+            return this == TASK
+                    ? List.of(TaskTypes.CHECKMARK, TaskTypes.CUSTOM, TaskTypes.ITEM)
+                    : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM);
+        }
+
+        boolean known(ResourceLocation typeId) { return builtIns().contains(typeId); }
+
+        boolean addable(ResourceLocation typeId) {
+            return this == TASK
+                    ? typeId.equals(TaskTypes.CHECKMARK) || typeId.equals(TaskTypes.CUSTOM)
+                            || typeId.equals(TaskTypes.ITEM)
+                    : typeId.equals(RewardTypes.CUSTOM) || typeId.equals(RewardTypes.ITEM);
+        }
+
+        boolean itemBacked(ResourceLocation typeId) {
+            return this == TASK ? typeId.equals(TaskTypes.ITEM) : typeId.equals(RewardTypes.ITEM);
+        }
+    }
 
     private enum StructureFormKind {
         NONE("screen.brnquest.editor.structure.none", "item", false),

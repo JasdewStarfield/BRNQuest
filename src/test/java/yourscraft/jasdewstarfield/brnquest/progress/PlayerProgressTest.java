@@ -48,4 +48,18 @@ class PlayerProgressTest {
         assertEquals(3L, progress.taskProgress("test:task"));
         assertTrue(progress.isClaimed("test:reward"));
     }
+
+    @Test void explicitTypedIdRenamesMigrateAndMergeNestedLedgers() {
+        PlayerProgress progress = new PlayerProgress();
+        progress.addTaskProgress("test:old_task", 7L);
+        progress.addTaskProgress("test:new_task", 3L);
+        progress.claim("test:old_reward");
+
+        assertTrue(progress.migrateTaskId("test:old_task", "test:new_task"));
+        assertEquals(0L, progress.taskProgress("test:old_task"));
+        assertEquals(7L, progress.taskProgress("test:new_task"));
+        assertTrue(progress.migrateRewardId("test:old_reward", "test:new_reward"));
+        assertFalse(progress.isClaimed("test:old_reward"));
+        assertTrue(progress.isClaimed("test:new_reward"));
+    }
 }

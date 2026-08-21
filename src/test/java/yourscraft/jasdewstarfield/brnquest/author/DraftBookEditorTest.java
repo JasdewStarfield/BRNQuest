@@ -64,6 +64,85 @@ class DraftBookEditorTest {
         assertTrue(AuthorValidationService.full(cycle).stream().anyMatch(value -> value.code().equals("BQV-103")));
     }
 
+    @Test void typedListsCopyReorderAndDeleteWithoutRewritingOpaqueConfig() {
+        QuestBookDefinition book = bookWithDependency();
+        TaskDefinition unknown = new TaskDefinition(id("book"), id("unknown_task"),
+                ResourceLocation.parse("missing_extension:counter"), Map.of("opaque", "{value:7}"), true);
+        TaskDefinition known = new TaskDefinition(id("book"), id("known_task"), id("checkmark"), Map.of(), false);
+        RewardDefinition reward = new RewardDefinition(id("book"), id("reward"), id("custom"),
+                Map.of("token", "alpha"), "manual", true);
+        book = value(DraftBookEditor.addTask(book, id("root"), unknown));
+        book = value(DraftBookEditor.addTask(book, id("root"), known));
+        book = value(DraftBookEditor.addReward(book, id("root"), reward));
+
+        TaskDefinition copied = new TaskDefinition(id("book"), id("unknown_copy"), unknown.typeId(),
+                unknown.config(), unknown.optional());
+        book = value(DraftBookEditor.copyTask(book, id("root"), unknown.id(), copied));
+        book = value(DraftBookEditor.moveTask(book, id("root"), copied.id(), 0));
+        book = value(DraftBookEditor.removeTask(book, id("root"), known.id()));
+
+        QuestDefinition quest = book.quests().stream().filter(value -> value.id().equals(id("root")))
+                .findFirst().orElseThrow();
+        assertEquals(List.of(copied.id(), unknown.id()), quest.tasks().stream().map(TaskDefinition::id).toList());
+        assertEquals(unknown.typeId(), quest.tasks().getFirst().typeId());
+        assertEquals(unknown.config(), quest.tasks().getFirst().config());
+        assertTrue(quest.tasks().getFirst().optional());
+        assertEquals(Map.of("token", "alpha"), quest.rewards().getFirst().config());
+        assertTrue(quest.rewards().getFirst().teamReward());
+    }
+
+    @Test void typedEntryRenamesPreservePropertiesOrderAndMigrationAliases() {
+        QuestBookDefinition book = bookWithDependency();
+        TaskDefinition firstTask = new TaskDefinition(id("book"), id("first_task"), id("item"),
+                Map.of("item", "{id:\"minecraft:stone\",count:1}", "count", "4"), true);
+        TaskDefinition secondTask = new TaskDefinition(id("book"), id("second_task"), id("checkmark"),
+                Map.of("title", "Finish"), false);
+        RewardDefinition firstReward = new RewardDefinition(id("book"), id("first_reward"), id("item"),
+                Map.of("item", "{id:\"minecraft:diamond\",count:1}", "count", "2"), "auto", true);
+        RewardDefinition secondReward = new RewardDefinition(id("book"), id("second_reward"), id("custom"),
+                Map.of("token", "beta"), "manual", false);
+        book = value(DraftBookEditor.addTask(book, id("root"), firstTask));
+        book = value(DraftBookEditor.addTask(book, id("root"), secondTask));
+        book = value(DraftBookEditor.addReward(book, id("root"), firstReward));
+        book = value(DraftBookEditor.addReward(book, id("root"), secondReward));
+
+        TaskDefinition renamedTask = new TaskDefinition(id("book"), id("renamed_task"), firstTask.typeId(),
+                firstTask.config(), firstTask.optional());
+        RewardDefinition renamedReward = new RewardDefinition(id("book"), id("renamed_reward"), firstReward.typeId(),
+                firstReward.config(), firstReward.claimPolicy(), firstReward.teamReward());
+        book = value(DraftBookEditor.updateTask(book, id("root"), firstTask.id(), renamedTask));
+        book = value(DraftBookEditor.updateReward(book, id("root"), firstReward.id(), renamedReward));
+
+        QuestDefinition quest = book.quests().stream().filter(value -> value.id().equals(id("root")))
+                .findFirst().orElseThrow();
+        assertEquals(List.of(renamedTask.id(), secondTask.id()), quest.tasks().stream().map(TaskDefinition::id).toList());
+        assertEquals(firstTask.config(), quest.tasks().getFirst().config());
+        assertTrue(quest.tasks().getFirst().optional());
+        assertEquals(List.of(renamedReward.id(), secondReward.id()), quest.rewards().stream().map(RewardDefinition::id).toList());
+        assertEquals("auto", quest.rewards().getFirst().claimPolicy());
+        assertTrue(quest.rewards().getFirst().teamReward());
+        assertEquals(renamedTask.id(), book.legacyIds().get("@task:" + firstTask.id()));
+        assertEquals(renamedReward.id(), book.legacyIds().get("@reward:" + firstReward.id()));
+        assertFalse(AuthorValidationService.blocksCommit(AuthorValidationService.full(book)));
+    }
+
+    @Test void typedEntryRenameRejectsDuplicateAndRemovalPrunesItsAlias() {
+        QuestBookDefinition book = bookWithDependency();
+        TaskDefinition source = new TaskDefinition(id("book"), id("source"), id("checkmark"), Map.of(), false);
+        RewardDefinition occupied = new RewardDefinition(id("book"), id("occupied"), id("custom"), Map.of(), "manual", false);
+        book = value(DraftBookEditor.addTask(book, id("root"), source));
+        book = value(DraftBookEditor.addReward(book, id("root"), occupied));
+
+        TaskDefinition duplicate = new TaskDefinition(id("book"), occupied.id(), source.typeId(), source.config(), false);
+        assertEquals("DUPLICATE_TYPED_ID", DraftBookEditor.updateTask(book, id("root"), source.id(), duplicate).code());
+
+        TaskDefinition renamed = new TaskDefinition(id("book"), id("renamed"), source.typeId(), source.config(), false);
+        book = value(DraftBookEditor.updateTask(book, id("root"), source.id(), renamed));
+        assertTrue(book.legacyIds().containsKey("@task:" + source.id()));
+        book = value(DraftBookEditor.removeTask(book, id("root"), renamed.id()));
+        assertFalse(book.legacyIds().containsKey("@task:" + source.id()));
+    }
+
     @Test void explicitCascadeReportsAndRemovesItsImpactScope() {
         QuestBookDefinition book = bookWithDependency();
 

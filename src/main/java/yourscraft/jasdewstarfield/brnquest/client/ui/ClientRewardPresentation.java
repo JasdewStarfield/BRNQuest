@@ -10,6 +10,8 @@ import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 public interface ClientRewardPresentation {
     default String itemSnbt(RewardView reward) { return ""; }
     default String symbol(RewardView reward) { return "?"; }
+    /** Localized type label used by authoring lists; unknown extensions retain their full ID. */
+    default Component typeName(RewardView reward) { return Component.literal(reward.typeId().toString()); }
 
     default Component title(RewardPresentationContext context) {
         String configured = context.reward().config().getOrDefault("title", "");

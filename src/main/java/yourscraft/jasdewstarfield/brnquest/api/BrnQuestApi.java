@@ -308,7 +308,8 @@ public final class BrnQuestApi {
     private static Optional<ResourceLocation> resolve(String value) {
         if (value == null || value.isBlank()) return Optional.empty();
         QuestBookSnapshot snapshot = snapshot().orElse(null);
-        if (snapshot != null && snapshot.book().legacyIds().containsKey(value)) {
+        if (snapshot != null && snapshot.book().legacyIds().containsKey(value)
+                && snapshot.quests().containsKey(snapshot.book().legacyIds().get(value))) {
             return Optional.of(snapshot.book().legacyIds().get(value));
         }
         if (QuestIds.isLegacy(value)) {

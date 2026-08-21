@@ -82,9 +82,15 @@ public final class QuestBookValidator {
         quests.keySet().stream().filter(id -> !reachable.contains(id)).forEach(id ->
                 add(report, Diagnostic.Severity.ERROR, "BQV-122", id,
                         "Quest is unreachable from a dependency root"));
-        book.legacyIds().forEach((legacyId, questId) -> {
-            if (!quests.containsKey(questId)) add(report, Diagnostic.Severity.ERROR, "BQV-121", questId,
-                    "Legacy alias " + legacyId + " targets a missing quest");
+        Set<ResourceLocation> taskIds = book.quests().stream().flatMap(quest -> quest.tasks().stream())
+                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> rewardIds = book.quests().stream().flatMap(quest -> quest.rewards().stream())
+                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
+        book.legacyIds().forEach((legacyId, targetId) -> {
+            boolean validTarget = legacyId.startsWith("@task:") ? taskIds.contains(targetId)
+                    : legacyId.startsWith("@reward:") ? rewardIds.contains(targetId) : quests.containsKey(targetId);
+            if (!validTarget) add(report, Diagnostic.Severity.ERROR, "BQV-121", targetId,
+                    "Legacy alias " + legacyId + " targets a missing object");
         });
     }
 

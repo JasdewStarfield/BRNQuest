@@ -14,6 +14,8 @@ public interface ClientTaskPresentation {
     default NodeStyle nodeStyle(TaskView task) { return NodeStyle.PLACEHOLDER; }
     default String itemSnbt(TaskView task) { return ""; }
     default String symbol(TaskView task) { return "?"; }
+    /** Localized type label used by authoring lists; unknown extensions retain their full ID. */
+    default Component typeName(TaskView task) { return Component.literal(task.typeId().toString()); }
     default boolean interactive(TaskView task) { return false; }
     default boolean acceptsQuestCompletionIntent(TaskView task) { return false; }
 

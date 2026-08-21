@@ -48,8 +48,18 @@ public final class ProgressEngine {
         PlayerProgress progress = data.get(ProgressOwnerService.require(player));
         // Canonical quest renames are published as aliases; migrate quest-level state before
         // availability and orphan checks so an intentional rename does not reset player progress.
+        Set<ResourceLocation> taskIds = snapshot.book().quests().stream().flatMap(quest -> quest.tasks().stream())
+                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> rewardIds = snapshot.book().quests().stream().flatMap(quest -> quest.rewards().stream())
+                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
         snapshot.book().legacyIds().forEach((oldId, newId) -> {
-            if (snapshot.quests().containsKey(newId)) progress.migrateQuestId(oldId, newId.toString());
+            if (oldId.startsWith("@task:") && taskIds.contains(newId)) {
+                progress.migrateTaskId(oldId.substring("@task:".length()), newId.toString());
+            } else if (oldId.startsWith("@reward:") && rewardIds.contains(newId)) {
+                progress.migrateRewardId(oldId.substring("@reward:".length()), newId.toString());
+            } else if (snapshot.quests().containsKey(newId)) {
+                progress.migrateQuestId(oldId, newId.toString());
+            }
         });
         Set<String> current = new HashSet<>();
         for (QuestDefinition quest : snapshot.book().quests()) {

@@ -102,6 +102,7 @@
   "screen.brnquest.editor.typed.property.rename_warning": "ID changes migrate existing player ledger entries; confirm again",
   "screen.brnquest.editor.typed.property.confirm_rename": "Confirm ID",
   "screen.brnquest.editor.typed.property.claim_required": "Claim policy is required",
+  "screen.brnquest.editor.typed.property.submitting": "Applying server-validated changes...",
   "screen.brnquest.editor.config.item": "Item",
   "screen.brnquest.editor.config.count": "Count",
   "screen.brnquest.editor.config.consume_items": "Consume",

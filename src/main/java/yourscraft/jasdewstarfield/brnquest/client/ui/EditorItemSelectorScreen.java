@@ -15,13 +15,26 @@ import java.util.function.Consumer;
  * never moved, split or consumed. The standalone screen is also the future JEI drop target.
  */
 public final class EditorItemSelectorScreen extends Screen {
+    private final Screen parent;
     private final Consumer<ItemStack> selectionConsumer;
     private ItemStack selected = ItemStack.EMPTY;
     private ItemStack carriedGhost = ItemStack.EMPTY;
 
-    public EditorItemSelectorScreen(Consumer<ItemStack> selectionConsumer) {
+    public EditorItemSelectorScreen(Screen parent, Consumer<ItemStack> selectionConsumer) {
         super(Component.translatable("screen.brnquest.editor.item_selector.title"));
+        this.parent = parent;
         this.selectionConsumer = selectionConsumer;
+    }
+
+    /** Exposes the final screen-space geometry to optional overlay integrations such as JEI. */
+    public EditorItemSelectorLayout selectorLayout() {
+        return layout();
+    }
+
+    /** Accepts an external ghost ingredient without ever mutating the source stack. */
+    public void acceptGhostItem(ItemStack stack) {
+        selected = stack == null || stack.isEmpty() ? ItemStack.EMPTY : stack.copyWithCount(1);
+        carriedGhost = ItemStack.EMPTY;
     }
 
     /** Prevents Screen.render from scheduling a second blur pass above the selector content. */
@@ -29,8 +42,20 @@ public final class EditorItemSelectorScreen extends Screen {
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
 
     @Override
+    public void tick() {
+        // The editor is suspended as a parent Screen rather than a NeoForge layer, so keep its
+        // lease renewal and response reconciliation active while the selector owns input.
+        parent.tick();
+        super.tick();
+    }
+
+    @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        // Match QuestScreen's ordering: blur the underlying world/screen once, then draw UI.
+        // Render the persistent editor first so JEI's setScreen recipe round-trip can return to the
+        // same visual context. Off-screen mouse coordinates suppress hover and tooltip side effects.
+        parent.render(graphics, -1, -1, partialTick);
+        // Blur and dim the completed parent framebuffer before drawing selector content. JEI draws
+        // from ScreenEvent.Render.Post afterwards, so its ingredient list remains the final layer.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
         EditorItemSelectorLayout layout = layout();
@@ -119,8 +144,10 @@ public final class EditorItemSelectorScreen extends Screen {
     @Override
     public void onClose() {
         carriedGhost = ItemStack.EMPTY;
-        // The selector is a NeoForge GUI layer; the native close path restores QuestScreen.
-        super.onClose();
+        if (minecraft != null) {
+            // Both the direct selector and a JEI recipe round-trip return to the same editor object.
+            minecraft.setScreen(parent);
+        }
     }
 
     private ItemStack hoveredStack(EditorItemSelectorLayout layout, int mouseX, int mouseY) {

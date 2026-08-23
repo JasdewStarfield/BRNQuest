@@ -228,6 +228,28 @@ class ClientEditorStateTest {
         assertEquals(ClientEditorState.Mode.VIEW, state.mode());
     }
 
+    @Test void rejectedMutationRetainsStructuredFieldDiagnosticsForTheOpenForm() {
+        ResourceLocation bookId = ResourceLocation.parse("test:diagnostics");
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Diagnostics",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        acceptTransfer("OPEN", UUID.randomUUID(), snapshot, snapshot.revision());
+        assertTrue(state.beginMutation());
+        var diagnostic = new AuthoringNetwork.EditorDiagnosticWire(
+                "ERROR", "BQA-T-TYPE", "test:task", "config.count", "Value does not match INTEGER");
+        var rejected = new AuthoringNetwork.SessionResponseWire("MUTATE", "INVALID_REQUEST",
+                "INVALID_EDITOR_MUTATION", "invalid count", "", "", "", "", "", 0L, 0, 0,
+                List.of(diagnostic));
+
+        state.acceptSession(GSON.toJson(rejected));
+
+        assertEquals(ClientEditorState.Mode.ERROR, state.mode());
+        assertEquals(List.of(diagnostic), state.diagnostics());
+        assertEquals(snapshot.book(), state.draft().orElseThrow().book());
+    }
+
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {
         String json = NativeBookJson.encode(snapshot.book());
         var response = new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "SESSION_OPENED", "ok",

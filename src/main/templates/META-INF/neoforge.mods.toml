@@ -24,3 +24,11 @@ type = "required"
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
+
+# JEI discovers BRNQuest's client plugin only when present; core gameplay never loads JEI classes.
+[[dependencies."${mod_id}"]]
+modId = "jei"
+type = "optional"
+versionRange = "[19.25.1.334,20)"
+ordering = "AFTER"
+side = "CLIENT"

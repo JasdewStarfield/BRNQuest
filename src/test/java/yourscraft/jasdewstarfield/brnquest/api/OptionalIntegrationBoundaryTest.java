@@ -1,0 +1,32 @@
+package yourscraft.jasdewstarfield.brnquest.api;
+
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class OptionalIntegrationBoundaryTest {
+    @Test void coreSourcesNeverResolveJeiTypesWhenTheOptionalModIsAbsent() throws IOException {
+        Path root = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java");
+        Path integration = root.resolve(Path.of("yourscraft", "jasdewstarfield", "brnquest", "compat", "jei"));
+        List<Path> sources;
+        try (var paths = Files.walk(root)) {
+            sources = paths.filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> !path.startsWith(integration)).sorted().toList();
+        }
+
+        assertFalse(sources.isEmpty());
+        for (Path source : sources) {
+            String text = Files.readString(source, StandardCharsets.UTF_8);
+            assertFalse(text.contains("mezz.jei."), () -> source + " leaks JEI into the core class-loading boundary");
+            assertFalse(text.contains("compat.jei"), () -> source + " eagerly references the optional JEI package");
+        }
+        assertTrue(Files.isRegularFile(integration.resolve("BrnQuestJeiPlugin.java")));
+    }
+}

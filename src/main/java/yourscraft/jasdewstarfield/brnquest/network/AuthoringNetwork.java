@@ -160,10 +160,26 @@ public final class AuthoringNetwork {
     public record CatalogResponseWire(String status, String code, String message, boolean allowed,
                                       List<CatalogEntryWire> entries) {}
 
+    public record EditorDiagnosticWire(String severity, String code, String objectId,
+                                       String path, String message) {}
+
     public record SessionResponseWire(String action, String status, String code, String message,
                                       String sessionId, String bookId, String baseRevision,
                                       String draftRevision, String savedRevision, long remainingTicks,
-                                      int chunks, int decodedBytes) {}
+                                      int chunks, int decodedBytes, List<EditorDiagnosticWire> diagnostics) {
+        public SessionResponseWire {
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+        }
+
+        /** Retains the protocol-2 constructor used by existing callers and additive-response tests. */
+        public SessionResponseWire(String action, String status, String code, String message,
+                                   String sessionId, String bookId, String baseRevision,
+                                   String draftRevision, String savedRevision, long remainingTicks,
+                                   int chunks, int decodedBytes) {
+            this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
+                    savedRevision, remainingTicks, chunks, decodedBytes, List.of());
+        }
+    }
 
     public record QuestUpdateWire(String sessionId, String bookId, String draftRevision, String questId,
                                   String replacementQuestId, String title, String subtitle,
@@ -622,21 +638,27 @@ public final class AuthoringNetwork {
             };
         } catch (IllegalArgumentException exception) {
             sendFailure(player, "MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_EDITOR_MUTATION", exception.getMessage());
+                    "INVALID_EDITOR_MUTATION", exception.getMessage(), List.of(mutationDiagnostic(wire, exception)));
             return;
         }
-        sendMutationResult(player, sessionId, bookId, result);
+        sendMutationResult(player, sessionId, bookId, result, wire);
     }
 
     private static void sendMutationResult(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
-                                           AuthorOperationResult<DraftEditResult> result) {
+                                           AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
         if (!result.success()) {
             String message = result.message();
+            List<EditorDiagnosticWire> diagnostics = List.of();
             if (result.value() != null && !result.value().diagnostics().isEmpty()) {
                 var first = result.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.message();
+                diagnostics = diagnosticWires(result.value().diagnostics());
+            } else if ("UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())) {
+                String path = "DUPLICATE_TYPED_ID".equals(result.code()) ? "id" : "";
+                diagnostics = List.of(new EditorDiagnosticWire("ERROR", result.code(),
+                        wire.sourceId(), path, result.message()));
             }
-            sendFailure(player, "MUTATE", result.status(), result.code(), message);
+            sendFailure(player, "MUTATE", result.status(), result.code(), message, diagnostics);
             return;
         }
         DraftSnapshot draft = result.value().snapshot();
@@ -773,15 +795,37 @@ public final class AuthoringNetwork {
         long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
         SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
                 boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
-                view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes);
+                view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes,
+                List.of());
         BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
     }
 
     private static void sendFailure(ServerPlayer player, String action, AuthorOperationResult.Status status,
                                     String code, String message) {
+        sendFailure(player, action, status, code, message, List.of());
+    }
+
+    private static void sendFailure(ServerPlayer player, String action, AuthorOperationResult.Status status,
+                                    String code, String message, List<EditorDiagnosticWire> diagnostics) {
         SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
-                boundedMessage(message), "", "", "", "", "", 0L, 0, 0);
+                boundedMessage(message), "", "", "", "", "", 0L, 0, 0, diagnostics);
         BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
+    }
+
+    private static EditorDiagnosticWire mutationDiagnostic(EditorMutationWire wire,
+                                                           IllegalArgumentException exception) {
+        String message = exception.getMessage() == null ? "Invalid editor mutation" : exception.getMessage();
+        String path = message.startsWith("Item config") ? "config.item"
+                : message.startsWith("Reward claim policy") ? "claim_policy" : "";
+        return new EditorDiagnosticWire("ERROR", "INVALID_EDITOR_MUTATION",
+                wire.sourceId() == null ? "" : wire.sourceId(), path, boundedMessage(message));
+    }
+
+    private static List<EditorDiagnosticWire> diagnosticWires(
+            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
+        return diagnostics.stream().limit(8).map(diagnostic -> new EditorDiagnosticWire(
+                diagnostic.severity().name(), diagnostic.code(), boundedMessage(diagnostic.objectId()),
+                boundedMessage(diagnostic.path()), boundedMessage(diagnostic.message()))).toList();
     }
 
     private static String boundedMessage(String message) {

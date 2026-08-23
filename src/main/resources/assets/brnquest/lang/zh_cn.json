@@ -102,6 +102,7 @@
   "screen.brnquest.editor.typed.property.rename_warning": "修改 ID 会迁移已有玩家账本；请再次确认",
   "screen.brnquest.editor.typed.property.confirm_rename": "确认改名",
   "screen.brnquest.editor.typed.property.claim_required": "领取策略不能为空",
+  "screen.brnquest.editor.typed.property.submitting": "正在应用服务端校验后的更改……",
   "screen.brnquest.editor.config.item": "物品",
   "screen.brnquest.editor.config.count": "数量",
   "screen.brnquest.editor.config.consume_items": "消耗物品",

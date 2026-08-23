@@ -35,6 +35,7 @@ public final class ClientEditorState {
     private List<CatalogEntry> catalog = List.of();
     private String statusCode = "";
     private String statusMessage = "";
+    private List<AuthoringNetwork.EditorDiagnosticWire> diagnostics = List.of();
     private UUID sessionId;
     private ResourceLocation bookId;
     private String baseRevision = "";
@@ -62,6 +63,7 @@ public final class ClientEditorState {
         catalog = List.of();
         statusCode = "";
         statusMessage = "";
+        diagnostics = List.of();
         closeWhenOpened = false;
         immediateClose = null;
     }
@@ -87,6 +89,7 @@ public final class ClientEditorState {
             allowed = response.allowed();
             statusCode = safe(response.code());
             statusMessage = safe(response.message());
+            diagnostics = List.of();
             mode = Mode.VIEW;
         } catch (RuntimeException exception) {
             fail("INVALID_EDITOR_CATALOG", "The server returned an invalid editor catalog");
@@ -143,6 +146,8 @@ public final class ClientEditorState {
         if (!editing() || busy()) return false;
         mode = Mode.MUTATING;
         statusCode = "DRAFT_MUTATING";
+        statusMessage = "";
+        diagnostics = List.of();
         return true;
     }
 
@@ -158,6 +163,7 @@ public final class ClientEditorState {
         }
         statusCode = safe(response.code());
         statusMessage = safe(response.message());
+        diagnostics = response.diagnostics() == null ? List.of() : List.copyOf(response.diagnostics());
         boolean success = "SUCCESS".equals(response.status()) || "NO_CHANGE".equals(response.status());
         if (!success) {
             fail(statusCode.isBlank() ? "EDITOR_SESSION_FAILED" : statusCode, statusMessage);
@@ -302,6 +308,7 @@ public final class ClientEditorState {
     public synchronized String draftRevision() { return draftRevision; }
     public synchronized String statusCode() { return statusCode; }
     public synchronized String statusMessage() { return statusMessage; }
+    public synchronized List<AuthoringNetwork.EditorDiagnosticWire> diagnostics() { return diagnostics; }
     public synchronized boolean editing() { return hasSession() && draft != null; }
     public synchronized boolean hasLease() { return hasSession(); }
     public synchronized boolean busy() {
@@ -426,6 +433,7 @@ public final class ClientEditorState {
         expectedBytes = 0;
         receivedChunks = 0;
         draft = null;
+        diagnostics = List.of();
     }
 
     private void fail(String code, String message) {

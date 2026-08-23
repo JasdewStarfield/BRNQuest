@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -116,6 +117,26 @@ class WorkspacePublishRepositoryTest {
         try (var entries = Files.list(workspace)) {
             assertTrue(entries.findAny().isEmpty());
         }
+    }
+
+    @Test void transientWindowsDirectoryMoveIsRetriedInsideOnePublish() throws Exception {
+        Path workspace = temporary.resolve("workspace");
+        Files.createDirectories(workspace);
+        AtomicInteger attempts = new AtomicInteger();
+        WorkspacePublishRepository repository = new WorkspacePublishRepository(stage -> {}, (source, target) -> {
+            if (attempts.getAndIncrement() == 0) {
+                throw new java.nio.file.AccessDeniedException(source.toString(), target.toString(),
+                        "injected transient directory handle");
+            }
+            Files.move(source, target);
+        });
+
+        var result = repository.publish(workspace, temporary.resolve("backups"),
+                draft("test:retry_move", "Retried"), "");
+
+        assertTrue(result.success(), () -> result.code() + ": " + result.message());
+        assertEquals(2, attempts.get());
+        assertTrue(Files.isRegularFile(workspace.resolve("data/test/brnquest/books/retry_move.json")));
     }
 
     private static DraftSnapshot draft(String id, String title) {

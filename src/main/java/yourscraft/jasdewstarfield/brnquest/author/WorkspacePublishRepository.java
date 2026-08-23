@@ -16,15 +16,23 @@ import java.util.UUID;
 
 /** Atomic writer for publishing a single draft while preserving the rest of the workspace pack. */
 final class WorkspacePublishRepository {
+    private static final int MOVE_ATTEMPTS = 4;
+    private static final long MOVE_RETRY_MILLIS = 25L;
     private static final String PACK_METADATA = "{\n  \"pack\": {\n    \"pack_format\": 48,\n    \"description\": \"BRNQuest author workspace\"\n  }\n}\n";
     private final TransactionHook transactionHook;
+    private final DirectoryMove directoryMove;
 
     WorkspacePublishRepository() {
-        this(stage -> {});
+        this(stage -> {}, WorkspacePublishRepository::moveOnce);
     }
 
     WorkspacePublishRepository(TransactionHook transactionHook) {
+        this(transactionHook, WorkspacePublishRepository::moveOnce);
+    }
+
+    WorkspacePublishRepository(TransactionHook transactionHook, DirectoryMove directoryMove) {
         this.transactionHook = transactionHook;
+        this.directoryMove = directoryMove;
     }
 
     AuthorOperationResult<DraftPublishResult> publish(MinecraftServer server, DraftSnapshot draft,
@@ -180,7 +188,30 @@ final class WorkspacePublishRepository {
         }
     }
 
-    private static void move(Path source, Path target) throws IOException {
+    private void move(Path source, Path target) throws IOException {
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= MOVE_ATTEMPTS; attempt++) {
+            try {
+                directoryMove.move(source, target);
+                return;
+            } catch (IOException exception) {
+                // Windows can briefly retain a directory handle after copy/verification. A short,
+                // bounded retry preserves the atomic transaction without asking authors to publish twice.
+                lastFailure = exception;
+                if (attempt == MOVE_ATTEMPTS) break;
+                try {
+                    Thread.sleep(MOVE_RETRY_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Workspace move retry was interrupted", exception);
+                }
+            }
+        }
+        throw new IOException("Workspace move failed after " + MOVE_ATTEMPTS + " attempts ["
+                + lastFailure.getClass().getSimpleName() + "]: " + lastFailure.getMessage(), lastFailure);
+    }
+
+    private static void moveOnce(Path source, Path target) throws IOException {
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ignored) {
@@ -205,5 +236,10 @@ final class WorkspacePublishRepository {
     @FunctionalInterface
     interface TransactionHook {
         void checkpoint(TransactionStage stage) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface DirectoryMove {
+        void move(Path source, Path target) throws IOException;
     }
 }

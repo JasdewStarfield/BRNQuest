@@ -7,6 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,17 @@ class AuthorValidationServiceTest {
         assertTrue(AuthorValidationService.blocksCommit(diagnostics, AuthorValidationService.full(baseline)));
     }
 
+    @Test
+    void rawConfigCandidateCannotBypassTheRegisteredTypeCodec() {
+        QuestBookDefinition baseline = itemBook(Map.of("item", "opaque-runtime-value"));
+        QuestBookDefinition invalid = itemBook(Map.of("count", "1"));
+
+        var diagnostics = AuthorValidationService.incremental(invalid, List.of(ResourceLocation.parse("test:quest")));
+
+        assertTrue(diagnostics.stream().anyMatch(value -> value.code().equals("BQV-119")));
+        assertTrue(AuthorValidationService.blocksCommit(diagnostics, AuthorValidationService.full(baseline)));
+    }
+
     private static QuestBookDefinition book(String questTitle) {
         ResourceLocation bookId = ResourceLocation.parse("test:book");
         ResourceLocation groupId = ResourceLocation.parse("test:group");
@@ -72,6 +84,20 @@ class AuthorValidationServiceTest {
                 1, 0, List.of(rootId), List.of(), List.of(), "");
         ChapterDefinition chapter = new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0,
                 List.of(root, child));
+        return new QuestBookDefinition(bookId, 1, "Book",
+                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of());
+    }
+
+    private static QuestBookDefinition itemBook(Map<String, String> config) {
+        ResourceLocation bookId = ResourceLocation.parse("test:book");
+        ResourceLocation groupId = ResourceLocation.parse("test:group");
+        ResourceLocation chapterId = ResourceLocation.parse("test:chapter");
+        TaskDefinition task = new TaskDefinition(bookId, ResourceLocation.parse("test:item_task"),
+                TaskTypes.ITEM, config, false);
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                "Quest", "", "", "", 0, 0, List.of(), List.of(task), List.of(), "");
+        ChapterDefinition chapter = new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0,
+                List.of(quest));
         return new QuestBookDefinition(bookId, 1, "Book",
                 List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of());
     }

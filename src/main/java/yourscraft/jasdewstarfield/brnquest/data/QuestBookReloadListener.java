@@ -32,7 +32,7 @@ public final class QuestBookReloadListener extends SimpleJsonResourceReloadListe
         try {
             QuestBookDefinition book = NativeBookJson.decode(selected.getValue().getAsJsonObject());
             if (QuestBookManager.get().install(book, report)) {
-                BRNQuest.LOGGER.info("[BRNQuest] Loaded {} quests from {}", book.quests().size(), selected.getKey());
+                BRNQuest.LOGGER.debug("[BRNQuest] Loaded {} quests from {}", book.quests().size(), selected.getKey());
             } else {
                 BRNQuest.LOGGER.error("[BRNQuest] Retaining previous quest snapshot after validation failure in {}",
                         selected.getKey());

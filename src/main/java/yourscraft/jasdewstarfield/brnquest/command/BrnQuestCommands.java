@@ -103,7 +103,7 @@ public final class BrnQuestCommands {
     }
 
     private static void audit(CommandContext<CommandSourceStack> context, String action, String player, String object, String result) {
-        yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action={} player={} object={} result={}", context.getSource().getTextName(), action, player, object, result);
+        yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action={} player={} object={} result={}", context.getSource().getTextName(), action, player, object, result);
     }
 
     private static int diagnose(CommandContext<CommandSourceStack> context) {
@@ -151,7 +151,7 @@ public final class BrnQuestCommands {
             }
             context.getSource().sendSuccess(() -> Component.literal("BRNQuest draft import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + errors + " errors, " + warnings + " warnings")
                     .withStyle(errors == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
-            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
+            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
                     context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), errors, warnings);
             return result.report().hasFatal() ? 0 : result.questCount();
         } catch (Exception exception) {

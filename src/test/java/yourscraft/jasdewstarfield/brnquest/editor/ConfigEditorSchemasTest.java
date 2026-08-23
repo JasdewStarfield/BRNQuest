@@ -42,6 +42,12 @@ class ConfigEditorSchemasTest {
         assertThrows(UnsupportedOperationException.class, () -> taskSchema.rawConfig().clear());
     }
 
+    @Test void registeredTypesWithoutDescriptorsUseTheEditableRawFallbackShape() {
+        assertTrue(ConfigEditorSchemas.forTask(task(TaskTypes.CUSTOM, Map.of("mode", "safe"))).rawFallback());
+        assertTrue(ConfigEditorSchemas.forReward(reward(RewardTypes.CUSTOM, Map.of("command", "say hi")))
+                .rawFallback());
+    }
+
     @Test void enumResourceRangeAndCustomValidatorsProduceFieldIssues() {
         ConfigFieldDescriptor mode = ConfigFieldDescriptor.enumeration("mode", List.of("safe", "fast"));
         ConfigFieldDescriptor target = ConfigFieldDescriptor.field("target", ConfigValueType.RESOURCE_LOCATION)

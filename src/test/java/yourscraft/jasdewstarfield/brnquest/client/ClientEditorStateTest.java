@@ -171,6 +171,31 @@ class ClientEditorStateTest {
         assertEquals("PUBLISH_APPLY_COMPLETE", state.statusCode());
     }
 
+    @Test void leaseHeartbeatCannotUnlockAnInFlightPublish() {
+        ResourceLocation bookId = ResourceLocation.parse("test:publish_renewal");
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Publish renewal",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, snapshot, snapshot.revision());
+
+        // Model a heartbeat that was already in flight when the player confirmed publish.
+        for (int tick = 0; tick < 20 * 30; tick++) state.tick();
+        assertTrue(state.pollRenewRequest().isPresent());
+        assertTrue(state.beginPublish().isPresent());
+        var renewed = new AuthoringNetwork.SessionResponseWire("RENEW", "SUCCESS", "SESSION_RENEWED", "ok",
+                sessionId.toString(), bookId.toString(), "", snapshot.revision(), snapshot.revision(),
+                36_000L, 0, 0);
+
+        state.acceptSession(GSON.toJson(renewed));
+
+        assertEquals(ClientEditorState.Mode.PUBLISHING, state.mode());
+        assertTrue(state.beginPublish().isEmpty());
+        assertTrue(state.pollRenewRequest().isEmpty());
+    }
+
     @Test void mismatchedDraftRevisionIsRejectedWithoutEnteringEditMode() {
         ResourceLocation bookId = ResourceLocation.parse("test:mismatch");
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Mismatch",

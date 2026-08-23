@@ -37,7 +37,9 @@ import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.ArrayList;
@@ -127,6 +129,7 @@ public final class QuestScreen extends Screen {
     private ResourceLocation typedPropertyTypeId;
     private ConfigEditorSchema typedPropertySchema;
     private Map<String, String> typedPropertyOriginalConfig = Map.of();
+    private Map<String, String> typedPropertyRawConfig = Map.of();
     private EditorTextField typedPropertyIdField;
     private EditorTextField typedPropertyClaimPolicyField;
     private final List<EditorTextField> typedPropertyConfigFields = new ArrayList<>();
@@ -179,18 +182,29 @@ public final class QuestScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        questTitleField = editorField("screen.brnquest.editor.quest.title", 256);
-        questSubtitleField = editorField("screen.brnquest.editor.quest.subtitle", 256);
-        questDescriptionField = editorField("screen.brnquest.editor.quest.description", 32_768);
-        questIdField = editorField("screen.brnquest.editor.quest.id", 256);
-        questIconField = editorField("screen.brnquest.editor.quest.icon", 256);
-        structureIdField = editorField("screen.brnquest.editor.structure.id", 256);
-        structureTitleField = editorField("screen.brnquest.editor.structure.title", 256);
-        typedPropertyIdField = editorField("screen.brnquest.editor.typed.property.id", 256);
-        typedPropertyClaimPolicyField = editorField("screen.brnquest.editor.typed.property.claim_policy", 64);
-        typedPropertyConfigFields.clear();
-        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
-            typedPropertyConfigFields.add(editorField("screen.brnquest.editor.typed.property.config", 65_536));
+        // setScreen(parent) initializes this same QuestScreen again after an item/raw-config child
+        // closes. Re-register existing fields instead of replacing them, preserving the complete
+        // in-progress form (stable ID, semantics, config values, cursor, and selection).
+        questTitleField = reinitializeEditorField(questTitleField, "screen.brnquest.editor.quest.title", 256);
+        questSubtitleField = reinitializeEditorField(questSubtitleField, "screen.brnquest.editor.quest.subtitle", 256);
+        questDescriptionField = reinitializeEditorField(questDescriptionField,
+                "screen.brnquest.editor.quest.description", 32_768);
+        questIdField = reinitializeEditorField(questIdField, "screen.brnquest.editor.quest.id", 256);
+        questIconField = reinitializeEditorField(questIconField, "screen.brnquest.editor.quest.icon", 256);
+        structureIdField = reinitializeEditorField(structureIdField, "screen.brnquest.editor.structure.id", 256);
+        structureTitleField = reinitializeEditorField(structureTitleField,
+                "screen.brnquest.editor.structure.title", 256);
+        typedPropertyIdField = reinitializeEditorField(typedPropertyIdField,
+                "screen.brnquest.editor.typed.property.id", 256);
+        typedPropertyClaimPolicyField = reinitializeEditorField(typedPropertyClaimPolicyField,
+                "screen.brnquest.editor.typed.property.claim_policy", 64);
+        if (typedPropertyConfigFields.isEmpty()) {
+            for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
+                typedPropertyConfigFields.add(editorField("screen.brnquest.editor.typed.property.config", 65_536));
+            }
+        } else {
+            typedPropertyConfigFields.replaceAll(field -> reinitializeEditorField(field,
+                    "screen.brnquest.editor.typed.property.config", 65_536));
         }
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
@@ -1903,6 +1917,7 @@ public final class QuestScreen extends Screen {
         typedPropertyOriginalId = entry.id();
         typedPropertyTypeId = entry.typeId();
         typedPropertyOriginalConfig = entry.config();
+        typedPropertyRawConfig = entry.config();
         typedPropertyOptional = entry.optional();
         typedPropertyTeamReward = entry.teamReward();
         typedPropertyRenameArmed = false;
@@ -1956,8 +1971,12 @@ public final class QuestScreen extends Screen {
         }
         int semanticsTop = top + 44 + visibleFields * 22;
         if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
-            graphics.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
-                    left, semanticsTop + 5, 0xFFFFA070, false);
+            if (typedPropertyRawEditable()) {
+                renderTypedRawConfigRow(graphics, left, semanticsTop, width, typedPropertyRawIssue());
+            } else {
+                graphics.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
+                        left, semanticsTop + 5, 0xFFFFA070, false);
+            }
             semanticsTop += 22;
         }
         if (typedEditorKind == TypedKind.TASK) {
@@ -2039,6 +2058,14 @@ public final class QuestScreen extends Screen {
                 0xFF343D49, 0xFFFFFFFF, 3);
     }
 
+    private void renderTypedRawConfigRow(GuiGraphics graphics, int left, int top, int width, String issue) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
+        drawTypedLabel(graphics, "screen.brnquest.editor.typed.property.raw_config", row.label(), issue);
+        EditorButton.render(graphics, font, row.field(), Component.translatable(
+                        "screen.brnquest.editor.typed.property.edit_raw", typedPropertyRawConfig.size()),
+                0xFF343D49, 0xFFFFFFFF, 3);
+    }
+
     private void drawTypedLabel(GuiGraphics graphics, String labelKey, UiRect bounds) {
         drawTypedLabel(graphics, labelKey, bounds, null);
     }
@@ -2092,6 +2119,11 @@ public final class QuestScreen extends Screen {
             }
         }
         int semanticsTop = typedPropertySemanticsTop();
+        if (typedPropertySchema != null && typedPropertySchema.rawFallback() && typedPropertyRawEditable()
+                && typedPropertySemanticBounds(semanticsTop - 22).contains(mouseX, mouseY)) {
+            openTypedPropertyRawEditor();
+            return true;
+        }
         if (typedEditorKind == TypedKind.TASK
                 && typedPropertySemanticBounds(semanticsTop).contains(mouseX, mouseY)) {
             typedPropertyOptional = !typedPropertyOptional;
@@ -2114,6 +2146,18 @@ public final class QuestScreen extends Screen {
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
             itemCache.remove(typedPropertyOriginalId);
         });
+    }
+
+    private void openTypedPropertyRawEditor() {
+        if (minecraft == null || !typedPropertyRawEditable()) return;
+        editorChildScreenOpening = true;
+        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertyRawConfig, config -> {
+            typedPropertyRawConfig = Map.copyOf(config);
+            // A corrected local value supersedes old field diagnostics; the server will return
+            // fresh Codec diagnostics when the containing property form is submitted.
+            typedPropertyServerIssues.keySet().removeIf(key -> !"id".equals(key) && !"claim_policy".equals(key));
+            typedPropertyMessage = null;
+        }));
     }
 
     private void prepareTypedPropertyEdit() {
@@ -2159,6 +2203,7 @@ public final class QuestScreen extends Screen {
         typedPropertyTypeId = null;
         typedPropertySchema = null;
         typedPropertyOriginalConfig = Map.of();
+        typedPropertyRawConfig = Map.of();
         typedPropertyMessage = null;
         typedPropertyRenameArmed = false;
         typedPropertySubmissionPending = false;
@@ -2194,6 +2239,9 @@ public final class QuestScreen extends Screen {
     }
 
     private Map<String, String> currentTypedPropertyConfig() {
+        if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
+            return Map.copyOf(typedPropertyRawConfig);
+        }
         Map<String, String> config = new LinkedHashMap<>(typedPropertyOriginalConfig);
         List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
@@ -2202,6 +2250,22 @@ public final class QuestScreen extends Screen {
             if (value.isEmpty()) config.remove(key); else config.put(key, value);
         }
         return config;
+    }
+
+    /** Missing registrations stay read-only because there is no corresponding Codec to approve an edit. */
+    private boolean typedPropertyRawEditable() {
+        if (typedPropertySchema == null || !typedPropertySchema.rawFallback() || typedPropertyTypeId == null) {
+            return false;
+        }
+        return typedEditorKind == TypedKind.TASK
+                ? TaskTypeRegistry.get(typedPropertyTypeId) != null
+                : RewardTypeRegistry.get(typedPropertyTypeId) != null;
+    }
+
+    private String typedPropertyRawIssue() {
+        return typedPropertyServerIssues.entrySet().stream()
+                .filter(entry -> !"id".equals(entry.getKey()) && !"claim_policy".equals(entry.getKey()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
     }
 
     /** Combines descriptor validation with the client registry check needed for an ItemStack field. */
@@ -2635,6 +2699,12 @@ public final class QuestScreen extends Screen {
 
     private EditorTextField editorField(String translationKey, int maximumLength) {
         EditorTextField field = new EditorTextField(font, Component.translatable(translationKey), maximumLength);
+        return addRenderableWidget(field);
+    }
+
+    private EditorTextField reinitializeEditorField(EditorTextField field, String translationKey, int maximumLength) {
+        if (field == null) return editorField(translationKey, maximumLength);
+        field.hide();
         return addRenderableWidget(field);
     }
 

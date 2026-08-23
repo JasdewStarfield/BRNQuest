@@ -282,7 +282,7 @@ public final class BrnQuestApi {
         String actor = context == null ? "<missing>" : context.actorId();
         String source = context == null ? "<missing>" : context.source();
         String targetId = target == null ? "<missing>" : target.getUUID().toString();
-        BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} source={} action={} target={} object={} status={} code={} changed={}",
+        BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} source={} action={} target={} object={} status={} code={} changed={}",
                 actor, source, action, targetId, String.valueOf(objectId), result.status(), result.code(), result.changed());
         return result;
     }

@@ -1,8 +1,10 @@
 package yourscraft.jasdewstarfield.brnquest.network;
 
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -29,5 +31,17 @@ class AuthoringNetworkTest {
         Map<String, String> tooMany = new LinkedHashMap<>();
         for (int index = 0; index < 65; index++) tooMany.put("field_" + index, "value");
         assertThrows(IllegalArgumentException.class, () -> AuthoringNetwork.boundedConfig(tooMany));
+    }
+
+    @Test void typedCodecFailuresPointBackToTheCompleteRawConfig() {
+        var wire = new AuthoringNetwork.EditorMutationWire("session", "test:book", "revision",
+                "UPDATE_TASK", "test:task", "test:quest", "test:task", "", 0, 0, 0,
+                List.of(), Map.of());
+        var codecFailure = new Diagnostic(Diagnostic.Severity.ERROR, "BQV-119", "", "",
+                "test:task", "Invalid task config");
+
+        var mapped = AuthoringNetwork.mutationDiagnosticWires(wire, List.of(codecFailure));
+
+        assertEquals("config", mapped.getFirst().path());
     }
 }

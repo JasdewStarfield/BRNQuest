@@ -242,7 +242,9 @@ public final class ClientEditorState {
     }
 
     public synchronized Optional<LeaseRequest> pollRenewRequest() {
-        if (!editing() || mode == Mode.RECEIVING_DRAFT || renewPending
+        // Foreground operations already validate or renew the lease themselves. A
+        // parallel heartbeat could otherwise return first and unlock their UI state.
+        if (!editing() || busy() || renewPending
                 || ticksSinceLeaseResponse < RENEW_INTERVAL_TICKS) {
             return Optional.empty();
         }
@@ -359,6 +361,12 @@ public final class ClientEditorState {
         UUID decodedSession = parseUuid(response.sessionId());
         if (sessionId == null || !sessionId.equals(decodedSession)
                 || !draftRevision.equals(response.draftRevision())) {
+            // A heartbeat sent immediately before a foreground mutation may arrive
+            // after that operation has advanced the authoritative draft revision.
+            if (busy()) {
+                renewPending = false;
+                return;
+            }
             fail("STALE_EDITOR_RENEWAL", "The edit-session renewal no longer matches this draft");
             return;
         }
@@ -366,7 +374,9 @@ public final class ClientEditorState {
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
-        mode = draft == null ? Mode.RECEIVING_DRAFT : Mode.EDITING;
+        // Never let a late heartbeat response complete an unrelated save, mutation,
+        // publish, or close operation from the client's point of view.
+        if (!busy()) mode = draft == null ? Mode.RECEIVING_DRAFT : Mode.EDITING;
     }
 
     private void acceptSaved(AuthoringNetwork.SessionResponseWire response) {

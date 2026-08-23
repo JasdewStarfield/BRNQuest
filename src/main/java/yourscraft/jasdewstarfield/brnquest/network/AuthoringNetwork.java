@@ -412,12 +412,15 @@ public final class AuthoringNetwork {
                     "INVALID_PUBLISH_REQUEST", "Incomplete publish request");
             return;
         }
+        debugPublishPhase(player, bookId, draftRevision, "request", "STARTED", "PUBLISH_REQUEST_ACCEPTED");
         var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
+        debugPublishPhase(player, bookId, draftRevision, "save", saved.status().name(), saved.code());
         if (!saved.success()) {
             sendFailure(player, "PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
             return;
         }
         var published = AuthorApi.publish(player, sessionId, bookId, draftRevision);
+        debugPublishPhase(player, bookId, draftRevision, "workspace", published.status().name(), published.code());
         if (!published.success()) {
             String message = "Draft was saved, but publish failed: " + published.message();
             if (published.value() != null && published.value().revisionCheck() != null
@@ -434,12 +437,14 @@ public final class AuthoringNetwork {
             return;
         }
         var deployed = AuthorApi.deploy(player, true);
+        debugPublishPhase(player, bookId, draftRevision, "deploy", deployed.status().name(), deployed.code());
         if (!deployed.success()) {
             sendFailure(player, "PUBLISH", deployed.status(), deployed.code(),
                     "Workspace publish completed, but deployment failed: " + deployed.message());
             return;
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
+        debugPublishPhase(player, bookId, draftRevision, "renew", renewed.status().name(), renewed.code());
         if (!renewed.success()) {
             sendFailure(player, "PUBLISH", renewed.status(), renewed.code(),
                     "Workspace was deployed, but the edit lease could not be renewed: " + renewed.message());
@@ -447,16 +452,28 @@ public final class AuthoringNetwork {
         }
         AuthorApi.reload(player).whenComplete((reloaded, error) -> player.getServer().execute(() -> {
             if (error != null) {
+                debugPublishPhase(player, bookId, draftRevision, "reload", "IO_FAILURE", "RELOAD_FAILED");
                 sendFailure(player, "PUBLISH", AuthorOperationResult.Status.IO_FAILURE, "RELOAD_FAILED",
                         "Workspace was deployed, but reload failed: " + error.getMessage());
             } else if (!reloaded.success()) {
+                debugPublishPhase(player, bookId, draftRevision, "reload",
+                        reloaded.status().name(), reloaded.code());
                 sendFailure(player, "PUBLISH", reloaded.status(), reloaded.code(),
                         "Workspace was deployed, but reload failed: " + reloaded.message());
             } else {
+                debugPublishPhase(player, bookId, draftRevision, "reload",
+                        reloaded.status().name(), "PUBLISH_APPLY_COMPLETE");
                 sendSession(player, "PUBLISH", AuthorOperationResult.Status.SUCCESS, "PUBLISH_APPLY_COMPLETE",
                         "Draft published, deployed with backup, and reloaded", renewed.value(), 0, 0);
             }
         }));
+    }
+
+    /** Keeps detailed pipeline telemetry available without adding noise to normal INFO logs. */
+    private static void debugPublishPhase(ServerPlayer player, ResourceLocation bookId, String revision,
+                                          String phase, String status, String code) {
+        BRNQuest.LOGGER.debug("[BRNQuest/EDITOR] actor={} book={} revision={} phase={} status={} code={}",
+                player.getGameProfile().getName(), bookId, shortRevision(revision), phase, status, code);
     }
 
     /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
@@ -652,7 +669,7 @@ public final class AuthoringNetwork {
             if (result.value() != null && !result.value().diagnostics().isEmpty()) {
                 var first = result.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.message();
-                diagnostics = diagnosticWires(result.value().diagnostics());
+                diagnostics = mutationDiagnosticWires(wire, result.value().diagnostics());
             } else if ("UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())) {
                 String path = "DUPLICATE_TYPED_ID".equals(result.code()) ? "id" : "";
                 diagnostics = List.of(new EditorDiagnosticWire("ERROR", result.code(),
@@ -826,6 +843,21 @@ public final class AuthoringNetwork {
         return diagnostics.stream().limit(8).map(diagnostic -> new EditorDiagnosticWire(
                 diagnostic.severity().name(), diagnostic.code(), boundedMessage(diagnostic.objectId()),
                 boundedMessage(diagnostic.path()), boundedMessage(diagnostic.message()))).toList();
+    }
+
+    static List<EditorDiagnosticWire> mutationDiagnosticWires(EditorMutationWire wire,
+            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
+        boolean typedUpdate = "UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action());
+        return diagnostics.stream().limit(8).map(diagnostic -> {
+            String path = diagnostic.path();
+            if (typedUpdate && path.isBlank()
+                    && ("BQV-119".equals(diagnostic.code()) || "BQV-120".equals(diagnostic.code()))) {
+                // Codec errors concern the complete raw map when no descriptor can identify one field.
+                path = "config";
+            }
+            return new EditorDiagnosticWire(diagnostic.severity().name(), diagnostic.code(),
+                    boundedMessage(diagnostic.objectId()), boundedMessage(path), boundedMessage(diagnostic.message()));
+        }).toList();
     }
 
     private static String boundedMessage(String message) {

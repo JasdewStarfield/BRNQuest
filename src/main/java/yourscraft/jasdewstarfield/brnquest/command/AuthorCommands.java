@@ -406,7 +406,7 @@ final class AuthorCommands {
 
     private static void audit(CommandContext<CommandSourceStack> context, String action, String object,
                               String status, String code) {
-        BRNQuest.LOGGER.info("[BRNQuest/AUDIT] actor={} action={} object={} status={} code={}",
+        BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action={} object={} status={} code={}",
                 context.getSource().getTextName(), action, object, status, code);
     }
 

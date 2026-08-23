@@ -14,6 +14,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDial
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPickerList;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewPanel;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorScrollbar;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
@@ -172,6 +174,8 @@ public final class QuestScreen extends Screen {
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
+    private AuthoringNetwork.PublishReviewWire publishReview;
+    private int publishReviewScroll;
 
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
@@ -266,6 +270,12 @@ public final class QuestScreen extends Screen {
         }
         editor.pollRenewRequest().ifPresent(request ->
                 AuthoringNetwork.renewSession(request.sessionId(), request.draftRevision()));
+        editor.pollPublishReview().ifPresent(review -> {
+            closeActiveEditorOverlay();
+            publishReview = review;
+            publishReviewScroll = 0;
+            editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
+        });
         reconcileDragPreview();
     }
 
@@ -943,6 +953,13 @@ public final class QuestScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION) && publishReview != null) {
+            EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
+            int maximum = EditorPublishReviewPanel.maximumScroll(reviewLayout, publishReviewRowCount());
+            publishReviewScroll = Math.max(0, Math.min(maximum,
+                    publishReviewScroll - (int) Math.signum(vertical)));
+            return true;
+        }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) {
             int maximum = Math.max(0, dependencyCandidates().size()
                     - EditorPickerList.visibleRows(dependencyPickerBounds()));
@@ -1205,7 +1222,7 @@ public final class QuestScreen extends Screen {
             case DISCARD_CONFIRMATION -> renderDiscardConfirmation(graphics);
             case DELETE_CONFIRMATION -> renderDeleteConfirmation(graphics);
             case QUEST_RENAME_CONFIRMATION -> renderQuestRenameConfirmation(graphics);
-            case PUBLISH_CONFIRMATION -> renderPublishConfirmation(graphics);
+            case PUBLISH_CONFIRMATION -> renderPublishConfirmation(graphics, mouseX, mouseY);
             default -> { }
         }
         graphics.pose().popPose();
@@ -1347,7 +1364,11 @@ public final class QuestScreen extends Screen {
                 editorOverlays.close();
             }
             case QUEST_RENAME_CONFIRMATION -> editorOverlays.close();
-            case PUBLISH_CONFIRMATION -> editorOverlays.close();
+            case PUBLISH_CONFIRMATION -> {
+                publishReview = null;
+                publishReviewScroll = 0;
+                editorOverlays.close();
+            }
             case NONE -> { }
         }
     }
@@ -1750,7 +1771,8 @@ public final class QuestScreen extends Screen {
             if (!editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
                     && !structureFormOpen()) {
                 closeActiveEditorOverlay();
-                editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
+                editor.beginPublishReview().ifPresent(request -> AuthoringNetwork.reviewPublish(
+                        request.sessionId(), editor.bookId(), request.draftRevision()));
             }
             return true;
         }
@@ -1786,6 +1808,7 @@ public final class QuestScreen extends Screen {
             case MUTATING -> Component.translatable("screen.brnquest.editor.draft.mutating");
             case SAVING -> Component.translatable("screen.brnquest.editor.draft.saving");
             case PUBLISHING -> Component.translatable("screen.brnquest.editor.draft.publishing");
+            case REVIEWING -> Component.translatable("screen.brnquest.editor.publish.reviewing");
             case EDITING -> {
                 long seconds = editor.remainingLeaseTicks() / 20L;
                 String time = "%d:%02d".formatted(seconds / 60L, seconds % 60L);
@@ -3027,28 +3050,182 @@ public final class QuestScreen extends Screen {
         return new UiRect(redo.left() - EDITOR_HISTORY_BUTTON_WIDTH - 4, redo.top(), redo.left() - 4, redo.bottom());
     }
 
-    private void renderPublishConfirmation(GuiGraphics graphics) {
-        EditorConfirmDialog.render(graphics, font, layout(),
-                Component.translatable("screen.brnquest.editor.publish.warning"),
-                Component.translatable("screen.brnquest.editor.publish.steps"), 0xFFFFC06A,
-                Component.translatable("gui.cancel"),
-                Component.translatable("screen.brnquest.editor.publish.confirm"));
+    private void renderPublishConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (publishReview == null) return;
+        EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
+        UiRect panel = reviewLayout.panel();
+        graphics.fill(0, 0, width, height, 0x88000000);
+        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xFF202832);
+        graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.publish.review.title"),
+                panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
+        int readinessColor = publishReview.publishAllowed() ? 0xFF83D69A : 0xFFFF8B8B;
+        graphics.drawString(font, Component.translatable(publishReview.publishAllowed()
+                        ? "screen.brnquest.editor.publish.review.ready"
+                        : "screen.brnquest.editor.publish.review.blocked"),
+                panel.left() + 12, panel.top() + 26, readinessColor, false);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.revisions",
+                        shortReviewRevision(publishReview.fromRevision()),
+                        shortReviewRevision(publishReview.targetRevision())),
+                panel.left() + 12, panel.top() + 40, 0xFFB7C5D8, false);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.counts",
+                        publishReview.diagnosticCount(), publishReview.changeCount(), publishReview.truncated()
+                                ? Component.translatable("screen.brnquest.editor.publish.review.truncated").getString()
+                                : ""),
+                panel.left() + 12, panel.top() + 54, 0xFFB7C5D8, false);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.backup"),
+                panel.left() + 12, panel.top() + 68, 0xFFFFC06A, false);
+
+        int rowCount = publishReviewRowCount();
+        int maximum = EditorPublishReviewPanel.maximumScroll(reviewLayout, rowCount);
+        publishReviewScroll = Math.max(0, Math.min(maximum, publishReviewScroll));
+        graphics.enableScissor(reviewLayout.list().left(), reviewLayout.list().top(),
+                reviewLayout.list().right(), reviewLayout.list().bottom());
+        int visibleRows = EditorPublishReviewPanel.visibleRows(reviewLayout);
+        for (int visibleIndex = 0; visibleIndex < visibleRows; visibleIndex++) {
+            int rowIndex = publishReviewScroll + visibleIndex;
+            if (rowIndex >= rowCount) break;
+            renderPublishReviewRow(graphics, reviewLayout, rowIndex,
+                    reviewLayout.list().top() + visibleIndex * EditorPublishReviewPanel.ROW_HEIGHT,
+                    mouseX, mouseY);
+        }
+        graphics.disableScissor();
+        EditorScrollbar.render(graphics, reviewLayout.list().right() + 2, reviewLayout.list().top(),
+                reviewLayout.list().bottom(), rowCount * EditorPublishReviewPanel.ROW_HEIGHT,
+                reviewLayout.list().height(), publishReviewScroll * EditorPublishReviewPanel.ROW_HEIGHT);
+        EditorButton.render(graphics, font, reviewLayout.cancel(), Component.translatable("gui.cancel"),
+                0xFF385A72, 0xFFFFFFFF, 4);
+        EditorButton.render(graphics, font, reviewLayout.confirm(),
+                Component.translatable(publishReview.publishAllowed()
+                        ? "screen.brnquest.editor.publish.confirm"
+                        : "screen.brnquest.editor.publish.blocked"),
+                publishReview.publishAllowed() ? 0xFF723E46 : 0xFF343D49,
+                publishReview.publishAllowed() ? 0xFFFFFFFF : 0xFF7F8996, 4);
+    }
+
+    /** Renders either a blocking diagnostic or one semantic change from the same bounded list used by hit testing. */
+    private void renderPublishReviewRow(GuiGraphics graphics, EditorPublishReviewPanel.Layout layout,
+                                        int rowIndex, int y, int mouseX, int mouseY) {
+        UiRect row = new UiRect(layout.list().left(), y, layout.list().right(),
+                y + EditorPublishReviewPanel.ROW_HEIGHT - 2);
+        boolean hovered = row.contains(mouseX, mouseY);
+        graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
+                hovered ? 0xFF354352 : (rowIndex % 2 == 0 ? 0xFF28313C : 0xFF242C36));
+        String heading;
+        String detail;
+        List<Component> tooltip;
+        if (rowIndex < publishReview.diagnostics().size()) {
+            AuthoringNetwork.EditorDiagnosticWire diagnostic = publishReview.diagnostics().get(rowIndex);
+            heading = diagnostic.severity() + " · " + diagnostic.code();
+            detail = diagnostic.objectId() + (diagnostic.path().isBlank() ? "" : " · " + diagnostic.path());
+            tooltip = List.of(Component.literal(heading), Component.literal(detail),
+                    Component.literal(diagnostic.message()));
+        } else if (publishReview.changes().isEmpty()) {
+            heading = Component.translatable("screen.brnquest.editor.publish.review.no_changes").getString();
+            detail = Component.translatable("screen.brnquest.editor.publish.review.no_changes.detail").getString();
+            tooltip = List.of(Component.literal(heading), Component.literal(detail));
+        } else {
+            AuthoringNetwork.SemanticDiffWire change = publishReview.changes().get(
+                    rowIndex - publishReview.diagnostics().size());
+            heading = EditorPublishReviewText.heading(change).getString();
+            detail = EditorPublishReviewText.detail(change).getString();
+            List<Component> changeTooltip = new ArrayList<>();
+            changeTooltip.add(Component.literal(heading));
+            changeTooltip.add(Component.literal(detail));
+            changeTooltip.addAll(EditorPublishReviewText.valueTooltip(change));
+            tooltip = List.copyOf(changeTooltip);
+        }
+        int textWidth = Math.max(20, row.width() - 12);
+        graphics.drawString(font, font.plainSubstrByWidth(heading, textWidth), row.left() + 5,
+                row.top() + 3, 0xFFFFFFFF, false);
+        graphics.drawString(font, font.plainSubstrByWidth(detail, textWidth), row.left() + 5,
+                row.top() + 15, 0xFF9FB0C2, false);
+        if (hovered) hoveredComponentTooltip = tooltip;
     }
 
     private boolean handlePublishConfirmationClick(double mouseX, double mouseY, int button) {
         if (button != 0) return true;
-        EditorConfirmDialog.Action action = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
-        if (action == EditorConfirmDialog.Action.CANCEL) {
-            editorOverlays.close();
+        if (publishReview == null) return true;
+        EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
+        if (reviewLayout.cancel().contains(mouseX, mouseY)) {
+            closeActiveEditorOverlay();
             return true;
         }
-        if (action == EditorConfirmDialog.Action.CONFIRM) {
-            editorOverlays.close();
+        if (publishReview.publishAllowed() && reviewLayout.confirm().contains(mouseX, mouseY)) {
+            String reviewedRevision = publishReview.targetRevision();
+            closeActiveEditorOverlay();
             ClientEditorState editor = ClientEditorState.get();
-            editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
-                    request.sessionId(), editor.bookId(), request.draftRevision()));
+            // The preview is revision-bound; never confirm a different draft with stale review data.
+            if (reviewedRevision.equals(editor.draftRevision())) {
+                editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
+                        request.sessionId(), editor.bookId(), request.draftRevision()));
+            }
+            return true;
+        }
+        int row = EditorPublishReviewPanel.rowAt(reviewLayout, publishReviewScroll,
+                publishReviewRowCount(), mouseX, mouseY);
+        if (row >= 0) {
+            ResourceLocation objectId = publishReviewObjectId(row);
+            if (objectId != null && jumpToEditorObject(objectId)) closeActiveEditorOverlay();
         }
         return true;
+    }
+
+    private int publishReviewRowCount() {
+        if (publishReview == null) return 0;
+        // Keep a visible semantic-diff result even when the server returned an empty change list.
+        return publishReview.diagnostics().size() + Math.max(1, publishReview.changes().size());
+    }
+
+    private ResourceLocation publishReviewObjectId(int rowIndex) {
+        String raw;
+        if (rowIndex < publishReview.diagnostics().size()) {
+            raw = publishReview.diagnostics().get(rowIndex).objectId();
+        } else if (publishReview.changes().isEmpty()) {
+            return null;
+        } else {
+            raw = publishReview.changes().get(rowIndex - publishReview.diagnostics().size()).objectId();
+        }
+        return ResourceLocation.tryParse(raw);
+    }
+
+    /** Selects the closest surviving chapter or quest represented by a diagnostic/diff object ID. */
+    private boolean jumpToEditorObject(ResourceLocation objectId) {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null) return false;
+        QuestBookDefinition book = snapshot.book();
+        ChapterDefinition chapter = book.chapters().stream()
+                .filter(candidate -> candidate.id().equals(objectId)).findFirst().orElse(null);
+        QuestDefinition quest = snapshot.quests().get(objectId);
+        if (quest == null) {
+            quest = book.quests().stream().filter(candidate -> candidate.tasks().stream()
+                            .anyMatch(task -> task.id().equals(objectId)) || candidate.rewards().stream()
+                            .anyMatch(reward -> reward.id().equals(objectId)))
+                    .findFirst().orElse(null);
+        }
+        if (quest != null) {
+            ResourceLocation targetChapter = quest.chapterId();
+            chapter = book.chapters().stream().filter(candidate -> candidate.id().equals(targetChapter))
+                    .findFirst().orElse(null);
+            editorSelectedQuest = quest.id();
+            selectOnly(quest.id());
+            detailsOpen = true;
+            detailScroll = 0;
+        }
+        if (chapter == null) return quest != null;
+        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(book);
+        int index = chapters.indexOf(chapter);
+        if (index >= 0) {
+            chapterIndex = index;
+            rememberedChapterId = chapter.id();
+            rememberedChapterResolved = true;
+            navigationScroll = 0;
+        }
+        return true;
+    }
+
+    private static String shortReviewRevision(String revision) {
+        if (revision == null || revision.isBlank()) return "<none>";
+        return revision.length() <= 12 ? revision : revision.substring(0, 12);
     }
 
     private void requestDiscardConfirmation(ResourceLocation switchTarget, boolean closeScreen) {

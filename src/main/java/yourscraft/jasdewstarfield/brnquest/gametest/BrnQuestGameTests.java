@@ -468,6 +468,13 @@ public final class BrnQuestGameTests {
                 "saved draft and session must have no semantic diff");
         String activeBeforePublish = QuestBookManager.get().active().orElseThrow().revision();
         DraftPublishService publisher = new DraftPublishService();
+        var publishPreview = publisher.preview(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
+        helper.assertTrue(publishPreview.success()
+                        && publishPreview.value().snapshot().draftRevision().equals(editedRevision)
+                        && publishPreview.value().backup() == null,
+                "publish preview must run the real gates without creating a workspace backup");
+        helper.assertValueEqual(QuestBookManager.get().active().orElseThrow().revision(), activeBeforePublish,
+                "publish preview must not change the active task-book snapshot");
         var published = publisher.publish(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
         var repeatedPublish = publisher.publish(firstAdmin, opened.value().sessionId(), bookId, editedRevision);
         helper.assertTrue(published.success(), "saved remote draft must publish to the target server workspace");

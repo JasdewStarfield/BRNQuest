@@ -14,6 +14,9 @@ import java.util.*;
 
 /** Lists, previews, and atomically restores BRNQuest-owned backups on the target server. */
 public final class AuthorBackupService {
+    private static final int MOVE_ATTEMPTS = 4;
+    private static final long MOVE_RETRY_MILLIS = 25L;
+
     public AuthorOperationResult<List<BackupDescriptor>> list(ServerPlayer player, BackupKind kind) {
         MinecraftServer server = authorizedServer(player);
         if (server == null) return authorizationFailure(player);
@@ -235,11 +238,30 @@ public final class AuthorBackupService {
     }
 
     private static void move(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target);
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= MOVE_ATTEMPTS; attempt++) {
+            try {
+                try {
+                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException ignored) {
+                    Files.move(source, target);
+                }
+                return;
+            } catch (IOException exception) {
+                // Windows can briefly retain the old workspace handle after it is moved aside.
+                // The bounded retry mirrors publish activation without weakening atomic restore.
+                lastFailure = exception;
+                if (attempt == MOVE_ATTEMPTS) break;
+                try {
+                    Thread.sleep(MOVE_RETRY_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Backup restore move retry was interrupted", exception);
+                }
+            }
         }
+        throw new IOException("Backup restore move failed after " + MOVE_ATTEMPTS + " attempts ["
+                + lastFailure.getClass().getSimpleName() + "]: " + lastFailure.getMessage(), lastFailure);
     }
 
     private static void safeDelete(Path target, Path allowedParent) {

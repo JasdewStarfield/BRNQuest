@@ -26,6 +26,7 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionHandle;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
+import yourscraft.jasdewstarfield.brnquest.author.SemanticDiffEntry;
 import yourscraft.jasdewstarfield.brnquest.client.ClientPayloadHandler;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
@@ -47,6 +48,8 @@ import java.util.UUID;
 /** Stage-5 authoring channel. Every request is re-authorized against the connected target server. */
 public final class AuthoringNetwork {
     private static final Gson GSON = new Gson();
+    private static final int MAX_REVIEW_ROWS = 128;
+    private static final int MAX_REVIEW_VALUE_CHARACTERS = 240;
 
     private AuthoringNetwork() {}
 
@@ -163,11 +166,24 @@ public final class AuthoringNetwork {
     public record EditorDiagnosticWire(String severity, String code, String objectId,
                                        String path, String message) {}
 
+    public record SemanticDiffWire(String kind, String objectKind, String objectId,
+                                   String path, String before, String after) {}
+
+    public record PublishReviewWire(boolean publishAllowed, String baseline, String fromRevision,
+                                    String targetRevision, String backupStrategy, int diagnosticCount,
+                                    int changeCount, boolean truncated, List<EditorDiagnosticWire> diagnostics,
+                                    List<SemanticDiffWire> changes) {
+        public PublishReviewWire {
+            diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+            changes = changes == null ? List.of() : List.copyOf(changes);
+        }
+    }
+
     public record SessionResponseWire(String action, String status, String code, String message,
                                       String sessionId, String bookId, String baseRevision,
                                       String draftRevision, String savedRevision, long remainingTicks,
                                       int chunks, int decodedBytes, int undoSteps, int redoSteps,
-                                      List<EditorDiagnosticWire> diagnostics) {
+                                      List<EditorDiagnosticWire> diagnostics, PublishReviewWire review) {
         public SessionResponseWire {
             undoSteps = Math.max(0, undoSteps);
             redoSteps = Math.max(0, redoSteps);
@@ -180,7 +196,7 @@ public final class AuthoringNetwork {
                                    String draftRevision, String savedRevision, long remainingTicks,
                                    int chunks, int decodedBytes) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, List.of());
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, List.of(), null);
         }
 
         /** Keeps structured-diagnostic callers source-compatible with the additive history fields. */
@@ -189,7 +205,17 @@ public final class AuthoringNetwork {
                                    String draftRevision, String savedRevision, long remainingTicks,
                                    int chunks, int decodedBytes, List<EditorDiagnosticWire> diagnostics) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, diagnostics);
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, diagnostics, null);
+        }
+
+        /** Keeps history-aware callers concise when no publish review is attached. */
+        public SessionResponseWire(String action, String status, String code, String message,
+                                   String sessionId, String bookId, String baseRevision,
+                                   String draftRevision, String savedRevision, long remainingTicks,
+                                   int chunks, int decodedBytes, int undoSteps, int redoSteps,
+                                   List<EditorDiagnosticWire> diagnostics) {
+            this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
+                    savedRevision, remainingTicks, chunks, decodedBytes, undoSteps, redoSteps, diagnostics, null);
         }
     }
 
@@ -287,6 +313,11 @@ public final class AuthoringNetwork {
     public static void history(UUID sessionId, ResourceLocation bookId, String draftRevision, boolean redo) {
         mutate(new EditorMutationWire(sessionId.toString(), bookId.toString(), draftRevision,
                 redo ? "REDO" : "UNDO", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
+    }
+
+    public static void reviewPublish(UUID sessionId, ResourceLocation bookId, String draftRevision) {
+        mutate(new EditorMutationWire(sessionId.toString(), bookId.toString(), draftRevision,
+                "REVIEW", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
     }
 
     private static void sendCatalog(ServerPlayer player) {
@@ -600,6 +631,10 @@ public final class AuthoringNetwork {
             sendFailure(player, "MUTATE", current.status(), current.code(), current.message());
             return;
         }
+        if ("REVIEW".equals(wire.action())) {
+            reviewPublish(player, sessionId, bookId, wire.draftRevision());
+            return;
+        }
         ResourceLocation targetId = parseId(wire.targetId());
         ResourceLocation parentId = parseId(wire.parentId());
         ResourceLocation sourceId = parseId(wire.sourceId());
@@ -679,6 +714,83 @@ public final class AuthoringNetwork {
             return;
         }
         sendMutationResult(player, sessionId, bookId, result, wire);
+    }
+
+    /** Combines the exact publish gates and workspace semantic diff into one revision-bound preview. */
+    private static void reviewPublish(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
+                                      String draftRevision) {
+        var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
+        if (!preview.success() && preview.value() == null) {
+            sendFailure(player, "REVIEW", preview.status(), preview.code(), preview.message());
+            return;
+        }
+        var diff = AuthorApi.diff(player, sessionId, bookId, draftRevision,
+                yourscraft.jasdewstarfield.brnquest.author.DraftDiffService.Baseline.WORKSPACE);
+        if (!diff.success() || diff.value() == null) {
+            sendFailure(player, "REVIEW", diff.status(), diff.code(), diff.message());
+            return;
+        }
+        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
+        if (!renewed.success()) {
+            sendFailure(player, "REVIEW", renewed.status(), renewed.code(), renewed.message());
+            return;
+        }
+        List<EditorDiagnosticWire> allDiagnostics = new java.util.ArrayList<>(preview.value().diagnostics().stream()
+                .map(diagnostic -> new EditorDiagnosticWire(diagnostic.severity().name(), diagnostic.code(),
+                        diagnostic.objectId(), diagnostic.path(), boundedReviewValue(diagnostic.message())))
+                .toList());
+        if (preview.value().revisionCheck() != null) {
+            preview.value().revisionCheck().conflicts().forEach(conflict -> allDiagnostics.add(
+                    new EditorDiagnosticWire("ERROR", conflict.code(), bookId.toString(), "revision",
+                            boundedReviewValue(conflict.message()))));
+        }
+        List<SemanticDiffWire> allChanges = diff.value().entries().stream().map(AuthoringNetwork::diffWire).toList();
+        sendPublishReview(player, renewed.value(), preview.success(), diff.value().fromRevision(),
+                diff.value().toRevision(), allDiagnostics, allChanges);
+    }
+
+    private static SemanticDiffWire diffWire(SemanticDiffEntry entry) {
+        return new SemanticDiffWire(entry.kind().name(), entry.objectKind().name(), entry.objectId().toString(),
+                entry.path(), boundedReviewValue(entry.before()), boundedReviewValue(entry.after()));
+    }
+
+    private static String boundedReviewValue(String value) {
+        String safe = value == null ? "" : value;
+        return safe.length() <= MAX_REVIEW_VALUE_CHARACTERS ? safe
+                : safe.substring(0, MAX_REVIEW_VALUE_CHARACTERS - 1) + "…";
+    }
+
+    private static void sendPublishReview(ServerPlayer player, EditSessionHandle handle, boolean publishAllowed,
+                                          String fromRevision, String targetRevision,
+                                          List<EditorDiagnosticWire> allDiagnostics,
+                                          List<SemanticDiffWire> allChanges) {
+        List<EditorDiagnosticWire> diagnostics = new java.util.ArrayList<>(
+                allDiagnostics.stream().limit(MAX_REVIEW_ROWS).toList());
+        List<SemanticDiffWire> changes = new java.util.ArrayList<>(allChanges.stream().limit(MAX_REVIEW_ROWS).toList());
+        boolean truncated = diagnostics.size() < allDiagnostics.size() || changes.size() < allChanges.size();
+        String json;
+        do {
+            PublishReviewWire review = new PublishReviewWire(publishAllowed, "WORKSPACE", fromRevision,
+                    targetRevision, "BACKUP_AND_REPLACE", allDiagnostics.size(), allChanges.size(), truncated,
+                    diagnostics, changes);
+            EditSessionView view = handle.session();
+            long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
+            SessionResponseWire response = new SessionResponseWire("REVIEW", "SUCCESS", "PUBLISH_REVIEW_READY",
+                    "Publish review generated", handle.sessionId().toString(), view.bookId().toString(),
+                    view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, 0, 0,
+                    view.undoSteps(), view.redoSteps(), List.of(), review);
+            json = GSON.toJson(response);
+            if (json.getBytes(StandardCharsets.UTF_8).length <= BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) break;
+            truncated = true;
+            if (!changes.isEmpty()) changes.removeLast();
+            else if (!diagnostics.isEmpty()) diagnostics.removeLast();
+            else {
+                sendFailure(player, "REVIEW", AuthorOperationResult.Status.IO_FAILURE,
+                        "PUBLISH_REVIEW_TOO_LARGE", "Publish review exceeds the editor protocol limit");
+                return;
+            }
+        } while (true);
+        BrnQuestNetwork.send(player, new SessionPayload(json));
     }
 
     private static void sendMutationResult(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
@@ -833,7 +945,7 @@ public final class AuthoringNetwork {
         SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
                 boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
                 view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes,
-                view.undoSteps(), view.redoSteps(), List.of());
+                view.undoSteps(), view.redoSteps(), List.of(), null);
         BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
     }
 

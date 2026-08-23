@@ -19,14 +19,22 @@ import java.util.UUID;
 /** Copies the global author workspace into a world without ever silently replacing it. */
 public final class WorkspaceDeploymentService {
     private static final DateTimeFormatter BACKUP_TIME = DateTimeFormatter.ofPattern("uuuuMMdd-HHmmss").withZone(ZoneOffset.UTC);
+    private static final int MOVE_ATTEMPTS = 4;
+    private static final long MOVE_RETRY_MILLIS = 25L;
     private final TransactionHook transactionHook;
+    private final DirectoryMove directoryMove;
 
     public WorkspaceDeploymentService() {
-        this(stage -> {});
+        this(stage -> {}, WorkspaceDeploymentService::moveOnce);
     }
 
     WorkspaceDeploymentService(TransactionHook transactionHook) {
+        this(transactionHook, WorkspaceDeploymentService::moveOnce);
+    }
+
+    WorkspaceDeploymentService(TransactionHook transactionHook, DirectoryMove directoryMove) {
         this.transactionHook = transactionHook;
+        this.directoryMove = directoryMove;
     }
 
     public DeploymentResult deploy(MinecraftServer server, boolean replace) throws IOException {
@@ -158,7 +166,30 @@ public final class WorkspaceDeploymentService {
         return count[0];
     }
 
-    private static void move(Path source, Path target) throws IOException {
+    private void move(Path source, Path target) throws IOException {
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= MOVE_ATTEMPTS; attempt++) {
+            try {
+                directoryMove.move(source, target);
+                return;
+            } catch (IOException exception) {
+                // Windows can briefly retain the deployed data pack after resource or file inspection.
+                // Retry only the same atomic move; validation, backup, and rollback boundaries stay unchanged.
+                lastFailure = exception;
+                if (attempt == MOVE_ATTEMPTS) break;
+                try {
+                    Thread.sleep(MOVE_RETRY_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("World pack move retry was interrupted", exception);
+                }
+            }
+        }
+        throw new IOException("World pack move failed after " + MOVE_ATTEMPTS + " attempts ["
+                + lastFailure.getClass().getSimpleName() + "]: " + lastFailure.getMessage(), lastFailure);
+    }
+
+    private static void moveOnce(Path source, Path target) throws IOException {
         try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
         catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
     }
@@ -176,6 +207,11 @@ public final class WorkspaceDeploymentService {
     @FunctionalInterface
     interface TransactionHook {
         void checkpoint(TransactionStage stage) throws IOException;
+    }
+
+    @FunctionalInterface
+    interface DirectoryMove {
+        void move(Path source, Path target) throws IOException;
     }
     static final class NoWorkspaceException extends IOException {
         private final Path path;

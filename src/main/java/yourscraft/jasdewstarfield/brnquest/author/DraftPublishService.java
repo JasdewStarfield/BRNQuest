@@ -35,30 +35,17 @@ public final class DraftPublishService {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "UNSAVED_DRAFT",
                         "Save the current draft before publishing it");
             }
-            List<Diagnostic> diagnostics = AuthorValidationService.full(state.snapshot().book());
-            List<Diagnostic> baselineDiagnostics = sourceBaselineDiagnostics(player, state.snapshot());
-            if (AuthorValidationService.blocksCommit(diagnostics, baselineDiagnostics)) {
-                return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
-                        "DRAFT_VALIDATION_FAILED", "Draft introduced a validation error relative to its source",
-                        new DraftPublishResult(state.snapshot(), "", null, null, diagnostics));
-            }
-            AuthorOperationResult<RevisionCheck> inspected = revisions.inspect(player.getServer(), state);
-            if (!inspected.success()) return failureLike(inspected);
-            RevisionCheck checked = addWorkspaceCreationConflict(state.snapshot(), inspected.value());
-            if (checked.hasConflicts()) {
-                RevisionConflict first = checked.conflicts().getFirst();
-                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "REVISION_CONFLICT",
-                        "Draft publish rejected by revision guard: " + first.code() + " - " + first.message(),
-                        new DraftPublishResult(state.snapshot(), checked.revisions().workspaceRevision(), null,
-                                checked, diagnostics));
-            }
+            AuthorOperationResult<DraftPublishResult> preview = previewState(player, state);
+            if (!preview.success()) return preview;
+            DraftPublishResult inspected = preview.value();
+            RevisionCheck checked = inspected.revisionCheck();
             String expectedWorkspace = checked.revisions().workspaceRevision();
             AuthorOperationResult<DraftPublishResult> published = workspace.publish(player.getServer(),
                     state.snapshot(), expectedWorkspace);
             if (!published.success()) return published;
             DraftPublishResult value = published.value();
             DraftPublishResult enriched = new DraftPublishResult(value.snapshot(), value.previousWorkspaceRevision(),
-                    value.backup(), checked, diagnostics);
+                    value.backup(), checked, inspected.diagnostics());
             return published.status() == AuthorOperationResult.Status.NO_CHANGE
                     ? AuthorOperationResult.noChange(published.code(), published.message(), enriched)
                     : AuthorOperationResult.success(published.code(), published.message(), enriched);
@@ -68,6 +55,35 @@ public final class DraftPublishService {
                 ? result.value().snapshot().draftRevision() : before;
         AuthorAuditLog.record(player, "draft_publish", bookId.toString(), before, after, result);
         return result;
+    }
+
+    /** Runs the exact publish validation and revision gates without writing workspace files. */
+    public AuthorOperationResult<DraftPublishResult> preview(ServerPlayer player, UUID sessionId,
+                                                              ResourceLocation bookId,
+                                                              String expectedDraftRevision) {
+        return sessions.read(player, sessionId, bookId, expectedDraftRevision,
+                state -> previewState(player, state));
+    }
+
+    private AuthorOperationResult<DraftPublishResult> previewState(ServerPlayer player, DraftSessionState state) {
+        List<Diagnostic> diagnostics = AuthorValidationService.full(state.snapshot().book());
+        List<Diagnostic> baselineDiagnostics = sourceBaselineDiagnostics(player, state.snapshot());
+        if (AuthorValidationService.blocksCommit(diagnostics, baselineDiagnostics)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                    "DRAFT_VALIDATION_FAILED", "Draft introduced a validation error relative to its source",
+                    new DraftPublishResult(state.snapshot(), "", null, null, diagnostics));
+        }
+        AuthorOperationResult<RevisionCheck> inspected = revisions.inspect(player.getServer(), state);
+        if (!inspected.success()) return failureLike(inspected);
+        RevisionCheck checked = addWorkspaceCreationConflict(state.snapshot(), inspected.value());
+        DraftPublishResult preview = new DraftPublishResult(state.snapshot(),
+                checked.revisions().workspaceRevision(), null, checked, diagnostics);
+        if (checked.hasConflicts()) {
+            RevisionConflict first = checked.conflicts().getFirst();
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "REVISION_CONFLICT",
+                    "Draft publish rejected by revision guard: " + first.code() + " - " + first.message(), preview);
+        }
+        return AuthorOperationResult.success("DRAFT_READY_TO_PUBLISH", "Draft is ready to publish", preview);
     }
 
     /**

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -53,6 +55,25 @@ class WorkspaceDeploymentServiceTest {
         assertEquals(temporary.resolve("world/brnquest-backups"), result.backup().getParent());
         assertTrue(Files.isRegularFile(result.backup().resolve("old.txt")));
         assertTrue(Files.isRegularFile(target.resolve("data/test/brnquest/books/main.json")));
+    }
+
+    @Test void transientWindowsMoveFailureIsRetriedWithoutRepeatingThePublishRequest() throws Exception {
+        Path source = workspace("retry");
+        Path target = temporary.resolve("world-retry/datapacks/brnquest-workspace");
+        Files.createDirectories(target);
+        Files.writeString(target.resolve("old.txt"), "old", StandardCharsets.UTF_8);
+        AtomicInteger moves = new AtomicInteger();
+        WorkspaceDeploymentService service = new WorkspaceDeploymentService(stage -> {}, (from, to) -> {
+            if (moves.incrementAndGet() <= 2) throw new java.nio.file.AccessDeniedException(from.toString());
+            Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
+        });
+
+        var result = service.deployTransaction(source, target, true);
+
+        assertEquals(WorkspaceDeploymentService.Status.REPLACED, result.status());
+        assertTrue(Files.isRegularFile(result.backup().resolve("old.txt")));
+        assertTrue(Files.isRegularFile(target.resolve("data/test/brnquest/books/main.json")));
+        assertEquals(4, moves.get(), "two retries plus backup and activation moves must complete in one transaction");
     }
 
     @Test void invalidWorkspaceIsRejectedBeforeTargetMutation() throws Exception {

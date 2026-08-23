@@ -171,6 +171,33 @@ class ClientEditorStateTest {
         assertEquals("PUBLISH_APPLY_COMPLETE", state.statusCode());
     }
 
+    @Test void publishReviewIsAcceptedOnlyForTheCurrentAuthoritativeRevision() {
+        ResourceLocation bookId = ResourceLocation.parse("test:publish_review");
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Review",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, snapshot, snapshot.revision());
+        assertTrue(state.beginPublishReview().isPresent());
+
+        var review = new AuthoringNetwork.PublishReviewWire(true, "WORKSPACE", "old",
+                snapshot.revision(), "BACKUP_AND_REPLACE", 1, 1, false,
+                List.of(new AuthoringNetwork.EditorDiagnosticWire("WARN", "BQR-TEST", bookId.toString(),
+                        "title", "warning")),
+                List.of(new AuthoringNetwork.SemanticDiffWire("PROPERTY_CHANGED", "BOOK",
+                        bookId.toString(), "title", "Before", "Review")));
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(
+                "REVIEW", "SUCCESS", "PUBLISH_REVIEW_READY", "ok", sessionId.toString(),
+                bookId.toString(), "", snapshot.revision(), snapshot.revision(), 36_000L,
+                0, 0, 0, 0, List.of(), review)));
+
+        assertEquals(ClientEditorState.Mode.EDITING, state.mode());
+        assertEquals(review, state.pollPublishReview().orElseThrow());
+        assertTrue(state.pollPublishReview().isEmpty());
+    }
+
     @Test void leaseHeartbeatCannotUnlockAnInFlightPublish() {
         ResourceLocation bookId = ResourceLocation.parse("test:publish_renewal");
         QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Publish renewal",

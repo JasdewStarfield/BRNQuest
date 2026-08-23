@@ -24,7 +24,8 @@ public final class ClientEditorState {
     private static final ClientEditorState INSTANCE = new ClientEditorState();
 
     public enum Mode {
-        VIEW, CATALOG_LOADING, OPENING, RECEIVING_DRAFT, EDITING, MUTATING, SAVING, PUBLISHING, CLOSING, ERROR
+        VIEW, CATALOG_LOADING, OPENING, RECEIVING_DRAFT, EDITING, MUTATING, REVIEWING, SAVING, PUBLISHING,
+        CLOSING, ERROR
     }
 
     public record CatalogEntry(ResourceLocation bookId, String title, String draftRevision, DraftOrigin origin) {}
@@ -53,6 +54,7 @@ public final class ClientEditorState {
     private QuestBookSnapshot draft;
     private boolean closeWhenOpened;
     private LeaseRequest immediateClose;
+    private AuthoringNetwork.PublishReviewWire pendingPublishReview;
 
     private ClientEditorState() {}
 
@@ -144,6 +146,16 @@ public final class ClientEditorState {
         return Optional.of(new LeaseRequest(sessionId, draftRevision));
     }
 
+    public synchronized Optional<LeaseRequest> beginPublishReview() {
+        if (mode != Mode.EDITING || !editing()) return Optional.empty();
+        mode = Mode.REVIEWING;
+        statusCode = "PUBLISH_REVIEWING";
+        statusMessage = "";
+        diagnostics = List.of();
+        pendingPublishReview = null;
+        return Optional.of(new LeaseRequest(sessionId, draftRevision));
+    }
+
     public synchronized boolean beginMutation() {
         if (!editing() || busy()) return false;
         mode = Mode.MUTATING;
@@ -213,6 +225,10 @@ public final class ClientEditorState {
             }
             case "PUBLISH" -> {
                 acceptSaved(response);
+                yield Optional.empty();
+            }
+            case "REVIEW" -> {
+                acceptPublishReview(response);
                 yield Optional.empty();
             }
             case "CLOSE" -> acceptClosed();
@@ -302,6 +318,12 @@ public final class ClientEditorState {
         return Optional.ofNullable(request);
     }
 
+    public synchronized Optional<AuthoringNetwork.PublishReviewWire> pollPublishReview() {
+        AuthoringNetwork.PublishReviewWire review = pendingPublishReview;
+        pendingPublishReview = null;
+        return Optional.ofNullable(review);
+    }
+
     public synchronized Mode mode() { return mode; }
     public synchronized boolean allowed() { return allowed; }
     public synchronized List<CatalogEntry> catalog() { return catalog; }
@@ -338,7 +360,7 @@ public final class ClientEditorState {
     public synchronized boolean hasLease() { return hasSession(); }
     public synchronized boolean busy() {
         return mode == Mode.OPENING || mode == Mode.RECEIVING_DRAFT || mode == Mode.MUTATING
-                || mode == Mode.SAVING || mode == Mode.PUBLISHING || mode == Mode.CLOSING;
+                || mode == Mode.REVIEWING || mode == Mode.SAVING || mode == Mode.PUBLISHING || mode == Mode.CLOSING;
     }
     public synchronized boolean dirty() {
         return !draftRevision.isBlank() && !draftRevision.equals(savedRevision);
@@ -426,6 +448,27 @@ public final class ClientEditorState {
         statusMessage = safe(response.message());
     }
 
+    private void acceptPublishReview(AuthoringNetwork.SessionResponseWire response) {
+        UUID decodedSession = parseUuid(response.sessionId());
+        ResourceLocation decodedBook = ResourceLocation.tryParse(response.bookId());
+        if (sessionId == null || !sessionId.equals(decodedSession) || bookId == null || !bookId.equals(decodedBook)
+                || !draftRevision.equals(response.draftRevision()) || response.review() == null
+                || !draftRevision.equals(response.review().targetRevision())) {
+            fail("STALE_PUBLISH_REVIEW", "The publish review no longer matches this edit session");
+            return;
+        }
+        savedRevision = safe(response.savedRevision());
+        undoSteps = response.undoSteps();
+        redoSteps = response.redoSteps();
+        leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
+        ticksSinceLeaseResponse = 0L;
+        renewPending = false;
+        pendingPublishReview = response.review();
+        mode = Mode.EDITING;
+        statusCode = safe(response.code());
+        statusMessage = safe(response.message());
+    }
+
     private Optional<ResourceLocation> acceptClosed() {
         ResourceLocation next = pendingBookId;
         pendingBookId = null;
@@ -475,6 +518,7 @@ public final class ClientEditorState {
         receivedChunks = 0;
         draft = null;
         diagnostics = List.of();
+        pendingPublishReview = null;
     }
 
     private void fail(String code, String message) {

@@ -89,6 +89,12 @@ public final class AuthorApi {
         return new DraftPublishService().publish(actor, sessionId, bookId, expectedDraftRevision);
     }
 
+    public static AuthorOperationResult<DraftPublishResult> previewPublish(ServerPlayer actor, UUID sessionId,
+                                                                            ResourceLocation bookId,
+                                                                            String expectedDraftRevision) {
+        return new DraftPublishService().preview(actor, sessionId, bookId, expectedDraftRevision);
+    }
+
     public static AuthorOperationResult<List<BackupDescriptor>> backups(ServerPlayer actor, BackupKind kind) {
         return new AuthorBackupService().list(actor, kind);
     }
@@ -117,7 +123,7 @@ public final class AuthorApi {
             return AuthorOperationResult.success("WORKSPACE_DEPLOYED", "Workspace deployed without reload", deployed);
         } catch (IOException exception) {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE, "WORKSPACE_DEPLOY_FAILED",
-                    exception.getMessage());
+                    exception.getClass().getSimpleName() + ": " + exception.getMessage());
         }
     }
 

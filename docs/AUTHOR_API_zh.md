@@ -33,7 +33,7 @@
 2. `AuthorApi.open(player, bookId)` 取得 session UUID 和初始 revision。
 3. 通过 `AuthorApi.editor()` 依次创建章节组、章节、任务、task/reward 和依赖；每次传入上一次返回的 revision。
 4. `AuthorApi.validate(...)` 执行完整校验。
-5. `AuthorApi.diff(..., WORKSPACE)` 预览发布影响。
+5. `AuthorApi.previewPublish(...)` 以真实发布门禁预检当前 revision；`AuthorApi.diff(..., WORKSPACE)` 提供对应的语义差异。两者都只读，不写 workspace 或备份。
 6. `AuthorApi.save(...)` 将会话内容原子保存到草稿目录。
 7. `AuthorApi.publish(...)` 只更新作者 workspace。
 8. `AuthorApi.deploy(player, false)` 首次复制到世界；后续显式使用 `replace=true`。

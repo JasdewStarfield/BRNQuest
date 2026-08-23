@@ -5,6 +5,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 
 import java.util.List;
@@ -51,6 +56,42 @@ public final class DraftService {
         var book = new QuestBookDefinition(bookId, BrnQuestConstants.DATA_SCHEMA, title,
                 List.of(), List.of(), Map.of());
         return repository.create(server, DraftSnapshot.from(book, DraftOrigin.EMPTY, ""));
+    }
+
+    /** Stores a recovery copy under a new book ID without changing stable content IDs. */
+    public AuthorOperationResult<DraftSnapshot> createRecoveryCopy(ServerPlayer player, DraftSnapshot source,
+                                                                    ResourceLocation targetBookId) {
+        MinecraftServer server = authorizedServer(player);
+        if (server == null) return authorizationFailure(player);
+        if (source == null || targetBookId == null || targetBookId.equals(source.book().id())) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_RECOVERY_BOOK", "Recovery copy requires a different valid book ID");
+        }
+        QuestBookDefinition copy = recoveryCopy(source.book(), targetBookId);
+        return repository.create(server, DraftSnapshot.from(copy, DraftOrigin.EMPTY, ""));
+    }
+
+    static QuestBookDefinition recoveryCopy(QuestBookDefinition original, ResourceLocation targetBookId) {
+        List<ChapterGroupDefinition> groups = original.chapterGroups().stream()
+                .map(group -> new ChapterGroupDefinition(targetBookId, group.id(), group.title(), group.order()))
+                .toList();
+        List<ChapterDefinition> chapters = original.chapters().stream().map(chapter ->
+                new ChapterDefinition(targetBookId, chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
+                        chapter.order(), chapter.quests().stream().map(quest -> copyQuest(targetBookId, quest)).toList()))
+                .toList();
+        QuestBookDefinition copy = new QuestBookDefinition(targetBookId, original.schemaVersion(),
+                original.title() + " (recovered)", groups, chapters, original.legacyIds());
+        return copy;
+    }
+
+    private static QuestDefinition copyQuest(ResourceLocation bookId, QuestDefinition quest) {
+        List<TaskDefinition> tasks = quest.tasks().stream().map(task -> new TaskDefinition(bookId, task.id(),
+                task.typeId(), task.config(), task.optional())).toList();
+        List<RewardDefinition> rewards = quest.rewards().stream().map(reward -> new RewardDefinition(bookId,
+                reward.id(), reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward())).toList();
+        return new QuestDefinition(bookId, quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
+                quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(), tasks, rewards,
+                quest.legacyId());
     }
 
     private static MinecraftServer authorizedServer(ServerPlayer player) {

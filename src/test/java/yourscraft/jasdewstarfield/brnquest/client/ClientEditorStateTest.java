@@ -8,6 +8,9 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 
 import java.nio.charset.StandardCharsets;
@@ -304,6 +307,48 @@ class ClientEditorStateTest {
         assertEquals(ClientEditorState.Mode.VIEW, state.mode());
     }
 
+    @Test void delayedOpenFromPreviousConnectionCannotRestoreAStaleDraft() {
+        ResourceLocation bookId = ResourceLocation.parse("test:old_connection");
+        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Old",
+                List.of(), List.of(), Map.of());
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(book);
+        state.disconnected();
+        String json = NativeBookJson.encode(book);
+        var delayed = new AuthoringNetwork.SessionResponseWire("OPEN", "SUCCESS", "SESSION_OPENED", "late",
+                UUID.randomUUID().toString(), bookId.toString(), "", snapshot.revision(), snapshot.revision(),
+                36_000L, 1, json.getBytes(StandardCharsets.UTF_8).length);
+
+        state.acceptSession(GSON.toJson(delayed));
+
+        assertEquals(ClientEditorState.Mode.VIEW, state.mode());
+        assertTrue(state.draft().isEmpty());
+        assertFalse(state.hasLease());
+    }
+
+    @Test void verifiedPositionPatchUpdatesDraftWithoutAFullBookTransfer() {
+        ResourceLocation bookId = ResourceLocation.parse("test:position_patch");
+        QuestBookSnapshot before = positionedBook(bookId, 1.0, 2.0);
+        QuestBookSnapshot after = positionedBook(bookId, 7.0, 9.0);
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, before, before.revision());
+        assertTrue(state.beginMutation());
+        var patch = new AuthoringNetwork.SessionResponseWire("PATCH", "SUCCESS", "QUESTS_MOVED", "ok",
+                sessionId.toString(), bookId.toString(), "", after.revision(), before.revision(),
+                36_000L, 0, 0, 1, 0, List.of(), null,
+                List.of(new AuthoringNetwork.PositionWire("test:quest", 7.0, 9.0)));
+
+        state.acceptSession(GSON.toJson(patch));
+
+        QuestDefinition moved = state.draft().orElseThrow().book().quests().getFirst();
+        assertEquals(7.0, moved.x());
+        assertEquals(9.0, moved.y());
+        assertEquals(after.revision(), state.draftRevision());
+        assertEquals(ClientEditorState.Mode.EDITING, state.mode());
+    }
+
     @Test void rejectedMutationRetainsStructuredFieldDiagnosticsForTheOpenForm() {
         ResourceLocation bookId = ResourceLocation.parse("test:diagnostics");
         QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Diagnostics",
@@ -324,6 +369,28 @@ class ClientEditorStateTest {
         assertEquals(ClientEditorState.Mode.ERROR, state.mode());
         assertEquals(List.of(diagnostic), state.diagnostics());
         assertEquals(snapshot.book(), state.draft().orElseThrow().book());
+        assertTrue(state.beginMutation(), "Corrected form input must remain retryable after validation rejection");
+    }
+
+    @Test void revisionConflictLocksWritesAndOffersExplicitRecovery() {
+        ResourceLocation bookId = ResourceLocation.parse("test:conflict");
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Conflict",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        acceptTransfer("OPEN", UUID.randomUUID(), snapshot, snapshot.revision());
+        assertTrue(state.beginMutation());
+
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(
+                "MUTATE", "CONFLICT", "STALE_DRAFT_REVISION", "server advanced", "", "", "", "", "",
+                0L, 0, 0)));
+
+        assertEquals(ClientEditorState.Mode.ERROR, state.mode());
+        assertTrue(state.recoverableConflict());
+        assertFalse(state.beginMutation());
+        assertTrue(state.beginRecovery());
+        assertEquals(ClientEditorState.Mode.MUTATING, state.mode());
     }
 
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {
@@ -343,5 +410,16 @@ class ClientEditorStateTest {
                 36_000L, 1, json.getBytes(StandardCharsets.UTF_8).length, undoSteps, redoSteps, List.of());
         state.acceptSession(GSON.toJson(response));
         assertTrue(state.acceptDraftChunk(sessionId.toString(), snapshot.revision(), 0, json));
+    }
+
+    private static QuestBookSnapshot positionedBook(ResourceLocation bookId, double x, double y) {
+        ResourceLocation groupId = ResourceLocation.parse("test:group");
+        ResourceLocation chapterId = ResourceLocation.parse("test:chapter");
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                "Quest", "", "", "", x, y, List.of(), List.of(), List.of(), "");
+        ChapterDefinition chapter = new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0,
+                List.of(quest));
+        return QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Book",
+                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of()));
     }
 }

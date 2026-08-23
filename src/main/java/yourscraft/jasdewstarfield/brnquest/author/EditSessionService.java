@@ -95,6 +95,51 @@ public final class EditSessionService {
         return AuthorOperationResult.success("SESSION_SNAPSHOT", "Edit-session draft loaded", lease.draft);
     }
 
+    /** Re-synchronizes the owner's authoritative lease after a stale client response. */
+    public synchronized AuthorOperationResult<EditSessionHandle> recover(ServerPlayer player, UUID sessionId,
+                                                                          ResourceLocation bookId) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        Lease lease = lease(server, sessionId);
+        if (lease == null || lease.expiresAtTick <= server.getTickCount()) return expired();
+        if (!lease.editorId.equals(player.getUUID())) return forbidden();
+        if (!lease.bookId.equals(bookId)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "SESSION_BOOK_MISMATCH", "Edit session belongs to " + lease.bookId);
+        }
+        lease.clearHistory();
+        lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
+        return AuthorOperationResult.success("SESSION_RECOVERED", "Authoritative draft re-synchronized",
+                lease.handle());
+    }
+
+    /** Lets the owner explicitly abandon a conflicted lease without trusting its stale client revision. */
+    public synchronized AuthorOperationResult<EditSessionView> abandon(ServerPlayer player, UUID sessionId,
+                                                                        ResourceLocation bookId) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        ServerSessions state = servers.get(server);
+        Lease lease = state == null ? null : state.byId.get(sessionId);
+        if (lease == null) return expired();
+        if (!lease.editorId.equals(player.getUUID())) return forbidden();
+        if (!lease.bookId.equals(bookId)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "SESSION_BOOK_MISMATCH", "Edit session belongs to " + lease.bookId);
+        }
+        state.remove(lease);
+        if (state.byId.isEmpty()) servers.remove(server);
+        return AuthorOperationResult.success("SESSION_ABANDONED", "Conflicted edit session abandoned", lease.view());
+    }
+
     synchronized AuthorOperationResult<DraftEditResult> mutate(ServerPlayer player, UUID sessionId,
                                                                 ResourceLocation bookId,
                                                                 String expectedDraftRevision,

@@ -7,7 +7,8 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 public final class EditorOverlayHost {
     public enum Kind {
         NONE, CATALOG, CONTEXT_MENU, STRUCTURE_FORM, DEPENDENCY_PICKER, TYPED_TYPE_PICKER,
-        DELETE_CONFIRMATION, DISCARD_CONFIRMATION, QUEST_RENAME_CONFIRMATION, PUBLISH_CONFIRMATION
+        DELETE_CONFIRMATION, DISCARD_CONFIRMATION, QUEST_RENAME_CONFIRMATION, PUBLISH_CONFIRMATION,
+        CONFLICT_RECOVERY
     }
 
     private Kind active = Kind.NONE;

@@ -91,6 +91,15 @@ public final class AuthoringNetwork {
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    /** Conflict recovery never accepts a client-owned book body or stale revision as authority. */
+    public record RecoverSessionPayload(String json) implements CustomPacketPayload {
+        public static final Type<RecoverSessionPayload> TYPE = AuthoringNetwork.type("editor_session_recover");
+        public static final StreamCodec<ByteBuf, RecoverSessionPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(BrnQuestConstants.MAX_EDITOR_METADATA_BYTES), RecoverSessionPayload::json,
+                RecoverSessionPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public record SaveSessionPayload(String sessionId, String bookId, String draftRevision)
             implements CustomPacketPayload {
         public static final Type<SaveSessionPayload> TYPE = AuthoringNetwork.type("editor_session_save");
@@ -183,20 +192,22 @@ public final class AuthoringNetwork {
                                       String sessionId, String bookId, String baseRevision,
                                       String draftRevision, String savedRevision, long remainingTicks,
                                       int chunks, int decodedBytes, int undoSteps, int redoSteps,
-                                      List<EditorDiagnosticWire> diagnostics, PublishReviewWire review) {
+                                      List<EditorDiagnosticWire> diagnostics, PublishReviewWire review,
+                                      List<PositionWire> positionPatch) {
         public SessionResponseWire {
             undoSteps = Math.max(0, undoSteps);
             redoSteps = Math.max(0, redoSteps);
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
+            positionPatch = positionPatch == null ? List.of() : List.copyOf(positionPatch);
         }
 
-        /** Retains the protocol-2 constructor used by existing callers and additive-response tests. */
+        /** Retains the original authoring constructor used by existing callers and additive-response tests. */
         public SessionResponseWire(String action, String status, String code, String message,
                                    String sessionId, String bookId, String baseRevision,
                                    String draftRevision, String savedRevision, long remainingTicks,
                                    int chunks, int decodedBytes) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, List.of(), null);
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, List.of(), null, List.of());
         }
 
         /** Keeps structured-diagnostic callers source-compatible with the additive history fields. */
@@ -205,7 +216,7 @@ public final class AuthoringNetwork {
                                    String draftRevision, String savedRevision, long remainingTicks,
                                    int chunks, int decodedBytes, List<EditorDiagnosticWire> diagnostics) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, diagnostics, null);
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, diagnostics, null, List.of());
         }
 
         /** Keeps history-aware callers concise when no publish review is attached. */
@@ -215,7 +226,19 @@ public final class AuthoringNetwork {
                                    int chunks, int decodedBytes, int undoSteps, int redoSteps,
                                    List<EditorDiagnosticWire> diagnostics) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, undoSteps, redoSteps, diagnostics, null);
+                    savedRevision, remainingTicks, chunks, decodedBytes, undoSteps, redoSteps,
+                    diagnostics, null, List.of());
+        }
+
+        /** Keeps publish-review callers source-compatible with the additive position patch. */
+        public SessionResponseWire(String action, String status, String code, String message,
+                                   String sessionId, String bookId, String baseRevision,
+                                   String draftRevision, String savedRevision, long remainingTicks,
+                                   int chunks, int decodedBytes, int undoSteps, int redoSteps,
+                                   List<EditorDiagnosticWire> diagnostics, PublishReviewWire review) {
+            this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
+                    savedRevision, remainingTicks, chunks, decodedBytes, undoSteps, redoSteps,
+                    diagnostics, review, List.of());
         }
     }
 
@@ -224,6 +247,8 @@ public final class AuthoringNetwork {
                                   String description, String iconKind, String iconValue, boolean preserveIcon) {}
 
     public record PositionWire(String questId, double x, double y) {}
+
+    public record RecoveryWire(String sessionId, String bookId, String action, String targetBookId) {}
 
     public record EditorMutationWire(String sessionId, String bookId, String draftRevision, String action,
                                      String targetId, String parentId, String sourceId, String title,
@@ -245,6 +270,9 @@ public final class AuthoringNetwork {
         });
         registrar.playToServer(CloseSessionPayload.TYPE, CloseSessionPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) close(player, payload.sessionId(), payload.draftRevision());
+        });
+        registrar.playToServer(RecoverSessionPayload.TYPE, RecoverSessionPayload.CODEC, (payload, context) -> {
+            if (context.player() instanceof ServerPlayer player) recover(player, payload.json());
         });
         registrar.playToServer(SaveSessionPayload.TYPE, SaveSessionPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) {
@@ -285,6 +313,13 @@ public final class AuthoringNetwork {
 
     public static void closeSession(UUID sessionId, String draftRevision) {
         PacketDistributor.sendToServer(new CloseSessionPayload(sessionId.toString(), draftRevision));
+    }
+
+    public static void recoverSession(UUID sessionId, ResourceLocation bookId, String action,
+                                      ResourceLocation targetBookId) {
+        RecoveryWire wire = new RecoveryWire(sessionId.toString(), bookId.toString(), action,
+                targetBookId == null ? "" : targetBookId.toString());
+        PacketDistributor.sendToServer(new RecoverSessionPayload(GSON.toJson(wire)));
     }
 
     public static void saveSession(UUID sessionId, ResourceLocation bookId, String draftRevision) {
@@ -415,6 +450,74 @@ public final class AuthoringNetwork {
         EditSessionView view = result.value();
         EditSessionHandle handle = new EditSessionHandle(sessionId, view);
         sendSession(player, "CLOSE", result.status(), result.code(), result.message(), handle, 0, 0);
+    }
+
+    private static void recover(ServerPlayer player, String json) {
+        RecoveryWire wire;
+        try {
+            wire = GSON.fromJson(json, RecoveryWire.class);
+        } catch (RuntimeException exception) {
+            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_RECOVERY_REQUEST", "Invalid conflict recovery request");
+            return;
+        }
+        UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
+        ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
+        if (sessionId == null || bookId == null) {
+            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_RECOVERY_REQUEST", "Incomplete conflict recovery request");
+            return;
+        }
+        if ("ABANDON".equals(wire.action())) {
+            var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
+            if (!abandoned.success()) {
+                sendFailure(player, "RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+                return;
+            }
+            sendSession(player, "CLOSE", abandoned.status(), abandoned.code(), abandoned.message(),
+                    new EditSessionHandle(sessionId, abandoned.value()), 0, 0);
+            return;
+        }
+        var recovered = EditSessionService.get().recover(player, sessionId, bookId);
+        if (!recovered.success()) {
+            sendFailure(player, "RECOVER", recovered.status(), recovered.code(), recovered.message());
+            return;
+        }
+        var snapshot = EditSessionService.get().snapshot(player, sessionId, bookId,
+                recovered.value().session().draftRevision());
+        if (!snapshot.success()) {
+            sendFailure(player, "RECOVER", snapshot.status(), snapshot.code(), snapshot.message());
+            return;
+        }
+        if ("REFRESH".equals(wire.action())) {
+            sendDraft(player, "RECOVER", "SESSION_RECOVERED", "Authoritative draft re-synchronized",
+                    recovered.value(), snapshot.value());
+            return;
+        }
+        ResourceLocation target = ResourceLocation.tryParse(wire.targetBookId());
+        if (!"SAVE_AS".equals(wire.action()) || target == null) {
+            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_RECOVERY_ACTION", "Unknown conflict recovery action");
+            return;
+        }
+        var copied = new yourscraft.jasdewstarfield.brnquest.author.DraftService()
+                .createRecoveryCopy(player, snapshot.value(), target);
+        if (!copied.success()) {
+            sendFailure(player, "RECOVER", copied.status(), copied.code(), copied.message());
+            return;
+        }
+        var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
+        if (!abandoned.success()) {
+            sendFailure(player, "RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+            return;
+        }
+        var opened = EditSessionService.get().open(player, copied.value());
+        if (!opened.success()) {
+            sendFailure(player, "RECOVER", opened.status(), opened.code(), opened.message());
+            return;
+        }
+        sendDraft(player, "RECOVER", "RECOVERY_COPY_OPENED", "Recovery copy created and opened",
+                opened.value(), copied.value());
     }
 
     private static void save(ServerPlayer player, String rawSessionId, String rawBookId, String draftRevision) {
@@ -778,7 +881,7 @@ public final class AuthoringNetwork {
             SessionResponseWire response = new SessionResponseWire("REVIEW", "SUCCESS", "PUBLISH_REVIEW_READY",
                     "Publish review generated", handle.sessionId().toString(), view.bookId().toString(),
                     view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, 0, 0,
-                    view.undoSteps(), view.redoSteps(), List.of(), review);
+                    view.undoSteps(), view.redoSteps(), List.of(), review, List.of());
             json = GSON.toJson(response);
             if (json.getBytes(StandardCharsets.UTF_8).length <= BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) break;
             truncated = true;
@@ -816,7 +919,14 @@ public final class AuthoringNetwork {
             sendFailure(player, "MUTATE", renewed.status(), renewed.code(), renewed.message());
             return;
         }
-        sendDraft(player, "MUTATE", result.code(), result.message(), renewed.value(), draft);
+        if ("MOVE_QUESTS".equals(wire.action())) {
+            // Dragging is the highest-frequency graph edit. The server returns only
+            // the accepted positions plus the authoritative resulting revision;
+            // the client verifies that revision before exposing the patched draft.
+            sendPositionPatch(player, result.code(), result.message(), renewed.value(), draft, wire.positions());
+        } else {
+            sendDraft(player, "MUTATE", result.code(), result.message(), renewed.value(), draft);
+        }
     }
 
     private static ResourceLocation requireId(ResourceLocation id) {
@@ -937,6 +1047,27 @@ public final class AuthoringNetwork {
         }
     }
 
+    private static void sendPositionPatch(ServerPlayer player, String code, String message,
+                                          EditSessionHandle handle, DraftSnapshot draft,
+                                          List<PositionWire> positions) {
+        EditSessionView view = handle.session();
+        long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
+        SessionResponseWire response = new SessionResponseWire("PATCH", "SUCCESS", code,
+                boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
+                view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, 0, 0,
+                view.undoSteps(), view.redoSteps(), List.of(), null,
+                positions == null ? List.of() : positions);
+        String json = GSON.toJson(response);
+        if (json.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) {
+            // Extremely long IDs can make even a bounded 4096-node delta larger
+            // than metadata. Fall back to the verified chunk transport so a
+            // successful server mutation never strands the client on a stale revision.
+            sendDraft(player, "MUTATE", code, message, handle, draft);
+            return;
+        }
+        BrnQuestNetwork.send(player, new SessionPayload(json));
+    }
+
     private static void sendSession(ServerPlayer player, String action, AuthorOperationResult.Status status,
                                     String code, String message, EditSessionHandle handle,
                                     int chunks, int decodedBytes) {
@@ -945,7 +1076,7 @@ public final class AuthoringNetwork {
         SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
                 boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
                 view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes,
-                view.undoSteps(), view.redoSteps(), List.of(), null);
+                view.undoSteps(), view.redoSteps(), List.of(), null, List.of());
         BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
     }
 

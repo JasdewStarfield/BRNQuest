@@ -6,6 +6,9 @@ import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 
@@ -14,6 +17,8 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -55,6 +60,7 @@ public final class ClientEditorState {
     private boolean closeWhenOpened;
     private LeaseRequest immediateClose;
     private AuthoringNetwork.PublishReviewWire pendingPublishReview;
+    private boolean recoverableConflict;
 
     private ClientEditorState() {}
 
@@ -132,7 +138,7 @@ public final class ClientEditorState {
     }
 
     public synchronized Optional<LeaseRequest> beginSave() {
-        if (!editing() || !dirty() || busy()) return Optional.empty();
+        if (!editing() || !dirty() || busy() || recoverableConflict) return Optional.empty();
         mode = Mode.SAVING;
         statusCode = "DRAFT_SAVING";
         return Optional.of(new LeaseRequest(sessionId, draftRevision));
@@ -140,7 +146,7 @@ public final class ClientEditorState {
 
     /** Starts the confirmed save/publish/deploy/reload pipeline; dirty drafts are saved by the server first. */
     public synchronized Optional<LeaseRequest> beginPublish() {
-        if (!editing() || busy()) return Optional.empty();
+        if (!editing() || busy() || recoverableConflict) return Optional.empty();
         mode = Mode.PUBLISHING;
         statusCode = "DRAFT_PUBLISHING";
         return Optional.of(new LeaseRequest(sessionId, draftRevision));
@@ -157,7 +163,7 @@ public final class ClientEditorState {
     }
 
     public synchronized boolean beginMutation() {
-        if (!editing() || busy()) return false;
+        if (!editing() || busy() || recoverableConflict) return false;
         mode = Mode.MUTATING;
         statusCode = "DRAFT_MUTATING";
         statusMessage = "";
@@ -192,15 +198,29 @@ public final class ClientEditorState {
             fail("INVALID_EDITOR_SESSION", "The server returned invalid edit-session metadata");
             return Optional.empty();
         }
+        String responseAction = safe(response.action());
+        boolean success = "SUCCESS".equals(response.status()) || "NO_CHANGE".equals(response.status());
+        if (success && ("UPDATE".equals(responseAction) || "MUTATE".equals(responseAction)
+                || "PATCH".equals(responseAction)) && sessionId != null
+                && !sessionId.equals(parseUuid(response.sessionId()))) {
+            // Old-connection and superseded-session responses are harmless: they
+            // neither replace the current draft nor force it into an error mode.
+            return Optional.empty();
+        }
         statusCode = safe(response.code());
         statusMessage = safe(response.message());
         diagnostics = response.diagnostics() == null ? List.of() : List.copyOf(response.diagnostics());
-        boolean success = "SUCCESS".equals(response.status()) || "NO_CHANGE".equals(response.status());
         if (!success) {
+            recoverableConflict = "CONFLICT".equals(response.status()) && hasSession() && draft != null;
             fail(statusCode.isBlank() ? "EDITOR_SESSION_FAILED" : statusCode, statusMessage);
             return Optional.empty();
         }
-        return switch (safe(response.action())) {
+        if ("OPEN".equals(response.action()) && mode != Mode.OPENING) {
+            // An acknowledgement queued by a previous connection or an abandoned
+            // open request must never resurrect its lease in the current client state.
+            return Optional.empty();
+        }
+        return switch (responseAction) {
             case "OPEN" -> {
                 acceptOpened(response, false);
                 yield Optional.empty();
@@ -213,6 +233,16 @@ public final class ClientEditorState {
             }
             case "MUTATE" -> {
                 acceptOpened(response, true);
+                yield Optional.empty();
+            }
+            case "PATCH" -> {
+                acceptPositionPatch(response);
+                yield Optional.empty();
+            }
+            case "RECOVER" -> {
+                ResourceLocation recoveredBook = ResourceLocation.tryParse(response.bookId());
+                acceptOpened(response, recoveredBook != null && recoveredBook.equals(bookId));
+                recoverableConflict = false;
                 yield Optional.empty();
             }
             case "RENEW" -> {
@@ -299,6 +329,16 @@ public final class ClientEditorState {
         mode = Mode.VIEW;
     }
 
+    /** Locks editing while one of the explicit conflict recovery choices is in flight. */
+    public synchronized boolean beginRecovery() {
+        if (mode != Mode.ERROR || !recoverableConflict || !hasSession() || draft == null) return false;
+        mode = Mode.MUTATING;
+        statusCode = "SESSION_RECOVERING";
+        statusMessage = "";
+        diagnostics = List.of();
+        return true;
+    }
+
     /** A new connection must never inherit a draft or lease token from the previous server. */
     public synchronized void disconnected() {
         allowed = false;
@@ -310,6 +350,7 @@ public final class ClientEditorState {
         immediateClose = null;
         clearLease();
         mode = Mode.VIEW;
+        recoverableConflict = false;
     }
 
     public synchronized Optional<LeaseRequest> pollImmediateClose() {
@@ -358,6 +399,7 @@ public final class ClientEditorState {
     public synchronized boolean canRedo() { return mode == Mode.EDITING && redoSteps > 0; }
     public synchronized boolean editing() { return hasSession() && draft != null; }
     public synchronized boolean hasLease() { return hasSession(); }
+    public synchronized boolean recoverableConflict() { return mode == Mode.ERROR && recoverableConflict; }
     public synchronized boolean busy() {
         return mode == Mode.OPENING || mode == Mode.RECEIVING_DRAFT || mode == Mode.MUTATING
                 || mode == Mode.REVIEWING || mode == Mode.SAVING || mode == Mode.PUBLISHING || mode == Mode.CLOSING;
@@ -376,6 +418,10 @@ public final class ClientEditorState {
     private void acceptOpened(AuthoringNetwork.SessionResponseWire response, boolean preserveVerifiedDraft) {
         UUID decodedSession = parseUuid(response.sessionId());
         ResourceLocation decodedBook = ResourceLocation.tryParse(response.bookId());
+        if (preserveVerifiedDraft && (sessionId == null || !sessionId.equals(decodedSession))) {
+            fail("STALE_EDITOR_RESPONSE", "An older edit-session response was ignored");
+            return;
+        }
         if (decodedSession == null || decodedBook == null || response.draftRevision() == null
                 || response.draftRevision().isBlank() || response.chunks() < 1
                 || response.decodedBytes() < 0 || response.decodedBytes() > BrnQuestConstants.MAX_BOOK_BYTES) {
@@ -426,6 +472,57 @@ public final class ClientEditorState {
         // Never let a late heartbeat response complete an unrelated save, mutation,
         // publish, or close operation from the client's point of view.
         if (!busy()) mode = draft == null ? Mode.RECEIVING_DRAFT : Mode.EDITING;
+    }
+
+    /** Applies a server-authored drag delta only when it reconstructs the advertised revision exactly. */
+    private void acceptPositionPatch(AuthoringNetwork.SessionResponseWire response) {
+        UUID decodedSession = parseUuid(response.sessionId());
+        ResourceLocation decodedBook = ResourceLocation.tryParse(response.bookId());
+        if (draft == null || sessionId == null || !sessionId.equals(decodedSession)
+                || bookId == null || !bookId.equals(decodedBook)
+                || response.positionPatch().isEmpty()
+                || response.positionPatch().size() > BrnQuestConstants.MAX_QUESTS) {
+            fail("INVALID_POSITION_PATCH", "The server returned an invalid position update");
+            return;
+        }
+        Map<ResourceLocation, AuthoringNetwork.PositionWire> positions = new LinkedHashMap<>();
+        for (AuthoringNetwork.PositionWire position : response.positionPatch()) {
+            ResourceLocation questId = position == null ? null : ResourceLocation.tryParse(position.questId());
+            if (questId == null || !Double.isFinite(position.x()) || !Double.isFinite(position.y())
+                    || positions.putIfAbsent(questId, position) != null) {
+                fail("INVALID_POSITION_PATCH", "The server returned malformed or duplicate positions");
+                return;
+            }
+        }
+        QuestBookDefinition current = draft.book();
+        int[] applied = {0};
+        List<ChapterDefinition> chapters = current.chapters().stream().map(chapter ->
+                new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(),
+                        chapter.icon(), chapter.order(), chapter.quests().stream().map(quest -> {
+                    AuthoringNetwork.PositionWire position = positions.get(quest.id());
+                    if (position == null) return quest;
+                    applied[0]++;
+                    return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(),
+                            quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
+                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
+                }).toList())).toList();
+        QuestBookSnapshot candidate = QuestBookSnapshot.of(new QuestBookDefinition(current.id(),
+                current.schemaVersion(), current.title(), current.chapterGroups(), chapters, current.legacyIds()));
+        if (applied[0] != positions.size() || !candidate.revision().equals(response.draftRevision())) {
+            fail("POSITION_PATCH_REVISION_MISMATCH", "The position update did not match the server revision");
+            return;
+        }
+        draft = candidate;
+        baseRevision = safe(response.baseRevision());
+        draftRevision = response.draftRevision();
+        savedRevision = safe(response.savedRevision());
+        undoSteps = response.undoSteps();
+        redoSteps = response.redoSteps();
+        leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
+        ticksSinceLeaseResponse = 0L;
+        renewPending = false;
+        mode = Mode.EDITING;
+        statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
     }
 
     private void acceptSaved(AuthoringNetwork.SessionResponseWire response) {
@@ -519,6 +616,7 @@ public final class ClientEditorState {
         draft = null;
         diagnostics = List.of();
         pendingPublishReview = null;
+        recoverableConflict = false;
     }
 
     private void fail(String code, String message) {

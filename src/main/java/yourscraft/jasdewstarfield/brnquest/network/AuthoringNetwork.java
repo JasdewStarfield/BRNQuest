@@ -166,8 +166,11 @@ public final class AuthoringNetwork {
     public record SessionResponseWire(String action, String status, String code, String message,
                                       String sessionId, String bookId, String baseRevision,
                                       String draftRevision, String savedRevision, long remainingTicks,
-                                      int chunks, int decodedBytes, List<EditorDiagnosticWire> diagnostics) {
+                                      int chunks, int decodedBytes, int undoSteps, int redoSteps,
+                                      List<EditorDiagnosticWire> diagnostics) {
         public SessionResponseWire {
+            undoSteps = Math.max(0, undoSteps);
+            redoSteps = Math.max(0, redoSteps);
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         }
 
@@ -177,7 +180,16 @@ public final class AuthoringNetwork {
                                    String draftRevision, String savedRevision, long remainingTicks,
                                    int chunks, int decodedBytes) {
             this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
-                    savedRevision, remainingTicks, chunks, decodedBytes, List.of());
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, List.of());
+        }
+
+        /** Keeps structured-diagnostic callers source-compatible with the additive history fields. */
+        public SessionResponseWire(String action, String status, String code, String message,
+                                   String sessionId, String bookId, String baseRevision,
+                                   String draftRevision, String savedRevision, long remainingTicks,
+                                   int chunks, int decodedBytes, List<EditorDiagnosticWire> diagnostics) {
+            this(action, status, code, message, sessionId, bookId, baseRevision, draftRevision,
+                    savedRevision, remainingTicks, chunks, decodedBytes, 0, 0, diagnostics);
         }
     }
 
@@ -269,6 +281,12 @@ public final class AuthoringNetwork {
 
     public static void mutate(EditorMutationWire wire) {
         PacketDistributor.sendToServer(new EditorMutationPayload(GSON.toJson(wire)));
+    }
+
+    /** Undo and redo reuse the bounded mutation envelope but carry no client-owned draft content. */
+    public static void history(UUID sessionId, ResourceLocation bookId, String draftRevision, boolean redo) {
+        mutate(new EditorMutationWire(sessionId.toString(), bookId.toString(), draftRevision,
+                redo ? "REDO" : "UNDO", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
     }
 
     private static void sendCatalog(ServerPlayer player) {
@@ -589,6 +607,8 @@ public final class AuthoringNetwork {
         AuthorOperationResult<DraftEditResult> result;
         try {
             result = switch (wire.action()) {
+                case "UNDO" -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
+                case "REDO" -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
                 case "ADD_GROUP" -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterGroupDefinition(bookId, requireId(targetId), boundedTitle(wire.title()), wire.targetIndex()));
                 case "UPDATE_GROUP" -> editor.updateGroup(player, sessionId, bookId, wire.draftRevision(),
@@ -813,7 +833,7 @@ public final class AuthoringNetwork {
         SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
                 boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
                 view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes,
-                List.of());
+                view.undoSteps(), view.redoSteps(), List.of());
         BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
     }
 

@@ -44,6 +44,8 @@ public final class ClientEditorState {
     private long leaseTicksAtResponse;
     private long ticksSinceLeaseResponse;
     private boolean renewPending;
+    private int undoSteps;
+    private int redoSteps;
     private ResourceLocation pendingBookId;
     private String[] chunks = new String[0];
     private int expectedBytes;
@@ -149,6 +151,23 @@ public final class ClientEditorState {
         statusMessage = "";
         diagnostics = List.of();
         return true;
+    }
+
+    public synchronized Optional<LeaseRequest> beginUndo() {
+        return beginHistory(false);
+    }
+
+    public synchronized Optional<LeaseRequest> beginRedo() {
+        return beginHistory(true);
+    }
+
+    private Optional<LeaseRequest> beginHistory(boolean redo) {
+        if (mode != Mode.EDITING || !editing() || (redo ? redoSteps : undoSteps) <= 0) return Optional.empty();
+        mode = Mode.MUTATING;
+        statusCode = redo ? "DRAFT_REDOING" : "DRAFT_UNDOING";
+        statusMessage = "";
+        diagnostics = List.of();
+        return Optional.of(new LeaseRequest(sessionId, draftRevision));
     }
 
     /** Applies server session metadata and returns a queued book switch, if one became ready. */
@@ -311,6 +330,10 @@ public final class ClientEditorState {
     public synchronized String statusCode() { return statusCode; }
     public synchronized String statusMessage() { return statusMessage; }
     public synchronized List<AuthoringNetwork.EditorDiagnosticWire> diagnostics() { return diagnostics; }
+    public synchronized int undoSteps() { return undoSteps; }
+    public synchronized int redoSteps() { return redoSteps; }
+    public synchronized boolean canUndo() { return mode == Mode.EDITING && undoSteps > 0; }
+    public synchronized boolean canRedo() { return mode == Mode.EDITING && redoSteps > 0; }
     public synchronized boolean editing() { return hasSession() && draft != null; }
     public synchronized boolean hasLease() { return hasSession(); }
     public synchronized boolean busy() {
@@ -342,6 +365,8 @@ public final class ClientEditorState {
         baseRevision = safe(response.baseRevision());
         draftRevision = response.draftRevision();
         savedRevision = safe(response.savedRevision());
+        undoSteps = response.undoSteps();
+        redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
@@ -371,6 +396,8 @@ public final class ClientEditorState {
             return;
         }
         savedRevision = safe(response.savedRevision());
+        undoSteps = response.undoSteps();
+        redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
@@ -389,6 +416,8 @@ public final class ClientEditorState {
             return;
         }
         savedRevision = response.savedRevision();
+        undoSteps = response.undoSteps();
+        redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
@@ -439,6 +468,8 @@ public final class ClientEditorState {
         leaseTicksAtResponse = 0L;
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
+        undoSteps = 0;
+        redoSteps = 0;
         chunks = new String[0];
         expectedBytes = 0;
         receivedChunks = 0;

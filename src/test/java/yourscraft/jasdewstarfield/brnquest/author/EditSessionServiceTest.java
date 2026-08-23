@@ -90,6 +90,76 @@ class EditSessionServiceTest {
         assertEquals(changed.draftRevision(), service.inspectAuthorized(server, changedBook.id(), 2L).value().draftRevision());
     }
 
+    @Test void undoRedoTracksConfirmedRevisionsAndNewEditsDiscardTheRedoBranch() {
+        EditSessionService service = new EditSessionService();
+        Object server = new Object();
+        DraftSnapshot original = draft("test:history");
+        EditSessionHandle handle = service.openAuthorized(server, ALICE, "Alice", original, 0L, 100L).value();
+        DraftSnapshot first = renamed(original, "First");
+        DraftSnapshot second = renamed(original, "Second");
+        DraftSnapshot branch = renamed(original, "Branch");
+
+        mutateTo(service, server, handle, original, first, 1L);
+        mutateTo(service, server, handle, first, second, 2L);
+        EditSessionView afterEdits = service.inspectAuthorized(server, original.book().id(), 2L).value();
+        assertEquals(2, afterEdits.undoSteps());
+        assertEquals(0, afterEdits.redoSteps());
+
+        var undone = service.historyAuthorized(server, ALICE, handle.sessionId(), original.book().id(),
+                second.draftRevision(), 3L, 100L, false);
+        assertEquals(first.draftRevision(), undone.value().snapshot().draftRevision());
+        assertEquals(1, service.inspectAuthorized(server, original.book().id(), 3L).value().undoSteps());
+        assertEquals(1, service.inspectAuthorized(server, original.book().id(), 3L).value().redoSteps());
+
+        var redone = service.historyAuthorized(server, ALICE, handle.sessionId(), original.book().id(),
+                first.draftRevision(), 4L, 100L, true);
+        assertEquals(second.draftRevision(), redone.value().snapshot().draftRevision());
+
+        service.historyAuthorized(server, ALICE, handle.sessionId(), original.book().id(),
+                second.draftRevision(), 5L, 100L, false);
+        mutateTo(service, server, handle, first, branch, 6L);
+        EditSessionView branched = service.inspectAuthorized(server, original.book().id(), 6L).value();
+        assertEquals(2, branched.undoSteps());
+        assertEquals(0, branched.redoSteps());
+        assertEquals(branch.draftRevision(), branched.draftRevision());
+    }
+
+    @Test void revisionConflictClearsHistoryAndHistoryRetainsOnlyTheBoundedTail() {
+        EditSessionService service = new EditSessionService();
+        Object server = new Object();
+        DraftSnapshot current = draft("test:bounded_history");
+        EditSessionHandle handle = service.openAuthorized(server, ALICE, "Alice", current, 0L, 10_000L).value();
+        for (int step = 1; step <= EditSessionService.MAX_HISTORY_STEPS + 4; step++) {
+            DraftSnapshot next = renamed(current, "Step " + step);
+            mutateTo(service, server, handle, current, next, step);
+            current = next;
+        }
+        assertEquals(EditSessionService.MAX_HISTORY_STEPS,
+                service.inspectAuthorized(server, current.book().id(), 100L).value().undoSteps());
+
+        var stale = service.mutateAuthorized(server, ALICE, handle.sessionId(), current.book().id(),
+                "stale-revision", 101L, 10_000L, ignored -> fail("stale callback must not execute"));
+
+        assertEquals(AuthorOperationResult.Status.CONFLICT, stale.status());
+        EditSessionView afterConflict = service.inspectAuthorized(server, current.book().id(), 101L).value();
+        assertEquals(0, afterConflict.undoSteps());
+        assertEquals(0, afterConflict.redoSteps());
+    }
+
+    private static void mutateTo(EditSessionService service, Object server, EditSessionHandle handle,
+                                 DraftSnapshot before, DraftSnapshot after, long tick) {
+        var result = service.mutateAuthorized(server, ALICE, handle.sessionId(), before.book().id(),
+                before.draftRevision(), tick, 100L, ignored -> AuthorOperationResult.success("OK", "changed",
+                        new DraftEditResult(after, List.of(after.book().id()), List.of())));
+        assertTrue(result.success());
+    }
+
+    private static DraftSnapshot renamed(DraftSnapshot original, String title) {
+        QuestBookDefinition changed = new QuestBookDefinition(original.book().id(), 1, title,
+                List.of(), List.of(), Map.of());
+        return DraftSnapshot.of(changed, original.baseRevision());
+    }
+
     private static DraftSnapshot draft(String id) {
         QuestBookDefinition book = new QuestBookDefinition(ResourceLocation.parse(id), 1, "Book",
                 List.of(), List.of(), Map.of());

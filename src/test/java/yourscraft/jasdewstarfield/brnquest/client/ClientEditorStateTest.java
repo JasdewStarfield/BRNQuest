@@ -196,6 +196,30 @@ class ClientEditorStateTest {
         assertTrue(state.pollRenewRequest().isEmpty());
     }
 
+    @Test void historyCountsOnlyUnlockAvailableServerConfirmedActions() {
+        ResourceLocation bookId = ResourceLocation.parse("test:history_controls");
+        QuestBookSnapshot before = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Before",
+                List.of(), List.of(), Map.of()));
+        QuestBookSnapshot after = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "After",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, before, before.revision());
+        acceptHistoryTransfer(sessionId, after, before.revision(), 1, 0, "DRAFT_UPDATED");
+
+        assertTrue(state.canUndo());
+        assertFalse(state.canRedo());
+        assertTrue(state.beginUndo().isPresent());
+        assertTrue(state.beginRedo().isEmpty());
+        acceptHistoryTransfer(sessionId, before, before.revision(), 0, 1, "DRAFT_UNDONE");
+
+        assertFalse(state.canUndo());
+        assertTrue(state.canRedo());
+        assertFalse(state.dirty());
+    }
+
     @Test void mismatchedDraftRevisionIsRejectedWithoutEnteringEditMode() {
         ResourceLocation bookId = ResourceLocation.parse("test:mismatch");
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Mismatch",
@@ -280,6 +304,16 @@ class ClientEditorStateTest {
         var response = new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "SESSION_OPENED", "ok",
                 sessionId.toString(), snapshot.book().id().toString(), "", snapshot.revision(), savedRevision,
                 36_000L, 1, json.getBytes(StandardCharsets.UTF_8).length);
+        state.acceptSession(GSON.toJson(response));
+        assertTrue(state.acceptDraftChunk(sessionId.toString(), snapshot.revision(), 0, json));
+    }
+
+    private void acceptHistoryTransfer(UUID sessionId, QuestBookSnapshot snapshot, String savedRevision,
+                                       int undoSteps, int redoSteps, String code) {
+        String json = NativeBookJson.encode(snapshot.book());
+        var response = new AuthoringNetwork.SessionResponseWire("MUTATE", "SUCCESS", code, "ok",
+                sessionId.toString(), snapshot.book().id().toString(), "", snapshot.revision(), savedRevision,
+                36_000L, 1, json.getBytes(StandardCharsets.UTF_8).length, undoSteps, redoSteps, List.of());
         state.acceptSession(GSON.toJson(response));
         assertTrue(state.acceptDraftChunk(sessionId.toString(), snapshot.revision(), 0, json));
     }

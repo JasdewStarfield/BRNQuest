@@ -72,6 +72,7 @@ public final class QuestScreen extends Screen {
     private static final int EDITOR_BUTTON_WIDTH = 96;
     private static final int EDITOR_SAVE_BUTTON_WIDTH = 72;
     private static final int EDITOR_PUBLISH_BUTTON_WIDTH = 92;
+    private static final int EDITOR_HISTORY_BUTTON_WIDTH = 48;
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
@@ -1144,11 +1145,32 @@ public final class QuestScreen extends Screen {
                     Component.translatable("screen.brnquest.editor.publish"),
                     publishEnabled ? 0xEFA06432 : 0xD02A323E,
                     publishEnabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
+
+            boolean historySurfaceReady = editorHistorySurfaceReady();
+            UiRect redo = editorRedoButtonBounds();
+            boolean redoEnabled = historySurfaceReady && editor.canRedo();
+            EditorButton.render(graphics, font, redo,
+                    Component.translatable("screen.brnquest.editor.redo", editor.redoSteps()),
+                    redoEnabled ? 0xEF385A72 : 0xD02A323E,
+                    redoEnabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
+            if (redo.contains(mouseX, mouseY)) {
+                hoveredDetailText = Component.translatable("screen.brnquest.editor.redo.tooltip");
+            }
+
+            UiRect undo = editorUndoButtonBounds();
+            boolean undoEnabled = historySurfaceReady && editor.canUndo();
+            EditorButton.render(graphics, font, undo,
+                    Component.translatable("screen.brnquest.editor.undo", editor.undoSteps()),
+                    undoEnabled ? 0xEF385A72 : 0xD02A323E,
+                    undoEnabled ? 0xFFFFFFFF : 0xFF8793A1, 4);
+            if (undo.contains(mouseX, mouseY)) {
+                hoveredDetailText = Component.translatable("screen.brnquest.editor.undo.tooltip");
+            }
         }
 
         Component status = editorStatus();
         if (status != null) {
-            UiRect leadingButton = editor.hasLease() ? editorPublishButtonBounds() : editorButtonBounds();
+            UiRect leadingButton = editor.hasLease() ? editorUndoButtonBounds() : editorButtonBounds();
             // The navigation drawer occupies only the middle region. Measuring from
             // canvasLeft incorrectly collapsed bottom-bar errors to the word "Editor".
             int maximumWidth = layout().bottomStatusMaximumWidth(leadingButton.left());
@@ -1732,7 +1754,27 @@ public final class QuestScreen extends Screen {
             }
             return true;
         }
+        if (editor.hasLease() && editorUndoButtonBounds().contains(mouseX, mouseY)) {
+            if (editorHistorySurfaceReady()) {
+                editor.beginUndo().ifPresent(request -> AuthoringNetwork.history(
+                        request.sessionId(), editor.bookId(), request.draftRevision(), false));
+            }
+            return true;
+        }
+        if (editor.hasLease() && editorRedoButtonBounds().contains(mouseX, mouseY)) {
+            if (editorHistorySurfaceReady()) {
+                editor.beginRedo().ifPresent(request -> AuthoringNetwork.history(
+                        request.sessionId(), editor.bookId(), request.draftRevision(), true));
+            }
+            return true;
+        }
         return false;
+    }
+
+    /** History never discards values that are still only present in an open client-side form. */
+    private boolean editorHistorySurfaceReady() {
+        return !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen && !structureFormOpen()
+                && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
     }
 
     private Component editorStatus() {
@@ -2972,6 +3014,17 @@ public final class QuestScreen extends Screen {
     private UiRect editorPublishButtonBounds() {
         UiRect save = editorSaveButtonBounds();
         return new UiRect(save.left() - EDITOR_PUBLISH_BUTTON_WIDTH - 4, save.top(), save.left() - 4, save.bottom());
+    }
+
+    private UiRect editorRedoButtonBounds() {
+        UiRect publish = editorPublishButtonBounds();
+        return new UiRect(publish.left() - EDITOR_HISTORY_BUTTON_WIDTH - 4, publish.top(),
+                publish.left() - 4, publish.bottom());
+    }
+
+    private UiRect editorUndoButtonBounds() {
+        UiRect redo = editorRedoButtonBounds();
+        return new UiRect(redo.left() - EDITOR_HISTORY_BUTTON_WIDTH - 4, redo.top(), redo.left() - 4, redo.bottom());
     }
 
     private void renderPublishConfirmation(GuiGraphics graphics) {

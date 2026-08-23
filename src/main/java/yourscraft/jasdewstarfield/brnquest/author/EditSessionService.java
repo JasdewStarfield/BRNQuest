@@ -4,7 +4,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
@@ -17,6 +20,7 @@ import java.util.function.Function;
 public final class EditSessionService {
     /** Thirty minutes leaves command authors time to inspect IDs while stage-5 clients still renew proactively. */
     public static final long DEFAULT_IDLE_TIMEOUT_TICKS = 20L * 60L * 30L;
+    static final int MAX_HISTORY_STEPS = 64;
     private static final EditSessionService INSTANCE = new EditSessionService();
 
     // Weak server keys keep integrated-server restarts and GameTest servers isolated
@@ -141,6 +145,7 @@ public final class EditSessionService {
                 expectedDraftRevision, server.getTickCount());
         if (denied != null) return denied;
         AuthorOperationResult<DraftSaveResult> result = operation.apply(lease.state());
+        if (result.status() == AuthorOperationResult.Status.CONFLICT) lease.clearHistory();
         if (result.success() && result.value() != null
                 && result.value().snapshot().draftRevision().equals(lease.draft.draftRevision())) {
             lease.savedRevision = lease.draft.draftRevision();
@@ -166,11 +171,14 @@ public final class EditSessionService {
                 expectedDraftRevision, server.getTickCount());
         if (denied != null) return denied;
         AuthorOperationResult<DraftPublishResult> result = operation.apply(lease.state());
+        if (result.status() == AuthorOperationResult.Status.CONFLICT) lease.clearHistory();
         if (result.success() && result.value() != null
                 && result.value().snapshot().draftRevision().equals(lease.draft.draftRevision())) {
             // Publishing establishes a new workspace concurrency baseline without
             // changing semantic content or the draft's saved/dirty state.
             lease.draft = result.value().snapshot();
+            lease.undo.clear();
+            lease.redo.clear();
             lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
         }
         return result;
@@ -189,10 +197,67 @@ public final class EditSessionService {
         AuthorOperationResult<DraftEditResult> result = operation.apply(lease.draft);
         if (result.success() && result.value() != null) {
             // The candidate was fully built and validated before this single pointer swap.
-            lease.draft = result.value().snapshot();
+            DraftSnapshot candidate = result.value().snapshot();
+            if (!candidate.draftRevision().equals(lease.draft.draftRevision())) {
+                lease.pushUndo(lease.draft);
+                lease.redo.clear();
+                lease.draft = candidate;
+            }
             lease.expiresAtTick = nowTick + timeoutTicks;
         }
         return result;
+    }
+
+    public synchronized AuthorOperationResult<DraftEditResult> undo(ServerPlayer player, UUID sessionId,
+                                                                     ResourceLocation bookId,
+                                                                     String expectedDraftRevision) {
+        return history(player, sessionId, bookId, expectedDraftRevision, false);
+    }
+
+    public synchronized AuthorOperationResult<DraftEditResult> redo(ServerPlayer player, UUID sessionId,
+                                                                     ResourceLocation bookId,
+                                                                     String expectedDraftRevision) {
+        return history(player, sessionId, bookId, expectedDraftRevision, true);
+    }
+
+    private AuthorOperationResult<DraftEditResult> history(ServerPlayer player, UUID sessionId,
+                                                            ResourceLocation bookId,
+                                                            String expectedDraftRevision, boolean redo) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) {
+            releasePlayer(server, player.getUUID());
+            return forbidden();
+        }
+        pruneDisconnected(server);
+        return historyAuthorized(server, player.getUUID(), sessionId, bookId, expectedDraftRevision,
+                server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS, redo);
+    }
+
+    AuthorOperationResult<DraftEditResult> historyAuthorized(Object serverKey, UUID editorId, UUID sessionId,
+                                                               ResourceLocation bookId, String expectedDraftRevision,
+                                                               long nowTick, long timeoutTicks, boolean redo) {
+        ServerSessions state = servers.get(serverKey);
+        if (state != null) state.prune(nowTick);
+        Lease lease = state == null ? null : state.byId.get(sessionId);
+        AuthorOperationResult<DraftEditResult> authorization = authorizeMutation(
+                lease, editorId, bookId, expectedDraftRevision, nowTick);
+        if (!authorization.success()) return authorization;
+        Deque<DraftSnapshot> source = redo ? lease.redo : lease.undo;
+        if (source.isEmpty()) {
+            DraftEditResult unchanged = new DraftEditResult(lease.draft, List.of(), List.of());
+            return AuthorOperationResult.noChange(redo ? "REDO_EMPTY" : "UNDO_EMPTY",
+                    redo ? "No edit is available to redo" : "No edit is available to undo", unchanged);
+        }
+        DraftSnapshot previous = lease.draft;
+        DraftSnapshot restored = source.removeLast();
+        if (redo) lease.pushUndo(previous);
+        else lease.pushRedo(previous);
+        lease.draft = restored;
+        lease.expiresAtTick = nowTick + timeoutTicks;
+        DraftEditResult result = new DraftEditResult(restored, List.of(bookId), List.of());
+        return AuthorOperationResult.success(redo ? "DRAFT_REDONE" : "DRAFT_UNDONE",
+                redo ? "Draft edit redone" : "Draft edit undone", result);
     }
 
     public synchronized void releasePlayer(MinecraftServer server, UUID playerId) {
@@ -237,6 +302,7 @@ public final class EditSessionService {
         if (lease == null) return expired();
         if (!lease.editorId.equals(editorId)) return forbidden();
         if (!lease.draft.draftRevision().equals(expectedDraftRevision)) {
+            lease.clearHistory();
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
                     "Expected " + expectedDraftRevision + " but server has " + lease.draft.draftRevision());
         }
@@ -253,6 +319,7 @@ public final class EditSessionService {
         if (lease == null) return expired();
         if (!lease.editorId.equals(editorId)) return forbidden();
         if (!lease.draft.draftRevision().equals(expectedDraftRevision)) {
+            lease.clearHistory();
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
                     "Close rejected because the draft revision changed");
         }
@@ -292,6 +359,7 @@ public final class EditSessionService {
                     "Edit session belongs to " + lease.bookId);
         }
         if (!lease.draft.draftRevision().equals(expectedRevision)) {
+            lease.clearHistory();
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
                     "Expected " + expectedRevision + " but server has " + lease.draft.draftRevision());
         }
@@ -312,6 +380,7 @@ public final class EditSessionService {
                     "Edit session belongs to " + lease.bookId);
         }
         if (!lease.draft.draftRevision().equals(expectedRevision)) {
+            lease.clearHistory();
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "STALE_DRAFT_REVISION",
                     "Expected " + expectedRevision + " but server has " + lease.draft.draftRevision());
         }
@@ -380,6 +449,8 @@ public final class EditSessionService {
         private DraftSnapshot draft;
         private String savedRevision;
         private long expiresAtTick;
+        private final Deque<DraftSnapshot> undo = new ArrayDeque<>();
+        private final Deque<DraftSnapshot> redo = new ArrayDeque<>();
 
         private Lease(UUID sessionId, ResourceLocation bookId, UUID editorId, String editorName,
                       DraftSnapshot draft, long expiresAtTick) {
@@ -394,13 +465,31 @@ public final class EditSessionService {
 
         private EditSessionView view() {
             return new EditSessionView(bookId, editorId, editorName, draft.baseRevision(),
-                    draft.draftRevision(), savedRevision, expiresAtTick);
+                    draft.draftRevision(), savedRevision, expiresAtTick, undo.size(), redo.size());
         }
 
         private DraftSessionState state() { return new DraftSessionState(draft, savedRevision); }
 
         private EditSessionHandle handle() {
             return new EditSessionHandle(sessionId, view());
+        }
+
+        private void pushUndo(DraftSnapshot snapshot) {
+            pushBounded(undo, snapshot);
+        }
+
+        private void pushRedo(DraftSnapshot snapshot) {
+            pushBounded(redo, snapshot);
+        }
+
+        private static void pushBounded(Deque<DraftSnapshot> history, DraftSnapshot snapshot) {
+            if (history.size() >= MAX_HISTORY_STEPS) history.removeFirst();
+            history.addLast(snapshot);
+        }
+
+        private void clearHistory() {
+            undo.clear();
+            redo.clear();
         }
     }
 }

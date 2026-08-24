@@ -27,7 +27,8 @@ public final class EditorConfirmDialog {
 
     public static void render(GuiGraphics graphics, Font font, QuestScreenLayout screenLayout,
                               Component title, Component detail, int detailColor,
-                              Component cancelLabel, Component confirmLabel) {
+                              Component cancelLabel, Component confirmLabel,
+                              int mouseX, int mouseY) {
         Layout layout = layout(screenLayout);
         UiRect dialog = layout.dialog();
         graphics.fill(0, 0, screenLayout.width(), screenLayout.height(), 0x88000000);
@@ -39,8 +40,12 @@ public final class EditorConfirmDialog {
             graphics.drawCenteredString(font, Component.literal(visible), dialog.centerX(), dialog.top() + 23,
                     detailColor);
         }
-        EditorButton.render(graphics, font, layout.cancel(), cancelLabel, 0xFF385A72, 0xFFFFFFFF, 4);
-        EditorButton.render(graphics, font, layout.confirm(), confirmLabel, 0xFF723E46, 0xFFFFFFFF, 4);
+        EditorButton.renderInteractive(graphics, font, layout.cancel(),
+                EditorButton.Definition.text(cancelLabel, null), true, false,
+                EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        EditorButton.renderInteractive(graphics, font, layout.confirm(),
+                EditorButton.Definition.text(confirmLabel, null), true, false,
+                EditorButton.Tone.DANGER, mouseX, mouseY);
     }
 
     public static Action actionAt(QuestScreenLayout screenLayout, double mouseX, double mouseY) {

@@ -67,11 +67,13 @@ public final class EditorRawConfigScreen extends Screen {
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(issue.getString(), panel.width() - 24)),
                     panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);
         }
-        EditorButton.render(graphics, font, cancelBounds(), Component.translatable("gui.cancel"),
-                0xFF343D49, 0xFFFFFFFF, 4);
-        EditorButton.render(graphics, font, applyBounds(),
-                Component.translatable("screen.brnquest.editor.raw_config.apply"),
-                0xFF385A72, 0xFFFFFFFF, 4);
+        EditorButton.renderInteractive(graphics, font, cancelBounds(),
+                EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
+                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        EditorButton.renderInteractive(graphics, font, applyBounds(),
+                EditorButton.Definition.text(
+                        Component.translatable("screen.brnquest.editor.raw_config.apply"), null),
+                true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 

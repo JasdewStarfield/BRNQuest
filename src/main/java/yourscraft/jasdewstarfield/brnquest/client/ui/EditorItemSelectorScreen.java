@@ -79,17 +79,21 @@ public final class EditorItemSelectorScreen extends Screen {
             }
         }
 
-        EditorButton.render(graphics, font, layout.cancelButton(), Component.translatable("gui.cancel"),
-                0xFF343D49, 0xFFFFFFFF, 4);
-        EditorButton.render(graphics, font, layout.doneButton(), Component.translatable("gui.done"),
-                selected.isEmpty() ? 0xFF343D49 : 0xFF385A72, 0xFFFFFFFF, 4);
+        EditorButton.renderInteractive(graphics, font, layout.cancelButton(),
+                EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
+                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        EditorButton.renderInteractive(graphics, font, layout.doneButton(),
+                EditorButton.Definition.text(Component.translatable("gui.done"), null),
+                !selected.isEmpty(), false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
 
+        super.render(graphics, mouseX, mouseY, partialTick);
+        // Carried ingredients and item Tooltip are the selector's final content layer. JEI's
+        // Render.Post overlay intentionally remains above them when the optional mod is present.
         if (!carriedGhost.isEmpty()) graphics.renderItem(carriedGhost, mouseX - 8, mouseY - 8);
         ItemStack hovered = hoveredStack(layout, mouseX, mouseY);
         if (!hovered.isEmpty() && carriedGhost.isEmpty()) {
             graphics.renderTooltip(font, hovered, mouseX, mouseY);
         }
-        super.render(graphics, mouseX, mouseY, partialTick);
     }
 
     private void renderSlot(GuiGraphics graphics, UiRect bounds, ItemStack stack,

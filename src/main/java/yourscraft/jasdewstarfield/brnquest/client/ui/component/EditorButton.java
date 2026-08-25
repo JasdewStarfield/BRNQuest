@@ -99,18 +99,23 @@ public final class EditorButton {
 
         int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
         int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());
-        ContentLayout content = contentLayout(bounds, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
+        float labelScale = labelScale(bounds, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
+        int scaledLabelWidth = (int) Math.ceil(labelWidth * labelScale);
+        ContentLayout content = contentLayout(bounds, definition.contentMode(), iconWidth, scaledLabelWidth, CONTENT_GAP);
         if (content.icon().width() > 0) {
             definition.icon().render(graphics, font, content.icon(), foreground);
         }
         if (content.label().width() > 0) {
-            // Keep a generic button inside its bounds even when localization is wider than expected.
-            Component visibleLabel = content.label().width() < labelWidth
-                    ? Component.literal(font.plainSubstrByWidth(definition.label().getString(), content.label().width()))
+            // Compact localized labels shrink before truncation, retaining more meaning in narrow sidebars.
+            int unscaledAvailable = Math.max(1, (int) Math.floor(content.label().width() / labelScale));
+            Component visibleLabel = unscaledAvailable < labelWidth
+                    ? Component.literal(font.plainSubstrByWidth(definition.label().getString(), unscaledAvailable))
                     : definition.label();
-            graphics.drawString(font, visibleLabel, content.label().left(),
-                    content.label().top() + Math.max(0, (content.label().height() - font.lineHeight) / 2),
-                    foreground, false);
+            graphics.pose().pushPose();
+            graphics.pose().translate(content.label().left(), content.label().centerY(), 0);
+            graphics.pose().scale(labelScale, labelScale, 1.0F);
+            graphics.drawString(font, visibleLabel, 0, -font.lineHeight / 2, foreground, false);
+            graphics.pose().popPose();
         }
         if (state.focused()) {
             // The outline is a shape cue, so keyboard focus is visible without color perception.
@@ -149,6 +154,15 @@ public final class EditorButton {
         int remaining = Math.max(0, bounds.right() - labelLeft);
         UiRect label = new UiRect(labelLeft, bounds.top(), labelLeft + Math.min(safeLabelWidth, remaining), bounds.bottom());
         return new ContentLayout(icon, label);
+    }
+
+    /** Computes the text-only part of a button without shrinking icons or click targets. */
+    static float labelScale(UiRect bounds, ContentMode mode, int iconWidth, int labelWidth, int gap) {
+        if (mode == ContentMode.ICON_ONLY || labelWidth <= 0) return 1.0F;
+        int safeIconWidth = mode == ContentMode.TEXT ? 0 : Math.max(0, iconWidth);
+        int safeGap = safeIconWidth > 0 ? Math.max(0, gap) : 0;
+        int available = Math.max(0, bounds.width() - safeIconWidth - safeGap);
+        return EditorTextLayout.fittedScale(labelWidth, available, 0.75F);
     }
 
 }

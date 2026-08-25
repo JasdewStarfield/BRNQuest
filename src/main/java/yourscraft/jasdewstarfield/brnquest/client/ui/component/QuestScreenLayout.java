@@ -6,28 +6,61 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
  * accidentally move either full-width toolbar.
  */
 public record QuestScreenLayout(int width, int height, boolean navigationCollapsed, boolean detailsOpen) {
-    public static final int NAVIGATION_WIDTH = 150;
-    public static final int NAVIGATION_HANDLE_WIDTH = 12;
-    public static final int DETAILS_WIDTH = 250;
-    public static final int TOP_TOOLBAR_HEIGHT = 24;
-    public static final int BOTTOM_TOOLBAR_HEIGHT = 24;
+    private static final int COMPACT_WIDTH_THRESHOLD = 800;
+    private static final int COMPACT_HEIGHT_THRESHOLD = 480;
+    private static final int REGULAR_NAVIGATION_WIDTH = 132;
+    private static final int REGULAR_DETAILS_WIDTH = 224;
+    private static final int COMPACT_NAVIGATION_MIN = 100;
+    private static final int COMPACT_NAVIGATION_MAX = 124;
+    private static final int COMPACT_DETAILS_MIN = 184;
+    private static final int COMPACT_DETAILS_MAX = 216;
+    private static final int NAVIGATION_GAP = 4;
+    private static final int NAVIGATION_HANDLE_WIDTH = 10;
+    private static final int TOOLBAR_HEIGHT = 20;
     public static final int EDITOR_CONTROL_HEIGHT = 16;
 
+    /** Minecraft Screen dimensions are already GUI-scaled, so physical resolution needs no special case. */
+    public boolean compact() {
+        return width < COMPACT_WIDTH_THRESHOLD || height < COMPACT_HEIGHT_THRESHOLD;
+    }
+
+    public int navigationWidth() {
+        if (!compact()) return REGULAR_NAVIGATION_WIDTH;
+        return clamp(Math.round(width * 0.22F), COMPACT_NAVIGATION_MIN, COMPACT_NAVIGATION_MAX);
+    }
+
+    public int navigationHandleWidth() {
+        return NAVIGATION_HANDLE_WIDTH;
+    }
+
+    public int detailsWidth() {
+        if (!compact()) return REGULAR_DETAILS_WIDTH;
+        return clamp(Math.round(width * 0.34F), COMPACT_DETAILS_MIN, COMPACT_DETAILS_MAX);
+    }
+
+    public int topToolbarHeight() {
+        return TOOLBAR_HEIGHT;
+    }
+
+    public int bottomToolbarHeight() {
+        return TOOLBAR_HEIGHT;
+    }
+
     public UiRect topToolbar() {
-        return new UiRect(0, 0, width, TOP_TOOLBAR_HEIGHT);
+        return new UiRect(0, 0, width, topToolbarHeight());
     }
 
     public UiRect bottomToolbar() {
-        return new UiRect(0, height - BOTTOM_TOOLBAR_HEIGHT, width, height);
+        return new UiRect(0, height - bottomToolbarHeight(), width, height);
     }
 
     public UiRect content() {
-        return new UiRect(0, TOP_TOOLBAR_HEIGHT, width, height - BOTTOM_TOOLBAR_HEIGHT);
+        return new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight());
     }
 
     public int canvasLeft() {
-        return navigationCollapsed ? NAVIGATION_HANDLE_WIDTH
-                : NAVIGATION_WIDTH + 4 + NAVIGATION_HANDLE_WIDTH;
+        return navigationCollapsed ? navigationHandleWidth()
+                : navigationWidth() + NAVIGATION_GAP + navigationHandleWidth();
     }
 
     public int canvasRight() {
@@ -35,7 +68,7 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     }
 
     public int detailLeft() {
-        return width - DETAILS_WIDTH;
+        return width - detailsWidth();
     }
 
     public int contentCenterY() {
@@ -54,7 +87,11 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     public UiRect centeredDialog(int preferredWidth, int minimumWidth, int horizontalMargin, int dialogHeight) {
         int dialogWidth = Math.min(preferredWidth, Math.max(minimumWidth, width - horizontalMargin * 2));
         int left = (width - dialogWidth) / 2;
-        int top = Math.max(TOP_TOOLBAR_HEIGHT + 8, (height - dialogHeight) / 2);
+        int top = Math.max(topToolbarHeight() + 8, (height - dialogHeight) / 2);
         return new UiRect(left, top, left + dialogWidth, top + dialogHeight);
+    }
+
+    private static int clamp(int value, int minimum, int maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 }

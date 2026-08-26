@@ -22,19 +22,18 @@ public final class EditorPickerList {
     }
 
     /** Returns an absolute entry index or -1 when the pointer is outside a visible row. */
-    public static int entryAt(UiRect bounds, int firstIndex, int entryCount, double mouseX, double mouseY) {
+    public static int entryAt(UiRect bounds, EditorSmoothScroll scroll, int entryCount,
+                              double mouseX, double mouseY) {
         if (!bounds.contains(mouseX, mouseY)) return -1;
+        if (mouseX >= bounds.right() - 6) return -1;
         int rowsTop = bounds.top() + SEARCH_HEIGHT + 2;
-        if (mouseY < rowsTop) return -1;
-        int row = ((int) mouseY - rowsTop) / ROW_HEIGHT;
-        if (row < 0 || row >= visibleRows(bounds)) return -1;
-        int index = firstIndex + row;
-        return index >= 0 && index < entryCount ? index : -1;
+        int rowsBottom = rowsTop + visibleRows(bounds) * ROW_HEIGHT;
+        return scroll.rowAt(mouseY, rowsTop, rowsBottom, ROW_HEIGHT, entryCount);
     }
 
     public static void render(GuiGraphics graphics, Font font, UiRect bounds, Component searchText,
-                              boolean showingHint, List<Entry> entries, int firstIndex,
-                              int mouseX, int mouseY) {
+                              boolean showingHint, List<Entry> entries, EditorSmoothScroll scroll,
+                              double elapsedSeconds, double smoothSpeed, int mouseX, int mouseY) {
         graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFA202832);
         graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2,
                 bounds.top() + SEARCH_HEIGHT, 0xFF151A22);
@@ -42,11 +41,18 @@ public final class EditorPickerList {
                 showingHint ? 0xFF7F8B99 : 0xFFFFFFFF, false);
 
         int visibleRows = visibleRows(bounds);
-        for (int row = 0; row < visibleRows && firstIndex + row < entries.size(); row++) {
+        int rowsTop = bounds.top() + SEARCH_HEIGHT + 2;
+        int rowsBottom = rowsTop + visibleRows * ROW_HEIGHT;
+        scroll.frameAndRender(graphics, bounds.right() - 4, rowsTop, rowsBottom,
+                entries.size() * ROW_HEIGHT, visibleRows * ROW_HEIGHT, elapsedSeconds, smoothSpeed);
+        int firstIndex = scroll.firstIndex(ROW_HEIGHT);
+        int rowOffset = scroll.rowOffset(ROW_HEIGHT);
+        graphics.enableScissor(bounds.left(), rowsTop, bounds.right(), rowsBottom);
+        for (int row = 0; row <= visibleRows && firstIndex + row < entries.size(); row++) {
             int index = firstIndex + row;
             Entry entry = entries.get(index);
-            int top = bounds.top() + SEARCH_HEIGHT + 2 + row * ROW_HEIGHT;
-            boolean hovered = mouseX >= bounds.left() + 2 && mouseX <= bounds.right() - 2
+            int top = rowsTop + rowOffset + row * ROW_HEIGHT;
+            boolean hovered = mouseX >= bounds.left() + 2 && mouseX <= bounds.right() - 6
                     && mouseY >= top && mouseY < top + ROW_HEIGHT;
             int background = hovered ? 0xE0343D49 : 0xA02A323E;
             int primaryColor = switch (entry.tone()) {
@@ -54,16 +60,15 @@ public final class EditorPickerList {
                 case WARNING -> 0xFFFFA070;
                 case DISABLED -> 0xFF7F8B99;
             };
-            graphics.fill(bounds.left() + 2, top, bounds.right() - 2, top + ROW_HEIGHT, background);
+            // Reserve the rightmost strip for the scrollbar rendered by the shared scroll state.
+            graphics.fill(bounds.left() + 2, top, bounds.right() - 6, top + ROW_HEIGHT, background);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            entry.primary().getString(), bounds.width() - 16)),
+                            entry.primary().getString(), bounds.width() - 20)),
                     bounds.left() + 6, top + 4, primaryColor, false);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            entry.secondary().getString(), bounds.width() - 16)),
+                            entry.secondary().getString(), bounds.width() - 20)),
                     bounds.left() + 6, top + 16, 0xFF9FB0C2, false);
         }
-
-        EditorScrollbar.render(graphics, bounds.right() - 4, bounds.top() + SEARCH_HEIGHT + 2, bounds.bottom() - 2,
-                entries.size() * ROW_HEIGHT, visibleRows * ROW_HEIGHT, firstIndex * (double) ROW_HEIGHT);
+        graphics.disableScissor();
     }
 }

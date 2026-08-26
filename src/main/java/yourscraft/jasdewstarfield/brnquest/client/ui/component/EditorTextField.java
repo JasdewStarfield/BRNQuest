@@ -34,4 +34,11 @@ public final class EditorTextField extends EditBox {
         setVisible(false);
         active = false;
     }
+
+    /** Moves a visible field with its drawer while disabling input until the drawer settles. */
+    public void offsetForDrawerAnimation(int offsetX) {
+        if (!visible || offsetX == 0) return;
+        setX(getX() + offsetX);
+        active = false;
+    }
 }

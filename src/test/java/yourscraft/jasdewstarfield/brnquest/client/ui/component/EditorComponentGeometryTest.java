@@ -85,12 +85,14 @@ class EditorComponentGeometryTest {
 
     @Test void pickerMapsOnlyVisibleTwoLineRowsToAbsoluteEntries() {
         UiRect bounds = new UiRect(100, 50, 500, 252);
+        EditorSmoothScroll scroll = new EditorSmoothScroll();
+        scroll.snap(3 * EditorPickerList.ROW_HEIGHT);
 
         assertEquals(6, EditorPickerList.visibleRows(bounds));
-        assertEquals(-1, EditorPickerList.entryAt(bounds, 3, 20, 120, 60));
-        assertEquals(3, EditorPickerList.entryAt(bounds, 3, 20, 120, 72));
-        assertEquals(8, EditorPickerList.entryAt(bounds, 3, 20, 120, 221));
-        assertEquals(-1, EditorPickerList.entryAt(bounds, 3, 5, 120, 221));
+        assertEquals(-1, EditorPickerList.entryAt(bounds, scroll, 20, 120, 60));
+        assertEquals(3, EditorPickerList.entryAt(bounds, scroll, 20, 120, 72));
+        assertEquals(8, EditorPickerList.entryAt(bounds, scroll, 20, 120, 221));
+        assertEquals(-1, EditorPickerList.entryAt(bounds, scroll, 5, 120, 221));
     }
 
     @Test void compactPropertyRowsReserveStableLabelAndFieldColumns() {

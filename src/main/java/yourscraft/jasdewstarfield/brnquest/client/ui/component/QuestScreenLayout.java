@@ -59,12 +59,34 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     }
 
     public int canvasLeft() {
-        return navigationCollapsed ? navigationHandleWidth()
-                : navigationWidth() + NAVIGATION_GAP + navigationHandleWidth();
+        return canvasLeft(navigationCollapsed ? 0.0 : 1.0);
     }
 
     public int canvasRight() {
-        return detailsOpen ? detailLeft() : width;
+        return canvasRight(detailsOpen ? 1.0 : 0.0);
+    }
+
+    /** Animated left canvas edge; the navigation handle remains visible at zero progress. */
+    public int canvasLeft(double navigationProgress) {
+        int drawerWidth = navigationWidth() + NAVIGATION_GAP;
+        return navigationHandleWidth() + (int) Math.round(drawerWidth * clampProgress(navigationProgress));
+    }
+
+    /** Animated right canvas edge shared with the visible leading edge of the details drawer. */
+    public int canvasRight(double detailsProgress) {
+        return width - (int) Math.round(detailsWidth() * clampProgress(detailsProgress));
+    }
+
+    /** Translation that keeps the navigation drawer's right edge attached to its moving handle. */
+    public int navigationDrawerOffset(double navigationProgress) {
+        int openHandleLeft = navigationWidth() + NAVIGATION_GAP;
+        int animatedHandleLeft = canvasLeft(navigationProgress) - navigationHandleWidth();
+        return animatedHandleLeft - openHandleLeft;
+    }
+
+    /** Translation that keeps the details drawer's left edge attached to the animated canvas edge. */
+    public int detailsDrawerOffset(double detailsProgress) {
+        return canvasRight(detailsProgress) - detailLeft();
     }
 
     public int detailLeft() {
@@ -93,5 +115,9 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
 
     private static int clamp(int value, int minimum, int maximum) {
         return Math.max(minimum, Math.min(maximum, value));
+    }
+
+    private static double clampProgress(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
     }
 }

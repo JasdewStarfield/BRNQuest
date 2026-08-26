@@ -26,6 +26,23 @@ class QuestScreenLayoutTest {
         assertEquals(1696, collapsedWithDetails.detailLeft());
     }
 
+    @Test void animatedDrawerBoundsStayBetweenTheirClosedAndOpenEndpoints() {
+        QuestScreenLayout layout = new QuestScreenLayout(1920, 1080, false, true);
+
+        assertEquals(10, layout.canvasLeft(0));
+        assertEquals(78, layout.canvasLeft(0.5));
+        assertEquals(146, layout.canvasLeft(1));
+        assertEquals(1920, layout.canvasRight(0));
+        assertEquals(1808, layout.canvasRight(0.5));
+        assertEquals(1696, layout.canvasRight(1));
+        assertEquals(-136, layout.navigationDrawerOffset(0));
+        assertEquals(-68, layout.navigationDrawerOffset(0.5));
+        assertEquals(0, layout.navigationDrawerOffset(1));
+        assertEquals(224, layout.detailsDrawerOffset(0));
+        assertEquals(112, layout.detailsDrawerOffset(0.5));
+        assertEquals(0, layout.detailsDrawerOffset(1));
+    }
+
     @Test void contentHitTestingExcludesBothToolbars() {
         QuestScreenLayout layout = new QuestScreenLayout(1280, 720, false, false);
 

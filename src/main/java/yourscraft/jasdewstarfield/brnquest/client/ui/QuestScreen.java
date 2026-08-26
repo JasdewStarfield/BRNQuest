@@ -13,6 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListViewport;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPickerList;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
@@ -20,7 +21,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishRevi
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorScrollbar;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
@@ -35,6 +37,7 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
@@ -54,6 +57,7 @@ import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Quest-book UI with grouped navigation, a scalable directed graph, and intent-only details. */
@@ -84,8 +88,21 @@ public final class QuestScreen extends Screen {
     private double panX;
     private double panY;
     private double zoom;
-    private double navigationScroll;
-    private double detailScroll;
+    private double renderedPanX;
+    private double renderedPanY;
+    private double renderedZoom;
+    private double renderedNavigationScroll;
+    private double renderedDetailScroll;
+    private long previousMotionFrameNanos;
+    private double currentMotionFrameSeconds = 1.0 / 60.0;
+    // Zoom needs a much smaller terminal snap than pixel scrolling; 0.01 zoom is visibly abrupt.
+    private final EditorSmoothValue zoomMotion = new EditorSmoothValue(1.0, 0.00001);
+    private final EditorSmoothValue navigationDrawerMotion = new EditorSmoothValue(1.0, 0.001);
+    private final EditorSmoothValue detailsDrawerMotion = new EditorSmoothValue(0.0, 0.001);
+    private final EditorSmoothValue focusPanXMotion = new EditorSmoothValue(0.0, 0.01);
+    private final EditorSmoothValue focusPanYMotion = new EditorSmoothValue(0.0, 0.01);
+    private final EditorSmoothScroll navigationScroll = new EditorSmoothScroll();
+    private final EditorSmoothScroll detailScroll = new EditorSmoothScroll();
     private int navigationContentHeight;
     private int detailContentHeight;
     private int chapterIndex;
@@ -97,11 +114,15 @@ public final class QuestScreen extends Screen {
     private boolean dragging;
     private boolean detailsOpen;
     private boolean navigationCollapsed;
+    private boolean observedDetailsOpen;
+    private ResourceLocation observedDetailsQuestId;
+    private ResourceLocation focusingQuestId;
+    private boolean focusTargetInitialized;
     private String serverContextId = "unknown";
     private ResourceLocation viewportBookId;
     private ResourceLocation editorSelectedQuest;
     private boolean catalogRequested;
-    private int catalogScroll;
+    private final EditorSmoothScroll catalogScroll = new EditorSmoothScroll();
     private String catalogFilter = "";
     private EditorTextField questTitleField;
     private EditorTextField questSubtitleField;
@@ -124,15 +145,15 @@ public final class QuestScreen extends Screen {
     private Component questEditorMessage;
     private boolean dependencyEditorOpen;
     private ResourceLocation dependencyEditorQuestId;
-    private int dependencyScroll;
+    private final EditorSmoothScroll dependencyScroll = new EditorSmoothScroll();
     private String dependencyFilter = "";
-    private int dependencyPickerScroll;
+    private final EditorSmoothScroll dependencyPickerScroll = new EditorSmoothScroll();
     private Component dependencyEditorMessage;
     private boolean typedEditorOpen;
     private TypedKind typedEditorKind = TypedKind.TASK;
     private ResourceLocation typedEditorQuestId;
-    private int typedEditorScroll;
-    private int typedTypePickerScroll;
+    private final EditorSmoothScroll typedEditorScroll = new EditorSmoothScroll();
+    private final EditorSmoothScroll typedTypePickerScroll = new EditorSmoothScroll();
     private Component typedEditorMessage;
     private boolean typedPropertyOpen;
     private ResourceLocation typedPropertyOriginalId;
@@ -185,7 +206,7 @@ public final class QuestScreen extends Screen {
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
     private AuthoringNetwork.PublishReviewWire publishReview;
-    private int publishReviewScroll;
+    private final EditorSmoothScroll publishReviewScroll = new EditorSmoothScroll();
     private ResourceLocation recoveryCopyBookId;
     private int editorKeyboardFocus = -1;
 
@@ -193,7 +214,10 @@ public final class QuestScreen extends Screen {
         super(Component.translatable("screen.brnquest.title"));
         QuestScreenSessionState.Snapshot defaults = QuestScreenSessionState.Snapshot.defaults();
         zoom = defaults.zoom();
+        zoomMotion.snap(zoom);
+        renderedZoom = zoom;
         navigationCollapsed = defaults.navigationCollapsed();
+        navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
     }
 
     @Override
@@ -287,7 +311,7 @@ public final class QuestScreen extends Screen {
         editor.pollPublishReview().ifPresent(review -> {
             closeActiveEditorOverlay();
             publishReview = review;
-            publishReviewScroll = 0;
+            publishReviewScroll.snap(0);
             editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
         });
         reconcileDragPreview();
@@ -313,6 +337,10 @@ public final class QuestScreen extends Screen {
         }
 
         ensureViewportBook(snapshot.book().id());
+        double motionFrameSeconds = motionFrameSeconds();
+        currentMotionFrameSeconds = motionFrameSeconds;
+        advanceZoomMotion(motionFrameSeconds);
+        advanceDrawerMotion(motionFrameSeconds);
 
         List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
         ChapterDefinition selectedChapter = null;
@@ -321,58 +349,84 @@ public final class QuestScreen extends Screen {
             chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
             selectedChapter = chapters.get(chapterIndex);
         }
-        renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY);
+        updateSelectedQuestFocus(snapshot, motionFrameSeconds);
+        renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
         if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
-        else graphics.fill(canvasLeft(), topToolbarHeight(), detailsOpen ? detailLeft() : width,
+        else graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
                 height - bottomToolbarHeight(), 0xD0151820);
-        if (detailsOpen && !structureFormOpen()) renderDetails(graphics, mouseX, mouseY);
+        if (detailsDrawerVisible() && !structureFormOpen()) {
+            int visibleLeft = canvasRight();
+            graphics.enableScissor(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight());
+            int detailMouseX = detailsPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
+            int detailMouseY = detailsPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
+            graphics.pose().pushPose();
+            graphics.pose().translate(detailsDrawerOffsetX(), 0, 0);
+            renderDetails(graphics, detailMouseX, detailMouseY, motionFrameSeconds);
+            graphics.pose().popPose();
+            graphics.disableScissor();
+        }
         renderEditorChrome(graphics, snapshot.book(), mouseX, mouseY);
         if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
+        offsetDetailsDrawerFieldsForMotion();
         super.render(graphics, mouseX, mouseY, partialTick);
         renderDeferredTooltip(graphics, mouseX, mouseY);
     }
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter,
-                                  int mouseX, int mouseY) {
-        if (navigationCollapsed) {
-            graphics.fill(0, navigationTop(), navigationHandleWidth(), height - navigationBottomMargin(), 0xD01B222C);
-            graphics.drawCenteredString(font, "›", navigationHandleWidth() / 2, contentCenterY() - 4, 0xFFB7C5D8);
-            return;
-        }
+                                  int mouseX, int mouseY, double motionFrameSeconds) {
+        int panelVisibleRight = navigationHandleLeft();
         int viewportHeight = navigationViewportHeight();
         navigationContentHeight = navigationContentHeight(book);
-        navigationScroll = QuestViewportMath.clampScroll(navigationScroll, navigationContentHeight, viewportHeight);
-        int y = navigationTop() - (int) Math.round(navigationScroll);
-        // A continuous panel makes the compact rows read as one navigation surface.
-        graphics.fill(NAV_LEFT, navigationTop(), navigationWidth() + 4, height - navigationBottomMargin(), 0xB8181E27);
-        graphics.enableScissor(NAV_LEFT, navigationTop(), navigationWidth() + 6, navigationListBottom());
-        for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
-            if (entry.group() != null) {
-                graphics.fill(NAV_LEFT, y, navigationWidth(), y + NAV_GROUP_HEIGHT, 0xE01B222C);
-                drawFittedString(graphics, Component.literal("▾ " + entry.group().title()),
-                        NAV_LEFT + 4, y + 2, navigationWidth() - NAV_LEFT - 8, 0xFFB7C5D8, 0.75F);
-                y += NAV_GROUP_HEIGHT;
-                continue;
+        if (panelVisibleRight > NAV_LEFT) {
+            int drawerOffsetX = navigationDrawerOffsetX();
+            // Translate the complete fixed-layout drawer; scissoring only hides the off-screen portion.
+            graphics.enableScissor(NAV_LEFT, navigationTop(), panelVisibleRight,
+                    height - navigationBottomMargin());
+            graphics.pose().pushPose();
+            graphics.pose().translate(drawerOffsetX, 0, 0);
+            graphics.fill(NAV_LEFT, navigationTop(), navigationWidth() + 4,
+                    height - navigationBottomMargin(), 0xB8181E27);
+            renderedNavigationScroll = navigationScroll.frameAndRender(graphics, navigationWidth() + 2,
+                    navigationTop(), navigationListBottom(), navigationContentHeight, viewportHeight,
+                    motionFrameSeconds, scrollSmoothSpeed());
+            int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
+            graphics.enableScissor(Math.max(NAV_LEFT, NAV_LEFT + drawerOffsetX), navigationTop(),
+                    Math.min(panelVisibleRight, navigationWidth() + 6 + drawerOffsetX), navigationListBottom());
+            for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
+                if (entry.group() != null) {
+                    graphics.fill(NAV_LEFT, y, navigationWidth(), y + NAV_GROUP_HEIGHT, 0xE01B222C);
+                    drawFittedString(graphics, Component.literal("▾ " + entry.group().title()),
+                            NAV_LEFT + 4, y + 2, navigationWidth() - NAV_LEFT - 8, 0xFFB7C5D8, 0.75F);
+                    y += NAV_GROUP_HEIGHT;
+                    continue;
+                }
+                ChapterDefinition chapter = entry.chapter();
+                int color = selectedChapter != null && chapter.id().equals(selectedChapter.id())
+                        ? 0xFF4A6A88 : 0xE0262D38;
+                graphics.fill(NAV_LEFT + 4, y, navigationWidth(), y + NAV_CHAPTER_HEIGHT, color);
+                drawFittedString(graphics, Component.literal(chapter.title()), NAV_LEFT + 9, y + 3,
+                        navigationWidth() - NAV_LEFT - 13, 0xFFFFFFFF, 0.75F);
+                y += NAV_CHAPTER_HEIGHT;
             }
-            ChapterDefinition chapter = entry.chapter();
-            int color = selectedChapter != null && chapter.id().equals(selectedChapter.id()) ? 0xFF4A6A88 : 0xE0262D38;
-            graphics.fill(NAV_LEFT + 4, y, navigationWidth(), y + NAV_CHAPTER_HEIGHT, color);
-            drawFittedString(graphics, Component.literal(chapter.title()), NAV_LEFT + 9, y + 3,
-                    navigationWidth() - NAV_LEFT - 13, 0xFFFFFFFF, 0.75F);
-            y += NAV_CHAPTER_HEIGHT;
+            graphics.disableScissor();
+            int navigationMouseX = navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
+            int navigationMouseY = navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
+            if (ClientEditorState.get().editing()) {
+                renderNavigationEditorButtons(graphics, navigationMouseX, navigationMouseY);
+            }
+            graphics.pose().popPose();
+            graphics.disableScissor();
         }
-        graphics.disableScissor();
-        EditorScrollbar.render(graphics, navigationWidth() + 2, navigationTop(), navigationListBottom(),
-                navigationContentHeight, viewportHeight, navigationScroll);
-        if (ClientEditorState.get().editing()) renderNavigationEditorButtons(graphics, mouseX, mouseY);
-        graphics.fill(navigationWidth() + 4, navigationTop(), navigationWidth() + 4 + navigationHandleWidth(),
+        int handleLeft = navigationHandleLeft();
+        graphics.fill(handleLeft, navigationTop(), handleLeft + navigationHandleWidth(),
                 height - navigationBottomMargin(), 0xD01B222C);
-        graphics.drawCenteredString(font, "‹", navigationWidth() + 4 + navigationHandleWidth() / 2,
+        graphics.drawCenteredString(font, navigationCollapsed ? "›" : "‹",
+                handleLeft + navigationHandleWidth() / 2,
                 contentCenterY() - 4, 0xFFB7C5D8);
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
-        int right = detailsOpen ? detailLeft() : width - CANVAS_MARGIN;
+        int right = canvasRight() - CANVAS_MARGIN;
         int top = topToolbarHeight();
         int bottom = height - bottomToolbarHeight();
         graphics.enableScissor(canvasLeft(), top, right, bottom);
@@ -387,7 +441,7 @@ public final class QuestScreen extends Screen {
         double graphMouseY = graphY(mouseY);
         graphics.pose().pushPose();
         graphics.pose().translate((float) graphOriginX(), (float) graphOriginY(), 0.0F);
-        graphics.pose().scale((float) zoom, (float) zoom, 1.0F);
+        graphics.pose().scale((float) renderedZoom, (float) renderedZoom, 1.0F);
         renderGrid(graphics, graphLeft, graphRight, graphTop, graphBottom);
 
         if (chapter != null) {
@@ -535,7 +589,7 @@ public final class QuestScreen extends Screen {
         graphics.pose().popPose();
     }
 
-    private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY, double motionFrameSeconds) {
         rewardHitboxes.clear();
         taskHitboxes.clear();
         quickTextHitboxes.clear();
@@ -549,27 +603,32 @@ public final class QuestScreen extends Screen {
         boolean editing = ClientEditorState.get().editing();
         if (editing && questEditorOpen && quest.id().equals(questEditorQuestId)) {
             detailContentHeight = 0;
-            detailScroll = 0;
+            detailScroll.snap(0);
             renderQuestPropertyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         if (editing && dependencyEditorOpen && quest.id().equals(dependencyEditorQuestId)) {
             detailContentHeight = 0;
-            detailScroll = 0;
+            detailScroll.snap(0);
             renderDependencyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         if (editing && typedEditorOpen && quest.id().equals(typedEditorQuestId)) {
             detailContentHeight = 0;
-            detailScroll = 0;
+            detailScroll.snap(0);
             renderTypedEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         int contentLeft = left + 10;
         int contentWidth = detailsWidth() - 24;
         int viewportHeight = detailViewportHeight();
-        int y = detailContentTop() - (int) Math.round(detailScroll);
-        graphics.enableScissor(left + 1, detailContentTop(), width - 10, height - detailContentBottomMargin());
+        renderedDetailScroll = detailScroll.frameAndRender(graphics, width - 8, detailContentTop(),
+                height - detailContentBottomMargin(), detailContentHeight, viewportHeight,
+                motionFrameSeconds, scrollSmoothSpeed());
+        int y = detailContentTop() - (int) Math.round(renderedDetailScroll);
+        graphics.enableScissor(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
+                Math.min(width, width - 10 + detailsDrawerOffsetX()),
+                height - detailContentBottomMargin());
         int titleTop = y;
         y = drawWrapped(graphics, questTitle(quest), contentLeft, y, contentWidth - 14, 0xFFFFFF);
         if (editing) addQuickTextHitbox(QuickTextKind.TITLE, contentLeft, titleTop, contentWidth - 14, y);
@@ -664,11 +723,9 @@ public final class QuestScreen extends Screen {
             // Compute from row count so a partially populated final row is never clipped.
             y = rewardTop + QuestViewportMath.rewardGridHeight(quest.rewards().size(), rewardColumns);
         }
-        detailContentHeight = Math.max(0, y + (int) Math.round(detailScroll) - detailContentTop() + 8);
-        detailScroll = QuestViewportMath.clampScroll(detailScroll, detailContentHeight, viewportHeight);
+        detailContentHeight = Math.max(0, y + (int) Math.round(renderedDetailScroll) - detailContentTop() + 8);
+        detailScroll.constrain(detailContentHeight, viewportHeight);
         graphics.disableScissor();
-        EditorScrollbar.render(graphics, width - 8, detailContentTop(), height - detailContentBottomMargin(),
-                detailContentHeight, viewportHeight, detailScroll);
 
         if (editing) {
             renderDetailEditorEntry(graphics, questPropertyButtonBounds(), "✎",
@@ -809,15 +866,15 @@ public final class QuestScreen extends Screen {
         }
         if (handleEditorChromeClick(mouseX, mouseY, button, snapshot.book())) return true;
 
-        if (dependencyEditorOpen && mouseX >= detailLeft()) {
+        if (dependencyEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
             return handleDependencyEditorClick(mouseX, mouseY, button);
         }
 
-        if (typedEditorOpen && mouseX >= detailLeft()) {
+        if (typedEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
             return handleTypedEditorClick(mouseX, mouseY, button);
         }
 
-        if (questEditorOpen && mouseX >= detailLeft()) {
+        if (questEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
             if (button == 0 && questIconModeBounds().contains(mouseX, mouseY)) {
                 rememberCurrentIconInput();
                 questEditorIconMode = questEditorIconMode == IconEditorMode.ITEM
@@ -845,26 +902,28 @@ public final class QuestScreen extends Screen {
             return true;
         }
 
-        int navigationHandleLeft = navigationCollapsed ? 0 : navigationWidth() + 4;
+        int navigationHandleLeft = navigationHandleLeft();
         if (mouseX >= navigationHandleLeft && mouseX <= navigationHandleLeft + navigationHandleWidth()
                 && isContentY(mouseY)) {
             navigationCollapsed = !navigationCollapsed;
             return true;
         }
 
-        if (!navigationCollapsed && mouseX >= navigationWidth() && mouseX <= navigationWidth() + 4 && navigationContentHeight > navigationViewportHeight()) {
-            navigationScroll = EditorScrollbar.scrollFromTrack(mouseY, navigationTop(), navigationListBottom(),
+        if (navigationPanelAcceptsPointer(mouseX) && mouseX >= navigationWidth()
+                && navigationContentHeight > navigationViewportHeight()) {
+            navigationScroll.snapFromTrack(mouseY, navigationTop(), navigationListBottom(),
                     navigationContentHeight, navigationViewportHeight());
             return true;
         }
-        if (detailsOpen && mouseX >= width - 12 && mouseX <= width && detailContentHeight > detailViewportHeight()
+        if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 12
+                && detailContentHeight > detailViewportHeight()
                 && mouseY >= detailContentTop() && mouseY <= height - detailContentBottomMargin()) {
-            detailScroll = EditorScrollbar.scrollFromTrack(mouseY, detailContentTop(), height - detailContentBottomMargin(),
+            detailScroll.snapFromTrack(mouseY, detailContentTop(), height - detailContentBottomMargin(),
                     detailContentHeight, detailViewportHeight());
             return true;
         }
 
-        if (ClientEditorState.get().editing() && !navigationCollapsed) {
+        if (ClientEditorState.get().editing() && navigationPanelAcceptsPointer(mouseX)) {
             if (navigationAddGroupBounds().contains(mouseX, mouseY)) {
                 openStructureForm(StructureFormKind.ADD_GROUP, null, null, 0, 0);
                 return true;
@@ -891,27 +950,31 @@ public final class QuestScreen extends Screen {
             rememberedChapterResolved = true;
             editorSelection.clear();
             dragPreview.clear();
+            zoomMotion.snap(renderedZoom);
+            zoom = renderedZoom;
             panX = 0;
             panY = 0;
+            renderedPanX = 0;
+            renderedPanY = 0;
             detailsOpen = false;
-            detailScroll = 0;
+            detailScroll.snap(0);
             closeQuestEditingPanels();
             return true;
         }
         // Group headings and empty navigation space belong to the left panel and
         // must not fall through into quest selection or canvas interaction.
-        if (!navigationCollapsed && mouseX >= NAV_LEFT && mouseX <= navigationWidth()) return true;
+        if (navigationPanelVisibleAt(mouseX)) return true;
 
         QuestDefinition selected = selectedQuest();
         int left = detailLeft();
-        if (detailsOpen && mouseX >= width - 18 && mouseX <= width
+        if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 18
                 && mouseY >= topToolbarHeight() && mouseY <= topToolbarHeight() + 16) {
             detailsOpen = false;
-            detailScroll = 0;
+            detailScroll.snap(0);
             closeQuestEditingPanels();
             return true;
         }
-        if (detailsOpen && selected != null) {
+        if (detailsPanelAcceptsPointer(mouseX) && selected != null) {
             if (ClientEditorState.get().editing() && button == 1) {
                 for (QuickTextHitbox hitbox : quickTextHitboxes) {
                     if (hitbox.bounds().contains(mouseX, mouseY)) {
@@ -968,8 +1031,13 @@ public final class QuestScreen extends Screen {
             if (mouseX >= left) return true;
         }
 
-        int canvasRight = detailsOpen ? left : width - CANVAS_MARGIN;
+        if (detailsPanelVisibleAt(mouseX) && !detailsPanelAcceptsPointer(mouseX)) return true;
+
+        int canvasRight = canvasRight() - CANVAS_MARGIN;
         if (mouseX > canvasLeft() && mouseX < canvasRight && isContentY(mouseY)) {
+            // Direct canvas interaction adopts the exact visible camera so dragging never
+            // chases an animation that is still converging underneath the pointer.
+            adoptRenderedCamera();
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
             double graphMouseX = graphX(mouseX);
@@ -998,8 +1066,8 @@ public final class QuestScreen extends Screen {
                 }
                 if (button == 0) {
                     closeQuestEditingPanels();
-                    detailsOpen = true;
-                    detailScroll = 0;
+                    openDetailsPanel();
+                    detailScroll.snap(0);
                     if (!ClientEditorState.get().editing()) {
                         BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), hit.id().toString());
                     }
@@ -1049,6 +1117,8 @@ public final class QuestScreen extends Screen {
         if (dragging) {
             panX += x - dragX;
             panY += y - dragY;
+            renderedPanX = panX;
+            renderedPanY = panY;
             dragX = x;
             dragY = y;
             return true;
@@ -1060,71 +1130,67 @@ public final class QuestScreen extends Screen {
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION) && publishReview != null) {
             EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
-            int maximum = EditorPublishReviewPanel.maximumScroll(reviewLayout, publishReviewRowCount());
-            publishReviewScroll = Math.max(0, Math.min(maximum,
-                    publishReviewScroll - (int) Math.signum(vertical)));
+            publishReviewScroll.scrollWheel(vertical, scrollStep(),
+                    publishReviewRowCount() * EditorPublishReviewPanel.ROW_HEIGHT,
+                    reviewLayout.list().height());
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) {
-            int maximum = Math.max(0, dependencyCandidates().size()
-                    - EditorPickerList.visibleRows(dependencyPickerBounds()));
-            dependencyPickerScroll = Math.max(0, Math.min(maximum,
-                    dependencyPickerScroll - (int) Math.signum(vertical)));
+            int visibleRows = EditorPickerList.visibleRows(dependencyPickerBounds());
+            dependencyPickerScroll.scrollWheel(vertical, scrollStep(),
+                    dependencyCandidates().size() * EditorPickerList.ROW_HEIGHT,
+                    visibleRows * EditorPickerList.ROW_HEIGHT);
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) {
-            int maximum = Math.max(0, typedTypeCandidates().size()
-                    - EditorPickerList.visibleRows(typedTypePickerBounds()));
-            typedTypePickerScroll = Math.max(0, Math.min(maximum,
-                    typedTypePickerScroll - (int) Math.signum(vertical)));
+            int visibleRows = EditorPickerList.visibleRows(typedTypePickerBounds());
+            typedTypePickerScroll.scrollWheel(vertical, scrollStep(),
+                    typedTypeCandidates().size() * EditorPickerList.ROW_HEIGHT,
+                    visibleRows * EditorPickerList.ROW_HEIGHT);
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) && editorCatalogBounds().contains(x, y)) {
             int visibleRows = editorCatalogVisibleRows();
-            int maximum = Math.max(0, editorCatalogEntries().size() - visibleRows);
-            catalogScroll = Math.max(0, Math.min(maximum, catalogScroll - (int) Math.signum(vertical)));
+            catalogScroll.scrollWheel(vertical, scrollStep(),
+                    editorCatalogEntries().size() * EDITOR_CATALOG_ROW_HEIGHT,
+                    visibleRows * EDITOR_CATALOG_ROW_HEIGHT);
             return true;
         }
         // Any open editor overlay owns wheel input, even outside its visible bounds.
         if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) return true;
-        if (dependencyEditorOpen && x >= detailLeft()) {
+        if (dependencyEditorOpen && detailsPanelAcceptsPointer(x)) {
             QuestDefinition quest = selectedQuest();
-            int maximum = quest == null ? 0 : Math.max(0,
-                    quest.dependencies().size() - dependencyVisibleRows());
-            dependencyScroll = Math.max(0, Math.min(maximum,
-                    dependencyScroll - (int) Math.signum(vertical)));
+            int visibleRows = dependencyVisibleRows();
+            dependencyScroll.scrollWheel(vertical, scrollStep(),
+                    (quest == null ? 0 : quest.dependencies().size()) * DEPENDENCY_ROW_HEIGHT,
+                    visibleRows * DEPENDENCY_ROW_HEIGHT);
             return true;
         }
-        if (typedEditorOpen && x >= detailLeft()) {
+        if (typedEditorOpen && detailsPanelAcceptsPointer(x)) {
             QuestDefinition quest = selectedQuest();
             int count = quest == null ? 0 : typedEditorKind.size(quest);
-            int maximum = Math.max(0, count - typedEditorVisibleRows());
-            typedEditorScroll = Math.max(0, Math.min(maximum,
-                    typedEditorScroll - (int) Math.signum(vertical)));
+            typedEditorScroll.scrollWheel(vertical, scrollStep(), count * TYPED_ROW_HEIGHT,
+                    typedEditorViewport().height());
             return true;
         }
-        if (!navigationCollapsed && x >= NAV_LEFT && x <= navigationWidth() + navigationHandleWidth() + 4 && isContentY(y)) {
-            navigationScroll = QuestViewportMath.clampScroll(navigationScroll - vertical * 24,
-                    navigationContentHeight, navigationViewportHeight());
+        if (navigationPanelVisibleAt(x) && isContentY(y)) {
+            if (navigationPanelAcceptsPointer(x)) {
+                navigationScroll.scrollWheel(vertical, scrollStep(),
+                        navigationContentHeight, navigationViewportHeight());
+            }
             return true;
         }
-        if (detailsOpen && x >= detailLeft() && isContentY(y)) {
-            detailScroll = QuestViewportMath.clampScroll(detailScroll - vertical * 24,
-                    detailContentHeight, detailViewportHeight());
+        if (detailsPanelVisibleAt(x) && isContentY(y)) {
+            if (detailsPanelAcceptsPointer(x)) {
+                detailScroll.scrollWheel(vertical, scrollStep(), detailContentHeight, detailViewportHeight());
+            }
             return true;
         }
 
         if (!isContentY(y)) return true;
-        double oldZoom = zoom;
-        double nextZoom = QuestViewportMath.clampZoom(zoom + vertical * 0.10);
-        if (nextZoom == oldZoom) return true;
-        // Side panels only clip the graph; the camera always zooms about the physical
-        // center of the whole Screen, regardless of their open state or width.
-        double anchorX = width / 2.0;
-        double anchorY = height / 2.0;
-        panX = QuestViewportMath.panForStableAnchor(anchorX, screenOriginX(), panX, oldZoom, nextZoom);
-        panY = QuestViewportMath.panForStableAnchor(anchorY, height / 2.0, panY, oldZoom, nextZoom);
-        zoom = nextZoom;
+        cancelSelectedQuestFocus();
+        double nextZoom = QuestViewportMath.clampZoom(zoomMotion.target() + vertical * 0.10);
+        zoomMotion.target(nextZoom);
         return true;
     }
 
@@ -1158,13 +1224,13 @@ public final class QuestScreen extends Screen {
         if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
                 && !catalogFilter.isEmpty()) {
             catalogFilter = catalogFilter.substring(0, catalogFilter.length() - 1);
-            catalogScroll = 0;
+            catalogScroll.snap(0);
             return true;
         }
         if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
                 && !dependencyFilter.isEmpty()) {
             dependencyFilter = dependencyFilter.substring(0, dependencyFilter.length() - 1);
-            dependencyPickerScroll = 0;
+            dependencyPickerScroll.snap(0);
             return true;
         }
         if (editorKeyboardSurfaceReady() && keyCode == 258) {
@@ -1220,7 +1286,7 @@ public final class QuestScreen extends Screen {
                 && !editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) return true;
         if (keyCode == 256 && detailsOpen) {
             detailsOpen = false;
-            detailScroll = 0;
+            detailScroll.snap(0);
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -1269,7 +1335,7 @@ public final class QuestScreen extends Screen {
         QuestDefinition quest = snapshot == null || editorSelectedQuest == null
                 ? null : snapshot.quests().get(editorSelectedQuest);
         if (quest == null) return;
-        detailsOpen = true;
+        openDetailsPanel();
         switch (panel) {
             case 0 -> openQuestEditor(quest);
             case 1 -> openTypedEditor(quest, TypedKind.TASK);
@@ -1294,13 +1360,13 @@ public final class QuestScreen extends Screen {
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
                 && !Character.isISOControl(codePoint) && catalogFilter.length() < 48) {
             catalogFilter += codePoint;
-            catalogScroll = 0;
+            catalogScroll.snap(0);
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
                 && !Character.isISOControl(codePoint) && dependencyFilter.length() < 48) {
             dependencyFilter += codePoint;
-            dependencyPickerScroll = 0;
+            dependencyPickerScroll.snap(0);
             return true;
         }
         if (editorOverlays.active() != EditorOverlayHost.Kind.NONE
@@ -1310,9 +1376,9 @@ public final class QuestScreen extends Screen {
     }
 
     private ChapterDefinition navigationChoice(QuestBookDefinition book, double mouseX, double mouseY) {
-        if (navigationCollapsed) return null;
-        if (mouseX < NAV_LEFT || mouseX > navigationWidth() || mouseY >= navigationListBottom()) return null;
-        int y = navigationTop() - (int) Math.round(navigationScroll);
+        if (!navigationPanelAcceptsPointer(mouseX) || mouseX > navigationWidth()
+                || mouseY >= navigationListBottom()) return null;
+        int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             if (entry.group() != null) {
                 y += NAV_GROUP_HEIGHT;
@@ -1325,9 +1391,9 @@ public final class QuestScreen extends Screen {
     }
 
     private QuestPresentation.NavigationEntry navigationEntry(QuestBookDefinition book, double mouseX, double mouseY) {
-        if (navigationCollapsed || mouseX < NAV_LEFT || mouseX > navigationWidth()
+        if (!navigationPanelAcceptsPointer(mouseX) || mouseX > navigationWidth()
                 || mouseY >= navigationListBottom()) return null;
-        int y = navigationTop() - (int) Math.round(navigationScroll);
+        int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
         for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
             int rowHeight = entry.group() != null ? NAV_GROUP_HEIGHT : NAV_CHAPTER_HEIGHT;
             if (mouseY >= y && mouseY <= y + rowHeight) return entry;
@@ -1706,19 +1772,19 @@ public final class QuestScreen extends Screen {
         switch (editorOverlays.active()) {
             case CATALOG -> {
                 catalogFilter = "";
-                catalogScroll = 0;
+                catalogScroll.snap(0);
                 editorOverlays.close();
             }
             case CONTEXT_MENU -> closeEditContext();
             case STRUCTURE_FORM -> closeStructureForm();
             case DEPENDENCY_PICKER -> {
                 dependencyFilter = "";
-                dependencyPickerScroll = 0;
+                dependencyPickerScroll.snap(0);
                 editorOverlays.close();
             }
             case TYPED_TYPE_PICKER -> {
                 // Esc, outside clicks and the visible close button share this path.
-                typedTypePickerScroll = 0;
+                typedTypePickerScroll.snap(0);
                 editorOverlays.close();
             }
             case QUICK_TEXT -> closeQuickTextEditor();
@@ -1736,7 +1802,7 @@ public final class QuestScreen extends Screen {
             case QUEST_RENAME_CONFIRMATION -> editorOverlays.close();
             case PUBLISH_CONFIRMATION -> {
                 publishReview = null;
-                publishReviewScroll = 0;
+                publishReviewScroll.snap(0);
                 editorOverlays.close();
             }
             case CONFLICT_RECOVERY -> {
@@ -2195,15 +2261,21 @@ public final class QuestScreen extends Screen {
             return;
         }
         int visibleRows = editorCatalogVisibleRows();
-        int maximumScroll = Math.max(0, entries.size() - visibleRows);
-        catalogScroll = Math.max(0, Math.min(maximumScroll, catalogScroll));
-        for (int row = 0; row < visibleRows && row + catalogScroll < entries.size(); row++) {
-            ClientEditorState.CatalogEntry entry = entries.get(row + catalogScroll);
-            int top = searchBottom + 2 + row * EDITOR_CATALOG_ROW_HEIGHT;
+        int rowsTop = searchBottom + 2;
+        int rowsBottom = rowsTop + visibleRows * EDITOR_CATALOG_ROW_HEIGHT;
+        catalogScroll.frameAndRender(graphics, bounds.right() - 4, rowsTop, rowsBottom,
+                entries.size() * EDITOR_CATALOG_ROW_HEIGHT, visibleRows * EDITOR_CATALOG_ROW_HEIGHT,
+                currentMotionFrameSeconds, scrollSmoothSpeed());
+        int firstIndex = catalogScroll.firstIndex(EDITOR_CATALOG_ROW_HEIGHT);
+        int rowOffset = catalogScroll.rowOffset(EDITOR_CATALOG_ROW_HEIGHT);
+        graphics.enableScissor(bounds.left(), rowsTop, bounds.right(), rowsBottom);
+        for (int row = 0; row <= visibleRows && row + firstIndex < entries.size(); row++) {
+            ClientEditorState.CatalogEntry entry = entries.get(row + firstIndex);
+            int top = rowsTop + rowOffset + row * EDITOR_CATALOG_ROW_HEIGHT;
             boolean selected = entry.bookId().equals(ClientEditorState.get().bookId());
-            boolean hovered = mouseX >= bounds.left() + 2 && mouseX <= bounds.right() - 2
+            boolean hovered = mouseX >= bounds.left() + 2 && mouseX <= bounds.right() - 6
                     && mouseY >= top && mouseY < top + EDITOR_CATALOG_ROW_HEIGHT;
-            graphics.fill(bounds.left() + 2, top, bounds.right() - 2, top + EDITOR_CATALOG_ROW_HEIGHT,
+            graphics.fill(bounds.left() + 2, top, bounds.right() - 6, top + EDITOR_CATALOG_ROW_HEIGHT,
                     selected ? 0xFF385A72 : hovered ? 0xE0343D49 : 0xA02A323E);
             String title = entry.title().isBlank() ? entry.bookId().toString() : entry.title();
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(title, bounds.width() - 12)),
@@ -2217,6 +2289,7 @@ public final class QuestScreen extends Screen {
                                 entry.origin().name().toLowerCase(java.util.Locale.ROOT)));
             }
         }
+        graphics.disableScissor();
     }
 
     private boolean handleEditorChromeClick(double mouseX, double mouseY, int button,
@@ -2228,11 +2301,16 @@ public final class QuestScreen extends Screen {
             if (catalogBounds.contains(mouseX, mouseY)) {
                 int rowsTop = catalogBounds.top() + EDITOR_CATALOG_SEARCH_HEIGHT + 2;
                 if (mouseY < rowsTop) return true;
-                int row = ((int) mouseY - rowsTop) / EDITOR_CATALOG_ROW_HEIGHT;
-                int index = catalogScroll + row;
+                int viewportHeight = editorCatalogVisibleRows() * EDITOR_CATALOG_ROW_HEIGHT;
+                if (catalogScroll.handleTrackClick(mouseX, mouseY, catalogBounds.right() - 4,
+                        rowsTop, rowsTop + viewportHeight,
+                        editorCatalogEntries().size() * EDITOR_CATALOG_ROW_HEIGHT, viewportHeight)) return true;
                 // Hit testing consumes the exact filtered list that was rendered above.
                 List<ClientEditorState.CatalogEntry> entries = editorCatalogEntries();
-                if (row >= 0 && row < editorCatalogVisibleRows() && index >= 0 && index < entries.size()) {
+                int index = catalogScroll.rowAt(mouseY, rowsTop,
+                        rowsTop + editorCatalogVisibleRows() * EDITOR_CATALOG_ROW_HEIGHT,
+                        EDITOR_CATALOG_ROW_HEIGHT, entries.size());
+                if (index >= 0) {
                     ResourceLocation target = entries.get(index).bookId();
                     editorOverlays.close();
                     catalogFilter = "";
@@ -2257,7 +2335,7 @@ public final class QuestScreen extends Screen {
             if (opening) {
                 editorOverlays.show(EditorOverlayHost.Kind.CATALOG);
                 catalogFilter = "";
-                catalogScroll = 0;
+                catalogScroll.snap(0);
             }
             return true;
         }
@@ -2353,20 +2431,27 @@ public final class QuestScreen extends Screen {
         graphics.drawString(font, Component.translatable(typedEditorKind.headingKey()),
                 left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
         int count = typedEditorKind.size(quest);
-        int visibleRows = typedEditorVisibleRows();
-        typedEditorScroll = Math.max(0, Math.min(Math.max(0, count - visibleRows), typedEditorScroll));
-        int listTop = typedEditorListTop();
-        int listBottom = listTop + visibleRows * TYPED_ROW_HEIGHT;
-        graphics.enableScissor(detailLeft() + 4, listTop, width - 4, listBottom);
+        EditorListViewport viewport = typedEditorViewport();
+        int listTop = viewport.top();
+        int listBottom = viewport.bottom();
+        typedEditorScroll.frameAndRender(graphics, width - 8, listTop, listBottom,
+                count * TYPED_ROW_HEIGHT, viewport.height(),
+                currentMotionFrameSeconds, scrollSmoothSpeed());
+        int firstIndex = typedEditorScroll.firstIndex(TYPED_ROW_HEIGHT);
+        int rowOffset = typedEditorScroll.rowOffset(TYPED_ROW_HEIGHT);
+        graphics.enableScissor(detailLeft() + 4 + detailsDrawerOffsetX(), listTop,
+                Math.min(width, width - 4 + detailsDrawerOffsetX()), listBottom);
         if (count == 0) {
             graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.typed.empty"),
                     (left + right) / 2, listTop + 8, 0xFF9AA6B5);
         }
-        for (int row = 0; row < visibleRows && typedEditorScroll + row < count; row++) {
-            int index = typedEditorScroll + row;
+        int rowsToRender = (viewport.height() + TYPED_ROW_HEIGHT - 1) / TYPED_ROW_HEIGHT + 1;
+        for (int row = 0; row < rowsToRender && firstIndex + row < count; row++) {
+            int index = firstIndex + row;
             TypedValue value = typedEditorKind.value(quest, index);
-            int top = listTop + row * TYPED_ROW_HEIGHT;
+            int top = listTop + rowOffset + row * TYPED_ROW_HEIGHT;
             UiRect rowBounds = new UiRect(left, top, right, top + TYPED_ROW_HEIGHT - 2);
+            if (!viewport.intersects(rowBounds)) continue;
             int actionWidth = 18;
             UiRect more = new UiRect(right - actionWidth, top + 9, right, top + 27);
             UiRect edit = new UiRect(more.left() - actionWidth - 2, top + 9, more.left() - 2, top + 27);
@@ -2386,20 +2471,18 @@ public final class QuestScreen extends Screen {
             Component summary = typedRowSummary(quest, index, known);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), textWidth)),
                     textLeft, top + 18, known ? 0xFF9FB0C2 : 0xFFFFA070, false);
-            if (rowBounds.contains(mouseX, mouseY)) {
-                hoveredComponentTooltip = List.of(Component.translatable(
-                        "screen.brnquest.editor.typed.more_hint"));
-            }
+            // Scissoring only affects pixels, so suppress button hover outside the same visible viewport.
+            int hoverMouseX = viewport.containsY(mouseY) ? mouseX : Integer.MIN_VALUE;
+            int hoverMouseY = viewport.containsY(mouseY) ? mouseY : Integer.MIN_VALUE;
             renderEditorIconButton(graphics, edit, Component.literal("✎"),
-                    Component.translatable("screen.brnquest.editor.action.edit"), true, false, mouseX, mouseY);
+                    Component.translatable("screen.brnquest.editor.action.edit"), true, false,
+                    hoverMouseX, hoverMouseY);
             renderEditorIconButton(graphics, more, Component.literal("⋯"),
-                    Component.translatable("screen.brnquest.editor.action.more"), true, false, mouseX, mouseY);
+                    Component.translatable("screen.brnquest.editor.action.more"), true, false,
+                    hoverMouseX, hoverMouseY);
             typedEditorHitboxes.add(new TypedEditorHitbox(value.id(), index, rowBounds, edit, more));
         }
         graphics.disableScissor();
-        EditorScrollbar.render(graphics, width - 8, listTop, listBottom,
-                count * TYPED_ROW_HEIGHT, visibleRows * TYPED_ROW_HEIGHT,
-                typedEditorScroll * (double) TYPED_ROW_HEIGHT);
         if (typedEditorMessage != null) {
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                             typedEditorMessage.getString(), detailsWidth() - 24)),
@@ -2416,18 +2499,27 @@ public final class QuestScreen extends Screen {
     private boolean handleTypedEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
         if (typedPropertyOpen) return handleTypedPropertyEditorClick(mouseX, mouseY);
+        EditorListViewport viewport = typedEditorViewport();
+        int typedViewportHeight = viewport.height();
+        QuestDefinition displayedQuest = selectedQuest();
+        int typedCount = displayedQuest == null ? 0 : typedEditorKind.size(displayedQuest);
+        if (button == 0 && typedEditorScroll.handleTrackClick(mouseX, mouseY, width - 8,
+                viewport.top(), viewport.bottom(),
+                typedCount * TYPED_ROW_HEIGHT, typedViewportHeight)) return true;
         if (button == 0 && typedEditorDoneBounds().contains(mouseX, mouseY)) {
             closeTypedEditor();
             return true;
         }
         if (button == 0 && typedEditorAddBounds().contains(mouseX, mouseY)) {
             if (!ClientEditorState.get().busy()) {
-                typedTypePickerScroll = 0;
+                typedTypePickerScroll.snap(0);
                 typedEditorMessage = null;
                 editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
             }
             return true;
         }
+        // Rows clipped by the list viewport must never retain an invisible interactive area.
+        if (!viewport.containsY(mouseY)) return true;
         if (ClientEditorState.get().busy()) return true;
         QuestBookSnapshot snapshot = displaySnapshot();
         QuestDefinition quest = selectedQuest();
@@ -2926,7 +3018,7 @@ public final class QuestScreen extends Screen {
         typedEditorOpen = true;
         typedEditorKind = kind;
         typedEditorQuestId = quest.id();
-        typedEditorScroll = 0;
+        typedEditorScroll.snap(0);
         typedEditorMessage = null;
     }
 
@@ -2934,7 +3026,7 @@ public final class QuestScreen extends Screen {
         closeTypedPropertyEditor();
         typedEditorOpen = false;
         typedEditorQuestId = null;
-        typedEditorScroll = 0;
+        typedEditorScroll.snap(0);
         typedEditorMessage = null;
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) closeActiveEditorOverlay();
     }
@@ -2942,9 +3034,6 @@ public final class QuestScreen extends Screen {
     private void renderTypedTypePicker(GuiGraphics graphics, int mouseX, int mouseY) {
         List<ResourceLocation> candidates = typedTypeCandidates();
         UiRect bounds = typedTypePickerBounds();
-        int visibleRows = EditorPickerList.visibleRows(bounds);
-        typedTypePickerScroll = Math.max(0, Math.min(Math.max(0, candidates.size() - visibleRows),
-                typedTypePickerScroll));
         List<EditorPickerList.Entry> entries = candidates.stream().map(type -> new EditorPickerList.Entry(
                 Component.literal(type.toString()), Component.translatable(typedEditorKind.addable(type)
                         ? typedEditorKind.itemBacked(type)
@@ -2954,7 +3043,7 @@ public final class QuestScreen extends Screen {
                 typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING)).toList();
         EditorPickerList.render(graphics, font, bounds,
                 Component.translatable("screen.brnquest.editor.typed.type_heading"), false, entries,
-                typedTypePickerScroll, mouseX, mouseY);
+                typedTypePickerScroll, currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
                 Component.translatable("screen.brnquest.editor.action.close"),
                 true, false, mouseX, mouseY);
@@ -2970,6 +3059,12 @@ public final class QuestScreen extends Screen {
             return true;
         }
         List<ResourceLocation> candidates = typedTypeCandidates();
+        UiRect pickerBounds = typedTypePickerBounds();
+        int pickerRowsTop = pickerBounds.top() + EditorPickerList.SEARCH_HEIGHT + 2;
+        int pickerViewportHeight = EditorPickerList.visibleRows(pickerBounds) * EditorPickerList.ROW_HEIGHT;
+        if (typedTypePickerScroll.handleTrackClick(mouseX, mouseY, pickerBounds.right() - 4,
+                pickerRowsTop, pickerRowsTop + pickerViewportHeight,
+                candidates.size() * EditorPickerList.ROW_HEIGHT, pickerViewportHeight)) return true;
         int index = EditorPickerList.entryAt(typedTypePickerBounds(), typedTypePickerScroll,
                 candidates.size(), mouseX, mouseY);
         if (index < 0) return true;
@@ -3030,8 +3125,12 @@ public final class QuestScreen extends Screen {
 
     private int typedEditorListTop() { return topToolbarHeight() + 34; }
 
-    private int typedEditorVisibleRows() {
-        return Math.max(1, (typedEditorAddBounds().top() - 16 - typedEditorListTop()) / TYPED_ROW_HEIGHT);
+    private EditorListViewport typedEditorViewport() {
+        // Keep a small footer gap while deliberately exposing half of the next row. Validation
+        // messages temporarily reclaim their original line so they never overlap list content.
+        int footerGap = typedEditorMessage == null ? 6 : 16;
+        return EditorListViewport.withHalfRowPreview(
+                typedEditorListTop(), typedEditorAddBounds().top() - footerGap, TYPED_ROW_HEIGHT);
     }
 
     private UiRect typedEditorAddBounds() {
@@ -3071,20 +3170,24 @@ public final class QuestScreen extends Screen {
 
         QuestBookSnapshot snapshot = displaySnapshot();
         int visibleRows = dependencyVisibleRows();
-        int maximumScroll = Math.max(0, quest.dependencies().size() - visibleRows);
-        dependencyScroll = Math.max(0, Math.min(maximumScroll, dependencyScroll));
         int listTop = dependencyListTop();
         int listBottom = listTop + visibleRows * DEPENDENCY_ROW_HEIGHT;
-        graphics.enableScissor(detailLeft() + 4, listTop, width - 4, listBottom);
+        dependencyScroll.frameAndRender(graphics, width - 8, listTop, listBottom,
+                quest.dependencies().size() * DEPENDENCY_ROW_HEIGHT,
+                visibleRows * DEPENDENCY_ROW_HEIGHT, currentMotionFrameSeconds, scrollSmoothSpeed());
+        int firstIndex = dependencyScroll.firstIndex(DEPENDENCY_ROW_HEIGHT);
+        int rowOffset = dependencyScroll.rowOffset(DEPENDENCY_ROW_HEIGHT);
+        graphics.enableScissor(detailLeft() + 4 + detailsDrawerOffsetX(), listTop,
+                Math.min(width, width - 4 + detailsDrawerOffsetX()), listBottom);
         if (quest.dependencies().isEmpty()) {
             graphics.drawCenteredString(font,
                     Component.translatable("screen.brnquest.editor.dependency.empty"),
                     (left + panelRight) / 2, listTop + 8, 0xFF9AA6B5);
         }
-        for (int row = 0; row < visibleRows && dependencyScroll + row < quest.dependencies().size(); row++) {
-            ResourceLocation dependencyId = quest.dependencies().get(dependencyScroll + row);
+        for (int row = 0; row <= visibleRows && firstIndex + row < quest.dependencies().size(); row++) {
+            ResourceLocation dependencyId = quest.dependencies().get(firstIndex + row);
             QuestDefinition dependency = snapshot == null ? null : snapshot.quests().get(dependencyId);
-            int top = listTop + row * DEPENDENCY_ROW_HEIGHT;
+            int top = listTop + rowOffset + row * DEPENDENCY_ROW_HEIGHT;
             UiRect rowBounds = new UiRect(left, top, panelRight, top + DEPENDENCY_ROW_HEIGHT - 2);
             UiRect remove = new UiRect(panelRight - 20, top + 5, panelRight - 2, top + 23);
             graphics.fill(rowBounds.left(), rowBounds.top(), rowBounds.right(), rowBounds.bottom(), 0xA02A323E);
@@ -3109,9 +3212,6 @@ public final class QuestScreen extends Screen {
             }
         }
         graphics.disableScissor();
-        EditorScrollbar.render(graphics, width - 8, listTop, listBottom,
-                quest.dependencies().size() * DEPENDENCY_ROW_HEIGHT,
-                visibleRows * DEPENDENCY_ROW_HEIGHT, dependencyScroll * (double) DEPENDENCY_ROW_HEIGHT);
 
         if (dependencyEditorMessage != null) {
             String visible = font.plainSubstrByWidth(dependencyEditorMessage.getString(), detailsWidth() - 24);
@@ -3128,6 +3228,12 @@ public final class QuestScreen extends Screen {
 
     private boolean handleDependencyEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
+        int dependencyViewportHeight = dependencyVisibleRows() * DEPENDENCY_ROW_HEIGHT;
+        QuestDefinition displayedQuest = selectedQuest();
+        int dependencyCount = displayedQuest == null ? 0 : displayedQuest.dependencies().size();
+        if (button == 0 && dependencyScroll.handleTrackClick(mouseX, mouseY, width - 8,
+                dependencyListTop(), dependencyListTop() + dependencyViewportHeight,
+                dependencyCount * DEPENDENCY_ROW_HEIGHT, dependencyViewportHeight)) return true;
         if (button == 0 && dependencyDoneBounds().contains(mouseX, mouseY)) {
             closeDependencyEditor();
             return true;
@@ -3159,14 +3265,14 @@ public final class QuestScreen extends Screen {
         closeActiveEditorOverlay();
         dependencyEditorOpen = true;
         dependencyEditorQuestId = quest.id();
-        dependencyScroll = 0;
+        dependencyScroll.snap(0);
         dependencyEditorMessage = null;
     }
 
     private void closeDependencyEditor() {
         dependencyEditorOpen = false;
         dependencyEditorQuestId = null;
-        dependencyScroll = 0;
+        dependencyScroll.snap(0);
         dependencyEditorMessage = null;
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) closeActiveEditorOverlay();
     }
@@ -3181,7 +3287,7 @@ public final class QuestScreen extends Screen {
         if (!dependencyEditorOpen || dependencyEditorQuestId == null) return;
         closeActiveEditorOverlay();
         dependencyFilter = "";
-        dependencyPickerScroll = 0;
+        dependencyPickerScroll.snap(0);
         dependencyEditorMessage = null;
         editorOverlays.show(EditorOverlayHost.Kind.DEPENDENCY_PICKER);
     }
@@ -3189,9 +3295,6 @@ public final class QuestScreen extends Screen {
     private void renderDependencyPicker(GuiGraphics graphics, int mouseX, int mouseY) {
         List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
         UiRect bounds = dependencyPickerBounds();
-        int visibleRows = EditorPickerList.visibleRows(bounds);
-        dependencyPickerScroll = Math.max(0, Math.min(Math.max(0, candidates.size() - visibleRows),
-                dependencyPickerScroll));
         List<EditorPickerList.Entry> entries = candidates.stream().map(candidate -> new EditorPickerList.Entry(
                 Component.literal((candidate.createsCycle() ? "⚠ " : "") + candidate.title()),
                 dependencyCandidateSubtitle(candidate),
@@ -3201,7 +3304,7 @@ public final class QuestScreen extends Screen {
                 : Component.literal("⌕ " + dependencyFilter);
         graphics.fill(0, 0, width, height, 0x66000000);
         EditorPickerList.render(graphics, font, bounds, searchText, dependencyFilter.isBlank(),
-                entries, dependencyPickerScroll, mouseX, mouseY);
+                entries, dependencyPickerScroll, currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
         if (entries.isEmpty()) {
             graphics.drawCenteredString(font,
                     Component.translatable("screen.brnquest.editor.dependency.no_candidates"),
@@ -3234,6 +3337,11 @@ public final class QuestScreen extends Screen {
             return true;
         }
         List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
+        int rowsTop = bounds.top() + EditorPickerList.SEARCH_HEIGHT + 2;
+        int viewportHeight = EditorPickerList.visibleRows(bounds) * EditorPickerList.ROW_HEIGHT;
+        if (dependencyPickerScroll.handleTrackClick(mouseX, mouseY, bounds.right() - 4,
+                rowsTop, rowsTop + viewportHeight, candidates.size() * EditorPickerList.ROW_HEIGHT,
+                viewportHeight)) return true;
         int index = EditorPickerList.entryAt(bounds, dependencyPickerScroll, candidates.size(), mouseX, mouseY);
         if (index < 0) return true;
         QuestDependencyEditorModel.Candidate candidate = candidates.get(index);
@@ -3472,6 +3580,24 @@ public final class QuestScreen extends Screen {
         }
     }
 
+    /** EditBox widgets render through Screen after custom panels, so apply the drawer translation explicitly. */
+    private void offsetDetailsDrawerFieldsForMotion() {
+        int offsetX = detailsDrawerOffsetX();
+        EditorTextField[] fields = {questIdField, questTitleField, questSubtitleField,
+                questDescriptionField, questIconField, typedPropertyIdField, typedPropertyClaimPolicyField};
+        if (!detailsOpen && !detailsDrawerVisible()) {
+            for (EditorTextField field : fields) {
+                if (field != null) field.hide();
+            }
+            typedPropertyConfigFields.forEach(EditorTextField::hide);
+            return;
+        }
+        for (EditorTextField field : fields) {
+            if (field != null) field.offsetForDrawerAnimation(offsetX);
+        }
+        typedPropertyConfigFields.forEach(field -> field.offsetForDrawerAnimation(offsetX));
+    }
+
     private static String iconItemId(String iconSnbt) {
         if (iconSnbt == null || iconSnbt.isBlank()) return "";
         try {
@@ -3633,22 +3759,24 @@ public final class QuestScreen extends Screen {
                 panel.left() + 12, panel.top() + 68, 0xFFFFC06A, false);
 
         int rowCount = publishReviewRowCount();
-        int maximum = EditorPublishReviewPanel.maximumScroll(reviewLayout, rowCount);
-        publishReviewScroll = Math.max(0, Math.min(maximum, publishReviewScroll));
+        publishReviewScroll.frameAndRender(graphics, reviewLayout.list().right() + 2,
+                reviewLayout.list().top(), reviewLayout.list().bottom(),
+                rowCount * EditorPublishReviewPanel.ROW_HEIGHT, reviewLayout.list().height(),
+                currentMotionFrameSeconds, scrollSmoothSpeed());
         graphics.enableScissor(reviewLayout.list().left(), reviewLayout.list().top(),
                 reviewLayout.list().right(), reviewLayout.list().bottom());
         int visibleRows = EditorPublishReviewPanel.visibleRows(reviewLayout);
-        for (int visibleIndex = 0; visibleIndex < visibleRows; visibleIndex++) {
-            int rowIndex = publishReviewScroll + visibleIndex;
+        int firstIndex = publishReviewScroll.firstIndex(EditorPublishReviewPanel.ROW_HEIGHT);
+        int rowOffset = publishReviewScroll.rowOffset(EditorPublishReviewPanel.ROW_HEIGHT);
+        for (int visibleIndex = 0; visibleIndex <= visibleRows; visibleIndex++) {
+            int rowIndex = firstIndex + visibleIndex;
             if (rowIndex >= rowCount) break;
             renderPublishReviewRow(graphics, reviewLayout, rowIndex,
-                    reviewLayout.list().top() + visibleIndex * EditorPublishReviewPanel.ROW_HEIGHT,
+                    reviewLayout.list().top() + rowOffset
+                            + visibleIndex * EditorPublishReviewPanel.ROW_HEIGHT,
                     mouseX, mouseY);
         }
         graphics.disableScissor();
-        EditorScrollbar.render(graphics, reviewLayout.list().right() + 2, reviewLayout.list().top(),
-                reviewLayout.list().bottom(), rowCount * EditorPublishReviewPanel.ROW_HEIGHT,
-                reviewLayout.list().height(), publishReviewScroll * EditorPublishReviewPanel.ROW_HEIGHT);
         renderEditorTextButton(graphics, reviewLayout.cancel(), Component.translatable("gui.cancel"),
                 null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         renderEditorTextButton(graphics, reviewLayout.confirm(),
@@ -3702,6 +3830,10 @@ public final class QuestScreen extends Screen {
         if (button != 0) return true;
         if (publishReview == null) return true;
         EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
+        if (publishReviewScroll.handleTrackClick(mouseX, mouseY, reviewLayout.list().right() + 2,
+                reviewLayout.list().top(), reviewLayout.list().bottom(),
+                publishReviewRowCount() * EditorPublishReviewPanel.ROW_HEIGHT,
+                reviewLayout.list().height())) return true;
         if (reviewLayout.cancel().contains(mouseX, mouseY)) {
             closeActiveEditorOverlay();
             return true;
@@ -3764,8 +3896,8 @@ public final class QuestScreen extends Screen {
                     .findFirst().orElse(null);
             editorSelectedQuest = quest.id();
             selectOnly(quest.id());
-            detailsOpen = true;
-            detailScroll = 0;
+            openDetailsPanel();
+            detailScroll.snap(0);
         }
         if (chapter == null) return quest != null;
         List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(book);
@@ -3774,7 +3906,7 @@ public final class QuestScreen extends Screen {
             chapterIndex = index;
             rememberedChapterId = chapter.id();
             rememberedChapterResolved = true;
-            navigationScroll = 0;
+            navigationScroll.snap(0);
         }
         return true;
     }
@@ -3968,7 +4100,7 @@ public final class QuestScreen extends Screen {
 
     private int detailStatusY(QuestDefinition quest) {
         int width = detailsWidth() - 38;
-        int y = detailContentTop() - (int) Math.round(detailScroll);
+        int y = detailContentTop() - (int) Math.round(renderedDetailScroll);
         y += font.split(Component.literal(questTitle(quest)), width).size() * font.lineHeight + 3;
         if (!quest.subtitle().isBlank()) y += font.split(Component.literal(quest.subtitle()), width).size() * font.lineHeight + 4;
         return y;
@@ -4127,19 +4259,19 @@ public final class QuestScreen extends Screen {
     }
 
     private double graphX(double screenX) {
-        return (screenX - graphOriginX()) / zoom;
+        return (screenX - graphOriginX()) / renderedZoom;
     }
 
     private double graphY(double screenY) {
-        return (screenY - graphOriginY()) / zoom;
+        return (screenY - graphOriginY()) / renderedZoom;
     }
 
     private double graphOriginX() {
-        return screenOriginX() + panX;
+        return screenOriginX() + renderedPanX;
     }
 
     private double graphOriginY() {
-        return contentCenterY() + panY;
+        return contentCenterY() + renderedPanY;
     }
 
     private int contentCenterY() {
@@ -4155,7 +4287,44 @@ public final class QuestScreen extends Screen {
     }
 
     private int canvasLeft() {
-        return layout().canvasLeft();
+        return layout().canvasLeft(navigationDrawerMotion.current());
+    }
+
+    private int canvasRight() {
+        return layout().canvasRight(detailsDrawerMotion.current());
+    }
+
+    private int navigationHandleLeft() {
+        return canvasLeft() - navigationHandleWidth();
+    }
+
+    private int navigationDrawerOffsetX() {
+        return layout().navigationDrawerOffset(navigationDrawerMotion.current());
+    }
+
+    private int detailsDrawerOffsetX() {
+        return layout().detailsDrawerOffset(detailsDrawerMotion.current());
+    }
+
+    private boolean navigationPanelVisibleAt(double x) {
+        return x >= NAV_LEFT && x < navigationHandleLeft();
+    }
+
+    private boolean navigationPanelAcceptsPointer(double x) {
+        return !navigationCollapsed && navigationDrawerMotion.current() >= 1.0
+                && navigationPanelVisibleAt(x);
+    }
+
+    private boolean detailsPanelVisibleAt(double x) {
+        return x >= canvasRight() && x < width;
+    }
+
+    private boolean detailsPanelAcceptsPointer(double x) {
+        return detailsOpen && detailsDrawerMotion.current() >= 1.0 && detailsPanelVisibleAt(x);
+    }
+
+    private boolean detailsDrawerVisible() {
+        return detailsDrawerMotion.current() > 0.0;
     }
 
     private int navigationWidth() {
@@ -4198,7 +4367,7 @@ public final class QuestScreen extends Screen {
         QuestScreenLayout current = cachedLayout;
         if (current == null || current.width() != width || current.height() != height
                 || current.navigationCollapsed() != navigationCollapsed || current.detailsOpen() != detailsOpen) {
-            // Geometry changes only on resize or drawer toggles; reuse one immutable snapshot between them.
+            // Width profiles change only on resize/toggles; animation progress is applied to this snapshot.
             current = new QuestScreenLayout(width, height, navigationCollapsed, detailsOpen);
             cachedLayout = current;
         }
@@ -4256,21 +4425,186 @@ public final class QuestScreen extends Screen {
         viewportBookId = bookId;
         QuestScreenSessionState.Snapshot remembered = QuestScreenSessionState.load(serverContextId, bookId);
         zoom = remembered.zoom();
+        zoomMotion.snap(zoom);
+        renderedZoom = zoom;
         panX = QuestViewportMath.panForGraphCenter(remembered.centerX(), zoom);
         panY = QuestViewportMath.panForGraphCenter(remembered.centerY(), zoom);
+        renderedPanX = panX;
+        renderedPanY = panY;
+        focusPanXMotion.snap(panX);
+        focusPanYMotion.snap(panY);
         rememberedChapterId = remembered.chapterId();
         navigationCollapsed = remembered.navigationCollapsed();
+        navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
         rememberedChapterResolved = false;
-        navigationScroll = 0;
-        detailScroll = 0;
+        navigationScroll.snap(0);
+        detailScroll.snap(0);
         detailsOpen = false;
+        detailsDrawerMotion.snap(0.0);
+        observedDetailsOpen = false;
+        observedDetailsQuestId = null;
+        focusingQuestId = null;
+        focusTargetInitialized = false;
         editorSelectedQuest = null;
     }
 
     private void saveViewport(ResourceLocation chapterId) {
+        finishZoomMotion();
         QuestScreenSessionState.save(serverContextId, viewportBookId, chapterId,
                 QuestViewportMath.graphCenterForPan(panX, zoom),
                 QuestViewportMath.graphCenterForPan(panY, zoom), zoom, navigationCollapsed);
+    }
+
+    /** Advances wheel zoom every rendered frame while preserving the physical-screen-center anchor. */
+    private void advanceZoomMotion(double elapsedSeconds) {
+        double oldZoom = zoom;
+        zoom = zoomMotion.advanceFrame(elapsedSeconds, zoomSmoothSpeed());
+        if (Double.compare(oldZoom, zoom) != 0) {
+            panX = QuestViewportMath.panForStableAnchor(width / 2.0, screenOriginX(), panX, oldZoom, zoom);
+            panY = QuestViewportMath.panForStableAnchor(height / 2.0, height / 2.0, panY, oldZoom, zoom);
+        }
+        renderedZoom = zoom;
+        renderedPanX = panX;
+        renderedPanY = panY;
+    }
+
+    /** Advances both drawer reveal boundaries from the same frame time used by scrolling and zoom. */
+    private void advanceDrawerMotion(double elapsedSeconds) {
+        navigationDrawerMotion.target(navigationCollapsed ? 0.0 : 1.0);
+        detailsDrawerMotion.target(detailsOpen ? 1.0 : 0.0);
+        navigationDrawerMotion.advanceFrame(elapsedSeconds, drawerSmoothSpeed());
+        detailsDrawerMotion.advanceFrame(elapsedSeconds, drawerSmoothSpeed());
+    }
+
+    /** Starts one focus pass for a newly opened or newly selected quest, then releases manual control. */
+    private void updateSelectedQuestFocus(QuestBookSnapshot snapshot, double elapsedSeconds) {
+        QuestDefinition selected = detailsOpen ? selectedQuest() : null;
+        ResourceLocation selectedId = selected == null ? null : selected.id();
+        boolean focusRequested = detailsOpen
+                && (!observedDetailsOpen || !Objects.equals(observedDetailsQuestId, selectedId));
+        observedDetailsOpen = detailsOpen;
+        observedDetailsQuestId = selectedId;
+
+        if (!autoFocusSelectedQuest() || !detailsOpen || selected == null) {
+            cancelSelectedQuestFocus();
+            return;
+        }
+        if (focusRequested) {
+            finishZoomMotion();
+            focusPanXMotion.snap(renderedPanX);
+            focusPanYMotion.snap(renderedPanY);
+            focusingQuestId = selectedId;
+            focusTargetInitialized = false;
+        }
+        if (focusingQuestId == null) return;
+        QuestDefinition focusQuest = snapshot.quests().get(focusingQuestId);
+        if (focusQuest == null) {
+            cancelSelectedQuestFocus();
+            return;
+        }
+        // Defer until a click-versus-drag gesture resolves, avoiding camera movement under a held node.
+        if (dragging || nodeDragging) {
+            focusPanXMotion.snap(renderedPanX);
+            focusPanYMotion.snap(renderedPanY);
+            return;
+        }
+
+        if (!focusTargetInitialized) {
+            QuestScreenLayout finalLayout = layout();
+            // Capture the destination once from the drawers' final states. Recomputing it from
+            // their animated edges bends the camera path and can produce a visible end jitter.
+            double targetX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
+                    + finalLayout.canvasRight(detailsOpen ? 1.0 : 0.0)) / 2.0;
+            double targetY = finalLayout.contentCenterY();
+            focusPanXMotion.target(QuestViewportMath.panForGraphPoint(
+                    nodeGraphX(focusQuest), targetX, screenOriginX(), renderedZoom));
+            focusPanYMotion.target(QuestViewportMath.panForGraphPoint(
+                    nodeGraphY(focusQuest), targetY, finalLayout.contentCenterY(), renderedZoom));
+            focusTargetInitialized = true;
+        }
+        panX = focusPanXMotion.advanceFrame(elapsedSeconds, focusSmoothSpeed());
+        panY = focusPanYMotion.advanceFrame(elapsedSeconds, focusSmoothSpeed());
+        renderedPanX = panX;
+        renderedPanY = panY;
+
+        boolean cameraSettled = focusPanXMotion.current() == focusPanXMotion.target()
+                && focusPanYMotion.current() == focusPanYMotion.target();
+        if (cameraSettled) {
+            focusingQuestId = null;
+            focusTargetInitialized = false;
+        }
+    }
+
+    private void cancelSelectedQuestFocus() {
+        focusingQuestId = null;
+        focusTargetInitialized = false;
+        focusPanXMotion.snap(renderedPanX);
+        focusPanYMotion.snap(renderedPanY);
+        panX = renderedPanX;
+        panY = renderedPanY;
+    }
+
+    /** Auto-collapses navigation only for a genuine closed-to-open details transition. */
+    private void openDetailsPanel() {
+        if (!detailsOpen) navigationCollapsed = true;
+        detailsOpen = true;
+    }
+
+    /** Supplies bounded wall-clock frame time so pauses do not collapse an animation into one jump. */
+    private double motionFrameSeconds() {
+        long now = System.nanoTime();
+        double elapsed = previousMotionFrameNanos == 0
+                ? 1.0 / 60.0
+                : (now - previousMotionFrameNanos) / 1_000_000_000.0;
+        previousMotionFrameNanos = now;
+        return Math.max(0.0, Math.min(0.05, elapsed));
+    }
+
+    private static double scrollStep() {
+        return BrnQuestClientConfig.VALUES.scrollStep.get();
+    }
+
+    private static double scrollSmoothSpeed() {
+        return BrnQuestClientConfig.VALUES.smoothSpeed.get();
+    }
+
+    private static double zoomSmoothSpeed() {
+        return BrnQuestClientConfig.VALUES.zoomSmoothSpeed.get();
+    }
+
+    private static double drawerSmoothSpeed() {
+        return BrnQuestClientConfig.VALUES.drawerSmoothSpeed.get();
+    }
+
+    private static double focusSmoothSpeed() {
+        return BrnQuestClientConfig.VALUES.focusSmoothSpeed.get();
+    }
+
+    private static boolean autoFocusSelectedQuest() {
+        return BrnQuestClientConfig.VALUES.autoFocusSelectedQuest.get();
+    }
+
+    /** Cancels residual easing at the currently drawn transform before direct manipulation begins. */
+    private void adoptRenderedCamera() {
+        cancelSelectedQuestFocus();
+        zoom = renderedZoom;
+        zoomMotion.snap(zoom);
+        panX = renderedPanX;
+        panY = renderedPanY;
+    }
+
+    /** Persists the player's requested zoom rather than an arbitrary mid-animation frame. */
+    private void finishZoomMotion() {
+        double targetZoom = zoomMotion.target();
+        if (Double.compare(zoom, targetZoom) != 0) {
+            panX = QuestViewportMath.panForStableAnchor(width / 2.0, screenOriginX(), panX, zoom, targetZoom);
+            panY = QuestViewportMath.panForStableAnchor(height / 2.0, height / 2.0, panY, zoom, targetZoom);
+            zoom = targetZoom;
+        }
+        zoomMotion.snap(zoom);
+        renderedPanX = panX;
+        renderedPanY = panY;
+        renderedZoom = zoom;
     }
 
     private String currentServerContext() {

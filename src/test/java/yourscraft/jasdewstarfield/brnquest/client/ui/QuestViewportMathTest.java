@@ -25,6 +25,17 @@ class QuestViewportMathTest {
         assertEquals(300, QuestViewportMath.clampScroll(900, 500, 200));
     }
 
+    @Test void selectedNodeCanBeCenteredInsideTheRemainingCanvas() {
+        double graphPixel = 170;
+        double targetScreen = 600;
+        double origin = 480;
+        double zoom = 1.5;
+
+        double pan = QuestViewportMath.panForGraphPoint(graphPixel, targetScreen, origin, zoom);
+
+        assertEquals(targetScreen, origin + pan + graphPixel * zoom, 0.000001);
+    }
+
     @Test void partialRewardRowStillContributesItsFullHeight() {
         assertEquals(0, QuestViewportMath.rewardGridHeight(0, 8));
         assertEquals(28, QuestViewportMath.rewardGridHeight(1, 8));

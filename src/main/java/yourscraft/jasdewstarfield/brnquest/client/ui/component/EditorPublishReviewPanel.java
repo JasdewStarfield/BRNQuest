@@ -28,11 +28,9 @@ public final class EditorPublishReviewPanel {
         return Math.max(0, rowCount - visibleRows(layout));
     }
 
-    public static int rowAt(Layout layout, int scroll, int rowCount, double x, double y) {
+    public static int rowAt(Layout layout, EditorSmoothScroll scroll, int rowCount, double x, double y) {
         if (!layout.list().contains(x, y)) return -1;
-        int visibleIndex = ((int) y - layout.list().top()) / ROW_HEIGHT;
-        int index = scroll + visibleIndex;
-        return visibleIndex < visibleRows(layout) && index < rowCount ? index : -1;
+        return scroll.rowAt(y, layout.list().top(), layout.list().bottom(), ROW_HEIGHT, rowCount);
     }
 
     public record Layout(UiRect panel, UiRect list, UiRect cancel, UiRect confirm) {}

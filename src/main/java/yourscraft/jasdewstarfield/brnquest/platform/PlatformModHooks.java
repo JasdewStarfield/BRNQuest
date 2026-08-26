@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.platform;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.config.ModConfig;
 import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddReloadListenerEvent;
@@ -15,6 +16,7 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.command.BrnQuestCommands;
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookReloadListener;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
@@ -27,6 +29,7 @@ public final class PlatformModHooks {
     private PlatformModHooks() {}
 
     public static void register(IEventBus modEventBus, ModContainer container) {
+        container.registerConfig(ModConfig.Type.CLIENT, BrnQuestClientConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onReloadListeners);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onCommands);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onLogin);

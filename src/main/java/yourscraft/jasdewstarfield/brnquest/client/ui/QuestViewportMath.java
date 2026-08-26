@@ -19,6 +19,11 @@ final class QuestViewportMath {
         return anchorScreen - screenOrigin - worldAtAnchor * GRID_SCALE * newZoom;
     }
 
+    /** Places one graph-pixel coordinate at a requested screen coordinate. */
+    static double panForGraphPoint(double graphPixel, double targetScreen, double screenOrigin, double zoom) {
+        return targetScreen - screenOrigin - graphPixel * zoom;
+    }
+
     static double clampScroll(double value, int contentHeight, int viewportHeight) {
         return Math.max(0.0, Math.min(Math.max(0, contentHeight - viewportHeight), value));
     }

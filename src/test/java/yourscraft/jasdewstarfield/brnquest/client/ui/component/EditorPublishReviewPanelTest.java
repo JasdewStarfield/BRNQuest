@@ -21,9 +21,12 @@ class EditorPublishReviewPanelTest {
 
     @Test void rowHitTestingUsesTheSameScrollWindowAsRendering() {
         var layout = EditorPublishReviewPanel.layout(new QuestScreenLayout(800, 600, false, false));
-        assertEquals(7, EditorPublishReviewPanel.rowAt(layout, 7, 30,
+        EditorSmoothScroll scroll = new EditorSmoothScroll();
+        scroll.snap(7 * EditorPublishReviewPanel.ROW_HEIGHT);
+        assertEquals(7, EditorPublishReviewPanel.rowAt(layout, scroll, 30,
                 layout.list().left() + 4, layout.list().top() + 4));
-        assertEquals(-1, EditorPublishReviewPanel.rowAt(layout, 0, 0,
+        scroll.snap(0);
+        assertEquals(-1, EditorPublishReviewPanel.rowAt(layout, scroll, 0,
                 layout.list().left() + 4, layout.list().top() + 4));
         assertTrue(EditorPublishReviewPanel.maximumScroll(layout, 30) > 0);
     }

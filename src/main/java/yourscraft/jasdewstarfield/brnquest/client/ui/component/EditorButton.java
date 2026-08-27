@@ -156,6 +156,15 @@ public final class EditorButton {
         return new ContentLayout(icon, label);
     }
 
+    /** Returns the exact icon slot used by rendering so optional hover actions never claim the label area. */
+    public static UiRect iconBounds(Font font, UiRect bounds, Definition definition) {
+        int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
+        int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());
+        float scale = labelScale(bounds, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
+        int scaledLabelWidth = (int) Math.ceil(labelWidth * scale);
+        return contentLayout(bounds, definition.contentMode(), iconWidth, scaledLabelWidth, CONTENT_GAP).icon();
+    }
+
     /** Computes the text-only part of a button without shrinking icons or click targets. */
     static float labelScale(UiRect bounds, ContentMode mode, int iconWidth, int labelWidth, int gap) {
         if (mode == ContentMode.ICON_ONLY || labelWidth <= 0) return 1.0F;

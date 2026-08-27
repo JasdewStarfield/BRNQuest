@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -26,6 +27,11 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.TransientChildScreenParent;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
@@ -58,10 +64,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /** Quest-book UI with grouped navigation, a scalable directed graph, and intent-only details. */
-public final class QuestScreen extends Screen {
+public final class QuestScreen extends Screen implements RecipeLookupSource, TransientChildScreenParent {
     private static final int NAV_LEFT = 0;
     private static final int NAV_GROUP_HEIGHT = 13;
     private static final int NAV_CHAPTER_HEIGHT = 15;
@@ -121,6 +128,7 @@ public final class QuestScreen extends Screen {
     private String serverContextId = "unknown";
     private ResourceLocation viewportBookId;
     private ResourceLocation editorSelectedQuest;
+    private boolean editorSelectionMode;
     private boolean catalogRequested;
     private final EditorSmoothScroll catalogScroll = new EditorSmoothScroll();
     private String catalogFilter = "";
@@ -205,6 +213,7 @@ public final class QuestScreen extends Screen {
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
+    private RecipeLookupTarget hoveredRecipeLookupTarget;
     private AuthoringNetwork.PublishReviewWire publishReview;
     private final EditorSmoothScroll publishReviewScroll = new EditorSmoothScroll();
     private ResourceLocation recoveryCopyBookId;
@@ -218,6 +227,7 @@ public final class QuestScreen extends Screen {
         renderedZoom = zoom;
         navigationCollapsed = defaults.navigationCollapsed();
         navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
+        editorSelectionMode = ClientEditorState.get().draft().isPresent();
     }
 
     @Override
@@ -297,6 +307,7 @@ public final class QuestScreen extends Screen {
         super.tick();
         ClientEditorState editor = ClientEditorState.get();
         editor.tick();
+        reconcileModeSelection(editor);
         if (questEditorOpen && !editor.editing()) closeQuestEditor();
         if (dependencyEditorOpen && !editor.editing()) closeDependencyEditor();
         if ((!editor.editing() && switch (editorOverlays.active()) {
@@ -317,16 +328,72 @@ public final class QuestScreen extends Screen {
         reconcileDragPreview();
     }
 
+    /**
+     * Transfers the visible task by stable ID exactly once when the authoritative display source
+     * changes between the runtime snapshot and an editor draft. Missing IDs close details instead
+     * of reviving the target mode's unrelated historical selection.
+     */
+    private void reconcileModeSelection(ClientEditorState editor) {
+        boolean nextEditorMode = editor.draft().isPresent();
+        if (nextEditorMode == editorSelectionMode) return;
+        QuestBookSnapshot target = nextEditorMode
+                ? editor.draft().orElse(null) : ClientQuestState.get().book().orElse(null);
+        ResourceLocation preferred = editorSelectionMode
+                ? editorSelectedQuest : ClientQuestState.get().selected();
+        Set<ResourceLocation> targetIds = target == null ? Set.of() : target.quests().keySet();
+        QuestModeSelection.Result result = QuestModeSelection.resolve(preferred, detailsOpen, targetIds);
+
+        if (nextEditorMode) {
+            editorSelectedQuest = result.selectedId();
+            editorSelection.clear();
+            if (result.selectedId() != null) selectOnly(result.selectedId());
+        } else {
+            ClientQuestState.get().selected(result.selectedId());
+            if (result.selectedId() != null) {
+                // Match an ordinary view-mode node selection so the explicit protocol intent
+                // remains consistent even though selection currently has no authority effect.
+                BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), result.selectedId().toString());
+            }
+        }
+        detailsOpen = result.detailsOpen();
+        if (result.selectedId() != null && target != null) {
+            selectChapterContaining(target, result.selectedId());
+        } else {
+            detailScroll.snap(0);
+            closeQuestEditingPanels();
+        }
+        editorSelectionMode = nextEditorMode;
+    }
+
+    private void selectChapterContaining(QuestBookSnapshot snapshot, ResourceLocation questId) {
+        QuestDefinition quest = snapshot.quests().get(questId);
+        if (quest == null) return;
+        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
+        for (int index = 0; index < chapters.size(); index++) {
+            if (chapters.get(index).id().equals(quest.chapterId())) {
+                chapterIndex = index;
+                rememberedChapterId = quest.chapterId();
+                rememberedChapterResolved = true;
+                return;
+            }
+        }
+    }
+
     /** Prevents Screen.render from applying a second blur pass over the completed UI. */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Network work can install or clear the draft between two screen ticks. Reconcile here
+        // before this frame reads either snapshot or selection, preventing a transient null task
+        // from cancelling and restarting an otherwise unchanged auto-focus animation.
+        reconcileModeSelection(ClientEditorState.get());
         // Tooltips are collected by content layers and rendered only after every opaque panel.
         hoveredDetailStack = ItemStack.EMPTY;
         hoveredDetailText = null;
         hoveredComponentTooltip = List.of();
+        hoveredRecipeLookupTarget = null;
         // Blur the world once, then render every BRNQuest layer above it.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0xC8151820);
@@ -552,7 +619,12 @@ public final class QuestScreen extends Screen {
 
         if (mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
                 && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
-            hoveredDetailText = Component.literal(questTitle(quest));
+            List<Component> tooltip = new ArrayList<>();
+            tooltip.add(Component.literal(questTitle(quest)).withStyle(ChatFormatting.WHITE));
+            if (!quest.subtitle().isBlank()) {
+                tooltip.add(Component.literal(quest.subtitle()).withStyle(ChatFormatting.GRAY));
+            }
+            hoveredComponentTooltip = List.copyOf(tooltip);
         }
     }
 
@@ -787,17 +859,21 @@ public final class QuestScreen extends Screen {
         graphics.drawString(font, Component.literal(progress), x + 24, y + 13, 0xFFABB7C6, false);
         if (task.optional()) graphics.drawString(font, Component.translatable("screen.brnquest.optional"), x + width - 38, y + 13, 0xFF9AA6B5, false);
         boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
+        UiRect itemBounds = new UiRect(x + 3, y + 4, x + 19, y + 20);
+        boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
+                detailRecipeLookupViewport(), mouseX, mouseY);
         boolean submitted = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
         boolean pending = ClientQuestState.get().isTaskSubmissionPending(task.id().toString());
         boolean interactive = !ClientEditorState.get().editing()
                 && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !submitted && !pending
                 && presentation.interactive(taskView);
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
-        if (visible && mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + 24) {
-            // Always delegate item tooltips to Minecraft so component data and tooltip
-            // lines injected by other mods remain intact. Text hints cover non-item rows.
-            if (!stack.isEmpty()) hoveredDetailStack = stack;
-            else hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
+        if (itemHovered) {
+            // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
+            hoveredDetailStack = stack;
+        } else if (stack.isEmpty() && visible && mouseX >= x && mouseX < x + width
+                && mouseY >= y && mouseY < y + 24) {
+            hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
         }
         return y + 28;
     }
@@ -817,13 +893,18 @@ public final class QuestScreen extends Screen {
         }
         if (claimed) graphics.drawString(font, "✓", x + 15, y + 14, 0xFF8BE2A0, true);
         boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
+        UiRect itemBounds = new UiRect(x + 4, y + 4, x + 20, y + 20);
+        boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
+                detailRecipeLookupViewport(), mouseX, mouseY);
         if (claimable && visible) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
-        if (visible && mouseX >= x && mouseX <= x + 24 && mouseY >= y && mouseY <= y + 24) {
+        if (itemHovered) {
+            // Item tooltip and recipe lookup now stop together at the icon's exclusive edges.
+            hoveredDetailStack = stack;
+        } else if (stack.isEmpty() && visible && mouseX >= x && mouseX < x + 24
+                && mouseY >= y && mouseY < y + 24) {
             RewardPresentationContext presentationContext = new RewardPresentationContext(minecraft, rewardView,
                     claimable, claimed, stack);
-            // Item rewards retain the complete vanilla/modded tooltip pipeline.
-            if (!stack.isEmpty()) hoveredDetailStack = stack;
-            else hoveredDetailText = presentation.interactionHint(presentationContext);
+            hoveredDetailText = presentation.interactionHint(presentationContext);
         }
     }
 
@@ -2459,6 +2540,12 @@ public final class QuestScreen extends Screen {
             TypedRowPresentation rowPresentation = typedRowPresentation(quest, index);
             if (!rowPresentation.stack().isEmpty()) {
                 graphics.renderItem(rowPresentation.stack(), rowBounds.left() + 4, top + 10);
+                if (registerRecipeLookupTarget(rowPresentation.stack(),
+                        new UiRect(rowBounds.left() + 4, top + 10, rowBounds.left() + 20, top + 26),
+                        new UiRect(rowBounds.left(), viewport.top(), rowBounds.right(), viewport.bottom()),
+                        mouseX, mouseY)) {
+                    hoveredDetailStack = rowPresentation.stack();
+                }
             } else {
                 graphics.drawCenteredString(font, rowPresentation.symbol(), rowBounds.left() + 12, top + 14,
                         0xFFFFFFFF);
@@ -2712,9 +2799,11 @@ public final class QuestScreen extends Screen {
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");
             EditorIcon icon = stack.isEmpty()
                     ? EditorIcon.glyph(Component.literal("+")) : EditorIcon.item(stack);
-            renderEditorActionButton(graphics, row.field(), EditorButton.Definition.iconAndText(
-                            select, select, icon),
+            EditorButton.Definition definition = EditorButton.Definition.iconAndText(select, select, icon);
+            renderEditorActionButton(graphics, row.field(), definition,
                     !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            registerRecipeLookupTarget(stack, EditorButton.iconBounds(font, row.field(), definition),
+                    row.field(), mouseX, mouseY);
         } else {
             field.show(row.field(), !ClientEditorState.get().busy());
         }
@@ -3465,9 +3554,13 @@ public final class QuestScreen extends Screen {
         if (questEditorIconMode == IconEditorMode.ITEM
                 && iconId != null && BuiltInRegistries.ITEM.containsKey(iconId)) {
             Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
-            renderEditorActionButton(graphics, questIconPickerBounds(), EditorButton.Definition.iconOnly(
-                            select, select, EditorIcon.item(BuiltInRegistries.ITEM.get(iconId).getDefaultInstance())),
+            ItemStack stack = BuiltInRegistries.ITEM.get(iconId).getDefaultInstance();
+            EditorButton.Definition definition = EditorButton.Definition.iconOnly(
+                    select, select, EditorIcon.item(stack));
+            renderEditorActionButton(graphics, questIconPickerBounds(), definition,
                     !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            registerRecipeLookupTarget(stack, EditorButton.iconBounds(font, questIconPickerBounds(), definition),
+                    questIconPickerBounds(), mouseX, mouseY);
         } else if (questEditorIconMode == IconEditorMode.ITEM) {
             Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
             renderEditorActionButton(graphics, questIconPickerBounds(), EditorButton.Definition.iconOnly(
@@ -4070,14 +4163,62 @@ public final class QuestScreen extends Screen {
         return ClientEditorState.get().draft().isPresent() ? editorSelectedQuest : ClientQuestState.get().selected();
     }
 
+    @Override
+    public Optional<RecipeLookupTarget> recipeLookupTargetAt(double mouseX, double mouseY) {
+        // Modal editor surfaces cover the graph and detail icons, so they must also suppress
+        // optional lookup hit testing instead of relying on scissoring alone.
+        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE || hoveredRecipeLookupTarget == null
+                || !hoveredRecipeLookupTarget.contains(mouseX, mouseY)) {
+            return Optional.empty();
+        }
+        return Optional.of(hoveredRecipeLookupTarget);
+    }
+
+    @Override
+    public void prepareForTransientChildScreen() {
+        // The matching ScreenEvent.Opening is raised before removed(), allowing a recipe viewer
+        // to suspend this exact editor object without closing its server-authoritative lease.
+        editorChildScreenOpening = true;
+    }
+
+    /** Records only the visible pixels of an item icon; the last rendered layer wins hover priority. */
+    private boolean registerRecipeLookupTarget(ItemStack stack, UiRect bounds, UiRect viewport,
+                                               double mouseX, double mouseY) {
+        Optional<RecipeLookupTarget> target = RecipeLookupTarget.clipped(stack, bounds, viewport)
+                .filter(candidate -> candidate.contains(mouseX, mouseY));
+        target.ifPresent(candidate -> hoveredRecipeLookupTarget = candidate);
+        return target.isPresent();
+    }
+
+    private UiRect detailRecipeLookupViewport() {
+        return new UiRect(detailLeft() + 1, detailContentTop(), width - 10,
+                height - detailContentBottomMargin());
+    }
+
     /** Draws the one winning hover surface at the final z-order, above details and navigation chrome. */
     private void renderDeferredTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        Component lookupHint = hoveredRecipeLookupTarget == null
+                ? null : RecipeLookupHint.current().orElse(null);
         if (!hoveredComponentTooltip.isEmpty()) {
-            graphics.renderComponentTooltip(font, hoveredComponentTooltip, mouseX, mouseY);
+            if (lookupHint == null) {
+                graphics.renderComponentTooltip(font, hoveredComponentTooltip, mouseX, mouseY);
+            } else {
+                List<Component> tooltip = new ArrayList<>(hoveredComponentTooltip);
+                tooltip.add(lookupHint);
+                graphics.renderComponentTooltip(font, tooltip, mouseX, mouseY);
+            }
         } else if (!hoveredDetailStack.isEmpty()) {
+            // The optional integration appends its hint through GatherComponents so the complete
+            // vanilla/modded ItemStack tooltip pipeline remains intact.
             graphics.renderTooltip(font, hoveredDetailStack, mouseX, mouseY);
         } else if (hoveredDetailText != null) {
-            graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
+            if (lookupHint == null) {
+                graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
+            } else {
+                graphics.renderComponentTooltip(font, List.of(hoveredDetailText, lookupHint), mouseX, mouseY);
+            }
+        } else if (lookupHint != null) {
+            graphics.renderTooltip(font, lookupHint, mouseX, mouseY);
         }
     }
 

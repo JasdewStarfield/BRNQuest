@@ -246,6 +246,9 @@
   "screen.brnquest.editor.narration": "%1$s。%2$s。%3$s",
   "screen.brnquest.editor.undo.action": "撤销",
   "screen.brnquest.editor.redo.action": "重做",
+  "screen.brnquest.jei.lookup_hint.both": "按 %1$s 查看配方 · 按 %2$s 查看用途",
+  "screen.brnquest.jei.lookup_hint.recipe": "按 %1$s 查看配方",
+  "screen.brnquest.jei.lookup_hint.uses": "按 %1$s 查看用途",
   "toast.brnquest.updated": "BRNQuest 已更新",
   "toast.brnquest.updated.description": "任务进度发生变化。"
 }

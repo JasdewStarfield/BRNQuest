@@ -1,21 +1,37 @@
 package yourscraft.jasdewstarfield.brnquest.compat.jei;
 
+import com.mojang.datafixers.util.Either;
 import mezz.jei.api.IModPlugin;
 import mezz.jei.api.JeiPlugin;
 import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.handlers.IGhostIngredientHandler;
+import mezz.jei.api.gui.handlers.IGlobalGuiHandler;
 import mezz.jei.api.gui.handlers.IGuiProperties;
+import mezz.jei.api.gui.builder.IClickableIngredientFactory;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
+import mezz.jei.api.runtime.IClickableIngredient;
+import mezz.jei.api.runtime.IJeiRuntime;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.event.RenderTooltipEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ui.EditorItemSelectorScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.TransientChildScreenParent;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Optional JEI entry point. No core BRNQuest class references this package, so the JVM never
@@ -24,6 +40,14 @@ import java.util.List;
 @JeiPlugin
 public final class BrnQuestJeiPlugin implements IModPlugin {
     private static final ResourceLocation UID = ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, "editor");
+    private IJeiRuntime runtime;
+
+    public BrnQuestJeiPlugin() {
+        // This class exists only in JEI's optional discovery path, so registering a client event
+        // listener here cannot resolve JEI classes during a dependency-absent BRNQuest startup.
+        NeoForge.EVENT_BUS.addListener(this::onScreenOpening);
+        NeoForge.EVENT_BUS.addListener(this::onTooltipGathering);
+    }
 
     @Override
     public ResourceLocation getPluginUid() {
@@ -33,20 +57,103 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         // Registering a plain Screen makes JEI render its ingredient list beside the selector layer.
-        registration.addGuiScreenHandler(EditorItemSelectorScreen.class, BrnQuestJeiPlugin::properties);
+        registration.addGuiScreenHandler(EditorItemSelectorScreen.class, BrnQuestJeiPlugin::selectorProperties);
+        // Global clickable ingredients are queried only for JEI-managed screens. QuestScreen is
+        // full-width, so registration activates recipe/use input without reserving overlay space.
+        registration.addGuiScreenHandler(QuestScreen.class, BrnQuestJeiPlugin::questProperties);
         registration.addGhostIngredientHandler(EditorItemSelectorScreen.class, new ItemSelectorGhostHandler());
+        registration.addGlobalGuiHandler(new BrnQuestClickableItemHandler());
     }
 
-    private static IGuiProperties properties(EditorItemSelectorScreen screen) {
+    @Override
+    public void onRuntimeAvailable(IJeiRuntime jeiRuntime) {
+        runtime = jeiRuntime;
+        // Read the live mappings on demand so in-game key rebinding is reflected immediately.
+        RecipeLookupHint.install(() -> lookupHint(jeiRuntime));
+    }
+
+    @Override
+    public void onRuntimeUnavailable() {
+        runtime = null;
+        RecipeLookupHint.clear();
+    }
+
+    private void onScreenOpening(ScreenEvent.Opening event) {
+        Screen current = event.getCurrentScreen();
+        if (runtime == null || !(current instanceof TransientChildScreenParent parent)
+                || event.getNewScreen() == current) return;
+        // JEI assigns its parent before setScreen fires Opening. Mark only that exact transition,
+        // leaving ordinary inventory, disconnect, and explicit editor-close lifecycles untouched.
+        if (runtime.getRecipesGui().getParentScreen().orElse(null) == current) {
+            parent.prepareForTransientChildScreen();
+        }
+    }
+
+    private void onTooltipGathering(RenderTooltipEvent.GatherComponents event) {
+        if (runtime == null || event.getItemStack().isEmpty()) return;
+        Minecraft minecraft = Minecraft.getInstance();
+        Screen screen = minecraft.screen;
+        if (!(screen instanceof RecipeLookupSource source)) return;
+        double mouseX = minecraft.mouseHandler.xpos() * minecraft.getWindow().getGuiScaledWidth()
+                / minecraft.getWindow().getScreenWidth();
+        double mouseY = minecraft.mouseHandler.ypos() * minecraft.getWindow().getGuiScaledHeight()
+                / minecraft.getWindow().getScreenHeight();
+        source.recipeLookupTargetAt(mouseX, mouseY)
+                .filter(target -> ItemStack.isSameItemSameComponents(target.stack(), event.getItemStack()))
+                .flatMap(ignored -> lookupHint(runtime))
+                .ifPresent(hint -> event.getTooltipElements().add(Either.left(hint)));
+    }
+
+    private static Optional<Component> lookupHint(IJeiRuntime runtime) {
+        var recipe = runtime.getKeyMappings().getShowRecipe();
+        var uses = runtime.getKeyMappings().getShowUses();
+        if (recipe.isUnbound() && uses.isUnbound()) return Optional.empty();
+        Component hint;
+        if (recipe.isUnbound()) {
+            hint = Component.translatable("screen.brnquest.jei.lookup_hint.uses",
+                    uses.getTranslatedKeyMessage());
+        } else if (uses.isUnbound()) {
+            hint = Component.translatable("screen.brnquest.jei.lookup_hint.recipe",
+                    recipe.getTranslatedKeyMessage());
+        } else {
+            hint = Component.translatable("screen.brnquest.jei.lookup_hint.both",
+                    recipe.getTranslatedKeyMessage(), uses.getTranslatedKeyMessage());
+        }
+        return Optional.of(hint.copy().withStyle(ChatFormatting.GRAY));
+    }
+
+    private static IGuiProperties selectorProperties(EditorItemSelectorScreen screen) {
         UiRect panel = screen.selectorLayout().panel();
-        return new SelectorGuiProperties(EditorItemSelectorScreen.class, panel.left(), panel.top(), panel.width(),
+        return new ScreenGuiProperties(EditorItemSelectorScreen.class, panel.left(), panel.top(), panel.width(),
                 panel.height(), screen.width, screen.height);
     }
 
+    private static IGuiProperties questProperties(QuestScreen screen) {
+        return new ScreenGuiProperties(QuestScreen.class, 0, 0, screen.width, screen.height,
+                screen.width, screen.height);
+    }
+
     /** Immutable JEI layout snapshot derived from the same geometry used for rendering and hit testing. */
-    private record SelectorGuiProperties(Class<? extends Screen> screenClass, int guiLeft, int guiTop,
-                                         int guiXSize, int guiYSize, int screenWidth,
-                                         int screenHeight) implements IGuiProperties {}
+    private record ScreenGuiProperties(Class<? extends Screen> screenClass, int guiLeft, int guiTop,
+                                       int guiXSize, int guiYSize, int screenWidth,
+                                       int screenHeight) implements IGuiProperties {}
+
+    private static final class BrnQuestClickableItemHandler implements IGlobalGuiHandler {
+        @Override
+        public Optional<IClickableIngredient<?>> getClickableIngredientUnderMouse(
+                IClickableIngredientFactory builder, double mouseX, double mouseY) {
+            Screen screen = Minecraft.getInstance().screen;
+            if (!(screen instanceof RecipeLookupSource source)) return Optional.empty();
+            return source.recipeLookupTargetAt(mouseX, mouseY).flatMap(target -> {
+                UiRect area = target.bounds();
+                // JEI wraps plugin-provided GUI ingredients with canClickToFocus=false. Its
+                // recipe/use keys work, while ordinary mouse clicks remain owned by BRNQuest.
+                return builder.createBuilder(target.stack())
+                        .buildWithArea(area.left(), area.top(), area.width(), area.height())
+                        .map(clickable -> (IClickableIngredient<?>) clickable);
+            });
+        }
+    }
 
     private static final class ItemSelectorGhostHandler implements IGhostIngredientHandler<EditorItemSelectorScreen> {
         @Override

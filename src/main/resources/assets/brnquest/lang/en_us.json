@@ -246,6 +246,9 @@
   "screen.brnquest.editor.narration": "%1$s. %2$s. %3$s",
   "screen.brnquest.editor.undo.action": "Undo",
   "screen.brnquest.editor.redo.action": "Redo",
+  "screen.brnquest.jei.lookup_hint.both": "Press %1$s for recipes · press %2$s for uses",
+  "screen.brnquest.jei.lookup_hint.recipe": "Press %1$s for recipes",
+  "screen.brnquest.jei.lookup_hint.uses": "Press %1$s for uses",
   "toast.brnquest.updated": "BRNQuest updated",
   "toast.brnquest.updated.description": "Quest progress changed."
 }

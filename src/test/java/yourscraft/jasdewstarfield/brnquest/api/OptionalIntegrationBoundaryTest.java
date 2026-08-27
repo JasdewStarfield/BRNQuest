@@ -29,4 +29,15 @@ class OptionalIntegrationBoundaryTest {
         }
         assertTrue(Files.isRegularFile(integration.resolve("BrnQuestJeiPlugin.java")));
     }
+
+    @Test void jeiRegistersEveryScreenThatOffersShortcutLookupTargets() throws IOException {
+        Path plugin = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java",
+                "yourscraft", "jasdewstarfield", "brnquest", "compat", "jei", "BrnQuestJeiPlugin.java");
+        String source = Files.readString(plugin, StandardCharsets.UTF_8);
+
+        // IGlobalGuiHandler targets are only queried after JEI recognizes the active Screen.
+        assertTrue(source.contains("addGuiScreenHandler(EditorItemSelectorScreen.class"));
+        assertTrue(source.contains("addGuiScreenHandler(QuestScreen.class"));
+        assertTrue(source.contains("addGlobalGuiHandler"));
+    }
 }

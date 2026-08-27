@@ -6,15 +6,18 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorItemSelectorLayout;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
  * A client-only ghost inventory: player stacks are copied for authoring metadata and are
  * never moved, split or consumed. The standalone screen is also the future JEI drop target.
  */
-public final class EditorItemSelectorScreen extends Screen {
+public final class EditorItemSelectorScreen extends Screen implements RecipeLookupSource {
     private final Screen parent;
     private final Consumer<ItemStack> selectionConsumer;
     private ItemStack selected = ItemStack.EMPTY;
@@ -155,10 +158,33 @@ public final class EditorItemSelectorScreen extends Screen {
     }
 
     private ItemStack hoveredStack(EditorItemSelectorLayout layout, int mouseX, int mouseY) {
-        if (layout.targetSlot().contains(mouseX, mouseY)) return selected;
+        if (itemBounds(layout.targetSlot()).contains(mouseX, mouseY)) return selected;
         int inventoryIndex = layout.inventoryIndexAt(mouseX, mouseY);
         if (inventoryIndex < 0 || minecraft == null || minecraft.player == null) return ItemStack.EMPTY;
-        return minecraft.player.getInventory().getItem(inventoryIndex);
+        return itemBounds(layout.inventorySlot(inventoryIndex)).contains(mouseX, mouseY)
+                ? minecraft.player.getInventory().getItem(inventoryIndex) : ItemStack.EMPTY;
+    }
+
+    @Override
+    public Optional<RecipeLookupTarget> recipeLookupTargetAt(double mouseX, double mouseY) {
+        EditorItemSelectorLayout layout = layout();
+        UiRect slot = layout.targetSlot();
+        ItemStack stack = selected;
+        if (!slot.contains(mouseX, mouseY)) {
+            int inventoryIndex = layout.inventoryIndexAt(mouseX, mouseY);
+            if (inventoryIndex < 0 || minecraft == null || minecraft.player == null) return Optional.empty();
+            slot = layout.inventorySlot(inventoryIndex);
+            stack = minecraft.player.getInventory().getItem(inventoryIndex);
+        }
+        if (stack.isEmpty()) return Optional.empty();
+        // Only the rendered 16px item is exposed; the surrounding slot keeps its normal click semantics.
+        RecipeLookupTarget target = new RecipeLookupTarget(stack, itemBounds(slot));
+        return target.contains(mouseX, mouseY) ? Optional.of(target) : Optional.empty();
+    }
+
+    /** Matches both the rendered item and JEI lookup to the slot's inner 16px square. */
+    private static UiRect itemBounds(UiRect slot) {
+        return new UiRect(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1);
     }
 
     private EditorItemSelectorLayout layout() {

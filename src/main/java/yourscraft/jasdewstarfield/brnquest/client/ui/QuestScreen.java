@@ -8,6 +8,7 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache;
@@ -91,6 +92,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
+    private static final int ATTENTION_PING_SIZE = 10;
+    private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+            BRNQuest.MOD_ID, "textures/gui/reward_ping.png");
+    private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
+            BRNQuest.MOD_ID, "textures/gui/submitable_ping.png");
 
     private double panX;
     private double panY;
@@ -100,6 +106,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private double renderedZoom;
     private double renderedNavigationScroll;
     private double renderedDetailScroll;
+    private int attentionPingOffsetY;
     private long previousMotionFrameNanos;
     private double currentMotionFrameSeconds = 1.0 / 60.0;
     // Zoom needs a much smaller terminal snap than pixel scrolling; 0.01 zoom is visibly abrupt.
@@ -408,6 +415,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         currentMotionFrameSeconds = motionFrameSeconds;
         advanceZoomMotion(motionFrameSeconds);
         advanceDrawerMotion(motionFrameSeconds);
+        // Sample once per frame so every visible notification hops in lockstep.
+        attentionPingOffsetY = AttentionPingAnimation.verticalOffset(System.nanoTime());
 
         List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
         ChapterDefinition selectedChapter = null;
@@ -613,8 +622,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         fillChamfer(graphics, x, y, size + (selected ? 4 : 2), selected ? 0xFF91C9F4 : 0xFF222936);
         fillChamfer(graphics, x, y, size, color);
         renderQuestVisual(graphics, quest, x, y, size);
-        if (!editing && QuestPresentation.hasPendingReward(quest, status, ClientQuestState.get().claimed())) {
-            renderPendingRewardBadge(graphics, x, y, size);
+        boolean attentionTask = !editing && questHasAttentionTask(quest, status);
+        boolean pendingReward = !editing
+                && QuestPresentation.hasPendingReward(quest, status, ClientQuestState.get().claimed());
+        // These states are mutually exclusive in normal progression, so both authored badges share
+        // the clearer top-right anchor instead of reserving opposite corners.
+        if (attentionTask) {
+            renderNodeAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x, y, size);
+        }
+        if (pendingReward) {
+            renderNodeAttentionPing(graphics, REWARD_PING_TEXTURE, x, y, size);
         }
 
         if (mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
@@ -842,37 +859,47 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                            int x, int y, int width, int mouseX, int mouseY) {
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
         var taskView = ApiViews.task(task);
-        boolean satisfied = taskSatisfied(task, status);
-        graphics.fill(x, y, x + width, y + 24, satisfied ? 0x663B6749 : 0x66343D49);
         String itemSnbt = presentation.itemSnbt(taskView);
         ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
-        if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
-        else graphics.drawCenteredString(font, presentation.symbol(taskView), x + 11, y + 8, 0xFFFFFFFF);
-
-        String title = task.config().getOrDefault("title", "");
         long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
         TaskPresentationContext presentationContext = new TaskPresentationContext(minecraft, taskView, status,
                 storedProgress, stack);
-        if (title.isBlank()) title = presentation.title(presentationContext).getString();
-        graphics.drawString(font, Component.literal(title), x + 24, y + 3, satisfied ? 0xFF8BE2A0 : 0xFFFFFFFF, false);
-        String progress = taskProgressText(task, status, stack, satisfied);
-        graphics.drawString(font, Component.literal(progress), x + 24, y + 13, 0xFFABB7C6, false);
-        if (task.optional()) graphics.drawString(font, Component.translatable("screen.brnquest.optional"), x + width - 38, y + 13, 0xFF9AA6B5, false);
+        boolean locallySatisfied = presentation.satisfied(presentationContext);
+        TaskDisplayState displayState = taskDisplayState(task, status, presentation, presentationContext);
+        graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
+        if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
+        else graphics.drawCenteredString(font, presentation.symbol(taskView), x + 11, y + 8, 0xFFFFFFFF);
+        if (displayState == TaskDisplayState.READY && !stack.isEmpty()) {
+            renderAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x + 17, y - 2);
+        }
+
+        Component title = presentation.objectiveTitle(presentationContext);
+        UiRect qualifierBounds = drawTaskObjectiveTitle(graphics, task, presentation, presentationContext,
+                title, x + width - 4, y + 3, Math.max(1, width - 28),
+                taskTitleColor(displayState));
+        Component progress = taskStateText(presentation, presentationContext, displayState, locallySatisfied);
+        if (task.optional()) progress = progress.copy().append(" · ").append(Component.translatable("screen.brnquest.optional"));
+        drawFittedStringRight(graphics, progress, x + width - 4, y + 13,
+                Math.max(1, width - 28), taskProgressColor(displayState), 0.75F);
         boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
         UiRect itemBounds = new UiRect(x + 3, y + 4, x + 19, y + 20);
         boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
                 detailRecipeLookupViewport(), mouseX, mouseY);
-        boolean submitted = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
-        boolean pending = ClientQuestState.get().isTaskSubmissionPending(task.id().toString());
-        boolean interactive = !ClientEditorState.get().editing()
-                && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && !submitted && !pending
-                && presentation.interactive(taskView);
+        boolean interactive = displayState.actionable();
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
+        boolean rowHovered = visible && mouseX >= x && mouseX < x + width
+                && mouseY >= y && mouseY < y + 24;
+        boolean qualifierHovered = visible && qualifierBounds != null && qualifierBounds.contains(mouseX, mouseY);
         if (itemHovered) {
             // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
             hoveredDetailStack = stack;
-        } else if (stack.isEmpty() && visible && mouseX >= x && mouseX < x + width
-                && mouseY >= y && mouseY < y + 24) {
+        } else if (qualifierHovered) {
+            hoveredDetailText = ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView);
+        } else if (interactive && rowHovered) {
+            // The item and semantic qualifier keep their more specific help; the remaining row
+            // communicates that the complete actionable row submits this objective.
+            hoveredDetailText = Component.translatable("screen.brnquest.task.click_to_submit");
+        } else if (stack.isEmpty() && rowHovered) {
             hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
         }
         return y + 28;
@@ -884,14 +911,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientRewardPresentation presentation = ClientRewardPresentationRegistry.get(reward.typeId());
         var rewardView = ApiViews.reward(reward);
         String itemSnbt = presentation.itemSnbt(rewardView);
-        ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
-        if (!stack.isEmpty()) graphics.renderItem(stack, x + 4, y + 4);
-        else graphics.drawCenteredString(font, presentation.symbol(rewardView), x + 12, y + 8, 0xFFFFFFFF);
-        if (claimable) {
-            graphics.fill(x + 2, y + 2, x + 22, y + 3, 0xFFE6B55B);
-            graphics.fill(x + 2, y + 21, x + 22, y + 22, 0xFFE6B55B);
+        ItemStack parsedStack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
+        ItemStack stack = presentation.displayedItem(rewardView, parsedStack);
+        if (!stack.isEmpty()) {
+            graphics.renderItem(stack, x + 4, y + 4);
+            // Match vanilla slot rendering so configured reward multipliers appear at bottom-right.
+            graphics.renderItemDecorations(font, stack, x + 4, y + 4);
         }
-        if (claimed) graphics.drawString(font, "✓", x + 15, y + 14, 0xFF8BE2A0, true);
+        else graphics.drawCenteredString(font, presentation.symbol(rewardView), x + 12, y + 8, 0xFFFFFFFF);
+        if (claimable && !stack.isEmpty()) {
+            renderAttentionPing(graphics, REWARD_PING_TEXTURE, x + 18, y - 2);
+        }
+        // Keep the claimed marker above the icon; the bottom-right corner belongs to vanilla count text.
+        if (claimed) renderClaimedRewardCheck(graphics, x + 17, y - 2);
         boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
         UiRect itemBounds = new UiRect(x + 4, y + 4, x + 20, y + 20);
         boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
@@ -4087,11 +4119,64 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return presentation.satisfied(new TaskPresentationContext(minecraft, view, status, storedProgress, displayedItem));
     }
 
-    private String taskProgressText(TaskDefinition task, QuestStatus status, ItemStack expected, boolean satisfied) {
-        long progress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
-        return ClientTaskPresentationRegistry.get(task.typeId()).progressText(
-                new TaskPresentationContext(minecraft, ApiViews.task(task), status, progress, expected),
-                satisfied).getString();
+    /** Builds the same state used by row color, row input and the outer-node attention badge. */
+    private TaskDisplayState taskDisplayState(TaskDefinition task, QuestStatus status) {
+        ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        var view = ApiViews.task(task);
+        String itemSnbt = presentation.itemSnbt(view);
+        ItemStack displayedItem = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
+        long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
+        TaskPresentationContext context = new TaskPresentationContext(
+                minecraft, view, status, storedProgress, displayedItem);
+        return taskDisplayState(task, status, presentation, context);
+    }
+
+    private TaskDisplayState taskDisplayState(TaskDefinition task, QuestStatus status,
+                                              ClientTaskPresentation presentation,
+                                              TaskPresentationContext context) {
+        return TaskDisplayState.resolve(status, context.storedProgress(),
+                ClientQuestState.get().isTaskSubmissionPending(task.id().toString()),
+                presentation.interactive(context.task()), presentation.readyForSubmission(context),
+                ClientEditorState.get().editing());
+    }
+
+    private boolean questHasAttentionTask(QuestDefinition quest, QuestStatus status) {
+        return quest.tasks().stream().map(task -> taskDisplayState(task, status))
+                .anyMatch(state -> state == TaskDisplayState.READY);
+    }
+
+    private Component taskStateText(ClientTaskPresentation presentation, TaskPresentationContext context,
+                                    TaskDisplayState state, boolean locallySatisfied) {
+        return switch (state) {
+            case READY, UNMET -> presentation.progressText(context, locallySatisfied);
+            case PENDING -> Component.translatable("screen.brnquest.task.awaiting_confirmation");
+            case SUBMITTED -> Component.translatable("screen.brnquest.task.submitted");
+            case COMPLETED -> Component.translatable("screen.brnquest.task.completed");
+        };
+    }
+
+    private int taskRowBackground(TaskDisplayState state) {
+        return switch (state) {
+            case READY, PENDING -> 0x665F512D;
+            case SUBMITTED, COMPLETED -> 0x663B6749;
+            case UNMET -> 0x66343D49;
+        };
+    }
+
+    private int taskTitleColor(TaskDisplayState state) {
+        return switch (state) {
+            case READY, PENDING -> 0xFFF2C96D;
+            case SUBMITTED, COMPLETED -> 0xFF8BE2A0;
+            case UNMET -> 0xFFFFFFFF;
+        };
+    }
+
+    private int taskProgressColor(TaskDisplayState state) {
+        return switch (state) {
+            case READY, PENDING -> 0xFFE6B55B;
+            case SUBMITTED, COMPLETED -> 0xFF72D88D;
+            case UNMET -> 0xFFABB7C6;
+        };
     }
 
     private QuestStatus status(QuestDefinition quest) {
@@ -4124,23 +4209,30 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED;
     }
 
-    /** Draws a small red notification dot above the node visual so pending rewards remain visible at every zoom level. */
-    private void renderPendingRewardBadge(GuiGraphics graphics, int nodeX, int nodeY, int nodeSize) {
+    /** Anchors either node notification just outside the visual's top-right corner. */
+    private void renderNodeAttentionPing(GuiGraphics graphics, ResourceLocation texture,
+                                         int nodeX, int nodeY, int nodeSize) {
         int nodeRadius = nodeSize / 2;
-        int badgeRadius = Math.max(2, Math.min(5, (nodeSize + 3) / 5));
-        int centerX = nodeX + nodeRadius - 1;
-        int centerY = nodeY - nodeRadius + 1;
-        fillCircle(graphics, centerX, centerY, badgeRadius + 1, 0xFFFFFFFF);
-        fillCircle(graphics, centerX, centerY, badgeRadius, 0xFFFF3038);
+        renderAttentionPing(graphics, texture,
+                nodeX + nodeRadius - 2,
+                nodeY - nodeRadius - ATTENTION_PING_SIZE + 2);
     }
 
-    /** Rasterizes a compact filled circle without adding a texture dependency for one badge. */
-    private void fillCircle(GuiGraphics graphics, int centerX, int centerY, int radius, int color) {
-        for (int offsetY = -radius; offsetY <= radius; offsetY++) {
-            int halfWidth = (int) Math.floor(Math.sqrt(radius * radius - offsetY * offsetY));
-            graphics.fill(centerX - halfWidth, centerY + offsetY,
-                    centerX + halfWidth + 1, centerY + offsetY + 1, color);
-        }
+    /** Renders a 10px authored badge above ItemRenderer's GUI depth. */
+    private void renderAttentionPing(GuiGraphics graphics, ResourceLocation texture, int x, int y) {
+        graphics.pose().pushPose();
+        graphics.pose().translate(0, 0, 300);
+        graphics.blit(texture, x, y + attentionPingOffsetY, 0.0F, 0.0F,
+                ATTENTION_PING_SIZE, ATTENTION_PING_SIZE, ATTENTION_PING_SIZE, ATTENTION_PING_SIZE);
+        graphics.pose().popPose();
+    }
+
+    /** Keeps the claimed check above the item while leaving its vanilla count corner unobstructed. */
+    private void renderClaimedRewardCheck(GuiGraphics graphics, int x, int y) {
+        graphics.pose().pushPose();
+        graphics.pose().translate(0, 0, 300);
+        graphics.drawString(font, "✓", x, y, 0xFF8BE2A0, true);
+        graphics.pose().popPose();
     }
 
     private int statusColor(QuestStatus status) {
@@ -4281,6 +4373,61 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.drawString(font, visible, 0, 0, color, false);
         graphics.pose().popPose();
+    }
+
+    /** Right-aligns compact detail text while using the same shrink-before-truncate policy. */
+    private void drawFittedStringRight(GuiGraphics graphics, Component text, int right, int y,
+                                       int maximumWidth, int color, float minimumScale) {
+        int measuredWidth = font.width(text);
+        float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
+        int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
+        String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
+        int left = right - Math.round(font.width(visible) * scale);
+        graphics.pose().pushPose();
+        graphics.pose().translate(left, y, 0);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, visible, 0, 0, color, false);
+        graphics.pose().popPose();
+    }
+
+    /**
+     * Draws built-in item semantics as a styled prefix and returns that prefix's exact hover area.
+     * Other presentations retain the public objective-title path and do not inherit item semantics.
+     */
+    private UiRect drawTaskObjectiveTitle(GuiGraphics graphics, TaskDefinition task,
+                                          ClientTaskPresentation presentation,
+                                          TaskPresentationContext context, Component fallbackTitle,
+                                          int right, int y, int maximumWidth, int color) {
+        if (!task.typeId().equals(TaskTypes.ITEM)) {
+            drawFittedStringRight(graphics, fallbackTitle, right, y, maximumWidth, color, 0.75F);
+            return null;
+        }
+
+        Component qualifier = ClientTaskPresentationRegistry.itemObjectiveQualifier(context.task());
+        String qualifierText = qualifier.getString();
+        String fullText = qualifierText + " " + presentation.title(context).getString()
+                + " ×" + ClientTaskPresentationRegistry.requiredCount(context.task());
+        float scale = EditorTextLayout.fittedScale(font.width(fullText), maximumWidth, 0.75F);
+        int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
+        String visible = font.plainSubstrByWidth(fullText, unscaledWidth);
+        int left = right - Math.round(font.width(visible) * scale);
+        int visibleQualifierLength = Math.min(qualifierText.length(), visible.length());
+
+        var styledText = Component.empty().append(
+                Component.literal(visible.substring(0, visibleQualifierLength))
+                        .withStyle(ChatFormatting.UNDERLINE));
+        if (visibleQualifierLength < visible.length()) {
+            styledText.append(Component.literal(visible.substring(visibleQualifierLength)));
+        }
+        graphics.pose().pushPose();
+        graphics.pose().translate(left, y, 0);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, styledText, 0, 0, color, false);
+        graphics.pose().popPose();
+
+        int qualifierWidth = Math.round(font.width(visible.substring(0, visibleQualifierLength)) * scale);
+        int lineHeight = Math.max(1, Math.round(font.lineHeight * scale));
+        return new UiRect(left, y, left + qualifierWidth, y + lineHeight);
     }
 
     private void fillChamfer(GuiGraphics graphics, int x, int y, int size, int color) {

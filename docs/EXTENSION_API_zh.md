@@ -39,6 +39,8 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 - `ClientTaskPresentation` 的静态展示方法接收不可变 `TaskView`；标题、进度和提示方法接收 `TaskPresentationContext`，其中的物品栈已防御性复制。
 - `ClientRewardPresentation` 接收不可变 `RewardView` 或 `RewardPresentationContext`，可根据仅供显示的 claimable/claimed 状态生成提示。
 - `interactive` 和 `acceptsQuestCompletionIntent` 仅控制客户端是否建立点击入口；服务端仍会按注册的 `TaskType`、当前库存、权限和 revision 重新校验。
+- `objectiveTitle` 可为详情目标行补充“需求/持有”等显示语义；`readyForSubmission` 默认保持既有 interactive 行可点击，只有能从客户端可靠观察前置条件的 presentation 才应收窄它。它只控制黄色可提交提示与本地命中，不能替代服务端校验。
+- `ClientRewardPresentation.displayedItem` 接收已解析物品的副本，可仅为图标、数量角标、Tooltip 与可选配方查询调整显示数量；不得借此改变服务端实际奖励。
 - 注册表按完整 `ResourceLocation` 查找。缺失 presentation 或仅路径同名时使用问号占位、完整类型 ID 标题且默认不可交互。
 - 客户端注册表在 client setup 冻结；服务端任务/奖励实现不得引用这些 `client.ui` 类。
 

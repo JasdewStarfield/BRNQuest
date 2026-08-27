@@ -51,6 +51,31 @@ class ClientPresentationContractTest {
         assertEquals("", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).itemSnbt(foreignSamePath));
     }
 
+    @Test void itemTaskConsumptionWordingHonorsCanonicalAndLegacyFields() {
+        TaskView consuming = task(TaskTypes.ITEM, Map.of("consume_items", "true"));
+        TaskView observing = task(TaskTypes.ITEM, Map.of("consume_items", "false", "consume", "true"));
+        assertTrue(ClientTaskPresentationRegistry.consumesItems(consuming));
+        assertTrue(ClientTaskPresentationRegistry.consumesItems(task(TaskTypes.ITEM,
+                Map.of("consume", "1b"))));
+        assertFalse(ClientTaskPresentationRegistry.consumesItems(observing));
+        assertEquals(Component.translatable("screen.brnquest.task.item.require.label"),
+                ClientTaskPresentationRegistry.itemObjectiveQualifier(consuming));
+        assertEquals(Component.translatable("screen.brnquest.task.item.hold.label"),
+                ClientTaskPresentationRegistry.itemObjectiveQualifier(observing));
+        assertEquals(Component.translatable("screen.brnquest.task.item.require.hint"),
+                ClientTaskPresentationRegistry.itemObjectiveQualifierHint(consuming));
+        assertEquals(Component.translatable("screen.brnquest.task.item.hold.hint"),
+                ClientTaskPresentationRegistry.itemObjectiveQualifierHint(observing));
+    }
+
+    @Test void itemRewardDisplayCountIncludesTheConfiguredMultiplier() {
+        RewardView reward = reward(RewardTypes.ITEM, Map.of("count", "4"));
+
+        assertEquals(8, ClientRewardPresentationRegistry.displayedCount(reward, 2));
+        assertEquals(1, ClientRewardPresentationRegistry.displayedCount(
+                reward(RewardTypes.ITEM, Map.of("count", "invalid")), 1));
+    }
+
     @Test void publicPresentationSpiDoesNotExposeInternalDefinitions() {
         Stream.of(ClientTaskPresentation.class, ClientRewardPresentation.class)
                 .flatMap(type -> Stream.of(type.getMethods()))

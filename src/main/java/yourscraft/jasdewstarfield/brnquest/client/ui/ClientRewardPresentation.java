@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
@@ -10,6 +11,10 @@ import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 public interface ClientRewardPresentation {
     default String itemSnbt(RewardView reward) { return ""; }
     default String symbol(RewardView reward) { return "?"; }
+    /** Returns a defensive display copy; item rewards may apply a separate configured multiplier. */
+    default ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {
+        return parsedItem == null ? ItemStack.EMPTY : parsedItem.copy();
+    }
     /** Localized type label used by authoring lists; unknown extensions retain their full ID. */
     default Component typeName(RewardView reward) { return Component.literal(reward.typeId().toString()); }
 

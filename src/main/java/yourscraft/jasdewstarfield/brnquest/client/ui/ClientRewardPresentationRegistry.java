@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
@@ -21,9 +22,16 @@ public final class ClientRewardPresentationRegistry {
     static {
         register(RewardTypes.ITEM, new ClientRewardPresentation() {
             public String itemSnbt(RewardView reward) { return reward.config().getOrDefault("item", ""); }
+            public ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {
+                if (parsedItem == null || parsedItem.isEmpty()) return ItemStack.EMPTY;
+                ItemStack displayed = parsedItem.copy();
+                displayed.setCount(displayedCount(reward, displayed.getCount()));
+                return displayed;
+            }
             public Component typeName(RewardView reward) {
                 return Component.translatable("screen.brnquest.type.reward.item");
             }
+
         });
         register(RewardTypes.CUSTOM, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "◆"; }
@@ -48,4 +56,16 @@ public final class ClientRewardPresentationRegistry {
 
     public static synchronized void freeze() { frozen = true; }
     public static boolean isFrozen() { return frozen; }
+
+    /** Computes the effective visual stack size without mutating the cached parsed ItemStack. */
+    static int displayedCount(RewardView reward, int baseCount) {
+        int multiplier;
+        try {
+            multiplier = Math.max(1, Integer.parseInt(reward.config().getOrDefault("count", "1")
+                    .replaceAll("[^0-9-]", "")));
+        } catch (NumberFormatException ignored) {
+            multiplier = 1;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, (long) Math.max(1, baseCount) * multiplier);
+    }
 }

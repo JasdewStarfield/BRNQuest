@@ -34,6 +34,20 @@ public interface ClientTaskPresentation {
         return Component.literal(configured.isBlank() ? context.task().typeId().toString() : configured);
     }
 
+    /** Detail-row title; built-in item tasks add their consume/observe semantics here. */
+    default Component objectiveTitle(TaskPresentationContext context) {
+        return title(context);
+    }
+
+    /**
+     * Reports whether a row can be submitted from the player's current client-visible state.
+     * The permissive default preserves existing interactive extension behavior; presentations
+     * with a locally observable prerequisite can narrow it, while the server always rechecks.
+     */
+    default boolean readyForSubmission(TaskPresentationContext context) {
+        return true;
+    }
+
     /** Tooltip shown for a task without an item tooltip. */
     default Component interactionHint(TaskPresentationContext context, boolean interactive) {
         return interactive ? Component.translatable("screen.brnquest.task.click_to_submit") : title(context);

@@ -61,6 +61,27 @@ public final class ClientTaskPresentationRegistry {
         }
     }
 
+    /** Mirrors the authoritative codec's canonical field and legacy alias for client wording. */
+    static boolean consumesItems(TaskView task) {
+        String canonical = task.config().getOrDefault("consume_items", "");
+        String value = canonical.isBlank() ? task.config().getOrDefault("consume", "false") : canonical;
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+    }
+
+    /** Short underlined qualifier used by built-in item objectives in the detail row. */
+    static Component itemObjectiveQualifier(TaskView task) {
+        return Component.translatable(consumesItems(task)
+                ? "screen.brnquest.task.item.require.label"
+                : "screen.brnquest.task.item.hold.label");
+    }
+
+    /** Explains whether satisfying the built-in item objective consumes matching inventory. */
+    static Component itemObjectiveQualifierHint(TaskView task) {
+        return Component.translatable(consumesItems(task)
+                ? "screen.brnquest.task.item.require.hint"
+                : "screen.brnquest.task.item.hold.hint");
+    }
+
     private static final class CheckmarkPresentation implements ClientTaskPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
         public String symbol(TaskView task) { return "✓"; }
@@ -100,6 +121,11 @@ public final class ClientTaskPresentationRegistry {
             return ClientTaskPresentation.super.progressText(context, satisfied);
         }
 
+        public boolean readyForSubmission(TaskPresentationContext context) {
+            return !context.displayedItem().isEmpty() && context.minecraft().player != null
+                    && present(context.minecraft(), context.displayedItem()) >= requiredCount(context.task());
+        }
+
         public Component title(TaskPresentationContext context) {
             String configured = context.task().config().getOrDefault("title", "");
             if (!configured.isBlank()) return Component.literal(configured);
@@ -108,10 +134,18 @@ public final class ClientTaskPresentationRegistry {
                     : context.displayedItem().getHoverName();
         }
 
+        public Component objectiveTitle(TaskPresentationContext context) {
+            String key = ClientTaskPresentationRegistry.consumesItems(context.task())
+                    ? "screen.brnquest.task.item.require"
+                    : "screen.brnquest.task.item.hold";
+            return Component.translatable(key, title(context), requiredCount(context.task()));
+        }
+
         private int present(Minecraft minecraft, ItemStack expected) {
             return minecraft.player.getInventory().items.stream()
                     .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
                     .mapToInt(ItemStack::getCount).sum();
         }
+
     }
 }

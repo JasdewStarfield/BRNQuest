@@ -22,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.event.RenderTooltipEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import org.jetbrains.annotations.Nullable;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ui.EditorItemSelectorScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
@@ -122,15 +123,25 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
         return Optional.of(hint.copy().withStyle(ChatFormatting.GRAY));
     }
 
+    @Nullable
     private static IGuiProperties selectorProperties(EditorItemSelectorScreen screen) {
+        if (!hasValidDimensions(screen)) return null;
         UiRect panel = screen.selectorLayout().panel();
+        if (panel.width() <= 1 || panel.height() <= 1) return null;
         return new ScreenGuiProperties(EditorItemSelectorScreen.class, panel.left(), panel.top(), panel.width(),
                 panel.height(), screen.width, screen.height);
     }
 
+    @Nullable
     private static IGuiProperties questProperties(QuestScreen screen) {
+        if (!hasValidDimensions(screen)) return null;
         return new ScreenGuiProperties(QuestScreen.class, 0, 0, screen.width, screen.height,
                 screen.width, screen.height);
+    }
+
+    /** JEI may query a newly assigned Screen once before Minecraft calls its resize/init path. */
+    private static boolean hasValidDimensions(Screen screen) {
+        return screen.width > 1 && screen.height > 1;
     }
 
     /** Immutable JEI layout snapshot derived from the same geometry used for rendering and hit testing. */

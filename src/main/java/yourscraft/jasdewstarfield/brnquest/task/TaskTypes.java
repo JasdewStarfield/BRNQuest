@@ -8,6 +8,7 @@ public final class TaskTypes {
     public static final ResourceLocation CHECKMARK = id("checkmark");
     public static final ResourceLocation CUSTOM = id("custom");
     public static final ResourceLocation ITEM = id("item");
+    public static final ResourceLocation ITEM_CHOICE = id("item_choice");
 
     private TaskTypes() {}
 

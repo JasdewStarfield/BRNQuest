@@ -226,6 +226,33 @@ class ClientEditorStateTest {
         assertTrue(state.pollRenewRequest().isEmpty());
     }
 
+    @Test void staleHeartbeatCannotTurnAnAcceptedForegroundMutationIntoAConflict() {
+        ResourceLocation bookId = ResourceLocation.parse("test:mutation_renewal");
+        QuestBookSnapshot before = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Before",
+                List.of(), List.of(), Map.of()));
+        QuestBookSnapshot after = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "After",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, before, before.revision());
+
+        for (int tick = 0; tick < 20 * 30; tick++) state.tick();
+        assertTrue(state.pollRenewRequest().isPresent());
+        assertTrue(state.beginMutation());
+        acceptHistoryTransfer(sessionId, after, before.revision(), 1, 0, "DRAFT_UPDATED");
+
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(
+                "RENEW", "CONFLICT", "STALE_DRAFT_REVISION", "server advanced",
+                "", "", "", "", "", 0L, 0, 0)));
+
+        assertEquals(ClientEditorState.Mode.EDITING, state.mode());
+        assertFalse(state.recoverableConflict());
+        assertEquals(after.revision(), state.draftRevision());
+        assertTrue(state.beginMutation());
+    }
+
     @Test void historyCountsOnlyUnlockAvailableServerConfirmedActions() {
         ResourceLocation bookId = ResourceLocation.parse("test:history_controls");
         QuestBookSnapshot before = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Before",
@@ -391,6 +418,26 @@ class ClientEditorStateTest {
         assertFalse(state.beginMutation());
         assertTrue(state.beginRecovery());
         assertEquals(ClientEditorState.Mode.MUTATING, state.mode());
+    }
+
+    @Test void semanticIdConflictStaysInTheFormAndCanBeCorrected() {
+        ResourceLocation bookId = ResourceLocation.parse("test:semantic_conflict");
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(new QuestBookDefinition(bookId, 1, "Conflict",
+                List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+        acceptTransfer("OPEN", UUID.randomUUID(), snapshot, snapshot.revision());
+        assertTrue(state.beginMutation());
+
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(
+                "MUTATE", "CONFLICT", "DUPLICATE_TYPED_ID", "already used", "", "", "", "", "",
+                0L, 0, 0, List.of(new AuthoringNetwork.EditorDiagnosticWire(
+                "ERROR", "DUPLICATE_TYPED_ID", "test:task", "id", "already used")))));
+
+        assertEquals(ClientEditorState.Mode.ERROR, state.mode());
+        assertFalse(state.recoverableConflict());
+        assertTrue(state.beginMutation(), "A corrected stable ID should be retryable without draft recovery");
     }
 
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {

@@ -51,6 +51,20 @@ class ClientPresentationContractTest {
         assertEquals("", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).itemSnbt(foreignSamePath));
     }
 
+    @Test void itemChoicePresentationAdvertisesItsSecondaryCandidateMenu() {
+        String matcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"minecraft:stone\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:dirt\\\"}\"],\"required\":1}";
+        TaskView choice = task(TaskTypes.ITEM_CHOICE, Map.of("matcher", matcher));
+        var presentation = ClientTaskPresentationRegistry.get(choice.typeId());
+
+        assertEquals(ClientTaskPresentation.NodeStyle.ITEM, presentation.nodeStyle(choice));
+        assertTrue(presentation.itemSnbt(choice).contains("minecraft:stone"));
+        assertEquals(Component.translatable("screen.brnquest.type.task.item_choice"),
+                presentation.typeName(choice));
+        assertTrue(presentation.interactive(choice));
+    }
+
     @Test void itemTaskConsumptionWordingHonorsCanonicalAndLegacyFields() {
         TaskView consuming = task(TaskTypes.ITEM, Map.of("consume_items", "true"));
         TaskView observing = task(TaskTypes.ITEM, Map.of("consume_items", "false", "consume", "true"));
@@ -66,6 +80,21 @@ class ClientPresentationContractTest {
                 ClientTaskPresentationRegistry.itemObjectiveQualifierHint(consuming));
         assertEquals(Component.translatable("screen.brnquest.task.item.hold.hint"),
                 ClientTaskPresentationRegistry.itemObjectiveQualifierHint(observing));
+    }
+
+    @Test void multipleItemObjectiveWordingUsesRequiredTypesInsteadOfStackCount() {
+        String matcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"minecraft:stone\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:dirt\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:apple\\\"}\"],\"required\":2}";
+        TaskView consuming = task(TaskTypes.ITEM, Map.of("matcher", matcher, "consume_items", "true"));
+        TaskView observing = task(TaskTypes.ITEM, Map.of("matcher", matcher, "consume_items", "false"));
+
+        var spec = ClientTaskPresentationRegistry.itemSpec(consuming);
+        assertEquals(Component.translatable("screen.brnquest.task.item_choice.require", 3, 2),
+                ClientTaskPresentationRegistry.multipleItemObjectiveTitle(consuming, spec));
+        assertEquals(Component.translatable("screen.brnquest.task.item_choice.hold", 3, 2),
+                ClientTaskPresentationRegistry.multipleItemObjectiveTitle(observing, spec));
     }
 
     @Test void itemRewardDisplayCountIncludesTheConfiguredMultiplier() {

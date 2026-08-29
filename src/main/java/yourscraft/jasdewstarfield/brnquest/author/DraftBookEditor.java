@@ -170,6 +170,7 @@ public final class DraftBookEditor {
             return invalid("QUEST_CONTAINER_MISMATCH", "Quest ownership does not match its chapter");
         }
         if (quest(book, quest.id()) != null) return conflict("DUPLICATE_QUEST_ID", quest.id());
+        if (questLegacySourceExists(book, quest.id())) return retiredQuestId(quest.id());
         return replaceChapter(book, chapterId, chapter -> new ChapterDefinition(chapter.bookId(), chapter.id(),
                 chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), quest)),
                 questObjectIds(quest));
@@ -217,6 +218,12 @@ public final class DraftBookEditor {
         ResourceLocation replacementId = replacement.id();
         if (!replacementId.equals(questId) && quest(book, replacementId) != null) {
             return conflict("DUPLICATE_QUEST_ID", replacementId);
+        }
+        ResourceLocation previousAliasTarget = book.legacyIds().get(replacementId.toString());
+        if (!replacementId.equals(questId) && previousAliasTarget != null && !previousAliasTarget.equals(questId)) {
+            // Renaming a quest back through its own alias chain is safe; assigning another
+            // quest's retired source would attach historical player state to the wrong node.
+            return retiredQuestId(replacementId);
         }
 
         List<ResourceLocation> affected = new ArrayList<>();
@@ -342,6 +349,7 @@ public final class DraftBookEditor {
     public static AuthorOperationResult<DraftChange> addTask(QuestBookDefinition book, ResourceLocation questId, TaskDefinition task) {
         if (task == null || !task.bookId().equals(book.id())) return invalid("TASK_BOOK_MISMATCH", "Task belongs to another book");
         if (typedIdExists(book, task.id())) return conflict("DUPLICATE_TYPED_ID", task.id());
+        if (typedLegacySourceExists(book, task.id())) return retiredTypedId(task.id());
         return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), append(quest.tasks(), task), quest.rewards()), task.id());
     }
 
@@ -362,6 +370,9 @@ public final class DraftBookEditor {
         if (!replacement.id().equals(taskId) && typedIdExists(book, replacement.id())) {
             return conflict("DUPLICATE_TYPED_ID", replacement.id());
         }
+        if (!replacement.id().equals(taskId) && typedLegacySourceExists(book, replacement.id())) {
+            return retiredTypedId(replacement.id());
+        }
         AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, replacement, true);
         return renamedTyped(updated, "@task:", taskId, replacement.id());
     }
@@ -378,6 +389,7 @@ public final class DraftBookEditor {
     public static AuthorOperationResult<DraftChange> addReward(QuestBookDefinition book, ResourceLocation questId, RewardDefinition reward) {
         if (reward == null || !reward.bookId().equals(book.id())) return invalid("REWARD_BOOK_MISMATCH", "Reward belongs to another book");
         if (typedIdExists(book, reward.id())) return conflict("DUPLICATE_TYPED_ID", reward.id());
+        if (typedLegacySourceExists(book, reward.id())) return retiredTypedId(reward.id());
         return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), reward)), reward.id());
     }
 
@@ -397,6 +409,9 @@ public final class DraftBookEditor {
         }
         if (!replacement.id().equals(rewardId) && typedIdExists(book, replacement.id())) {
             return conflict("DUPLICATE_TYPED_ID", replacement.id());
+        }
+        if (!replacement.id().equals(rewardId) && typedLegacySourceExists(book, replacement.id())) {
+            return retiredTypedId(replacement.id());
         }
         AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, replacement, false);
         return renamedTyped(updated, "@reward:", rewardId, replacement.id());
@@ -574,6 +589,16 @@ public final class DraftBookEditor {
                 || quest.rewards().stream().anyMatch(reward -> reward.id().equals(id)));
     }
 
+    /** Legacy source IDs are retired permanently because player ledgers may still contain them. */
+    private static boolean typedLegacySourceExists(QuestBookDefinition book, ResourceLocation id) {
+        return book.legacyIds().containsKey("@task:" + id)
+                || book.legacyIds().containsKey("@reward:" + id);
+    }
+
+    private static boolean questLegacySourceExists(QuestBookDefinition book, ResourceLocation id) {
+        return book.legacyIds().containsKey(id.toString());
+    }
+
     /** Records typed-object renames in schema-1 legacy_ids so reload can migrate player ledgers. */
     private static AuthorOperationResult<DraftChange> renamedTyped(AuthorOperationResult<DraftChange> updated,
                                                                     String prefix, ResourceLocation oldId,
@@ -649,6 +674,16 @@ public final class DraftBookEditor {
 
     private static AuthorOperationResult<DraftChange> conflict(String code, Object detail) {
         return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, code, detail.toString());
+    }
+
+    private static AuthorOperationResult<DraftChange> retiredTypedId(ResourceLocation id) {
+        return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "RETIRED_TYPED_ID",
+                "Stable ID " + id + " is reserved by a player-ledger migration");
+    }
+
+    private static AuthorOperationResult<DraftChange> retiredQuestId(ResourceLocation id) {
+        return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "RETIRED_QUEST_ID",
+                "Quest ID " + id + " is reserved by a player-ledger migration");
     }
 
     private static AuthorOperationResult<DraftChange> notFound(String code, ResourceLocation id) {

@@ -11,6 +11,7 @@ import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerView;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
+import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 
@@ -55,6 +56,14 @@ public final class BrnQuestApi {
 
     public static OperationResult completeTaskResult(OperationContext context, ServerPlayer player,
                                                      String questId, String taskId) {
+        return completeTaskResult(context, player, questId, taskId, TaskSubmissionSelection.AUTOMATIC);
+    }
+
+    /** Context-aware submission with optional child item entries selected by the player. */
+    @ApiStatus(ApiStability.INTERNAL)
+    public static OperationResult completeTaskResult(OperationContext context, ServerPlayer player,
+                                                     String questId, String taskId,
+                                                     TaskSubmissionSelection selection) {
         OperationResult readiness = validateWriteContext(context, player);
         if (readiness != null) return audited(context, player, "complete_task", taskId, readiness);
         Optional<ResourceLocation> resolvedQuest = resolve(questId);
@@ -62,7 +71,8 @@ public final class BrnQuestApi {
         if (resolvedQuest.isEmpty()) return audited(context, player, "complete_task", questId, invalidId("quest", questId));
         if (resolvedTask.isEmpty()) return audited(context, player, "complete_task", taskId, invalidId("task", taskId));
         return audited(context, player, "complete_task", taskId,
-                ProgressEngine.get().completeTask(player, resolvedQuest.orElseThrow(), resolvedTask.orElseThrow()));
+                ProgressEngine.get().completeTask(player, resolvedQuest.orElseThrow(), resolvedTask.orElseThrow(),
+                        selection));
     }
 
     public static boolean isQuestCompleted(ServerPlayer player, String questId) {

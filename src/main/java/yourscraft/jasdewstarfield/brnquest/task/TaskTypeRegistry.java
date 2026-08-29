@@ -1,12 +1,10 @@
 package yourscraft.jasdewstarfield.brnquest.task;
 
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.TagParser;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
@@ -26,7 +24,9 @@ public final class TaskTypeRegistry {
     static {
         register(TaskTypes.CHECKMARK, new CheckmarkTask());
         register(TaskTypes.CUSTOM, new ProgressTask());
-        register(TaskTypes.ITEM, new ItemTask());
+        register(TaskTypes.ITEM, new UnifiedItemTask());
+        // The historical type ID remains readable, but both IDs now share one model and editor.
+        register(TaskTypes.ITEM_CHOICE, new UnifiedItemTask());
     }
 
     private TaskTypeRegistry() {}
@@ -78,85 +78,104 @@ public final class TaskTypeRegistry {
         }
     }
 
-    /** Typed runtime view of the stable schema-1 string map for item objectives. */
-    private record ItemTaskConfig(String item, String count, String consumeItems, String consume, String title) {
-        private static final Codec<ItemTaskConfig> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-                Codec.STRING.fieldOf("item").forGetter(ItemTaskConfig::item),
-                Codec.STRING.optionalFieldOf("count", "1").forGetter(ItemTaskConfig::count),
-                Codec.STRING.optionalFieldOf("consume_items", "").forGetter(ItemTaskConfig::consumeItems),
-                Codec.STRING.optionalFieldOf("consume", "false").forGetter(ItemTaskConfig::consume),
-                Codec.STRING.optionalFieldOf("title", "").forGetter(ItemTaskConfig::title)
-        ).apply(instance, ItemTaskConfig::new));
+    /** Both historical IDs decode through this canonical target-plus-child-entry model. */
+    private static final class UnifiedItemTask implements TaskType<Map<String, String>> {
+        private static final Codec<Map<String, String>> CODEC = Codec.unboundedMap(Codec.STRING, Codec.STRING)
+                .flatXmap(config -> ItemChoiceMatcher.normalizeConfig(
+                                RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY), config)
+                                .map(ignored -> config),
+                        config -> ItemChoiceMatcher.parseConfig(config).map(ignored -> config));
 
-        boolean consumesItems() {
-            String value = consumeItems.isBlank() ? consume : consumeItems;
-            return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
-        }
-    }
+        @Override
+        public Codec<Map<String, String>> configCodec() { return CODEC; }
 
-    private static final class ItemTask implements TaskType<ItemTaskConfig> {
-        public Codec<ItemTaskConfig> configCodec() { return ItemTaskConfig.CODEC; }
-
+        @Override
         public List<ConfigFieldDescriptor> configFields() {
             return List.of(
-                    ConfigFieldDescriptor.field("item", ConfigValueType.ITEM_STACK).asRequired()
-                            .withHelp("ItemStack SNBT matched by item and components"),
-                    ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER).withDefault("1")
-                            .withRange(1, Integer.MAX_VALUE).withHelp("Required item count"),
-                    ConfigFieldDescriptor.field("consume_items", ConfigValueType.BOOLEAN).withDefault("false")
-                            .withHelp("Consume matching items when submitted"),
                     ConfigFieldDescriptor.field("title", ConfigValueType.TEXT)
-                            .withHelp("Optional objective title")
+                            .withHelp("Optional objective title"),
+                    ConfigFieldDescriptor.field("required_entries", ConfigValueType.INTEGER).withDefault("1")
+                            .withRange(1, ItemChoiceMatcher.MAX_CANDIDATES)
+                            .withHelp("Number of child item entries required")
+                            .withValidator((value, config) -> {
+                                ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parse(
+                                        config.getOrDefault("matcher", "")).result().orElse(null);
+                                int required;
+                                try { required = Integer.parseInt(value); }
+                                catch (NumberFormatException ignored) { return List.of(); }
+                                if (spec == null || required <= spec.entries().size()) return List.of();
+                                return List.of(new yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldIssue(
+                                        "required_entries",
+                                        yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldIssue.Severity.ERROR,
+                                        "ENTRY_COUNT", "Required entries exceed the configured item entries"));
+                            }),
+                    ConfigFieldDescriptor.field("consume_items", ConfigValueType.BOOLEAN).withDefault("false")
+                            .withHelp("Consume only the selected entries when submitted"),
+                    ConfigFieldDescriptor.field("matcher", ConfigValueType.ITEM_MATCHER).asRequired()
+                            .withHelp("Open the child item-property editor")
             );
         }
 
-        public boolean satisfied(TaskContext context, ItemTaskConfig config) {
+        @Override
+        public Map<String, String> editorConfig(yourscraft.jasdewstarfield.brnquest.api.TaskView task) {
+            return ItemChoiceMatcher.canonicalEditorConfig(task.config());
+        }
+
+        @Override
+        public boolean satisfied(TaskContext context, Map<String, String> config) {
             if (context.progress() >= 1) return true;
-            ItemStack expected = expected(context.player(), config);
-            if (expected.isEmpty()) return false;
-            int required = requiredCount(config, expected);
-            return context.player().getInventory().items.stream()
-                    .filter(stack -> ItemStack.isSameItemSameComponents(stack, expected))
-                    .mapToInt(ItemStack::getCount).sum() >= required;
+            ItemChoiceMatcher.MatchPlan plan = plan(context, config, TaskSubmissionSelection.AUTOMATIC);
+            return plan != null && plan.satisfied();
         }
 
-        public boolean consume(TaskContext context, ItemTaskConfig config) {
-            if (!config.consumesItems()) return true;
-            ItemStack expected = expected(context.player(), config);
-            int remaining = requiredCount(config, expected);
-            for (ItemStack stack : context.player().getInventory().items) {
-                if (ItemStack.isSameItemSameComponents(stack, expected)) {
-                    int removed = Math.min(remaining, stack.getCount());
-                    stack.shrink(removed);
-                    remaining -= removed;
-                    if (remaining == 0) return true;
-                }
+        @Override
+        public boolean consume(TaskContext context, Map<String, String> config) {
+            if (!consumesItems(config)) return true;
+            ItemChoiceMatcher.MatchPlan plan = plan(context, config, TaskSubmissionSelection.AUTOMATIC);
+            return plan != null && ItemChoiceMatcher.consume(context.player().getInventory().items, plan);
+        }
+
+        @Override
+        public TaskSubmissionResult submit(TaskContext context, Map<String, String> config,
+                                           TaskSubmissionSelection selection) {
+            ItemChoiceMatcher.MatchPlan plan = plan(context, config, selection);
+            if (plan == null || !plan.satisfied()) {
+                return TaskSubmissionResult.failure("UNSATISFIED", "Item objective requirements are incomplete");
             }
-            return false;
-        }
-
-        public boolean allowsManualSubmission(ItemTaskConfig config) { return true; }
-        public boolean reevaluateOnInventoryChange(ItemTaskConfig config) { return !config.consumesItems(); }
-        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, ItemTaskConfig config) {
-            return Component.literal(config.title.isBlank() ? config.item : config.title);
-        }
-
-        private int requiredCount(ItemTaskConfig config, ItemStack expected) {
-            try {
-                long parsed = Long.parseLong(config.count.replaceAll("[^0-9-]", ""));
-                return (int) Math.max(1, Math.min(Integer.MAX_VALUE, parsed));
-            } catch (NumberFormatException ignored) {
-                return Math.max(1, expected.getCount());
+            if (!plan.selectionValid()) {
+                return TaskSubmissionResult.failure("INVALID_ITEM_SELECTION",
+                        "Selected item entries are incomplete or no longer available");
             }
+            if (consumesItems(config) && !ItemChoiceMatcher.consume(context.player().getInventory().items, plan)) {
+                return TaskSubmissionResult.failure("CONSUME_FAILED", "Selected item entries could not be consumed");
+            }
+            return TaskSubmissionResult.accepted();
         }
 
-        private ItemStack expected(net.minecraft.server.level.ServerPlayer player, ItemTaskConfig config) {
-            try {
-                CompoundTag tag = TagParser.parseTag(config.item);
-                return ItemStack.parseOptional(player.registryAccess(), tag);
-            } catch (Exception ignored) {
-                return ItemStack.EMPTY;
-            }
+        @Override
+        public boolean allowsManualSubmission(Map<String, String> config) { return true; }
+
+        @Override
+        public boolean reevaluateOnInventoryChange(Map<String, String> config) { return !consumesItems(config); }
+
+        @Override
+        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task,
+                                  Map<String, String> config) {
+            String title = config.getOrDefault("title", "");
+            return Component.literal(title.isBlank() ? "Item objective" : title);
+        }
+
+        private ItemChoiceMatcher.MatchPlan plan(TaskContext context, Map<String, String> config,
+                                                 TaskSubmissionSelection selection) {
+            ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parseConfig(config).result().orElse(null);
+            return spec == null ? null : ItemChoiceMatcher.plan(context.player().registryAccess(),
+                    context.player().getInventory().items, spec, selection.inventorySlots());
+        }
+
+        private boolean consumesItems(Map<String, String> config) {
+            String value = config.getOrDefault("consume_items", "");
+            if (value.isBlank()) value = config.getOrDefault("consume", "false");
+            return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
         }
     }
 }

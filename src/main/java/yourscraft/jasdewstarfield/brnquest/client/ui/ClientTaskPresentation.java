@@ -1,10 +1,13 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+
+import java.util.List;
 
 /** Client-only presentation contract paired with a server task type by full ID. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
@@ -37,6 +40,22 @@ public interface ClientTaskPresentation {
     /** Detail-row title; built-in item tasks add their consume/observe semantics here. */
     default Component objectiveTitle(TaskPresentationContext context) {
         return title(context);
+    }
+
+    /** Representative stack rendered in the compact task row. */
+    default ItemStack displayedItem(TaskPresentationContext context) {
+        return context.displayedItem();
+    }
+
+    /** Candidate stacks shown by the optional secondary candidate Screen. */
+    default List<ItemStack> acceptedItems(TaskPresentationContext context) {
+        ItemStack displayed = displayedItem(context);
+        return displayed.isEmpty() ? List.of() : List.of(displayed.copyWithCount(1));
+    }
+
+    /** Whether the compact row should expose its candidate-list button. */
+    default boolean hasCandidateMenu(TaskPresentationContext context) {
+        return false;
     }
 
     /**

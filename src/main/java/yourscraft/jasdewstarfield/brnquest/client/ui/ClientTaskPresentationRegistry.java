@@ -8,8 +8,10 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
@@ -23,7 +25,8 @@ public final class ClientTaskPresentationRegistry {
 
     static {
         register(TaskTypes.CHECKMARK, new CheckmarkPresentation());
-        register(TaskTypes.ITEM, new ItemPresentation());
+        register(TaskTypes.ITEM, new ItemChoicePresentation());
+        register(TaskTypes.ITEM_CHOICE, new ItemChoicePresentation());
         register(TaskTypes.CUSTOM, new ClientTaskPresentation() {
             public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
             public String symbol(TaskView task) { return "◆"; }
@@ -52,6 +55,8 @@ public final class ClientTaskPresentationRegistry {
 
     /** Schema-1 counts remain strings, so presentation parsing mirrors the authoritative codec bounds. */
     static int requiredCount(TaskView task) {
+        ItemChoiceMatcher.Spec spec = itemSpec(task);
+        if (spec != null && spec.entries().size() == 1) return spec.entries().getFirst().requiredCount();
         String raw = task.config().getOrDefault("count", "1");
         try {
             long parsed = Long.parseLong(raw.replaceAll("[^0-9-]", ""));
@@ -59,6 +64,18 @@ public final class ClientTaskPresentationRegistry {
         } catch (NumberFormatException ignored) {
             return 1;
         }
+    }
+
+    static ItemChoiceMatcher.Spec itemSpec(TaskView task) {
+        return ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
+    }
+
+    /** Multi-entry objectives describe the required number of types, never a misleading stack count. */
+    static Component multipleItemObjectiveTitle(TaskView task, ItemChoiceMatcher.Spec spec) {
+        String key = consumesItems(task)
+                ? "screen.brnquest.task.item_choice.require"
+                : "screen.brnquest.task.item_choice.hold";
+        return Component.translatable(key, spec.entries().size(), spec.requiredEntries());
     }
 
     /** Mirrors the authoritative codec's canonical field and legacy alias for client wording. */
@@ -80,6 +97,27 @@ public final class ClientTaskPresentationRegistry {
         return Component.translatable(consumesItems(task)
                 ? "screen.brnquest.task.item.require.hint"
                 : "screen.brnquest.task.item.hold.hint");
+    }
+
+    /** Generated item name without an author override, used as the override's explanatory Tooltip. */
+    static Component defaultItemObjectiveTitle(TaskPresentationContext context) {
+        ItemChoiceMatcher.Spec spec = itemSpec(context.task());
+        if (spec != null && spec.entries().size() > 1) {
+            return multipleItemObjectiveTitle(context.task(), spec);
+        }
+        Component itemTitle;
+        if (spec != null && spec.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.TAG) {
+            itemTitle = Component.translatable("screen.brnquest.task.item_choice.tag_title");
+        } else if (spec != null && spec.entries().size() == 1
+                && context.displayedItem() != null && !context.displayedItem().isEmpty()) {
+            itemTitle = context.displayedItem().getHoverName();
+        } else {
+            itemTitle = Component.translatable("screen.brnquest.task.item_choice.list_title",
+                    spec == null ? 0 : spec.entries().size());
+        }
+        String key = consumesItems(context.task())
+                ? "screen.brnquest.task.item.require" : "screen.brnquest.task.item.hold";
+        return Component.translatable(key, itemTitle, requiredCount(context.task()));
     }
 
     private static final class CheckmarkPresentation implements ClientTaskPresentation {
@@ -135,6 +173,12 @@ public final class ClientTaskPresentationRegistry {
         }
 
         public Component objectiveTitle(TaskPresentationContext context) {
+            String configured = context.task().config().getOrDefault("title", "");
+            if (!configured.isBlank()) return Component.literal(configured);
+            ItemChoiceMatcher.Spec spec = itemSpec(context.task());
+            if (spec != null && spec.entries().size() > 1) {
+                return multipleItemObjectiveTitle(context.task(), spec);
+            }
             String key = ClientTaskPresentationRegistry.consumesItems(context.task())
                     ? "screen.brnquest.task.item.require"
                     : "screen.brnquest.task.item.hold";
@@ -147,5 +191,116 @@ public final class ClientTaskPresentationRegistry {
                     .mapToInt(ItemStack::getCount).sum();
         }
 
+    }
+
+    private static final class ItemChoicePresentation implements ClientTaskPresentation {
+        @Override
+        public NodeStyle nodeStyle(TaskView task) {
+            ItemChoiceMatcher.Spec spec = spec(task);
+            return spec != null && spec.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.ITEM
+                    ? NodeStyle.ITEM : NodeStyle.CUSTOM;
+        }
+
+        @Override
+        public String itemSnbt(TaskView task) {
+            ItemChoiceMatcher.Spec spec = spec(task);
+            return spec != null && spec.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.ITEM
+                    ? spec.entries().getFirst().value() : "";
+        }
+
+        @Override
+        public String symbol(TaskView task) {
+            return "◇";
+        }
+
+        @Override
+        public Component typeName(TaskView task) {
+            return Component.translatable(task.typeId().equals(TaskTypes.ITEM)
+                    ? "screen.brnquest.type.task.item" : "screen.brnquest.type.task.item_choice");
+        }
+
+        @Override
+        public boolean interactive(TaskView task) {
+            return true;
+        }
+
+        @Override
+        public ItemStack displayedItem(TaskPresentationContext context) {
+            ItemChoiceMatcher.MatchPlan plan = plan(context);
+            return plan == null ? ItemStack.EMPTY : plan.representative();
+        }
+
+        @Override
+        public List<ItemStack> acceptedItems(TaskPresentationContext context) {
+            ItemChoiceMatcher.Spec spec = spec(context.task());
+            if (spec == null || context.minecraft().level == null) return List.of();
+            return ItemChoiceMatcher.displayedCandidates(context.minecraft().level.registryAccess(), spec);
+        }
+
+        @Override
+        public boolean hasCandidateMenu(TaskPresentationContext context) {
+            return spec(context.task()) != null;
+        }
+
+        @Override
+        public boolean satisfied(TaskPresentationContext context) {
+            if (ClientTaskPresentation.super.satisfied(context)) return true;
+            ItemChoiceMatcher.MatchPlan plan = plan(context);
+            return plan != null && plan.satisfied();
+        }
+
+        @Override
+        public boolean readyForSubmission(TaskPresentationContext context) {
+            ItemChoiceMatcher.MatchPlan plan = plan(context);
+            return plan != null && plan.satisfied();
+        }
+
+        @Override
+        public Component progressText(TaskPresentationContext context, boolean satisfied) {
+            ItemChoiceMatcher.MatchPlan plan = plan(context);
+            if (plan == null) return ClientTaskPresentation.super.progressText(context, satisfied);
+            return Component.translatable("screen.brnquest.task.item_choice.progress",
+                    Math.min(plan.satisfiedEntries(), plan.requiredEntries()), plan.requiredEntries());
+        }
+
+        @Override
+        public Component title(TaskPresentationContext context) {
+            String configured = context.task().config().getOrDefault("title", "");
+            if (!configured.isBlank()) return Component.literal(configured);
+            ItemChoiceMatcher.Spec spec = spec(context.task());
+            if (spec != null && spec.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.TAG) {
+                return Component.translatable("screen.brnquest.task.item_choice.tag_title");
+            }
+            int candidates = spec == null ? 0 : spec.entries().size();
+            if (candidates == 1 && context.displayedItem() != null && !context.displayedItem().isEmpty()) {
+                return context.displayedItem().getHoverName();
+            }
+            return Component.translatable("screen.brnquest.task.item_choice.list_title", candidates);
+        }
+
+        @Override
+        public Component objectiveTitle(TaskPresentationContext context) {
+            String configured = context.task().config().getOrDefault("title", "");
+            if (!configured.isBlank()) return Component.literal(configured);
+            ItemChoiceMatcher.Spec spec = spec(context.task());
+            if (spec != null && spec.entries().size() > 1) {
+                return multipleItemObjectiveTitle(context.task(), spec);
+            }
+            String key = ClientTaskPresentationRegistry.consumesItems(context.task())
+                    ? "screen.brnquest.task.item.require"
+                    : "screen.brnquest.task.item.hold";
+            return Component.translatable(key, title(context), requiredCount(context.task()));
+        }
+
+        private ItemChoiceMatcher.MatchPlan plan(TaskPresentationContext context) {
+            ItemChoiceMatcher.Spec spec = spec(context.task());
+            if (spec == null || context.minecraft().level == null || context.minecraft().player == null) return null;
+            return ItemChoiceMatcher.plan(context.minecraft().level.registryAccess(),
+                    context.minecraft().player.getInventory().items, spec);
+        }
+
+        private ItemChoiceMatcher.Spec spec(TaskView task) {
+            return itemSpec(task);
+        }
     }
 }

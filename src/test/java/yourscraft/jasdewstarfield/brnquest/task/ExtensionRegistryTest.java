@@ -59,6 +59,22 @@ class ExtensionRegistryTest {
     }
 
     @Test
+    void itemChoiceCodecRejectsUnknownItemsAndOutOfRangeCounts() {
+        String unknownMatcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"missing:unknown_item\\\"}\"],\"required\":1}";
+        TaskView unknown = new TaskView(id("book"), id("unknown_choice"), TaskTypes.ITEM_CHOICE,
+                Map.of("matcher", unknownMatcher, "count", "1"), false);
+        String validMatcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"minecraft:stone\\\"}\"],\"required\":1}";
+        TaskView invalidCount = new TaskView(id("book"), id("invalid_count_choice"), TaskTypes.ITEM_CHOICE,
+                Map.of("matcher", validMatcher, "count", "0"), false);
+        TaskType<?> type = TaskTypeRegistry.get(TaskTypes.ITEM_CHOICE);
+
+        assertTrue(TaskTypeExecutor.configError(type, unknown).isPresent());
+        assertTrue(TaskTypeExecutor.configError(type, invalidCount).isPresent());
+    }
+
+    @Test
     void registeredForeignRewardUsesTheSameDecodedExecutionPath() {
         RewardDefinition reward = new RewardDefinition(id("book"), id("counter_reward_instance"), COUNTER_REWARD,
                 Map.of("target", "2"), "manual", false);

@@ -2,6 +2,8 @@ package yourscraft.jasdewstarfield.brnquest.gametest;
 
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.players.ServerOpListEntry;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -163,6 +165,130 @@ public final class BrnQuestGameTests {
 
         helper.assertTrue(result.success(), result.message());
         helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0, "submitted items must be consumed exactly once");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void itemChoiceListConsumesFirstSatisfiedCandidatesInAuthorOrder(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        ResourceLocation taskId = id("item_choice_list");
+        String matcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"minecraft:stone\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:dirt\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:diamond\\\"}\"],\"required\":2}";
+        TaskDefinition task = new TaskDefinition(id("book"), taskId, id("item_choice"),
+                Map.of("matcher", matcher, "count", "2", "consume_items", "true"), false);
+        QuestDefinition quest = quest("item_choice_list_quest", List.of(), List.of(task), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.STONE, 2));
+        player.getInventory().add(new ItemStack(Items.DIRT, 2));
+        player.getInventory().add(new ItemStack(Items.DIAMOND, 2));
+        ProgressEngine.get().reconcile(player);
+
+        var result = ProgressEngine.get().completeTask(player, quest.id(), task.id());
+
+        helper.assertTrue(result.success(), result.message());
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0,
+                "the first satisfied author candidate must be consumed");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIRT), 0,
+                "the second satisfied author candidate must be consumed");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 2,
+                "satisfied candidates beyond required must remain untouched");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void itemChoiceListConsumesOnlyPlayerSelectedCandidates(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        ResourceLocation taskId = id("item_choice_selected_list");
+        String matcher = "{\"version\":2,\"entries\":["
+                + "{\"kind\":\"item\",\"stack\":\"{count:1,id:\\\"minecraft:stone\\\"}\",\"count\":2},"
+                + "{\"kind\":\"item\",\"stack\":\"{count:1,id:\\\"minecraft:dirt\\\"}\",\"count\":2},"
+                + "{\"kind\":\"item\",\"stack\":\"{count:1,id:\\\"minecraft:diamond\\\"}\",\"count\":2}],"
+                + "\"required\":2}";
+        TaskDefinition task = new TaskDefinition(id("book"), taskId, id("item"),
+                Map.of("matcher", matcher, "required_entries", "2", "consume_items", "true"), false);
+        QuestDefinition quest = quest("item_choice_selected_list_quest", List.of(), List.of(task), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.STONE, 2));
+        player.getInventory().add(new ItemStack(Items.DIRT, 2));
+        player.getInventory().add(new ItemStack(Items.DIAMOND, 2));
+        ProgressEngine.get().reconcile(player);
+
+        var result = ProgressEngine.get().completeTask(player, quest.id(), task.id(),
+                new yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection(List.of(1, 2)));
+
+        helper.assertTrue(result.success(), result.message());
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2,
+                "an unselected satisfied entry must remain untouched");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIRT), 0,
+                "the first player-selected entry must be consumed");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 0,
+                "the second player-selected entry must be consumed");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void itemSubmissionConsumesChosenInventorySlotWithoutComponents(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        ResourceLocation taskId = id("item_selected_component_stack");
+        String matcher = "{\"version\":2,\"entries\":["
+                + "{\"kind\":\"item\",\"stack\":\"{count:1,id:\\\"minecraft:diamond_sword\\\"}\","
+                + "\"count\":1}],\"required\":1}";
+        TaskDefinition task = new TaskDefinition(id("book"), taskId, id("item"),
+                Map.of("matcher", matcher, "required_entries", "1", "consume_items", "true"), false);
+        QuestDefinition quest = quest("item_selected_component_stack_quest", List.of(), List.of(task), List.of());
+        install(quest);
+        ItemStack enchantedSword = new ItemStack(Items.DIAMOND_SWORD);
+        enchantedSword.set(DataComponents.CUSTOM_NAME, Component.literal("Valuable sword"));
+        player.getInventory().setItem(0, enchantedSword);
+        player.getInventory().setItem(1, new ItemStack(Items.DIAMOND_SWORD));
+        ProgressEngine.get().reconcile(player);
+
+        var result = ProgressEngine.get().completeTask(player, quest.id(), task.id(),
+                new yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection(List.of(1)));
+
+        helper.assertTrue(result.success(), result.message());
+        helper.assertValueEqual(player.getInventory().getItem(0).getCount(), 1,
+                "the unselected component-bearing sword must remain in its slot");
+        helper.assertTrue(player.getInventory().getItem(0).has(DataComponents.CUSTOM_NAME),
+                "the remaining sword must keep its components");
+        helper.assertTrue(player.getInventory().getItem(1).isEmpty(),
+                "the selected plain sword must be consumed");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void itemChoiceTagRequiresOneItemTypeAndDoesNotMixTagMembers(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        ResourceLocation taskId = id("item_choice_tag");
+        String matcher = "{\"mode\":\"tag\",\"tag\":\"minecraft:planks\"}";
+        TaskDefinition task = new TaskDefinition(id("book"), taskId, id("item_choice"),
+                Map.of("matcher", matcher, "count", "2", "consume_items", "true"), false);
+        QuestDefinition quest = quest("item_choice_tag_quest", List.of(), List.of(task), List.of());
+        install(quest);
+        player.getInventory().add(new ItemStack(Items.OAK_PLANKS));
+        player.getInventory().add(new ItemStack(Items.BIRCH_PLANKS));
+        ProgressEngine.get().reconcile(player);
+
+        var mixed = ProgressEngine.get().completeTask(player, quest.id(), task.id());
+        helper.assertTrue(!mixed.success(), "different tag members must not be combined into one required stack");
+        helper.assertValueEqual(player.getInventory().countItem(Items.OAK_PLANKS), 1,
+                "a rejected submission must not consume the first tag member");
+        helper.assertValueEqual(player.getInventory().countItem(Items.BIRCH_PLANKS), 1,
+                "a rejected submission must not consume the second tag member");
+
+        player.getInventory().add(new ItemStack(Items.OAK_PLANKS));
+        var accepted = ProgressEngine.get().completeTask(player, quest.id(), task.id());
+        helper.assertTrue(accepted.success(), accepted.message());
+        helper.assertValueEqual(player.getInventory().countItem(Items.OAK_PLANKS), 0,
+                "the first qualifying inventory item type must supply the complete tag requirement");
+        helper.assertValueEqual(player.getInventory().countItem(Items.BIRCH_PLANKS), 1,
+                "other tag members must remain untouched");
         helper.succeed();
     }
 

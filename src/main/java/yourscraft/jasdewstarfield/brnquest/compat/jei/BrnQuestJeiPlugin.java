@@ -25,6 +25,8 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.jetbrains.annotations.Nullable;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ui.EditorItemSelectorScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ItemChoiceScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.ItemSubmissionScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
@@ -59,10 +61,13 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
         // Registering a plain Screen makes JEI render its ingredient list beside the selector layer.
         registration.addGuiScreenHandler(EditorItemSelectorScreen.class, BrnQuestJeiPlugin::selectorProperties);
+        registration.addGuiScreenHandler(ItemChoiceScreen.class, BrnQuestJeiPlugin::choiceProperties);
+        registration.addGuiScreenHandler(ItemSubmissionScreen.class, BrnQuestJeiPlugin::submissionProperties);
         // Global clickable ingredients are queried only for JEI-managed screens. QuestScreen is
         // full-width, so registration activates recipe/use input without reserving overlay space.
         registration.addGuiScreenHandler(QuestScreen.class, BrnQuestJeiPlugin::questProperties);
         registration.addGhostIngredientHandler(EditorItemSelectorScreen.class, new ItemSelectorGhostHandler());
+        registration.addGhostIngredientHandler(ItemChoiceScreen.class, new ItemChoiceGhostHandler());
         registration.addGlobalGuiHandler(new BrnQuestClickableItemHandler());
     }
 
@@ -133,6 +138,24 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
     }
 
     @Nullable
+    private static IGuiProperties choiceProperties(ItemChoiceScreen screen) {
+        if (!hasValidDimensions(screen)) return null;
+        UiRect panel = screen.panelBounds();
+        if (panel.width() <= 1 || panel.height() <= 1) return null;
+        return new ScreenGuiProperties(ItemChoiceScreen.class, panel.left(), panel.top(), panel.width(),
+                panel.height(), screen.width, screen.height);
+    }
+
+    @Nullable
+    private static IGuiProperties submissionProperties(ItemSubmissionScreen screen) {
+        if (!hasValidDimensions(screen)) return null;
+        UiRect panel = screen.selectorLayout().panel();
+        if (panel.width() <= 1 || panel.height() <= 1) return null;
+        return new ScreenGuiProperties(ItemSubmissionScreen.class, panel.left(), panel.top(), panel.width(),
+                panel.height(), screen.width, screen.height);
+    }
+
+    @Nullable
     private static IGuiProperties questProperties(QuestScreen screen) {
         if (!hasValidDimensions(screen)) return null;
         return new ScreenGuiProperties(QuestScreen.class, 0, 0, screen.width, screen.height,
@@ -190,6 +213,34 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
         @Override
         public void onComplete() {
             // The target commits its count-one copy in accept; no source inventory cleanup is needed.
+        }
+    }
+
+    private static final class ItemChoiceGhostHandler implements IGhostIngredientHandler<ItemChoiceScreen> {
+        @Override
+        public <I> List<Target<I>> getTargetsTyped(ItemChoiceScreen screen,
+                                                   ITypedIngredient<I> ingredient, boolean doStart) {
+            if (!screen.editing() || ingredient.getType() != VanillaTypes.ITEM_STACK
+                    || ingredient.getItemStack().orElse(ItemStack.EMPTY).isEmpty()) {
+                return List.of();
+            }
+            UiRect target = screen.ghostTargetBounds();
+            return List.of(new Target<>() {
+                @Override
+                public Rect2i getArea() {
+                    return new Rect2i(target.left(), target.top(), target.width(), target.height());
+                }
+
+                @Override
+                public void accept(I dropped) {
+                    if (dropped instanceof ItemStack stack) screen.acceptGhostItem(stack);
+                }
+            });
+        }
+
+        @Override
+        public void onComplete() {
+            // The Screen stores a count-one copy, so the JEI source remains untouched.
         }
     }
 }

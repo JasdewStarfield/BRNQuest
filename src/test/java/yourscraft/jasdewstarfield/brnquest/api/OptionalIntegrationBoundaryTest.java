@@ -37,7 +37,9 @@ class OptionalIntegrationBoundaryTest {
 
         // IGlobalGuiHandler targets are only queried after JEI recognizes the active Screen.
         assertTrue(source.contains("addGuiScreenHandler(EditorItemSelectorScreen.class"));
+        assertTrue(source.contains("addGuiScreenHandler(ItemChoiceScreen.class"));
         assertTrue(source.contains("addGuiScreenHandler(QuestScreen.class"));
+        assertTrue(source.contains("addGhostIngredientHandler(ItemChoiceScreen.class"));
         assertTrue(source.contains("addGlobalGuiHandler"));
     }
 

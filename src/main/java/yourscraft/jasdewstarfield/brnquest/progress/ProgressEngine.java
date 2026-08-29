@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.OperationResult;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
@@ -25,6 +26,7 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskType;
 import yourscraft.jasdewstarfield.brnquest.task.TaskContext;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 
 import java.util.*;
 
@@ -48,19 +50,7 @@ public final class ProgressEngine {
         PlayerProgress progress = data.get(ProgressOwnerService.require(player));
         // Canonical quest renames are published as aliases; migrate quest-level state before
         // availability and orphan checks so an intentional rename does not reset player progress.
-        Set<ResourceLocation> taskIds = snapshot.book().quests().stream().flatMap(quest -> quest.tasks().stream())
-                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
-        Set<ResourceLocation> rewardIds = snapshot.book().quests().stream().flatMap(quest -> quest.rewards().stream())
-                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
-        snapshot.book().legacyIds().forEach((oldId, newId) -> {
-            if (oldId.startsWith("@task:") && taskIds.contains(newId)) {
-                progress.migrateTaskId(oldId.substring("@task:".length()), newId.toString());
-            } else if (oldId.startsWith("@reward:") && rewardIds.contains(newId)) {
-                progress.migrateRewardId(oldId.substring("@reward:".length()), newId.toString());
-            } else if (snapshot.quests().containsKey(newId)) {
-                progress.migrateQuestId(oldId, newId.toString());
-            }
-        });
+        reconcileLegacyIds(snapshot.book(), progress);
         Set<String> current = new HashSet<>();
         for (QuestDefinition quest : snapshot.book().quests()) {
             current.add(quest.id().toString());
@@ -71,6 +61,34 @@ public final class ProgressEngine {
         progress.questsView().keySet().stream().filter(id -> !current.contains(id)).forEach(progress::orphan);
         progress.revision(snapshot.revision());
         data.setDirty();
+    }
+
+    private static ResourceLocation typedLegacyId(String key, String prefix) {
+        return key.startsWith(prefix) ? ResourceLocation.tryParse(key.substring(prefix.length())) : null;
+    }
+
+    /** Applies unambiguous ledger aliases while preserving any source ID that is live again. */
+    static void reconcileLegacyIds(QuestBookDefinition book, PlayerProgress progress) {
+        Set<ResourceLocation> questIds = book.quests().stream().map(QuestDefinition::id)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> taskIds = book.quests().stream().flatMap(quest -> quest.tasks().stream())
+                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
+        Set<ResourceLocation> rewardIds = book.quests().stream().flatMap(quest -> quest.rewards().stream())
+                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
+        book.legacyIds().forEach((oldId, newId) -> {
+            ResourceLocation oldTaskId = typedLegacyId(oldId, "@task:");
+            ResourceLocation oldRewardId = typedLegacyId(oldId, "@reward:");
+            if (oldTaskId != null && taskIds.contains(newId) && !taskIds.contains(oldTaskId)) {
+                progress.migrateTaskId(oldTaskId.toString(), newId.toString());
+            } else if (oldRewardId != null && rewardIds.contains(newId) && !rewardIds.contains(oldRewardId)) {
+                progress.migrateRewardId(oldRewardId.toString(), newId.toString());
+            } else if (!oldId.startsWith("@task:") && !oldId.startsWith("@reward:") && questIds.contains(newId)) {
+                ResourceLocation oldQuestId = ResourceLocation.tryParse(oldId);
+                if (oldQuestId == null || !questIds.contains(oldQuestId)) {
+                    progress.migrateQuestId(oldId, newId.toString());
+                }
+            }
+        });
     }
 
     /** Reconciles every connected player after a successfully installed task-book revision. */
@@ -128,6 +146,12 @@ public final class ProgressEngine {
 
     /** Applies one task-row intent, then lets the normal transaction decide whether the quest can finish. */
     public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId) {
+        return completeTask(player, questId, taskId, TaskSubmissionSelection.AUTOMATIC);
+    }
+
+    /** Applies a bounded child-entry selection that the task type revalidates inside the owner lock. */
+    public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
+                                        TaskSubmissionSelection selection) {
         OperationResult result = synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
@@ -154,7 +178,7 @@ public final class ProgressEngine {
             }
             List<net.minecraft.world.item.ItemStack> inventoryBeforeSubmit = player.getInventory().items.stream()
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
-            var submission = TaskTypeExecutor.submit(type, context);
+            var submission = TaskTypeExecutor.submit(type, context, selection);
             if (!submission.success()) {
                 restoreMainInventory(player, inventoryBeforeSubmit);
                 return OperationResult.failure(submission.code(), submission.message() + ": " + task.id());

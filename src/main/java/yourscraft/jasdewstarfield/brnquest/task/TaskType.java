@@ -8,6 +8,7 @@ import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 
 import java.util.List;
+import java.util.Map;
 
 /** Public task extension point using immutable definition and progress projections. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
@@ -20,6 +21,9 @@ public interface TaskType<TConfig> {
     default boolean reevaluateOnInventoryChange(TConfig config) { return false; }
     /** Optional editor metadata; an empty list selects the safe raw-config fallback. */
     default List<ConfigFieldDescriptor> configFields() { return List.of(); }
+    /** Optional canonical editor projection for transparently adapting legacy config shapes. */
+    @ApiStatus(ApiStability.INTERNAL)
+    default Map<String, String> editorConfig(TaskView task) { return task.config(); }
 
     default TaskSubmissionResult submit(TaskContext context, TConfig config) {
         if (!satisfied(context, config)) {
@@ -29,6 +33,12 @@ public interface TaskType<TConfig> {
             return TaskSubmissionResult.failure("CONSUME_FAILED", "Task resources could not be consumed");
         }
         return TaskSubmissionResult.accepted();
+    }
+
+    /** Player-selected child entries are advisory until this server-side method validates them. */
+    @ApiStatus(ApiStability.INTERNAL)
+    default TaskSubmissionResult submit(TaskContext context, TConfig config, TaskSubmissionSelection selection) {
+        return submit(context, config);
     }
 
     Component describe(TaskView task, TConfig config);

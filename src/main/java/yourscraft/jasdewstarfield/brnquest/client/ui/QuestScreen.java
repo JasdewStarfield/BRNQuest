@@ -55,6 +55,7 @@ import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
@@ -214,6 +215,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
+    private final List<TaskCandidateHitbox> taskCandidateHitboxes = new ArrayList<>();
     private final List<DependencyHitbox> dependencyHitboxes = new ArrayList<>();
     private final List<TypedEditorHitbox> typedEditorHitboxes = new ArrayList<>();
     private final List<QuickTextHitbox> quickTextHitboxes = new ArrayList<>();
@@ -681,6 +683,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY, double motionFrameSeconds) {
         rewardHitboxes.clear();
         taskHitboxes.clear();
+        taskCandidateHitboxes.clear();
         quickTextHitboxes.clear();
         int left = detailLeft();
         graphics.fill(left, topToolbarHeight(), width, height - bottomToolbarHeight(), 0xF0202632);
@@ -712,12 +715,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int contentWidth = detailsWidth() - 24;
         int viewportHeight = detailViewportHeight();
         renderedDetailScroll = detailScroll.frameAndRender(graphics, width - 8, detailContentTop(),
-                height - detailContentBottomMargin(), detailContentHeight, viewportHeight,
+                detailContentBottom(), detailContentHeight, viewportHeight,
                 motionFrameSeconds, scrollSmoothSpeed());
         int y = detailContentTop() - (int) Math.round(renderedDetailScroll);
         graphics.enableScissor(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
                 Math.min(width, width - 10 + detailsDrawerOffsetX()),
-                height - detailContentBottomMargin());
+                detailContentBottom());
         int titleTop = y;
         y = drawWrapped(graphics, questTitle(quest), contentLeft, y, contentWidth - 14, 0xFFFFFF);
         if (editing) addQuickTextHitbox(QuickTextKind.TITLE, contentLeft, titleTop, contentWidth - 14, y);
@@ -830,7 +833,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int visibleStatusY = statusTop;
         if (!editing && status == QuestStatus.LOCKED && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= visibleStatusY && mouseY <= visibleStatusY + font.lineHeight
-                && visibleStatusY >= detailContentTop() && visibleStatusY < height - detailContentBottomMargin()) {
+                && visibleStatusY >= detailContentTop() && visibleStatusY < detailContentBottom()) {
             hoveredComponentTooltip = dependencyTooltip(quest);
         }
 
@@ -848,7 +851,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Registers only the visible portion, so scrolled-away text cannot capture a right click. */
     private void addQuickTextHitbox(QuickTextKind kind, int left, int top, int width, int bottom) {
         int visibleTop = Math.max(top, detailContentTop());
-        int visibleBottom = Math.min(bottom, height - detailContentBottomMargin());
+        int visibleBottom = Math.min(bottom, detailContentBottom());
         if (visibleBottom > visibleTop) {
             quickTextHitboxes.add(new QuickTextHitbox(kind,
                     new UiRect(left, visibleTop, left + width, visibleBottom)));
@@ -864,6 +867,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
         TaskPresentationContext presentationContext = new TaskPresentationContext(minecraft, taskView, status,
                 storedProgress, stack);
+        // Choice tasks select their representative from the live inventory; rebuild the context so
+        // title, progress and readiness all observe the same immutable render-frame decision.
+        ItemStack representative = presentation.displayedItem(presentationContext);
+        if (!ItemStack.matches(stack, representative)) {
+            stack = representative;
+            presentationContext = new TaskPresentationContext(minecraft, taskView, status,
+                    storedProgress, stack);
+        }
         boolean locallySatisfied = presentation.satisfied(presentationContext);
         TaskDisplayState displayState = taskDisplayState(task, status, presentation, presentationContext);
         graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
@@ -873,15 +884,26 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x + 17, y - 2);
         }
 
+        boolean visible = visibleTaskRow(y);
+        boolean candidateMenu = presentation.hasCandidateMenu(presentationContext);
+        UiRect candidateBounds = candidateMenu
+                ? new UiRect(x + 21, y + 4, x + 35, y + 20) : null;
+        if (candidateBounds != null) {
+            graphics.fill(candidateBounds.left(), candidateBounds.top(), candidateBounds.right(),
+                    candidateBounds.bottom(), candidateBounds.contains(mouseX, mouseY) ? 0xFF526C84 : 0xFF394858);
+            graphics.drawCenteredString(font, Component.literal("…"), candidateBounds.centerX(),
+                    candidateBounds.top() + 4, 0xFFFFFFFF);
+            if (visibleTaskRow(y)) taskCandidateHitboxes.add(new TaskCandidateHitbox(candidateBounds, task));
+        }
+        int textInset = candidateMenu ? 43 : 28;
         Component title = presentation.objectiveTitle(presentationContext);
-        UiRect qualifierBounds = drawTaskObjectiveTitle(graphics, task, presentation, presentationContext,
-                title, x + width - 4, y + 3, Math.max(1, width - 28),
+        UiRect titleHintBounds = drawTaskObjectiveTitle(graphics, task, presentation, presentationContext,
+                title, x + width - 4, y + 3, Math.max(1, width - textInset),
                 taskTitleColor(displayState));
         Component progress = taskStateText(presentation, presentationContext, displayState, locallySatisfied);
         if (task.optional()) progress = progress.copy().append(" · ").append(Component.translatable("screen.brnquest.optional"));
         drawFittedStringRight(graphics, progress, x + width - 4, y + 13,
-                Math.max(1, width - 28), taskProgressColor(displayState), 0.75F);
-        boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
+                Math.max(1, width - textInset), taskProgressColor(displayState), 0.75F);
         UiRect itemBounds = new UiRect(x + 3, y + 4, x + 19, y + 20);
         boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
                 detailRecipeLookupViewport(), mouseX, mouseY);
@@ -889,12 +911,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
         boolean rowHovered = visible && mouseX >= x && mouseX < x + width
                 && mouseY >= y && mouseY < y + 24;
-        boolean qualifierHovered = visible && qualifierBounds != null && qualifierBounds.contains(mouseX, mouseY);
+        boolean titleHintHovered = visible && titleHintBounds != null && titleHintBounds.contains(mouseX, mouseY);
         if (itemHovered) {
             // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
             hoveredDetailStack = stack;
-        } else if (qualifierHovered) {
-            hoveredDetailText = ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView);
+        } else if (titleHintHovered) {
+            hoveredDetailText = task.config().getOrDefault("title", "").isBlank()
+                    ? ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView)
+                    : ClientTaskPresentationRegistry.defaultItemObjectiveTitle(presentationContext);
+        } else if (candidateBounds != null && visible && candidateBounds.contains(mouseX, mouseY)) {
+            hoveredDetailText = Component.translatable("screen.brnquest.item_choice.view_candidates");
         } else if (interactive && rowHovered) {
             // The item and semantic qualifier keep their more specific help; the remaining row
             // communicates that the complete actionable row submits this objective.
@@ -903,6 +929,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
         }
         return y + 28;
+    }
+
+    private boolean visibleTaskRow(int y) {
+        return y >= detailContentTop() && y + 24 <= detailContentBottom();
     }
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
@@ -924,7 +954,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         // Keep the claimed marker above the icon; the bottom-right corner belongs to vanilla count text.
         if (claimed) renderClaimedRewardCheck(graphics, x + 17, y - 2);
-        boolean visible = y >= detailContentTop() && y + 24 <= height - detailContentBottomMargin();
+        boolean visible = y >= detailContentTop() && y + 24 <= detailContentBottom();
         UiRect itemBounds = new UiRect(x + 4, y + 4, x + 20, y + 20);
         boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
                 detailRecipeLookupViewport(), mouseX, mouseY);
@@ -1030,8 +1060,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 12
                 && detailContentHeight > detailViewportHeight()
-                && mouseY >= detailContentTop() && mouseY <= height - detailContentBottomMargin()) {
-            detailScroll.snapFromTrack(mouseY, detailContentTop(), height - detailContentBottomMargin(),
+                && mouseY >= detailContentTop() && mouseY <= detailContentBottom()) {
+            detailScroll.snapFromTrack(mouseY, detailContentTop(), detailContentBottom(),
                     detailContentHeight, detailViewportHeight());
             return true;
         }
@@ -1112,6 +1142,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 openQuestEditor(selected);
                 return true;
             }
+            for (TaskCandidateHitbox hitbox : taskCandidateHitboxes) {
+                if (hitbox.bounds().contains(mouseX, mouseY)) {
+                    ItemChoiceMatcher.parseConfig(hitbox.task().config()).result()
+                            .ifPresent(spec -> openGameplayItemChoiceScreen(selected, hitbox.task(), spec));
+                    return true;
+                }
+            }
             if (ClientEditorState.get().editing() && mouseX >= left) return true;
             QuestStatus status = status(selected);
             Component statusText = Component.translatable(
@@ -1127,6 +1164,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             for (TaskHitbox hitbox : taskHitboxes) {
                 if (hitbox.contains(mouseX, mouseY)) {
                     String taskId = hitbox.task().id().toString();
+                    ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(hitbox.task().config())
+                            .result().orElse(null);
+                    if (itemSpec != null && needsManualItemSelection(hitbox.task(), itemSpec)) {
+                        openGameplayItemChoiceScreen(hitbox.quest(), hitbox.task(), itemSpec);
+                        return true;
+                    }
                     // Disable the row until the authoritative response arrives, preventing a
                     // fast double click from enqueueing the same consumption intent twice.
                     if (ClientQuestState.get().beginTaskSubmission(taskId)) {
@@ -2328,11 +2371,24 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             value.tasks().forEach(task -> ids.add(task.id()));
             value.rewards().forEach(reward -> ids.add(reward.id()));
         });
-        for (int suffix = 1; suffix < 10_000; suffix++) {
-            ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(namespace, stem + "_" + suffix);
+        book.legacyIds().keySet().forEach(alias -> {
+            // Migration sources are retired IDs. Reusing one would make a reload move
+            // the newly created entry's ledger state into the historical target.
+            String raw = alias.startsWith("@task:") ? alias.substring("@task:".length())
+                    : alias.startsWith("@reward:") ? alias.substring("@reward:".length()) : alias;
+            ResourceLocation retired = ResourceLocation.tryParse(raw);
+            if (retired != null) ids.add(retired);
+        });
+        // A timestamp-derived generation keeps deleted stable IDs from being silently reused.
+        // Reuse would attach an old player's completion or claim ledger to a new object.
+        String generation = Long.toUnsignedString(System.currentTimeMillis(), 36);
+        for (int suffix = 0; suffix < 10_000; suffix++) {
+            String path = stem + "_" + generation + (suffix == 0 ? "" : "_" + suffix);
+            ResourceLocation candidate = ResourceLocation.fromNamespaceAndPath(namespace, path);
             if (!ids.contains(candidate)) return candidate;
         }
-        return ResourceLocation.fromNamespaceAndPath(namespace, stem + "_new");
+        return ResourceLocation.fromNamespaceAndPath(namespace, stem + "_" + java.util.UUID.randomUUID()
+                .toString().replace("-", ""));
     }
 
     private ResourceLocation defaultGroupId(QuestBookDefinition book) {
@@ -2683,8 +2739,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             var view = ApiViews.task(task);
             var presentation = ClientTaskPresentationRegistry.get(task.typeId());
             String snbt = presentation.itemSnbt(view);
+            ItemStack parsed = snbt.isBlank() ? ItemStack.EMPTY : item(task.id(), snbt);
+            TaskPresentationContext context = new TaskPresentationContext(minecraft, view, status(quest),
+                    ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L), parsed);
             return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
-                    snbt.isBlank() ? ItemStack.EMPTY : item(task.id(), snbt));
+                    presentation.displayedItem(context));
         }
         RewardDefinition reward = quest.rewards().get(index);
         var view = ApiViews.reward(reward);
@@ -2700,8 +2759,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyOpen = true;
         typedPropertyOriginalId = entry.id();
         typedPropertyTypeId = entry.typeId();
-        typedPropertyOriginalConfig = entry.config();
-        typedPropertyRawConfig = entry.config();
         typedPropertyOptional = entry.optional();
         typedPropertyTeamReward = entry.teamReward();
         typedPropertyRenameArmed = false;
@@ -2713,9 +2770,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertySchema = typedEditorKind == TypedKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
                 : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
+        // Item tasks project both historical config shapes into one canonical editor model.
+        // The original map for this form must be that projection so hidden legacy keys do
+        // not silently survive a successful canonical save.
+        typedPropertyOriginalConfig = typedPropertySchema.rawConfig();
+        typedPropertyRawConfig = typedPropertySchema.rawConfig();
         for (int index = 0; index < typedPropertyConfigFields.size(); index++) {
             String value = index < typedPropertySchema.fields().size()
-                    ? entry.config().getOrDefault(typedPropertySchema.fields().get(index).key(),
+                    ? typedPropertySchema.rawConfig().getOrDefault(typedPropertySchema.fields().get(index).key(),
                     typedPropertySchema.fields().get(index).defaultValue().orElse("")) : "";
             typedPropertyConfigFields.get(index).setValue(value);
         }
@@ -2836,6 +2898,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             registerRecipeLookupTarget(stack, EditorButton.iconBounds(font, row.field(), definition),
                     row.field(), mouseX, mouseY);
+        } else if (descriptor.valueType() == ConfigValueType.ITEM_MATCHER) {
+            ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parse(field.getValue()).result().orElse(null);
+            List<ItemStack> candidates = choiceCandidates(spec);
+            ItemStack stack = candidates.isEmpty() ? ItemStack.EMPTY : candidates.getFirst();
+            Component edit = Component.translatable(
+                    "screen.brnquest.editor.typed.property.edit_matcher", candidates.size());
+            EditorIcon icon = stack.isEmpty()
+                    ? EditorIcon.glyph(Component.literal("+")) : EditorIcon.item(stack);
+            EditorButton.Definition definition = EditorButton.Definition.iconAndText(edit, edit, icon);
+            renderEditorActionButton(graphics, row.field(), definition,
+                    !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            registerRecipeLookupTarget(stack, EditorButton.iconBounds(font, row.field(), definition),
+                    row.field(), mouseX, mouseY);
         } else {
             field.show(row.field(), !ClientEditorState.get().busy());
         }
@@ -2876,6 +2951,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private String typedConfigLabel(String key) {
         return switch (key) {
             case "item" -> "screen.brnquest.editor.config.item";
+            case "matcher" -> "screen.brnquest.editor.config.matcher";
+            case "required_entries" -> "screen.brnquest.editor.config.required_entries";
             case "count" -> "screen.brnquest.editor.config.count";
             case "consume_items" -> "screen.brnquest.editor.config.consume_items";
             case "title" -> "screen.brnquest.editor.config.title";
@@ -2912,6 +2989,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 openTypedPropertyItemSelector(index);
                 return true;
             }
+            if (descriptor.valueType() == ConfigValueType.ITEM_MATCHER) {
+                openTypedPropertyMatcherEditor(index);
+                return true;
+            }
         }
         int semanticsTop = typedPropertySemanticsTop();
         if (typedPropertySchema != null && typedPropertySchema.rawFallback() && typedPropertyRawEditable()
@@ -2941,6 +3022,92 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
             itemCache.remove(typedPropertyOriginalId);
         });
+    }
+
+    private void openTypedPropertyMatcherEditor(int fieldIndex) {
+        if (fieldIndex >= typedPropertyConfigFields.size()) return;
+        ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
+                typedPropertyConfigFields.get(fieldIndex).getValue()).result().orElse(null);
+        int requiredIndex = typedConfigFieldIndex("required_entries");
+        if (initial != null && requiredIndex >= 0) {
+            try {
+                int required = Integer.parseInt(typedPropertyConfigFields.get(requiredIndex).getValue());
+                initial = initial.withRequiredEntries(required);
+            } catch (IllegalArgumentException ignored) {
+                // The target-level field keeps its own inline validation; child editing still opens.
+            }
+        }
+        if (initial == null) {
+            openNewItemChoiceEditor(spec -> setTypedMatcher(fieldIndex, spec));
+        } else {
+            openItemChoiceScreen(initial, true, spec -> setTypedMatcher(fieldIndex, spec));
+        }
+    }
+
+    private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
+        if (fieldIndex >= typedPropertyConfigFields.size()) return;
+        typedPropertyConfigFields.get(fieldIndex).setValue(spec.encode());
+        int requiredIndex = typedConfigFieldIndex("required_entries");
+        if (requiredIndex >= 0) {
+            typedPropertyConfigFields.get(requiredIndex).setValue(Integer.toString(spec.requiredEntries()));
+        }
+        itemCache.remove(typedPropertyOriginalId);
+        typedPropertyMessage = null;
+    }
+
+    private int typedConfigFieldIndex(String key) {
+        if (typedPropertySchema == null) return -1;
+        for (int index = 0; index < typedPropertySchema.fields().size(); index++) {
+            if (typedPropertySchema.fields().get(index).key().equals(key)) return index;
+        }
+        return -1;
+    }
+
+    private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
+        if (minecraft == null) return;
+        editorChildScreenOpening = true;
+        minecraft.setScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
+    }
+
+    private List<ItemStack> choiceCandidates(ItemChoiceMatcher.Spec spec) {
+        if (spec == null || minecraft == null || minecraft.level == null) return List.of();
+        return ItemChoiceMatcher.displayedCandidates(minecraft.level.registryAccess(), spec);
+    }
+
+    private void openItemChoiceScreen(ItemChoiceMatcher.Spec initial, boolean editing,
+                                      java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
+        if (minecraft == null) return;
+        editorChildScreenOpening = true;
+        minecraft.setScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
+    }
+
+    private void openGameplayItemChoiceScreen(QuestDefinition quest, TaskDefinition task,
+                                              ItemChoiceMatcher.Spec spec) {
+        if (minecraft == null) return;
+        editorChildScreenOpening = true;
+        boolean selectable = !ClientEditorState.get().editing() && needsManualItemSelection(task, spec)
+                && ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) < 1;
+        if (!selectable) {
+            minecraft.setScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
+            return;
+        }
+        minecraft.setScreen(new ItemSubmissionScreen(this, spec, selectedSlots -> {
+            String taskId = task.id().toString();
+            if (ClientQuestState.get().beginTaskSubmission(taskId)) {
+                BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), quest.id().toString(),
+                        taskId, selectedSlots);
+            }
+        }));
+    }
+
+    private boolean needsManualItemSelection(TaskDefinition task, ItemChoiceMatcher.Spec spec) {
+        if (!ClientTaskPresentationRegistry.consumesItems(ApiViews.task(task)) || minecraft == null
+                || minecraft.level == null || minecraft.player == null) return false;
+        ItemChoiceMatcher.MatchPlan plan = ItemChoiceMatcher.plan(minecraft.level.registryAccess(),
+                minecraft.player.getInventory().items, spec);
+        // Every satisfiable consume objective enters the real-inventory picker. Even a one-entry
+        // objective may have several stacks with different components that the player must choose between.
+        return plan.satisfied();
     }
 
     private void openTypedPropertyRawEditor() {
@@ -3157,7 +3324,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         UiRect bounds = typedTypePickerBounds();
         List<EditorPickerList.Entry> entries = candidates.stream().map(type -> new EditorPickerList.Entry(
                 Component.literal(type.toString()), Component.translatable(typedEditorKind.addable(type)
-                        ? typedEditorKind.itemBacked(type)
+                        ? typedEditorKind.choiceBacked(type)
+                                ? "screen.brnquest.editor.typed.click_to_select_candidates"
+                                : typedEditorKind.itemBacked(type)
                                 ? "screen.brnquest.editor.typed.click_to_select_item"
                                 : "screen.brnquest.editor.typed.click_to_add"
                         : "screen.brnquest.editor.typed.requires_config"),
@@ -3197,6 +3366,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null || typedEditorQuestId == null) return true;
+        if (typedEditorKind.choiceBacked(typeId)) {
+            closeActiveEditorOverlay();
+            openNewItemChoiceEditor(spec -> addSelectedChoice(typeId, spec));
+            return true;
+        }
         if (typedEditorKind.itemBacked(typeId)) {
             closeActiveEditorOverlay();
             openItemSelector(typeId);
@@ -3230,6 +3404,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         String itemSnbt = stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString();
         sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
                 "", 0, 0, 0, List.of(), Map.of("item", itemSnbt, "count", "1"));
+    }
+
+    private void addSelectedChoice(ResourceLocation typeId, ItemChoiceMatcher.Spec spec) {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null || typedEditorQuestId == null) return;
+        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
+        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
+                "", 0, 0, 0, List.of(), Map.of(
+                        "matcher", spec.encode(),
+                        "required_entries", Integer.toString(spec.requiredEntries()),
+                        "consume_items", "false"));
     }
 
     private List<ResourceLocation> typedTypeCandidates() {
@@ -4284,7 +4469,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect detailRecipeLookupViewport() {
         return new UiRect(detailLeft() + 1, detailContentTop(), width - 10,
-                height - detailContentBottomMargin());
+                detailContentBottom());
     }
 
     /** Draws the one winning hover surface at the final z-order, above details and navigation chrome. */
@@ -4398,15 +4583,35 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                           ClientTaskPresentation presentation,
                                           TaskPresentationContext context, Component fallbackTitle,
                                           int right, int y, int maximumWidth, int color) {
-        if (!task.typeId().equals(TaskTypes.ITEM)) {
+        if (!task.typeId().equals(TaskTypes.ITEM) && !task.typeId().equals(TaskTypes.ITEM_CHOICE)) {
             drawFittedStringRight(graphics, fallbackTitle, right, y, maximumWidth, color, 0.75F);
             return null;
         }
 
+        String configuredTitle = task.config().getOrDefault("title", "");
+        if (!configuredTitle.isBlank()) {
+            Component customTitle = Component.literal(configuredTitle);
+            float scale = EditorTextLayout.fittedScale(font.width(customTitle), maximumWidth, 0.75F);
+            int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
+            String visible = font.plainSubstrByWidth(configuredTitle, unscaledWidth);
+            int left = right - Math.round(font.width(visible) * scale);
+            graphics.pose().pushPose();
+            graphics.pose().translate(left, y, 0);
+            graphics.pose().scale(scale, scale, 1.0F);
+            graphics.drawString(font, visible, 0, 0, color, false);
+            graphics.pose().popPose();
+            return new UiRect(left, y, right, y + Math.max(1, Math.round(font.lineHeight * scale)));
+        }
+
         Component qualifier = ClientTaskPresentationRegistry.itemObjectiveQualifier(context.task());
         String qualifierText = qualifier.getString();
-        String fullText = qualifierText + " " + presentation.title(context).getString()
-                + " ×" + ClientTaskPresentationRegistry.requiredCount(context.task());
+        ItemChoiceMatcher.Spec itemSpec = ClientTaskPresentationRegistry.itemSpec(context.task());
+        String subject = itemSpec != null && itemSpec.entries().size() > 1
+                ? Component.translatable("screen.brnquest.task.item_choice.requirement",
+                        itemSpec.entries().size(), itemSpec.requiredEntries()).getString()
+                : presentation.title(context).getString() + (itemSpec == null ? ""
+                        : " ×" + itemSpec.entries().getFirst().requiredCount());
+        String fullText = qualifierText + " " + subject;
         float scale = EditorTextLayout.fittedScale(font.width(fullText), maximumWidth, 0.75F);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
         String visible = font.plainSubstrByWidth(fullText, unscaledWidth);
@@ -4649,6 +4854,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private int detailContentBottomMargin() {
         return bottomToolbarHeight() + 8;
+    }
+
+    /** The scrolling detail body stops above editor tabs instead of rendering behind them. */
+    private int detailContentBottom() {
+        int ordinaryBottom = height - detailContentBottomMargin();
+        int controlAwareBottom = ClientEditorState.get().editing()
+                ? Math.min(ordinaryBottom, questPropertyButtonBounds().top() - 4)
+                : ordinaryBottom;
+        return Math.max(detailContentTop() + 1, controlAwareBottom);
     }
 
     private QuestScreenLayout layout() {
@@ -4917,7 +5131,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int detailViewportHeight() {
-        return Math.max(1, height - detailContentTop() - detailContentBottomMargin());
+        return Math.max(1, detailContentBottom() - detailContentTop());
     }
 
     private record RewardHitbox(int left, int top, int right, int bottom, RewardDefinition reward) {
@@ -4931,6 +5145,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return x >= left && x <= right && y >= top && y <= bottom;
         }
     }
+
+    private record TaskCandidateHitbox(UiRect bounds, TaskDefinition task) {}
 
     private record DependencyHitbox(UiRect rowBounds, UiRect removeBounds, ResourceLocation dependencyId) {}
 
@@ -5043,7 +5259,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         boolean itemBacked(ResourceLocation typeId) {
-            return this == TASK ? typeId.equals(TaskTypes.ITEM) : typeId.equals(RewardTypes.ITEM);
+            return this == REWARD && typeId.equals(RewardTypes.ITEM);
+        }
+
+        boolean choiceBacked(ResourceLocation typeId) {
+            return this == TASK && typeId.equals(TaskTypes.ITEM);
         }
     }
 

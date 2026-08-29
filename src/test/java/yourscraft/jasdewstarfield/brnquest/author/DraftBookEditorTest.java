@@ -143,6 +143,54 @@ class DraftBookEditorTest {
         assertFalse(book.legacyIds().containsKey("@task:" + source.id()));
     }
 
+    @Test void retiredTypedMigrationSourcesCannotBeReused() {
+        QuestBookDefinition original = bookWithDependency();
+        TaskDefinition source = new TaskDefinition(id("book"), id("source"), id("checkmark"), Map.of(), false);
+        QuestBookDefinition renamed = value(DraftBookEditor.addTask(original, id("root"), source));
+        renamed = value(DraftBookEditor.updateTask(renamed, id("root"), source.id(),
+                new TaskDefinition(id("book"), id("renamed"), source.typeId(), source.config(), false)));
+
+        TaskDefinition reused = new TaskDefinition(id("book"), source.id(), id("checkmark"), Map.of(), false);
+        RewardDefinition rewardReuse = new RewardDefinition(id("book"), id("old_reward"), id("custom"),
+                Map.of(), "manual", false);
+        renamed = value(DraftBookEditor.addReward(renamed, id("root"), rewardReuse));
+        renamed = value(DraftBookEditor.updateReward(renamed, id("root"), rewardReuse.id(),
+                new RewardDefinition(id("book"), id("renamed_reward"), rewardReuse.typeId(), Map.of(),
+                        "manual", false)));
+
+        assertEquals("RETIRED_TYPED_ID", DraftBookEditor.addTask(renamed, id("child"), reused).code());
+        assertEquals("RETIRED_TYPED_ID", DraftBookEditor.addReward(renamed, id("child"),
+                new RewardDefinition(id("book"), rewardReuse.id(), id("custom"), Map.of(), "manual", false)).code());
+    }
+
+    @Test void retiredQuestMigrationSourcesCannotBeAssignedToAnotherQuest() {
+        QuestBookDefinition original = bookWithDependency();
+        QuestDefinition root = original.quests().stream().filter(quest -> quest.id().equals(id("root")))
+                .findFirst().orElseThrow();
+        QuestDefinition renamedRoot = new QuestDefinition(root.bookId(), id("renamed_root"), root.chapterId(),
+                root.title(), root.subtitle(), root.description(), root.icon(), root.x(), root.y(),
+                root.dependencies(), root.tasks(), root.rewards(), root.legacyId());
+        QuestBookDefinition renamed = value(DraftBookEditor.updateQuestBasics(original, root.id(), renamedRoot));
+
+        QuestDefinition reused = quest("root", id("chapter"), List.of());
+        assertEquals("RETIRED_QUEST_ID", DraftBookEditor.addQuest(renamed, id("chapter"), reused).code());
+
+        QuestDefinition child = renamed.quests().stream().filter(quest -> quest.id().equals(id("child")))
+                .findFirst().orElseThrow();
+        QuestDefinition reassigned = new QuestDefinition(child.bookId(), id("root"), child.chapterId(),
+                child.title(), child.subtitle(), child.description(), child.icon(), child.x(), child.y(),
+                child.dependencies(), child.tasks(), child.rewards(), child.legacyId());
+        assertEquals("RETIRED_QUEST_ID",
+                DraftBookEditor.updateQuestBasics(renamed, child.id(), reassigned).code());
+
+        // Reversing the original rename is still a valid migration of the same identity.
+        QuestDefinition restored = new QuestDefinition(renamedRoot.bookId(), root.id(), renamedRoot.chapterId(),
+                renamedRoot.title(), renamedRoot.subtitle(), renamedRoot.description(), renamedRoot.icon(),
+                renamedRoot.x(), renamedRoot.y(), renamedRoot.dependencies(), renamedRoot.tasks(),
+                renamedRoot.rewards(), renamedRoot.legacyId());
+        assertTrue(DraftBookEditor.updateQuestBasics(renamed, renamedRoot.id(), restored).success());
+    }
+
     @Test void explicitCascadeReportsAndRemovesItsImpactScope() {
         QuestBookDefinition book = bookWithDependency();
 

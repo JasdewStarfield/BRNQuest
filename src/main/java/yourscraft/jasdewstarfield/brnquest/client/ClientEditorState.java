@@ -211,7 +211,18 @@ public final class ClientEditorState {
         statusMessage = safe(response.message());
         diagnostics = response.diagnostics() == null ? List.of() : List.copyOf(response.diagnostics());
         if (!success) {
-            recoverableConflict = "CONFLICT".equals(response.status()) && hasSession() && draft != null;
+            if ("RENEW".equals(responseAction) && hasSession()
+                    && "STALE_DRAFT_REVISION".equals(statusCode)) {
+                // A heartbeat may already be travelling when a foreground mutation advances
+                // the same lease. Its old revision is then expected, not an external edit
+                // conflict; the mutation response remains the authoritative replacement.
+                renewPending = false;
+                return Optional.empty();
+            }
+            // Domain conflicts such as duplicate IDs belong to the open form and are
+            // retryable. Only authority/revision divergence requires the full recovery UI.
+            recoverableConflict = "CONFLICT".equals(response.status()) && hasSession() && draft != null
+                    && requiresAuthoritativeRecovery(statusCode);
             fail(statusCode.isBlank() ? "EDITOR_SESSION_FAILED" : statusCode, statusMessage);
             return Optional.empty();
         }
@@ -455,12 +466,13 @@ public final class ClientEditorState {
         if (sessionId == null || !sessionId.equals(decodedSession)
                 || !draftRevision.equals(response.draftRevision())) {
             // A heartbeat sent immediately before a foreground mutation may arrive
-            // after that operation has advanced the authoritative draft revision.
-            if (busy()) {
-                renewPending = false;
-                return;
-            }
-            fail("STALE_EDITOR_RENEWAL", "The edit-session renewal no longer matches this draft");
+            // after that operation has advanced the authoritative draft revision and
+            // finished transferring its chunks. The pending flag identifies that late
+            // response even when the client has already returned to EDITING mode.
+            // Heartbeats are advisory and never carry authored content. Any mismatched
+            // response is therefore stale by definition; the next foreground request
+            // still performs the authoritative session/revision check.
+            renewPending = false;
             return;
         }
         savedRevision = safe(response.savedRevision());
@@ -576,6 +588,11 @@ public final class ClientEditorState {
     }
 
     private boolean hasSession() { return sessionId != null; }
+
+    private static boolean requiresAuthoritativeRecovery(String code) {
+        return "STALE_DRAFT_REVISION".equals(code) || "REVISION_CONFLICT".equals(code)
+                || "DISK_DRAFT_CHANGED".equals(code) || "WORKSPACE_CHANGED".equals(code);
+    }
 
     private boolean contains(ResourceLocation target) {
         return catalog.stream().anyMatch(entry -> entry.bookId().equals(target));

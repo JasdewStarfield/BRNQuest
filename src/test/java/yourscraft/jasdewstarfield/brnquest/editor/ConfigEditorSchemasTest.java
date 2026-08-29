@@ -18,16 +18,29 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ConfigEditorSchemasTest {
-    @Test void builtInItemMetadataDescribesRequiredCountAndConsumption() {
+    @Test void builtInItemMetadataProjectsLegacySingleItemIntoUnifiedHierarchy() {
         var schema = ConfigEditorSchemas.forTask(task(TaskTypes.ITEM, Map.of(
-                "item", "{count:1,id:\"minecraft:stone\"}", "count", "0", "consume_items", "true")));
+                "item", "{count:1,id:\"minecraft:stone\"}", "count", "2", "consume_items", "true")));
 
         assertFalse(schema.rawFallback());
-        assertEquals(List.of("item", "count", "consume_items", "title"),
+        assertEquals(List.of("title", "required_entries", "consume_items", "matcher"),
                 schema.fields().stream().map(ConfigFieldDescriptor::key).toList());
-        assertTrue(schema.fields().stream().filter(field -> field.key().equals("item")).findFirst().orElseThrow().required());
-        assertTrue(schema.issues().stream().anyMatch(issue -> issue.fieldKey().equals("count")
-                && issue.code().equals("MINIMUM")));
+        assertEquals("1", schema.rawConfig().get("required_entries"));
+        assertTrue(schema.rawConfig().get("matcher").contains("\"count\":2"));
+        assertFalse(schema.rawConfig().containsKey("item"));
+    }
+
+    @Test void itemChoiceMetadataUsesTheDedicatedMatcherEditorAndValidatesItsShape() {
+        var schema = ConfigEditorSchemas.forTask(task(TaskTypes.ITEM_CHOICE, Map.of(
+                "matcher", "{\"mode\":\"list\",\"items\":[],\"required\":1}",
+                "count", "2", "consume_items", "false")));
+
+        assertFalse(schema.rawFallback());
+        assertEquals(List.of("title", "required_entries", "consume_items", "matcher"),
+                schema.fields().stream().map(ConfigFieldDescriptor::key).toList());
+        assertEquals(ConfigValueType.ITEM_MATCHER, schema.fields().getLast().valueType());
+        assertTrue(schema.issues().stream().anyMatch(issue -> issue.fieldKey().equals("matcher")
+                && issue.code().equals("INVALID_ITEM_MATCHER")));
     }
 
     @Test void unknownTypesRetainLosslessImmutableRawFallback() {

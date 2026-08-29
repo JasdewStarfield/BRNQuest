@@ -12,5 +12,7 @@ public enum ConfigValueType {
     TEXT,
     ENUM,
     RESOURCE_LOCATION,
-    ITEM_STACK
+    ITEM_STACK,
+    /** Structured tag-or-list item matcher edited by the shared candidate selector Screen. */
+    ITEM_MATCHER
 }

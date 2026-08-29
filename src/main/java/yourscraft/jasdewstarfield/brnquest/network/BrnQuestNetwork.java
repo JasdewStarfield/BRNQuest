@@ -25,6 +25,7 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
+import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -86,12 +87,14 @@ public final class BrnQuestNetwork {
         public static final StreamCodec<ByteBuf, CompleteCheckmarkPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, CompleteCheckmarkPayload::revision, ByteBufCodecs.STRING_UTF8, CompleteCheckmarkPayload::questId, CompleteCheckmarkPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
-    public record CompleteTaskPayload(String revision, String questId, String taskId) implements CustomPacketPayload {
+    public record CompleteTaskPayload(String revision, String questId, String taskId,
+                                      String selectedSlots) implements CustomPacketPayload {
         public static final Type<CompleteTaskPayload> TYPE = payloadType("complete_task");
         public static final StreamCodec<ByteBuf, CompleteTaskPayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::revision,
                 ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::questId,
                 ByteBufCodecs.STRING_UTF8, CompleteTaskPayload::taskId,
+                ByteBufCodecs.stringUtf8(256), CompleteTaskPayload::selectedSlots,
                 CompleteTaskPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
@@ -132,10 +135,16 @@ public final class BrnQuestNetwork {
         registrar.playToServer(CompleteTaskPayload.TYPE, CompleteTaskPayload.CODEC, (payload, context) -> {
             ResourceLocation questId = ResourceLocation.tryParse(payload.questId());
             ResourceLocation taskId = ResourceLocation.tryParse(payload.taskId());
+            TaskSubmissionSelection selection = parseSelection(payload.selectedSlots());
             if (context.player() instanceof ServerPlayer player && questId != null && taskId != null
                     && payload.revision().equals(currentRevision())) {
+                if (selection == null) {
+                    // A malformed bounded selection must not leave the client stuck in its optimistic pending state.
+                    syncProgress(player, true);
+                    return;
+                }
                 BrnQuestApi.completeTaskResult(OperationContext.self(player), player,
-                        questId.toString(), taskId.toString());
+                        questId.toString(), taskId.toString(), selection);
             }
         });
         registrar.playToServer(ToggleTrackedPayload.TYPE, ToggleTrackedPayload.CODEC, (payload, context) -> {
@@ -201,12 +210,28 @@ public final class BrnQuestNetwork {
     public static void requestBook(String revision) { PacketDistributor.sendToServer(new RequestBookPayload(revision)); }
     public static void requestOpen(String knownRevision) { PacketDistributor.sendToServer(new RequestOpenPayload(knownRevision)); }
     public static void completeCheckmark(String revision, String questId) { PacketDistributor.sendToServer(new CompleteCheckmarkPayload(revision, questId)); }
-    public static void completeTask(String revision, String questId, String taskId) { PacketDistributor.sendToServer(new CompleteTaskPayload(revision, questId, taskId)); }
+    public static void completeTask(String revision, String questId, String taskId) {
+        completeTask(revision, questId, taskId, List.of());
+    }
+    public static void completeTask(String revision, String questId, String taskId, List<Integer> selectedSlots) {
+        String encoded = selectedSlots.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining(","));
+        PacketDistributor.sendToServer(new CompleteTaskPayload(revision, questId, taskId, encoded));
+    }
     public static void toggleTracked(String revision, String questId) { PacketDistributor.sendToServer(new ToggleTrackedPayload(revision, questId)); }
     public static void claimReward(String revision, String rewardId) { PacketDistributor.sendToServer(new ClaimRewardPayload(revision, rewardId)); }
     public static void selectQuest(String revision, String questId) { PacketDistributor.sendToServer(new SelectQuestPayload(revision, questId)); }
 
     private static String currentRevision() { return QuestBookManager.get().active().map(s -> s.revision()).orElse(""); }
+    private static TaskSubmissionSelection parseSelection(String encoded) {
+        try {
+            if (encoded == null || encoded.isBlank()) return TaskSubmissionSelection.AUTOMATIC;
+            List<Integer> indices = java.util.Arrays.stream(encoded.split(","))
+                    .map(Integer::parseInt).toList();
+            return new TaskSubmissionSelection(indices);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
     static void send(ServerPlayer player, CustomPacketPayload payload) {
         // Mock players and clients without the negotiated channel must not make
         // otherwise server-only progress operations fail.

@@ -7,6 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.ArrayList;
@@ -21,7 +22,8 @@ public final class ConfigEditorSchemas {
     public static ConfigEditorSchema forTask(TaskView task) {
         var type = TaskTypeRegistry.get(task.typeId());
         List<ConfigFieldDescriptor> fields = type == null ? List.of() : fields(type::configFields, task.typeId());
-        return schema(ConfigEditorSchema.Kind.TASK, task.typeId(), fields, task.config());
+        Map<String, String> editorConfig = type == null ? task.config() : editorConfig(type, task);
+        return schema(ConfigEditorSchema.Kind.TASK, task.typeId(), fields, editorConfig);
     }
 
     public static ConfigEditorSchema forReward(RewardView reward) {
@@ -74,6 +76,18 @@ public final class ConfigEditorSchemas {
         }
     }
 
+    private static <T> Map<String, String> editorConfig(yourscraft.jasdewstarfield.brnquest.task.TaskType<T> type,
+                                                        TaskView task) {
+        try {
+            Map<String, String> config = type.editorConfig(task);
+            return config == null ? task.config() : Map.copyOf(config);
+        } catch (RuntimeException | LinkageError exception) {
+            BRNQuest.LOGGER.error("[BRNQuest/EDITOR] Config projection failed for {}; using stored config",
+                    task.typeId(), exception);
+            return task.config();
+        }
+    }
+
     private static void validateShape(ConfigFieldDescriptor field, String value, List<ConfigFieldIssue> issues) {
         try {
             switch (field.valueType()) {
@@ -91,6 +105,8 @@ public final class ConfigEditorSchemas {
                 case RESOURCE_LOCATION -> {
                     if (ResourceLocation.tryParse(value) == null) throw new IllegalArgumentException();
                 }
+                case ITEM_MATCHER -> ItemChoiceMatcher.parse(value).error().ifPresent(error ->
+                        issues.add(issue(field, "INVALID_ITEM_MATCHER", error.message())));
                 case TEXT, ITEM_STACK -> { /* Codec and publish validation retain final authority. */ }
             }
         } catch (IllegalArgumentException exception) {

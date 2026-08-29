@@ -37,6 +37,7 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.nio.charset.StandardCharsets;
@@ -906,7 +907,8 @@ public final class AuthoringNetwork {
                 message += ": " + first.code() + " " + first.message();
                 diagnostics = mutationDiagnosticWires(wire, result.value().diagnostics());
             } else if ("UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())) {
-                String path = "DUPLICATE_TYPED_ID".equals(result.code()) ? "id" : "";
+                String path = "DUPLICATE_TYPED_ID".equals(result.code())
+                        || "RETIRED_TYPED_ID".equals(result.code()) ? "id" : "";
                 diagnostics = List.of(new EditorDiagnosticWire("ERROR", result.code(),
                         wire.sourceId(), path, result.message()));
             }
@@ -1152,21 +1154,18 @@ public final class AuthoringNetwork {
     private static Map<String, String> typedMutationConfig(ServerPlayer player, ResourceLocation typeId,
                                                            Map<String, String> config) {
         Map<String, String> bounded = boundedConfig(config);
-        if (!TaskTypes.ITEM.equals(typeId)) return bounded;
-        String itemSnbt = bounded.get("item");
-        try {
-            ItemStack stack = itemSnbt == null ? ItemStack.EMPTY
-                    : ItemStack.parseOptional(player.registryAccess(), TagParser.parseTag(itemSnbt));
-            if (stack.isEmpty()) throw new IllegalArgumentException("Item config must contain a registered item");
-            Map<String, String> normalized = new LinkedHashMap<>(bounded);
-            // Quantity belongs to the separate config field; the identity stack stays count one.
-            normalized.put("item", stack.copyWithCount(1).save(player.registryAccess()).toString());
-            return Map.copyOf(normalized);
-        } catch (IllegalArgumentException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw new IllegalArgumentException("Item config contains invalid ItemStack SNBT");
+        if (TaskTypes.ITEM.equals(typeId) || TaskTypes.ITEM_CHOICE.equals(typeId)) {
+            Map<String, String> canonical = ItemChoiceMatcher.canonicalEditorConfig(bounded);
+            var normalizedResult = ItemChoiceMatcher.normalizeConfig(player.registryAccess(), canonical);
+            ItemChoiceMatcher.Spec normalized = normalizedResult.result().orElseThrow(() ->
+                    new IllegalArgumentException(normalizedResult.error()
+                            .map(error -> error.message()).orElse("Item matcher is invalid")));
+            Map<String, String> normalizedConfig = new LinkedHashMap<>(canonical);
+            normalizedConfig.put("matcher", normalized.encode());
+            normalizedConfig.put("required_entries", Integer.toString(normalized.requiredEntries()));
+            return Map.copyOf(normalizedConfig);
         }
+        return bounded;
     }
 
     private static TaskDefinition taskReplacement(ServerPlayer player, QuestBookDefinition book,

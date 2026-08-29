@@ -37,7 +37,12 @@ public final class TaskTypeExecutor {
     }
 
     public static TaskSubmissionResult submit(TaskType<?> type, TaskContext context) {
-        return submitTyped(type, context);
+        return submit(type, context, TaskSubmissionSelection.AUTOMATIC);
+    }
+
+    public static TaskSubmissionResult submit(TaskType<?> type, TaskContext context,
+                                              TaskSubmissionSelection selection) {
+        return submitTyped(type, context, selection);
     }
 
     private enum Invocation { SATISFIED, CONSUME }
@@ -52,9 +57,10 @@ public final class TaskTypeExecutor {
                 invocation == Invocation.SATISFIED ? type.satisfied(context, config) : type.consume(context, config));
     }
 
-    private static <T> TaskSubmissionResult submitTyped(TaskType<T> type, TaskContext context) {
+    private static <T> TaskSubmissionResult submitTyped(TaskType<T> type, TaskContext context,
+                                                        TaskSubmissionSelection selection) {
         return StringMapConfigCodec.decode(type.configCodec(), context.task().config()).result()
-                .map(config -> type.submit(context, config))
+                .map(config -> type.submit(context, config, selection))
                 .orElseGet(() -> TaskSubmissionResult.failure("INVALID_CONFIG", "Task configuration is invalid"));
     }
 

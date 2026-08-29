@@ -40,6 +40,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 - `ClientRewardPresentation` 接收不可变 `RewardView` 或 `RewardPresentationContext`，可根据仅供显示的 claimable/claimed 状态生成提示。
 - `interactive` 和 `acceptsQuestCompletionIntent` 仅控制客户端是否建立点击入口；服务端仍会按注册的 `TaskType`、当前库存、权限和 revision 重新校验。
 - `objectiveTitle` 可为详情目标行补充“需求/持有”等显示语义；`readyForSubmission` 默认保持既有 interactive 行可点击，只有能从客户端可靠观察前置条件的 presentation 才应收窄它。它只控制黄色可提交提示与本地命中，不能替代服务端校验。
+- `displayedItem` 可从当前只读上下文选出紧凑行代表物品；`acceptedItems` 与 `hasCandidateMenu` 可声明一个只读候选列表入口。三个方法都有兼容默认值，返回的物品仅用于显示、Tooltip 与可选 JEI 查询，不能把客户端选择发送给服务器作为匹配结论。
 - `ClientRewardPresentation.displayedItem` 接收已解析物品的副本，可仅为图标、数量角标、Tooltip 与可选配方查询调整显示数量；不得借此改变服务端实际奖励。
 - 注册表按完整 `ResourceLocation` 查找。缺失 presentation 或仅路径同名时使用问号占位、完整类型 ID 标题且默认不可交互。
 - 客户端注册表在 client setup 冻结；服务端任务/奖励实现不得引用这些 `client.ui` 类。
@@ -59,6 +60,8 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 任务和奖励类型可覆盖 `configFields()`，用 `ConfigFieldDescriptor` 描述 schema 1 字符串 Map。描述应使用稳定字段键，并尽量给出默认值、范围、枚举、资源注册表提示和简短帮助文本；复杂跨字段规则可以使用 `ConfigFieldValidator` 返回字段级诊断。
 
 字段描述是编辑器提示而不是新的配置 Codec。BRNQuest 始终保留完整 raw Map，未知字段不会因表单保存而自动删除；最终发布仍调用原有 `configCodec()`。返回空列表表示类型只支持原始配置后备视图，适合开放式或尚未冻结的外部配置。
+
+内置 `ITEM_MATCHER` 字段会打开下属物品属性 Screen，`brnquest:item` 与兼容保留的 `brnquest:item_choice` 共用该能力。规范 matcher 是 version 2 entries JSON：每个条目保存自己的物品展示栈或 tag 与需求数量，目标所需条目数由上层 `required_entries` 编辑；物品条目按物品类型接受组件不同的同类栈，玩家提交时再选择具体背包格。旧单物品及旧 tag/list matcher 会投影到相同表单；多 tag 物品通过二级列表明确选择。完成子级编辑后才一次性回填，取消不会修改原配置。该能力及带玩家背包槽位选择的提交重载均为内部实现边界；扩展自己的 matcher 仍必须由服务端 Codec 和提交事务重新校验，不能信任客户端槽位、ItemStack 或库存快照。
 
 ## 注册与 reload 顺序
 

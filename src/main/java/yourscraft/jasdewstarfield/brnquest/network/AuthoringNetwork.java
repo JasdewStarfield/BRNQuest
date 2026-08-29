@@ -245,7 +245,8 @@ public final class AuthoringNetwork {
 
     public record QuestUpdateWire(String sessionId, String bookId, String draftRevision, String questId,
                                   String replacementQuestId, String title, String subtitle,
-                                  String description, String iconKind, String iconValue, boolean preserveIcon) {}
+                                  String description, String iconKind, String iconValue, boolean preserveIcon,
+                                  Double x, Double y) {}
 
     public record PositionWire(String questId, double x, double y) {}
 
@@ -335,9 +336,18 @@ public final class AuthoringNetwork {
                                    ResourceLocation questId, ResourceLocation replacementQuestId,
                                    String title, String subtitle, String description, String iconKind, String iconValue,
                                    boolean preserveIcon) {
+        updateQuest(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle,
+                description, iconKind, iconValue, preserveIcon, null, null);
+    }
+
+    /** Optional coordinates let the full property form update exact values without changing quick text edits. */
+    public static void updateQuest(UUID sessionId, ResourceLocation bookId, String draftRevision,
+                                   ResourceLocation questId, ResourceLocation replacementQuestId,
+                                   String title, String subtitle, String description, String iconKind, String iconValue,
+                                   boolean preserveIcon, Double x, Double y) {
         QuestUpdateWire wire = new QuestUpdateWire(sessionId.toString(), bookId.toString(), draftRevision,
                 questId.toString(), replacementQuestId.toString(), title, subtitle, description,
-                iconKind, iconValue, preserveIcon);
+                iconKind, iconValue, preserveIcon, x, y);
         PacketDistributor.sendToServer(new UpdateQuestPayload(GSON.toJson(wire)));
     }
 
@@ -665,6 +675,19 @@ public final class AuthoringNetwork {
                     current.success() ? "Selected quest no longer exists" : current.message());
             return;
         }
+        boolean hasX = wire.x() != null;
+        boolean hasY = wire.y() != null;
+        if (hasX != hasY || (hasX && (!Double.isFinite(wire.x()) || !Double.isFinite(wire.y())))) {
+            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_QUEST_POSITION", "Quest coordinates must be finite and supplied together");
+            return;
+        }
+        if (!replacementQuestId.equals(questId) && hasX
+                && (Double.compare(wire.x(), quest.x()) != 0 || Double.compare(wire.y(), quest.y()) != 0)) {
+            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "POSITION_WITH_RENAME", "Rename the quest before editing its coordinates");
+            return;
+        }
         String icon = quest.icon();
         if (!wire.preserveIcon()) {
             ResourceLocation iconId = wire.iconValue().isBlank() ? null : ResourceLocation.tryParse(wire.iconValue());
@@ -688,10 +711,16 @@ public final class AuthoringNetwork {
                 return;
             }
         }
+        double replacementX = hasX ? wire.x() : quest.x();
+        double replacementY = hasY ? wire.y() : quest.y();
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
-                wire.title(), wire.subtitle(), wire.description(), icon, quest.x(), quest.y(),
+                wire.title(), wire.subtitle(), wire.description(), icon, replacementX, replacementY,
                 quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
-        var updated = AuthorApi.editor().updateQuestBasics(player, sessionId, bookId, wire.draftRevision(), questId,
+        // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
+        // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.
+        var updated = replacementQuestId.equals(questId) && hasX
+                ? AuthorApi.editor().updateQuest(player, sessionId, bookId, wire.draftRevision(), questId, replacement)
+                : AuthorApi.editor().updateQuestBasics(player, sessionId, bookId, wire.draftRevision(), questId,
                 replacement);
         if (!updated.success()) {
             String message = updated.message();

@@ -94,6 +94,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
     private static final int ATTENTION_PING_SIZE = 10;
+    private static final long NODE_LONG_PRESS_NANOS = 220_000_000L;
+    private static final double NODE_PAN_INTENT_PIXELS = 4.0;
+    private static final double NODE_DRAG_START_PIXELS = 2.0;
     private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             BRNQuest.MOD_ID, "textures/gui/reward_ping.png");
     private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
@@ -145,6 +148,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private EditorTextField questDescriptionField;
     private EditorTextField questIdField;
     private EditorTextField questIconField;
+    private EditorTextField questXField;
+    private EditorTextField questYField;
     private String questEditorOriginalIconItemId = "";
     private IconEditorMode questEditorIconMode = IconEditorMode.ITEM;
     private IconEditorMode questEditorOriginalIconMode = IconEditorMode.ITEM;
@@ -207,11 +212,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ResourceLocation deleteTarget;
     private String deleteImpact = "";
     private final Set<ResourceLocation> editorSelection = new LinkedHashSet<>();
+    private Set<ResourceLocation> nodeDragSelectionBeforePress = Set.of();
     private final Map<ResourceLocation, DraftBookEditor.Position> dragPreview = new LinkedHashMap<>();
+    private final Map<ResourceLocation, DraftBookEditor.Position> dragSnapPreview = new LinkedHashMap<>();
     private Map<ResourceLocation, DraftBookEditor.Position> dragOrigins = Map.of();
     private boolean nodeDragging;
+    private boolean nodeDragPickedUp;
+    private boolean nodeDragMoved;
+    private long nodeDragPressStartedNanos;
+    private ResourceLocation nodeDragAnchorId;
     private double nodeDragStartX;
     private double nodeDragStartY;
+    private double nodeDragPressScreenX;
+    private double nodeDragPressScreenY;
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
@@ -251,6 +264,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 "screen.brnquest.editor.quest.description", 32_768);
         questIdField = reinitializeEditorField(questIdField, "screen.brnquest.editor.quest.id", 256);
         questIconField = reinitializeEditorField(questIconField, "screen.brnquest.editor.quest.icon", 256);
+        questXField = reinitializeEditorField(questXField, "screen.brnquest.editor.quest.position_x", 64);
+        questYField = reinitializeEditorField(questYField, "screen.brnquest.editor.quest.position_y", 64);
         structureIdField = reinitializeEditorField(structureIdField, "screen.brnquest.editor.structure.id", 256);
         structureTitleField = reinitializeEditorField(structureTitleField,
                 "screen.brnquest.editor.structure.title", 256);
@@ -517,6 +532,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         double graphBottom = graphY(bottom);
         double graphMouseX = graphX(mouseX);
         double graphMouseY = graphY(mouseY);
+        updateNodeDragGesture(graphMouseX, graphMouseY, mouseX, mouseY, System.nanoTime());
         graphics.pose().pushPose();
         graphics.pose().translate((float) graphOriginX(), (float) graphOriginY(), 0.0F);
         graphics.pose().scale((float) renderedZoom, (float) renderedZoom, 1.0F);
@@ -536,6 +552,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         renderDependency(graphics, parent, quest);
                     }
                 }
+            }
+            for (QuestDefinition quest : chapter.quests()) {
+                renderNodeSnapGhost(graphics, quest, graphLeft, graphRight, graphTop, graphBottom);
             }
             for (QuestDefinition quest : chapter.quests()) {
                 renderNode(graphics, quest, graphLeft, graphRight, graphTop, graphBottom, graphMouseX, graphMouseY);
@@ -606,7 +625,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             double top, double bottom, double mouseX, double mouseY) {
         int x = nodeGraphX(quest);
         int y = nodeGraphY(quest);
-        int size = NODE_BASE_SIZE;
+        boolean pickedUp = nodeDragPickedUp && quest.id().equals(nodeDragAnchorId);
+        int size = NODE_BASE_SIZE + (pickedUp ? 4 : 0);
         int radius = size / 2;
         // Keep partially visible nodes; cull only after their entire bounds leave the canvas.
         if (!QuestViewportMath.intersectsViewport(x, y, radius, left, right, top, bottom)) return;
@@ -636,7 +656,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderNodeAttentionPing(graphics, REWARD_PING_TEXTURE, x, y, size);
         }
 
-        if (mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
+        if (!nodeDragging && mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
                 && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(Component.literal(questTitle(quest)).withStyle(ChatFormatting.WHITE));
@@ -645,6 +665,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             hoveredComponentTooltip = List.copyOf(tooltip);
         }
+    }
+
+    /** Draws the server-bound grid destination below the freely moving picked-up node. */
+    private void renderNodeSnapGhost(GuiGraphics graphics, QuestDefinition quest, double left, double right,
+                                     double top, double bottom) {
+        DraftBookEditor.Position target = dragSnapPreview.get(quest.id());
+        if (!nodeDragPickedUp || target == null) return;
+        int x = graphCoordinate(target.x());
+        int y = graphCoordinate(target.y());
+        int radius = NODE_BASE_SIZE / 2 + 3;
+        if (!QuestViewportMath.intersectsViewport(x, y, radius, left, right, top, bottom)) return;
+        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 6, 0x9091C9F4);
+        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 2, 0xB0202632);
+        graphics.drawCenteredString(font, Component.literal("◇"), x, y - 4, 0xD091C9F4);
     }
 
     private void renderQuestVisual(GuiGraphics graphics, QuestDefinition quest, int x, int y, int size) {
@@ -1208,14 +1242,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         return true;
                     }
                     if (button == 0) {
+                        nodeDragSelectionBeforePress = Set.copyOf(editorSelection);
                         if (hasControlDown()) {
                             if (!editorSelection.add(hit.id())) editorSelection.remove(hit.id());
                             if (editorSelection.isEmpty()) editorSelection.add(hit.id());
                         } else if (!editorSelection.contains(hit.id())) {
                             selectOnly(hit.id());
                         }
-                        editorSelectedQuest = hit.id();
-                        beginNodeDrag(graphMouseX, graphMouseY, snapshot.book());
+                        // Defer opening details until release so a long press can pick up the node
+                        // without flashing or replacing the detail panel underneath the gesture.
+                        beginNodeDrag(hit.id(), graphMouseX, graphMouseY, mouseX, mouseY, snapshot.book());
+                        return true;
                     }
                 } else if (button == 0) {
                     ClientQuestState.get().selected(hit.id());
@@ -1252,7 +1289,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     ? super.mouseReleased(x, y, button) : true;
         }
         if (nodeDragging && button == 0) {
-            commitNodeDrag();
+            if (nodeDragPickedUp) {
+                commitNodeDrag();
+            } else {
+                ResourceLocation clickedQuestId = nodeDragAnchorId;
+                cancelNodeDrag();
+                openEditorQuestDetails(clickedQuestId);
+            }
             return true;
         }
         dragging = false;
@@ -1267,7 +1310,28 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     ? super.mouseDragged(x, y, button, dx, dy) : true;
         }
         if (nodeDragging && button == 0) {
-            updateNodeDrag(graphX(x), graphY(y));
+            long nowNanos = System.nanoTime();
+            if (!nodeDragPickedUp && nodeGestureRequestsCanvasPan(x, y, nowNanos)) {
+                // Motion before the hold threshold is a canvas-pan intent, not an accidental
+                // node move. Apply the displacement already travelled before handing off.
+                double pressX = nodeDragPressScreenX;
+                double pressY = nodeDragPressScreenY;
+                Set<ResourceLocation> selectionBeforePress = nodeDragSelectionBeforePress;
+                cancelNodeDrag();
+                // Panning from a node should behave like panning from empty canvas and therefore
+                // must not leave behind the provisional selection made on pointer-down.
+                editorSelection.clear();
+                editorSelection.addAll(selectionBeforePress);
+                dragging = true;
+                panX += x - pressX;
+                panY += y - pressY;
+                renderedPanX = panX;
+                renderedPanY = panY;
+                dragX = x;
+                dragY = y;
+                return true;
+            }
+            updateNodeDragGesture(graphX(x), graphY(y), x, y, nowNanos);
             return true;
         }
         if (dragging) {
@@ -3736,6 +3800,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 left, fieldTop + pitch * 3, fieldWidth);
         renderQuestIconEditorField(graphics,
                 left, fieldTop + pitch * 4, fieldWidth, mouseX, mouseY);
+        renderQuestPositionEditorField(graphics, left, fieldTop + pitch * 5, fieldWidth);
 
         renderEditorTextButton(graphics, questEditorCancelBounds(), Component.translatable("gui.cancel"),
                 null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -3793,6 +3858,31 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
     }
 
+    /** Keeps exact coordinate entry available even though pointer dragging snaps to the visible grid. */
+    private void renderQuestPositionEditorField(GuiGraphics graphics, int left, int top, int width) {
+        int labelWidth = 48;
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, labelWidth);
+        String label = font.plainSubstrByWidth(
+                Component.translatable("screen.brnquest.editor.quest.position").getString(),
+                row.label().width() - 4);
+        graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
+                0xFF9FB0C2, false);
+
+        int axisLabelWidth = 10;
+        int gap = 4;
+        int inputWidth = Math.max(16, (row.field().width() - axisLabelWidth * 2 - gap) / 2);
+        int xLabelLeft = row.field().left();
+        int xInputLeft = xLabelLeft + axisLabelWidth;
+        int yLabelLeft = xInputLeft + inputWidth + gap;
+        int yInputLeft = yLabelLeft + axisLabelWidth;
+        graphics.drawString(font, "X", xLabelLeft + 1, row.field().top() + 5, 0xFF9FB0C2, false);
+        graphics.drawString(font, "Y", yLabelLeft + 1, row.field().top() + 5, 0xFF9FB0C2, false);
+        questXField.show(new UiRect(xInputLeft, row.field().top(), xInputLeft + inputWidth, row.field().bottom()),
+                !ClientEditorState.get().busy());
+        questYField.show(new UiRect(yInputLeft, row.field().top(), row.field().right(), row.field().bottom()),
+                !ClientEditorState.get().busy());
+    }
+
     /** Reuses the ghost inventory/JEI Screen while the quest form retains identity-only item input. */
     private void openQuestIconItemSelector() {
         openEditorItemSelector(stack -> {
@@ -3829,6 +3919,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorTextureIconValue = questEditorIconMode == IconEditorMode.TEXTURE
                 ? questEditorOriginalIconItemId : "";
         questIconField.setValue(questEditorOriginalIconItemId);
+        questXField.setValue(Double.toString(quest.x()));
+        questYField.setValue(Double.toString(quest.y()));
         setFocused(questIdField);
     }
 
@@ -3846,6 +3938,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     ? "screen.brnquest.editor.quest.invalid_icon" : "screen.brnquest.editor.quest.invalid_texture");
             return;
         }
+        Double x = parseFiniteCoordinate(questXField);
+        Double y = parseFiniteCoordinate(questYField);
+        if (x == null || y == null) {
+            questEditorMessage = Component.translatable("screen.brnquest.editor.quest.invalid_position");
+            return;
+        }
+        QuestDefinition currentQuest = draftQuest(questEditorQuestId);
+        if (!replacementId.equals(questEditorQuestId) && currentQuest != null
+                && (Double.compare(x, currentQuest.x()) != 0 || Double.compare(y, currentQuest.y()) != 0)) {
+            // A rename migrates aliases and a coordinate update changes content; keeping them as separate
+            // revision steps prevents a confirmed rename from racing a second mutation request.
+            questEditorMessage = Component.translatable("screen.brnquest.editor.quest.rename_position_conflict");
+            return;
+        }
         questEditorMessage = null;
         if (!replacementId.equals(questEditorQuestId)) {
             closeActiveEditorOverlay();
@@ -3853,6 +3959,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return;
         }
         submitQuestPropertyEdit(replacementId);
+    }
+
+    /** Rejects NaN and infinity because both would poison viewport bounds and serialized drafts. */
+    private static Double parseFiniteCoordinate(EditorTextField field) {
+        if (field == null) return null;
+        try {
+            double value = Double.parseDouble(field.getValue().strip());
+            return Double.isFinite(value) ? value : null;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private QuestDefinition draftQuest(ResourceLocation questId) {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        return snapshot == null || questId == null ? null : snapshot.quests().get(questId);
     }
 
     private void submitQuestPropertyEdit(ResourceLocation replacementId) {
@@ -3867,7 +3989,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 replacementId, questTitleField.getValue(), questSubtitleField.getValue(),
                 questDescriptionField.getValue(), questEditorIconMode.name(), questIconField.getValue().strip(),
                 questEditorIconMode == questEditorOriginalIconMode
-                        && questIconField.getValue().strip().equals(questEditorOriginalIconItemId));
+                        && questIconField.getValue().strip().equals(questEditorOriginalIconItemId),
+                Double.parseDouble(questXField.getValue().strip()),
+                Double.parseDouble(questYField.getValue().strip()));
         editorSelectedQuest = replacementId;
         closeQuestEditingPanels();
         editorOverlays.close();
@@ -3884,7 +4008,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorTextureIconValue = "";
         setFocused(null);
         for (EditorTextField field : List.of(questIdField, questTitleField, questSubtitleField,
-                questDescriptionField, questIconField)) {
+                questDescriptionField, questIconField, questXField, questYField)) {
             if (field == null) continue;
             field.hide();
         }
@@ -3894,7 +4018,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void offsetDetailsDrawerFieldsForMotion() {
         int offsetX = detailsDrawerOffsetX();
         EditorTextField[] fields = {questIdField, questTitleField, questSubtitleField,
-                questDescriptionField, questIconField, typedPropertyIdField, typedPropertyClaimPolicyField};
+                questDescriptionField, questIconField, questXField, questYField,
+                typedPropertyIdField, typedPropertyClaimPolicyField};
         if (!detailsOpen && !detailsDrawerVisible()) {
             for (EditorTextField field : fields) {
                 if (field != null) field.hide();
@@ -4698,7 +4823,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         editorSelection.add(questId);
     }
 
-    private void beginNodeDrag(double graphMouseX, double graphMouseY, QuestBookDefinition book) {
+    private void beginNodeDrag(ResourceLocation anchorId, double graphMouseX, double graphMouseY,
+                               double screenMouseX, double screenMouseY, QuestBookDefinition book) {
         Map<ResourceLocation, DraftBookEditor.Position> origins = new LinkedHashMap<>();
         for (QuestDefinition quest : book.quests()) {
             if (editorSelection.contains(quest.id())) {
@@ -4711,30 +4837,102 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         dragPreview.putAll(origins);
         nodeDragStartX = graphMouseX;
         nodeDragStartY = graphMouseY;
+        nodeDragPressScreenX = screenMouseX;
+        nodeDragPressScreenY = screenMouseY;
+        nodeDragAnchorId = anchorId;
+        nodeDragPressStartedNanos = System.nanoTime();
+        nodeDragPickedUp = false;
+        nodeDragMoved = false;
+        dragSnapPreview.clear();
         nodeDragging = true;
         dragging = false;
+    }
+
+    /** Resolves click versus long-press independently from render or mouse-event frequency. */
+    private void updateNodeDragGesture(double graphMouseX, double graphMouseY,
+                                       double screenMouseX, double screenMouseY, long nowNanos) {
+        if (!nodeDragging || dragOrigins.isEmpty()) return;
+        // A pointer that travelled before the deadline belongs to canvas panning. mouseDragged
+        // performs the actual handoff; render-time long-press detection must not pick it up first.
+        if (!nodeDragPickedUp && nodeGestureRequestsCanvasPan(screenMouseX, screenMouseY, nowNanos)) return;
+        if (!nodeDragPickedUp && nowNanos - nodeDragPressStartedNanos >= NODE_LONG_PRESS_NANOS) {
+            nodeDragPickedUp = true;
+        }
+        if (!nodeDragPickedUp) return;
+        updateNodeDrag(graphMouseX, graphMouseY);
+    }
+
+    private boolean nodeGestureRequestsCanvasPan(double screenMouseX, double screenMouseY, long nowNanos) {
+        return QuestViewportMath.shouldPanBeforeLongPress(nowNanos - nodeDragPressStartedNanos,
+                NODE_LONG_PRESS_NANOS, screenMouseX - nodeDragPressScreenX,
+                screenMouseY - nodeDragPressScreenY, NODE_PAN_INTENT_PIXELS);
+    }
+
+    /** Completes the click branch only after release proves that no drag gesture was intended. */
+    private void openEditorQuestDetails(ResourceLocation questId) {
+        if (questId == null) return;
+        editorSelectedQuest = questId;
+        closeQuestEditingPanels();
+        openDetailsPanel();
+        detailScroll.snap(0);
     }
 
     private void updateNodeDrag(double graphMouseX, double graphMouseY) {
         double deltaX = (graphMouseX - nodeDragStartX) / QuestViewportMath.GRID_SCALE;
         double deltaY = (graphMouseY - nodeDragStartY) / QuestViewportMath.GRID_SCALE;
+        nodeDragMoved = Math.hypot(graphMouseX - nodeDragStartX, graphMouseY - nodeDragStartY)
+                >= NODE_DRAG_START_PIXELS;
         dragPreview.clear();
         dragOrigins.forEach((id, position) -> dragPreview.put(id,
                 new DraftBookEditor.Position(position.x() + deltaX, position.y() + deltaY)));
+        dragSnapPreview.clear();
+        if (!nodeDragMoved) return;
+        DraftBookEditor.Position anchor = dragOrigins.get(nodeDragAnchorId);
+        if (anchor == null) return;
+        double snappedDeltaX = QuestViewportMath.snappedGroupDelta(anchor.x(), deltaX);
+        double snappedDeltaY = QuestViewportMath.snappedGroupDelta(anchor.y(), deltaY);
+        dragOrigins.forEach((id, position) -> dragSnapPreview.put(id, new DraftBookEditor.Position(
+                QuestViewportMath.limitDraggedPrecision(position.x() + snappedDeltaX),
+                QuestViewportMath.limitDraggedPrecision(position.y() + snappedDeltaY))));
     }
 
     private void commitNodeDrag() {
         nodeDragging = false;
-        if (dragPreview.isEmpty() || dragPreview.equals(dragOrigins)) {
-            dragPreview.clear();
-            dragOrigins = Map.of();
+        if (!nodeDragMoved || dragSnapPreview.isEmpty() || dragSnapPreview.equals(dragOrigins)) {
+            cancelNodeDrag();
             return;
         }
-        List<AuthoringNetwork.PositionWire> positions = dragPreview.entrySet().stream()
+        Map<ResourceLocation, DraftBookEditor.Position> committed = Map.copyOf(dragSnapPreview);
+        List<AuthoringNetwork.PositionWire> positions = committed.entrySet().stream()
                 .map(entry -> new AuthoringNetwork.PositionWire(entry.getKey().toString(),
                         entry.getValue().x(), entry.getValue().y())).toList();
+        // Hold the exact server-bound position on screen until the authoritative patch arrives.
+        dragPreview.clear();
+        dragPreview.putAll(committed);
         sendMutation("MOVE_QUESTS", null, null, null, "", 0, 0, 0, positions);
         dragOrigins = Map.of();
+        dragSnapPreview.clear();
+        nodeDragPickedUp = false;
+        nodeDragMoved = false;
+        nodeDragAnchorId = null;
+        nodeDragPressStartedNanos = 0L;
+        nodeDragPressScreenX = 0.0D;
+        nodeDragPressScreenY = 0.0D;
+        nodeDragSelectionBeforePress = Set.of();
+    }
+
+    private void cancelNodeDrag() {
+        nodeDragging = false;
+        nodeDragPickedUp = false;
+        nodeDragMoved = false;
+        nodeDragAnchorId = null;
+        nodeDragPressStartedNanos = 0L;
+        nodeDragPressScreenX = 0.0D;
+        nodeDragPressScreenY = 0.0D;
+        nodeDragSelectionBeforePress = Set.of();
+        dragOrigins = Map.of();
+        dragPreview.clear();
+        dragSnapPreview.clear();
     }
 
     private void reconcileDragPreview() {

@@ -5,6 +5,7 @@ final class QuestViewportMath {
     static final double MIN_ZOOM = 0.50;
     static final double MAX_ZOOM = 2.00;
     static final double GRID_SCALE = 34.0;
+    static final int DRAG_DECIMAL_PLACES = 3;
     static final int REWARD_ROW_HEIGHT = 28;
 
     private QuestViewportMath() {}
@@ -26,6 +27,28 @@ final class QuestViewportMath {
 
     static double clampScroll(double value, int contentHeight, int viewportHeight) {
         return Math.max(0.0, Math.min(Math.max(0, contentHeight - viewportHeight), value));
+    }
+
+    /** Returns the nearest visible grid line in quest-coordinate space. */
+    static double snapQuestCoordinate(double value) {
+        return Math.round(value);
+    }
+
+    /** Dragging uses bounded precision while property editing may retain arbitrary finite decimals. */
+    static double limitDraggedPrecision(double value) {
+        double scale = Math.pow(10.0, DRAG_DECIMAL_PLACES);
+        return Math.round(value * scale) / scale;
+    }
+
+    /** Snaps the grabbed node and applies the same delta to every node in a multi-selection. */
+    static double snappedGroupDelta(double anchorOrigin, double rawDelta) {
+        return snapQuestCoordinate(anchorOrigin + rawDelta) - anchorOrigin;
+    }
+
+    /** Resolves early pointer travel as canvas panning while preserving a stationary long press. */
+    static boolean shouldPanBeforeLongPress(long elapsedNanos, long holdNanos,
+                                            double deltaX, double deltaY, double thresholdPixels) {
+        return elapsedNanos < holdNanos && Math.hypot(deltaX, deltaY) >= thresholdPixels;
     }
 
     static int rewardGridHeight(int rewardCount, int columns) {

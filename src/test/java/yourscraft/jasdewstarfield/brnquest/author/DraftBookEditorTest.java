@@ -42,12 +42,15 @@ class DraftBookEditorTest {
         QuestBookDefinition book = bookWithDependency();
         QuestDefinition child = book.quests().stream().filter(value -> value.id().equals(id("child"))).findFirst().orElseThrow();
         QuestDefinition maliciousReplacement = new QuestDefinition(id("book"), child.id(), child.chapterId(),
-                "Updated", "", "", "", 2, 3, List.of(), List.of(), List.of(), "");
+                "Updated", "", "", "", 2.125678, -3.987654, List.of(), List.of(), List.of(), "");
 
         QuestBookDefinition updated = value(DraftBookEditor.updateQuest(book, child.id(), maliciousReplacement));
 
-        assertEquals(List.of(id("root")), updated.quests().stream()
-                .filter(value -> value.id().equals(child.id())).findFirst().orElseThrow().dependencies());
+        QuestDefinition updatedChild = updated.quests().stream()
+                .filter(value -> value.id().equals(child.id())).findFirst().orElseThrow();
+        assertEquals(List.of(id("root")), updatedChild.dependencies());
+        assertEquals(2.125678, updatedChild.x(), "Exact-coordinate property updates must retain authored precision");
+        assertEquals(-3.987654, updatedChild.y(), "Exact-coordinate property updates must retain authored precision");
         assertEquals("QUEST_IS_DEPENDENCY", DraftBookEditor.removeQuest(updated, id("root")).code());
         assertEquals("CHAPTER_NOT_EMPTY", DraftBookEditor.removeChapter(updated, id("chapter")).code());
         assertEquals("GROUP_NOT_EMPTY", DraftBookEditor.removeGroup(updated, id("group")).code());

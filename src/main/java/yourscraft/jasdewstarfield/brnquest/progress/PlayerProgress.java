@@ -68,6 +68,13 @@ public final class PlayerProgress {
         claimedRewards.removeAll(rewardIds);
     }
 
+    /** A single-objective reset must never make previously delivered rewards claimable again. */
+    void resetTask(String questId, String taskId, QuestStatus reopenedStatus) {
+        taskProgress.remove(taskId);
+        completionTimes.remove(questId);
+        quests.put(questId, reopenedStatus);
+    }
+
     private static int statusRank(QuestStatus status) {
         return switch (status) {
             case REWARD_CLAIMED -> 5;

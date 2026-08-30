@@ -256,11 +256,50 @@ public final class ProgressEngine {
     }
 
     public void reset(ServerPlayer player, ResourceLocation questId) {
-        var quest = QuestBookManager.get().active().map(s -> s.quests().get(questId)).orElse(null);
-        if (quest == null) return;
-        progress(player).resetQuest(questId.toString(), quest.tasks().stream().map(t -> t.id().toString()).toList(), quest.rewards().stream().map(r -> r.id().toString()).toList());
-        QuestProgressData.get(player.getServer()).setDirty();
-        reconcile(player);
+        synchronizedOwner(player, () -> {
+            var quest = QuestBookManager.get().active().map(s -> s.quests().get(questId)).orElse(null);
+            if (quest == null) return null;
+            progress(player).resetQuest(questId.toString(), quest.tasks().stream().map(t -> t.id().toString()).toList(),
+                    quest.rewards().stream().map(r -> r.id().toString()).toList());
+            QuestProgressData.get(player.getServer()).setDirty();
+            reconcile(player);
+            BrnQuestNetwork.syncProgress(player, false);
+            return null;
+        });
+    }
+
+    /** Called only by the permission/revision-checked admin service while holding the same owner lock. */
+    OperationResult administer(ServerPlayer player, QuestDefinition quest, ResourceLocation taskId,
+                               AdminProgressAction action) {
+        PlayerProgress progress = progress(player);
+        if (action == AdminProgressAction.FORCE_QUEST) return forceComplete(player, quest.id());
+        if (action == AdminProgressAction.RESET_QUEST) {
+            reset(player, quest.id());
+            return OperationResult.success("Quest progress reset");
+        }
+        TaskDefinition task = quest.tasks().stream().filter(value -> value.id().equals(taskId)).findFirst().orElseThrow();
+        if (action == AdminProgressAction.RESET_TASK) {
+            long previous = progress.taskProgress(taskId.toString());
+            progress.resetTask(quest.id().toString(), taskId.toString(),
+                    dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
+            QuestProgressData.get(player.getServer()).setDirty();
+            if (previous != 0) BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(),
+                    player.getScoreboardName(), quest.bookId(), quest.id(), taskId, ApiViews.task(task), previous, 0));
+            return OperationResult.success("Objective progress reset; reward claims preserved");
+        }
+        if (progress.taskProgress(taskId.toString()) >= 1) {
+            return OperationResult.noChange("ALREADY_SUBMITTED", "Objective already completed");
+        }
+        // Do not call the normal submission path: it may consume other currently satisfied items.
+        changeTaskProgress(player, quest, task, progress, Long.MAX_VALUE / 4);
+        QuestStatus status = progress.status(quest.id().toString());
+        if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED
+                && dependenciesComplete(quest, progress)
+                && quest.tasks().stream().filter(value -> !value.optional())
+                .allMatch(value -> progress.taskProgress(value.id().toString()) >= 1)) {
+            return boundedCompletion(() -> markCompleted(player, quest, progress, QuestProgressData.get(player.getServer())));
+        }
+        return OperationResult.success("Objective force-completed without consuming resources");
     }
 
     public OperationResult toggleTracked(ServerPlayer player, ResourceLocation questId) {
@@ -296,6 +335,11 @@ public final class ProgressEngine {
         // only the trigger differs.
         quest.rewards().stream().filter(reward -> reward.claimPolicy().equals("auto"))
                 .forEach(reward -> claim(player, reward.id()));
+        // A task-only reset preserves claims; completing it again must not reopen already claimed rewards.
+        if (!quest.rewards().isEmpty() && quest.rewards().stream()
+                .allMatch(reward -> progress.isClaimed(reward.id().toString()))) {
+            progress.status(quest.id().toString(), QuestStatus.REWARD_CLAIMED);
+        }
         BrnQuestNetwork.syncProgress(player, true);
         return OperationResult.success("Quest completed");
     }
@@ -332,7 +376,7 @@ public final class ProgressEngine {
         finally { COMPLETION_DEPTH.set(depth); }
     }
 
-    private <T> T synchronizedOwner(ServerPlayer player, java.util.function.Supplier<T> operation) {
+    <T> T synchronizedOwner(ServerPlayer player, java.util.function.Supplier<T> operation) {
         ProgressOwnerId owner = ProgressOwnerService.require(player);
         Object lock;
         // Shared providers will serialize all members through the same stable owner key.

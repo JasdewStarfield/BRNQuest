@@ -40,6 +40,70 @@ class ClientEditorStateTest {
         assertTrue(state.catalog().isEmpty());
     }
 
+    @Test void catalogRefreshCannotInterruptAdvancedDraftOpenHandshake() {
+        ResourceLocation bookId = ResourceLocation.parse("test:advanced_open");
+        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Advanced", List.of(), List.of(), Map.of());
+        QuestBookSnapshot snapshot = QuestBookSnapshot.of(book);
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ready", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "refreshed", true,
+                List.of(new AuthoringNetwork.CatalogEntryWire(bookId.toString(), book.title(),
+                        snapshot.revision(), DraftOrigin.ACTIVE.name())))));
+
+        assertEquals(ClientEditorState.Mode.OPENING, state.mode());
+        UUID sessionId = UUID.randomUUID();
+        acceptTransfer("OPEN", sessionId, snapshot, snapshot.revision());
+        assertEquals(ClientEditorState.Mode.EDITING, state.mode());
+        assertEquals(sessionId, state.sessionId());
+        assertFalse(state.live(), "advanced draft response must not be mistaken for live editing");
+        assertEquals(List.of(bookId), state.catalog().stream().map(ClientEditorState.CatalogEntry::bookId).toList());
+        assertTrue(state.beginMutation());
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "late refresh", true, List.of())));
+        assertEquals(ClientEditorState.Mode.MUTATING, state.mode(), "late catalog replies cannot finish a foreground mutation");
+        assertEquals(sessionId, state.sessionId());
+    }
+
+    @Test void malformedCatalogRefreshAlsoLeavesOpenHandshakeRecoverable() {
+        ResourceLocation bookId = ResourceLocation.parse("test:advanced_malformed_catalog");
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ready", true, List.of())));
+        assertTrue(state.beginOpenCurrent(bookId));
+
+        state.acceptCatalog("not-json");
+
+        assertEquals(ClientEditorState.Mode.OPENING, state.mode());
+        assertEquals("SESSION_OPENING", state.statusCode());
+    }
+
+    @Test void liveEditingAllowsGameplayOnlyForAnAcknowledgedActiveRevision() {
+        var book = new QuestBookDefinition(ResourceLocation.parse("test:live"), 1, "Live", List.of(), List.of(), Map.of());
+        var snapshot = QuestBookSnapshot.of(book);
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(book.id()));
+        UUID session = UUID.randomUUID();
+        String json = NativeBookJson.encode(book);
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("OPEN", "SUCCESS",
+                "SESSION_LIVE_OPENED", "ok", session.toString(), book.id().toString(), snapshot.revision(),
+                snapshot.revision(), snapshot.revision(), 36000L, 1, json.getBytes(StandardCharsets.UTF_8).length)));
+        assertTrue(state.acceptDraftChunk(session.toString(), snapshot.revision(), 0, json));
+        assertTrue(state.live());
+        assertTrue(state.gameplayAllowed(snapshot.revision()));
+        assertFalse(state.gameplayAllowed("another-runtime-revision"));
+        assertTrue(state.beginSave().isEmpty());
+        assertTrue(state.beginPublish().isEmpty());
+        assertTrue(state.beginPublishReview().isEmpty());
+        assertTrue(state.beginMutation());
+        assertFalse(state.gameplayAllowed(snapshot.revision()), "in-flight edits must not use an unacknowledged definition");
+        state.resetForTest();
+        assertFalse(state.live());
+        assertTrue(state.gameplayAllowed(snapshot.revision()));
+    }
+
     @Test void catalogPrioritizesDisplayedBookAndMovesBackupLikeEntriesToTheEnd() {
         ResourceLocation displayed = ResourceLocation.parse("test:current");
         var response = new AuthoringNetwork.CatalogResponseWire("SUCCESS", "DRAFT_CATALOG", "ok", true,
@@ -88,6 +152,8 @@ class ClientEditorStateTest {
         assertEquals(book, state.draft().orElseThrow().book());
         assertFalse(state.dirty());
         assertEquals(36_000L, state.remainingLeaseTicks());
+        assertFalse(state.live());
+        assertFalse(state.gameplayAllowed(snapshot.revision()), "advanced drafts remain isolated even at the same revision");
     }
 
     @Test void authoritativeQuestUpdateKeepsPreviousDraftVisibleUntilReplacementIsVerified() {

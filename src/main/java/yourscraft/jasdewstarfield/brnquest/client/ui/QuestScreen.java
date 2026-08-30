@@ -89,7 +89,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private static final int EDITOR_ACTION_REDO = 2;
     private static final int EDITOR_ACTION_UNDO = 3;
     private static final int EDITOR_ACTION_EXIT = 4;
-    private static final int EDITOR_ACTION_COUNT = 5;
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
@@ -633,19 +632,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         boolean editing = ClientEditorState.get().editing();
         QuestStatus status = status(quest);
-        int color = editing ? 0xFF4A6A88 : switch (status) {
+        int color = !gameplayAllowed() ? 0xFF4A6A88 : switch (status) {
             case COMPLETED, REWARD_CLAIMED -> 0xFF4C9A66;
             case AVAILABLE, ACTIVE -> 0xFFCF9F42;
             default -> 0xFF59606B;
         };
         boolean selected = editing ? editorSelection.contains(quest.id()) : quest.id().equals(selectedQuestId());
-        boolean tracked = !editing && status == QuestStatus.ACTIVE;
+        boolean tracked = gameplayAllowed() && status == QuestStatus.ACTIVE;
         if (tracked) fillChamfer(graphics, x, y, size + 7, 0xFF57C7F2);
         fillChamfer(graphics, x, y, size + (selected ? 4 : 2), selected ? 0xFF91C9F4 : 0xFF222936);
         fillChamfer(graphics, x, y, size, color);
         renderQuestVisual(graphics, quest, x, y, size);
-        boolean attentionTask = !editing && questHasAttentionTask(quest, status);
-        boolean pendingReward = !editing
+        boolean attentionTask = gameplayAllowed() && questHasAttentionTask(quest, status);
+        boolean pendingReward = gameplayAllowed()
                 && QuestPresentation.hasPendingReward(quest, status, ClientQuestState.get().claimed());
         // These states are mutually exclusive in normal progression, so both authored badges share
         // the clearer top-right anchor instead of reserving opposite corners.
@@ -772,20 +771,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         boolean ready = canSubmit(quest, status);
-        Component statusText = editing
+        Component statusText = !gameplayAllowed()
                 ? Component.translatable("screen.brnquest.editor.preview")
                 : Component.translatable(QuestPresentation.statusTranslationKey(
                         quest, status, ClientQuestState.get().claimed()));
         graphics.drawString(font, statusText, contentLeft, y, statusColor(status), false);
         int statusTop = y;
         int statusWidth = font.width(statusText);
-        if (!editing && status == QuestStatus.LOCKED) {
+        if (gameplayAllowed() && status == QuestStatus.LOCKED) {
             // Cyan underline and info glyph advertise that the locked reason is inspectable.
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
             graphics.drawString(font, Component.literal("ⓘ"), contentLeft + statusWidth + 4, y, 0xFF68BDE8, false);
             statusWidth += 4 + font.width("ⓘ");
         }
-        if (!editing && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+        if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
             int pinX = detailTrackX(pin);
             graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : 0xFFB7C5D8, false);
@@ -794,7 +793,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         ? "screen.brnquest.untrack" : "screen.brnquest.track");
             }
         }
-        if (!editing && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
+        if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
             graphics.drawString(font, Component.translatable("screen.brnquest.ready"), contentLeft + font.width(statusText) + 6, y, 0xFF72D88D, false);
         }
         y += 16;
@@ -865,7 +864,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         int visibleStatusY = statusTop;
-        if (!editing && status == QuestStatus.LOCKED && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
+        if (gameplayAllowed() && status == QuestStatus.LOCKED && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= visibleStatusY && mouseY <= visibleStatusY + font.lineHeight
                 && visibleStatusY >= detailContentTop() && visibleStatusY < detailContentBottom()) {
             hoveredComponentTooltip = dependencyTooltip(quest);
@@ -971,7 +970,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
         boolean claimed = ClientQuestState.get().claimed().contains(reward.id().toString());
-        boolean claimable = !ClientEditorState.get().editing() && isCompleted(status) && !claimed;
+        boolean claimable = gameplayAllowed() && isCompleted(status) && !claimed;
         ClientRewardPresentation presentation = ClientRewardPresentationRegistry.get(reward.typeId());
         var rewardView = ApiViews.reward(reward);
         String itemSnbt = presentation.itemSnbt(rewardView);
@@ -1176,6 +1175,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 openQuestEditor(selected);
                 return true;
             }
+            // Right-click is an editor gesture, never an implicit consume/claim action.
+            if (button != 0) return true;
             for (TaskCandidateHitbox hitbox : taskCandidateHitboxes) {
                 if (hitbox.bounds().contains(mouseX, mouseY)) {
                     ItemChoiceMatcher.parseConfig(hitbox.task().config()).result()
@@ -1183,7 +1184,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     return true;
                 }
             }
-            if (ClientEditorState.get().editing() && mouseX >= left) return true;
+            if (!gameplayAllowed() && mouseX >= left) return true;
             QuestStatus status = status(selected);
             Component statusText = Component.translatable(
                     QuestPresentation.statusTranslationKey(selected, status, ClientQuestState.get().claimed()));
@@ -1454,8 +1455,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         if (editorKeyboardSurfaceReady() && keyCode == 258) {
-            editorKeyboardFocus = Math.floorMod(
-                    editorKeyboardFocus + (hasShiftDown() ? -1 : 1), EDITOR_ACTION_COUNT);
+            // Follow visible left-to-right controls; live mode has no hidden save/publish tab stops.
+            List<Integer> actions = ClientEditorState.get().live()
+                    ? List.of(EDITOR_ACTION_UNDO, EDITOR_ACTION_REDO, EDITOR_ACTION_EXIT)
+                    : List.of(EDITOR_ACTION_UNDO, EDITOR_ACTION_REDO, EDITOR_ACTION_PUBLISH, EDITOR_ACTION_SAVE, EDITOR_ACTION_EXIT);
+            int index = actions.indexOf(editorKeyboardFocus);
+            int next = index < 0 ? (hasShiftDown() ? actions.size() - 1 : 0)
+                    : Math.floorMod(index + (hasShiftDown() ? -1 : 1), actions.size());
+            editorKeyboardFocus = actions.get(next);
             return true;
         }
         if (editorKeyboardSurfaceReady() && (keyCode == 257 || keyCode == 335)
@@ -1658,22 +1665,30 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     active ? EditorButton.Tone.PRIMARY : EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
 
+        if (!editor.hasLease() && editor.allowed()) {
+            renderEditorActionButton(graphics, editorSaveButtonBounds(), EditorButton.Definition.text(
+                    Component.translatable("screen.brnquest.editor.live.advanced"),
+                    Component.translatable("screen.brnquest.editor.live.advanced_hint")),
+                    !editor.busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        }
         if (editor.hasLease()) {
-            UiRect save = editorSaveButtonBounds();
-            boolean enabled = editor.dirty() && !editor.busy();
-            Component label = Component.translatable(editor.dirty()
-                    ? "screen.brnquest.editor.save" : "screen.brnquest.editor.saved");
-            renderEditorActionButton(graphics, save, EditorButton.Definition.text(label,
-                            Component.translatable("screen.brnquest.editor.save.tooltip")),
-                    enabled, EDITOR_ACTION_SAVE, EditorButton.Tone.SUCCESS, mouseX, mouseY);
+            if (!editor.live()) {
+                UiRect save = editorSaveButtonBounds();
+                boolean enabled = editor.dirty() && !editor.busy();
+                Component label = Component.translatable(editor.dirty()
+                        ? "screen.brnquest.editor.save" : "screen.brnquest.editor.saved");
+                renderEditorActionButton(graphics, save, EditorButton.Definition.text(label,
+                                Component.translatable("screen.brnquest.editor.save.tooltip")),
+                        enabled, EDITOR_ACTION_SAVE, EditorButton.Tone.SUCCESS, mouseX, mouseY);
 
-            UiRect publish = editorPublishButtonBounds();
-            boolean publishEnabled = !editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
-                    && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
-            renderEditorActionButton(graphics, publish, EditorButton.Definition.text(
-                    Component.translatable("screen.brnquest.editor.publish"),
-                            Component.translatable("screen.brnquest.editor.publish.tooltip")),
-                    publishEnabled, EDITOR_ACTION_PUBLISH, EditorButton.Tone.WARNING, mouseX, mouseY);
+                UiRect publish = editorPublishButtonBounds();
+                boolean publishEnabled = !editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
+                        && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
+                renderEditorActionButton(graphics, publish, EditorButton.Definition.text(
+                        Component.translatable("screen.brnquest.editor.publish"),
+                                Component.translatable("screen.brnquest.editor.publish.tooltip")),
+                        publishEnabled, EDITOR_ACTION_PUBLISH, EditorButton.Tone.WARNING, mouseX, mouseY);
+            }
 
             boolean historySurfaceReady = editorHistorySurfaceReady();
             UiRect redo = editorRedoButtonBounds();
@@ -1693,7 +1708,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         Component status = editorStatus();
         if (status != null) {
-            UiRect leadingButton = editor.hasLease() ? editorUndoButtonBounds() : editorButtonBounds();
+            UiRect leadingButton = editor.hasLease() ? editorUndoButtonBounds()
+                    : editor.allowed() ? editorSaveButtonBounds() : editorButtonBounds();
             // The navigation drawer occupies only the middle region. Measuring from
             // canvasLeft incorrectly collapsed bottom-bar errors to the word "Editor".
             int maximumWidth = layout().bottomStatusMaximumWidth(leadingButton.left());
@@ -1814,6 +1830,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         double graphY = editContextGraphY;
         closeEditContext();
         switch (action) {
+            case "ADMIN_QUEST" -> openAdminProgress(target, null);
+            case "ADMIN_TASK" -> openAdminProgress(typedEditorQuestId, target);
+            case "SELF_FORCE_QUEST" -> openSelfProgress(target, null, false);
+            case "SELF_RESET_QUEST" -> openSelfProgress(target, null, true);
+            case "SELF_FORCE_TASK" -> openSelfProgress(typedEditorQuestId, target, false);
+            case "SELF_RESET_TASK" -> openSelfProgress(typedEditorQuestId, target, true);
             case "ADD_QUEST" -> {
                 ResourceLocation chapterId = currentChapterId();
                 if (chapterId != null) openStructureForm(StructureFormKind.ADD_QUEST, null, chapterId, graphX, graphY);
@@ -1852,9 +1874,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case CANVAS -> EditorPopupMenu.menu(menu -> menu.action("ADD_QUEST",
                     Component.translatable("screen.brnquest.editor.context.add_quest"), false));
             case NODE -> EditorPopupMenu.menu(menu -> menu
+                    .action("SELF_FORCE_QUEST", Component.translatable("screen.brnquest.admin.self_force"), false,
+                            canManageProgress(editContextTarget, null))
+                    .action("SELF_RESET_QUEST", Component.translatable("screen.brnquest.admin.self_reset"), true,
+                            canManageProgress(editContextTarget, null))
+                    .action("ADMIN_QUEST", adminProgressLabel(editContextTarget, null), false,
+                            canManageProgress(editContextTarget, null))
                     .action("COPY_QUEST", Component.translatable("screen.brnquest.editor.context.copy_quest"), false)
                     .action("DELETE_QUEST", Component.translatable(
-                            "screen.brnquest.editor.context.delete_quest"), true));
+                            "screen.brnquest.editor.context.delete_quest"), true)).stream()
+                    .filter(entry -> !(entry.action().equals("ADMIN_QUEST") || entry.action().startsWith("SELF_"))
+                            || hasAdminProgressPermission()).toList();
             case GROUP -> EditorPopupMenu.menu(menu -> menu
                     .action("ADD_CHAPTER", Component.translatable(
                             "screen.brnquest.editor.context.add_chapter"), false)
@@ -1876,6 +1906,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     .action("DELETE_CHAPTER", Component.translatable(
                             "screen.brnquest.editor.context.delete"), true));
             case TYPED_ENTRY -> EditorPopupMenu.menu(menu -> menu
+                    .action("SELF_FORCE_TASK", Component.translatable("screen.brnquest.admin.self_force"), false,
+                            canManageProgress(typedEditorQuestId, editContextTarget))
+                    .action("SELF_RESET_TASK", Component.translatable("screen.brnquest.admin.self_reset"), true,
+                            canManageProgress(typedEditorQuestId, editContextTarget))
+                    .action("ADMIN_TASK", adminProgressLabel(typedEditorQuestId, editContextTarget), false,
+                            canManageProgress(typedEditorQuestId, editContextTarget))
                     .action("EDIT_TYPED", Component.translatable(
                             "screen.brnquest.editor.action.edit"), false)
                     .action("COPY_TYPED", Component.translatable(
@@ -1894,7 +1930,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             .action("COPY_TYPED_TYPE", Component.translatable(
                                     "screen.brnquest.editor.context.copy_type_id"), false))
                     .action("DELETE_TYPED", Component.translatable(
-                            "screen.brnquest.editor.context.delete"), true));
+                            "screen.brnquest.editor.context.delete"), true)).stream()
+                    .filter(entry -> !(entry.action().equals("ADMIN_TASK") || entry.action().startsWith("SELF_"))
+                            || typedEditorKind == TypedKind.TASK && hasAdminProgressPermission()).toList();
             case DEPENDENCY_ENTRY -> EditorPopupMenu.menu(menu -> menu
                     .submenu(Component.translatable("screen.brnquest.editor.context.technical"), technical -> technical
                             .action("COPY_DEPENDENCY_ID", Component.translatable(
@@ -2581,19 +2619,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 return true;
             }
             ResourceLocation target = displayedBook.id();
-            if (editor.beginOpen(target)) {
-                AuthoringNetwork.openSession(target);
-            } else if (editor.beginOpenCurrent(target)) {
-                AuthoringNetwork.openCurrentSession(target);
+            if (editor.beginOpenCurrent(target)) {
+                AuthoringNetwork.openLiveSession(target);
             }
             return true;
         }
-        if (editor.hasLease() && editorSaveButtonBounds().contains(mouseX, mouseY)) {
+        if (!editor.hasLease() && editor.allowed() && editorSaveButtonBounds().contains(mouseX, mouseY)) {
+            if (editor.beginOpenCurrent(displayedBook.id())) AuthoringNetwork.openCurrentSession(displayedBook.id());
+            return true;
+        }
+        if (editor.hasLease() && !editor.live() && editorSaveButtonBounds().contains(mouseX, mouseY)) {
             editor.beginSave().ifPresent(request ->
                     AuthoringNetwork.saveSession(request.sessionId(), editor.bookId(), request.draftRevision()));
             return true;
         }
-        if (editor.hasLease() && editorPublishButtonBounds().contains(mouseX, mouseY)) {
+        if (editor.hasLease() && !editor.live() && editorPublishButtonBounds().contains(mouseX, mouseY)) {
             if (!editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
                     && !structureFormOpen()) {
                 closeActiveEditorOverlay();
@@ -2627,6 +2667,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private Component editorStatus() {
         ClientEditorState editor = ClientEditorState.get();
+        if (editor.live()) return Component.translatable("screen.brnquest.editor.live." +
+                (editor.mode() == ClientEditorState.Mode.ERROR ? "failed" : editor.busy() ? "saving" : "saved"));
         return switch (editor.mode()) {
             case CATALOG_LOADING -> Component.translatable("screen.brnquest.editor.catalog.loading");
             case OPENING -> Component.translatable("screen.brnquest.editor.session.opening");
@@ -3133,6 +3175,48 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         minecraft.setScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
     }
 
+    /** Permission hiding is only a convenience; the server checks every request independently. */
+    private boolean hasAdminProgressPermission() {
+        return minecraft != null && minecraft.player != null && minecraft.player.hasPermissions(2);
+    }
+
+    /** The editor shows drafts, but management may only touch exact IDs in the published book. */
+    private boolean canManageProgress(ResourceLocation questId, ResourceLocation taskId) {
+        if (minecraft == null || minecraft.player == null || !minecraft.player.hasPermissions(2)
+                || questId == null || ClientEditorState.get().busy()) return false;
+        var active = ClientQuestState.get().book().orElse(null);
+        if (active == null || !active.book().id().equals(ClientEditorState.get().bookId())) return false;
+        QuestDefinition quest = active.quests().get(questId);
+        return quest != null && (taskId == null || quest.tasks().stream().anyMatch(task -> task.id().equals(taskId)));
+    }
+
+    private Component adminProgressLabel(ResourceLocation questId, ResourceLocation taskId) {
+        return Component.translatable("screen.brnquest.admin." + (canManageProgress(questId, taskId)
+                ? taskId == null ? "manage_quest" : "manage_task" : "publish_first"));
+    }
+
+    private void openAdminProgress(ResourceLocation questId, ResourceLocation taskId) {
+        if (!canManageProgress(questId, taskId)) return;
+        var active = ClientQuestState.get().book().orElseThrow();
+        editorChildScreenOpening = true;
+        minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
+                questId.toString(), taskId == null ? "" : taskId.toString()));
+    }
+
+    /** Self actions use the same server preview ticket, but never ask the player to select themselves. */
+    private void openSelfProgress(ResourceLocation questId, ResourceLocation taskId, boolean reset) {
+        if (!canManageProgress(questId, taskId)) return;
+        var active = ClientQuestState.get().book().orElseThrow();
+        var action = taskId == null
+                ? (reset ? yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_QUEST
+                         : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_QUEST)
+                : (reset ? yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_TASK
+                         : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_TASK);
+        editorChildScreenOpening = true;
+        minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
+                questId.toString(), taskId == null ? "" : taskId.toString(), action));
+    }
+
     private List<ItemStack> choiceCandidates(ItemChoiceMatcher.Spec spec) {
         if (spec == null || minecraft == null || minecraft.level == null) return List.of();
         return ItemChoiceMatcher.displayedCandidates(minecraft.level.registryAccess(), spec);
@@ -3149,7 +3233,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                               ItemChoiceMatcher.Spec spec) {
         if (minecraft == null) return;
         editorChildScreenOpening = true;
-        boolean selectable = !ClientEditorState.get().editing() && needsManualItemSelection(task, spec)
+        boolean selectable = gameplayAllowed() && needsManualItemSelection(task, spec)
                 && ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) < 1;
         if (!selectable) {
             minecraft.setScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
@@ -4158,9 +4242,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private UiRect editorRedoButtonBounds() {
-        UiRect publish = editorPublishButtonBounds();
-        return new UiRect(publish.left() - EDITOR_HISTORY_BUTTON_WIDTH - 4, publish.top(),
-                publish.left() - 4, publish.bottom());
+        // Lightweight editing collapses the absent save/publish controls instead of leaving a large gap.
+        UiRect anchor = ClientEditorState.get().live() ? editorButtonBounds() : editorPublishButtonBounds();
+        return new UiRect(anchor.left() - EDITOR_HISTORY_BUTTON_WIDTH - 4, anchor.top(),
+                anchor.left() - 4, anchor.bottom());
     }
 
     private UiRect editorUndoButtonBounds() {
@@ -4447,7 +4532,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return TaskDisplayState.resolve(status, context.storedProgress(),
                 ClientQuestState.get().isTaskSubmissionPending(task.id().toString()),
                 presentation.interactive(context.task()), presentation.readyForSubmission(context),
-                ClientEditorState.get().editing());
+                !gameplayAllowed());
     }
 
     private boolean questHasAttentionTask(QuestDefinition quest, QuestStatus status) {
@@ -4489,8 +4574,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         };
     }
 
+    /** Editing adds controls; only isolated drafts or unacknowledged live revisions suppress gameplay. */
+    private boolean gameplayAllowed() {
+        return ClientEditorState.get().gameplayAllowed(ClientQuestState.get().revision());
+    }
+
     private QuestStatus status(QuestDefinition quest) {
-        if (ClientEditorState.get().draft().isPresent()) return QuestStatus.LOCKED;
+        if (!gameplayAllowed()) return QuestStatus.LOCKED;
         return ClientQuestState.get().statuses().getOrDefault(quest.id().toString(), QuestStatus.LOCKED);
     }
 

@@ -17,10 +17,19 @@ import java.util.Map;
 
 /** Loads the deterministic native book file and commits only a fully parsed snapshot. */
 public final class QuestBookReloadListener extends SimpleJsonResourceReloadListener {
+    private long preparedGeneration;
     public QuestBookReloadListener() { super(new Gson(), "brnquest/books"); }
 
     @Override
+    protected Map<ResourceLocation, JsonElement> prepare(ResourceManager manager, ProfilerFiller profiler) {
+        preparedGeneration = QuestBookManager.get().liveGeneration();
+        return super.prepare(manager, profiler);
+    }
+
+    @Override
     protected void apply(Map<ResourceLocation, JsonElement> values, @NotNull ResourceManager manager, @NotNull ProfilerFiller profiler) {
+        // A reload prepared before a successful live edit must not restore its older resource snapshot.
+        if (preparedGeneration != QuestBookManager.get().liveGeneration()) return;
         DiagnosticReport report = new DiagnosticReport();
         if (values.isEmpty()) {
             report.add(new Diagnostic(Diagnostic.Severity.WARN, "BQV-001", "", "", "", "No BRNQuest book found"));
@@ -31,7 +40,7 @@ public final class QuestBookReloadListener extends SimpleJsonResourceReloadListe
         Map.Entry<ResourceLocation, JsonElement> selected = values.entrySet().stream().min(Comparator.comparing(e -> e.getKey().toString())).orElseThrow();
         try {
             QuestBookDefinition book = NativeBookJson.decode(selected.getValue().getAsJsonObject());
-            if (QuestBookManager.get().install(book, report)) {
+            if (QuestBookManager.get().install(book, report, selected.getKey())) {
                 BRNQuest.LOGGER.debug("[BRNQuest] Loaded {} quests from {}", book.quests().size(), selected.getKey());
             } else {
                 BRNQuest.LOGGER.error("[BRNQuest] Retaining previous quest snapshot after validation failure in {}",

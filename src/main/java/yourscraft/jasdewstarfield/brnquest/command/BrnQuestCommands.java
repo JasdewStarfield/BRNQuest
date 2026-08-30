@@ -82,16 +82,21 @@ public final class BrnQuestCommands {
     private static int progressComplete(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         var player = EntityArgument.getPlayer(context, "player");
         String quest = StringArgumentType.getString(context, "quest");
-        var actor = OperationContext.administrator(context.getSource()).orElseThrow();
-        var result = BrnQuestApi.completeQuestResult(actor, player, quest);
+        var result = yourscraft.jasdewstarfield.brnquest.progress.AdminProgressService.get().command(
+                context.getSource(), player, quest,
+                yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_QUEST);
+        if (!result.success()) context.getSource().sendFailure(Component.literal(result.message()));
         return result.success() ? 1 : 0;
     }
 
     private static int progressReset(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         var player = EntityArgument.getPlayer(context, "player");
         String quest = StringArgumentType.getString(context, "quest");
-        var actor = OperationContext.administrator(context.getSource()).orElseThrow();
-        return BrnQuestApi.resetQuestResult(actor, player, quest).success() ? 1 : 0;
+        var result = yourscraft.jasdewstarfield.brnquest.progress.AdminProgressService.get().command(
+                context.getSource(), player, quest,
+                yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_QUEST);
+        if (!result.success()) context.getSource().sendFailure(Component.literal(result.message()));
+        return result.success() ? 1 : 0;
     }
 
     private static int rewardClaim(CommandContext<CommandSourceStack> context) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -34,13 +34,41 @@ public final class EditSessionService {
         return INSTANCE;
     }
 
+    /** Lightweight sessions start from the active book, never from an unfinished saved draft. */
+    public synchronized AuthorOperationResult<EditSessionHandle> openLive(ServerPlayer player, ResourceLocation bookId) {
+        MinecraftServer server = connectedServer(player);
+        if (server == null) return notConnected();
+        if (!isAdministrator(player)) return forbidden();
+        pruneDisconnected(server);
+        var active = yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get().active().orElse(null);
+        if (active == null || !active.book().id().equals(bookId)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "LIVE_BOOK_CHANGED", "Displayed book is no longer active");
+        }
+        var opened = openAuthorized(server, player.getUUID(), player.getScoreboardName(),
+                DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision()),
+                server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS);
+        if (!opened.success()) return opened;
+        Lease lease = lease(player.getServer(), opened.value().sessionId());
+        if (!lease.live && opened.status() == AuthorOperationResult.Status.NO_CHANGE) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "BOOK_ALREADY_EDITED", "Close the existing draft session before live editing");
+        }
+        lease.live = true;
+        return AuthorOperationResult.success("SESSION_LIVE_OPENED", "Live editor opened", lease.handle());
+    }
+
     public synchronized AuthorOperationResult<EditSessionHandle> open(ServerPlayer player, DraftSnapshot draft) {
         MinecraftServer server = connectedServer(player);
         if (server == null) return notConnected();
         if (!isAdministrator(player)) return forbidden();
         pruneDisconnected(server);
-        return openAuthorized(server, player.getUUID(), player.getScoreboardName(), draft,
+        var opened = openAuthorized(server, player.getUUID(), player.getScoreboardName(), draft,
                 server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS);
+        if (opened.success() && lease(server, opened.value().sessionId()).live) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "BOOK_ALREADY_EDITED", "Close live editing before opening an advanced draft");
+        }
+        return opened;
     }
 
     public synchronized AuthorOperationResult<EditSessionHandle> renew(ServerPlayer player, UUID sessionId,
@@ -112,6 +140,16 @@ public final class EditSessionService {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
                     "SESSION_BOOK_MISMATCH", "Edit session belongs to " + lease.bookId);
         }
+        if (lease.live) {
+            var active = yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get().active().orElse(null);
+            if (active == null || !active.book().id().equals(bookId)) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                        "LIVE_BOOK_CHANGED", "Active book changed; close this editor first");
+            }
+            // Recovery abandons stale live projections; it never publishes them over another revision.
+            lease.draft = DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision());
+            lease.savedRevision = active.revision();
+        }
         lease.clearHistory();
         lease.expiresAtTick = server.getTickCount() + DEFAULT_IDLE_TIMEOUT_TICKS;
         return AuthorOperationResult.success("SESSION_RECOVERED", "Authoritative draft re-synchronized",
@@ -152,7 +190,12 @@ public final class EditSessionService {
         }
         pruneDisconnected(server);
         return mutateAuthorized(server, player.getUUID(), sessionId, bookId, expectedDraftRevision,
-                server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS, operation);
+                server.getTickCount(), DEFAULT_IDLE_TIMEOUT_TICKS, current -> {
+                    var result = operation.apply(current);
+                    Lease lease = lease(server, sessionId);
+                    return lease.live && result.success() && result.value() != null
+                            ? LiveEditService.commit(server, player, current, result.value()) : result;
+                });
     }
 
     synchronized <T> AuthorOperationResult<T> read(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
@@ -189,6 +232,8 @@ public final class EditSessionService {
         AuthorOperationResult<DraftSaveResult> denied = denyLease(lease, player.getUUID(), bookId,
                 expectedDraftRevision, server.getTickCount());
         if (denied != null) return denied;
+        if (lease.live) return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                "LIVE_ALREADY_SAVED", "Live edits do not write to the advanced draft workspace");
         AuthorOperationResult<DraftSaveResult> result = operation.apply(lease.state());
         if (result.status() == AuthorOperationResult.Status.CONFLICT) lease.clearHistory();
         if (result.success() && result.value() != null
@@ -215,6 +260,8 @@ public final class EditSessionService {
         AuthorOperationResult<DraftPublishResult> denied = denyLease(lease, player.getUUID(), bookId,
                 expectedDraftRevision, server.getTickCount());
         if (denied != null) return denied;
+        if (lease.live) return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                "LIVE_ALREADY_SAVED", "Live edits are already applied to this world");
         AuthorOperationResult<DraftPublishResult> result = operation.apply(lease.state());
         if (result.status() == AuthorOperationResult.Status.CONFLICT) lease.clearHistory();
         if (result.success() && result.value() != null
@@ -244,9 +291,12 @@ public final class EditSessionService {
             // The candidate was fully built and validated before this single pointer swap.
             DraftSnapshot candidate = result.value().snapshot();
             if (!candidate.draftRevision().equals(lease.draft.draftRevision())) {
-                lease.pushUndo(lease.draft);
+                // Published ID migrations affect real ledgers and cannot be undone by removing their aliases.
+                if (lease.live && !candidate.book().legacyIds().equals(lease.draft.book().legacyIds())) lease.clearHistory();
+                else lease.pushUndo(lease.draft);
                 lease.redo.clear();
                 lease.draft = candidate;
+                if (lease.live) lease.savedRevision = candidate.draftRevision();
             }
             lease.expiresAtTick = nowTick + timeoutTicks;
         }
@@ -295,7 +345,16 @@ public final class EditSessionService {
                     redo ? "No edit is available to redo" : "No edit is available to undo", unchanged);
         }
         DraftSnapshot previous = lease.draft;
-        DraftSnapshot restored = source.removeLast();
+        DraftSnapshot restored = source.peekLast();
+        if (lease.live) {
+            MinecraftServer server = (MinecraftServer) serverKey;
+            var committed = LiveEditService.commit(server, server.getPlayerList().getPlayer(editorId), previous,
+                    new DraftEditResult(restored, List.of(bookId), List.of()));
+            if (!committed.success()) return committed;
+            restored = committed.value().snapshot();
+            lease.savedRevision = restored.draftRevision();
+        }
+        source.removeLast();
         if (redo) lease.pushUndo(previous);
         else lease.pushRedo(previous);
         lease.draft = restored;
@@ -493,6 +552,7 @@ public final class EditSessionService {
         private final String editorName;
         private DraftSnapshot draft;
         private String savedRevision;
+        private boolean live;
         private long expiresAtTick;
         private final Deque<DraftSnapshot> undo = new ArrayDeque<>();
         private final Deque<DraftSnapshot> redo = new ArrayDeque<>();

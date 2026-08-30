@@ -14,6 +14,25 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerProgressTest {
+    @Test void taskResetReopensQuestButPreservesOtherTasksAndClaimsAcrossSave() {
+        PlayerProgress progress = new PlayerProgress();
+        progress.status("test:quest", QuestStatus.REWARD_CLAIMED);
+        progress.completedAt("test:quest", 42);
+        progress.addTaskProgress("test:first", 1);
+        progress.addTaskProgress("test:second", 1);
+        progress.claim("test:reward");
+        progress.resetTask("test:quest", "test:first", QuestStatus.AVAILABLE);
+        PlayerProgress loaded = PlayerProgress.load(progress.save());
+        assertEquals(QuestStatus.AVAILABLE, loaded.status("test:quest"));
+        assertEquals(0, loaded.completedAt("test:quest"));
+        assertEquals(0, loaded.taskProgress("test:first"));
+        assertEquals(1, loaded.taskProgress("test:second"));
+        assertTrue(loaded.isClaimed("test:reward"));
+        loaded.resetTask("test:quest", "test:first", QuestStatus.LOCKED);
+        assertEquals(QuestStatus.LOCKED, loaded.status("test:quest"));
+        assertTrue(loaded.isClaimed("test:reward"));
+    }
+
     @Test void saveRoundTripPreservesLedgerAndOrphans() {
         PlayerProgress progress = new PlayerProgress();
         progress.status("test:quest", QuestStatus.COMPLETED);

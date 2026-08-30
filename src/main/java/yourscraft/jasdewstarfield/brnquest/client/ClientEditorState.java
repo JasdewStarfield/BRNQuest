@@ -38,6 +38,7 @@ public final class ClientEditorState {
 
     private Mode mode = Mode.VIEW;
     private boolean allowed;
+    private boolean live;
     private List<CatalogEntry> catalog = List.of();
     private String statusCode = "";
     private String statusMessage = "";
@@ -79,6 +80,9 @@ public final class ClientEditorState {
     }
 
     public synchronized void acceptCatalog(String json) {
+        // openCurrent sends a catalog refresh before OPEN. Catalog data must never
+        // reset the handshake or an established lease back to the browsing mode.
+        boolean editorFlowActive = mode == Mode.OPENING || hasSession();
         try {
             AuthoringNetwork.CatalogResponseWire response = GSON.fromJson(json,
                     AuthoringNetwork.CatalogResponseWire.class);
@@ -97,11 +101,16 @@ public final class ClientEditorState {
             }
             catalog = List.copyOf(decoded);
             allowed = response.allowed();
-            statusCode = safe(response.code());
-            statusMessage = safe(response.message());
-            diagnostics = List.of();
-            mode = Mode.VIEW;
+            if (!editorFlowActive) {
+                statusCode = safe(response.code());
+                statusMessage = safe(response.message());
+                diagnostics = List.of();
+                mode = Mode.VIEW;
+            }
         } catch (RuntimeException exception) {
+            // The catalog is auxiliary to an already-started OPEN handshake. A malformed
+            // refresh must not orphan the server lease by making its following reply stale.
+            if (editorFlowActive) return;
             fail("INVALID_EDITOR_CATALOG", "The server returned an invalid editor catalog");
             allowed = false;
             catalog = List.of();
@@ -138,6 +147,7 @@ public final class ClientEditorState {
     }
 
     public synchronized Optional<LeaseRequest> beginSave() {
+        if (live) return Optional.empty();
         if (!editing() || !dirty() || busy() || recoverableConflict) return Optional.empty();
         mode = Mode.SAVING;
         statusCode = "DRAFT_SAVING";
@@ -146,6 +156,7 @@ public final class ClientEditorState {
 
     /** Starts the confirmed save/publish/deploy/reload pipeline; dirty drafts are saved by the server first. */
     public synchronized Optional<LeaseRequest> beginPublish() {
+        if (live) return Optional.empty();
         if (!editing() || busy() || recoverableConflict) return Optional.empty();
         mode = Mode.PUBLISHING;
         statusCode = "DRAFT_PUBLISHING";
@@ -153,6 +164,7 @@ public final class ClientEditorState {
     }
 
     public synchronized Optional<LeaseRequest> beginPublishReview() {
+        if (live) return Optional.empty();
         if (mode != Mode.EDITING || !editing()) return Optional.empty();
         mode = Mode.REVIEWING;
         statusCode = "PUBLISH_REVIEWING";
@@ -233,6 +245,7 @@ public final class ClientEditorState {
         }
         return switch (responseAction) {
             case "OPEN" -> {
+                live = "SESSION_LIVE_OPENED".equals(response.code());
                 acceptOpened(response, false);
                 yield Optional.empty();
             }
@@ -377,6 +390,11 @@ public final class ClientEditorState {
     }
 
     public synchronized Mode mode() { return mode; }
+    public synchronized boolean live() { return live; }
+    /** Only acknowledged runtime definitions may drive item consumption or reward claims. */
+    public synchronized boolean gameplayAllowed(String activeRevision) {
+        return draft == null || live && !busy() && draft.revision().equals(activeRevision);
+    }
     public synchronized boolean allowed() { return allowed; }
     public synchronized List<CatalogEntry> catalog() { return catalog; }
 
@@ -591,7 +609,8 @@ public final class ClientEditorState {
 
     private static boolean requiresAuthoritativeRecovery(String code) {
         return "STALE_DRAFT_REVISION".equals(code) || "REVISION_CONFLICT".equals(code)
-                || "DISK_DRAFT_CHANGED".equals(code) || "WORKSPACE_CHANGED".equals(code);
+                || "DISK_DRAFT_CHANGED".equals(code) || "WORKSPACE_CHANGED".equals(code)
+                || "LIVE_BOOK_CHANGED".equals(code);
     }
 
     private boolean contains(ResourceLocation target) {
@@ -617,6 +636,7 @@ public final class ClientEditorState {
     }
 
     private void clearLease() {
+        live = false;
         sessionId = null;
         bookId = null;
         baseRevision = "";

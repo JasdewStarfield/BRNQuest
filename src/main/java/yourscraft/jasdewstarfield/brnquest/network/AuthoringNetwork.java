@@ -258,6 +258,22 @@ public final class AuthoringNetwork {
                                      Map<String, String> config) {}
 
     static void register(PayloadRegistrar registrar) {
+        registrar.playToServer(OpenLivePayload.TYPE, OpenLivePayload.CODEC, (payload, context) -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            var bookId = ResourceLocation.tryParse(payload.bookId());
+            var opened = EditSessionService.get().openLive(player, bookId);
+            if (!opened.success()) {
+                sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
+                return;
+            }
+            var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
+                    opened.value().session().draftRevision());
+            if (!draft.success()) {
+                sendFailure(player, "OPEN", draft.status(), draft.code(), draft.message());
+                return;
+            }
+            sendDraft(player, "OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
+        });
         registrar.playToServer(RequestCatalogPayload.TYPE, RequestCatalogPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) sendCatalog(player);
         });
@@ -303,6 +319,17 @@ public final class AuthoringNetwork {
 
     public static void openSession(ResourceLocation bookId) {
         PacketDistributor.sendToServer(new OpenSessionPayload(bookId.toString()));
+    }
+
+    public record OpenLivePayload(String bookId) implements CustomPacketPayload {
+        public static final Type<OpenLivePayload> TYPE = AuthoringNetwork.type("editor_open_live");
+        public static final StreamCodec<ByteBuf, OpenLivePayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(256), OpenLivePayload::bookId, OpenLivePayload::new);
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public static void openLiveSession(ResourceLocation bookId) {
+        PacketDistributor.sendToServer(new OpenLivePayload(bookId.toString()));
     }
 
     public static void openCurrentSession(ResourceLocation bookId) {

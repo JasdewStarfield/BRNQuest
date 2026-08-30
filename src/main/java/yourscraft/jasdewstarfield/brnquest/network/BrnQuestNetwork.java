@@ -172,6 +172,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, QuestToastPayload.TYPE, QuestToastPayload.CODEC, ClientDelegate::toast);
         registerClient(registrar, OpenScreenPayload.TYPE, OpenScreenPayload.CODEC, ClientDelegate::open);
         AuthoringNetwork.register(registrar);
+        AdminProgressNetwork.register(registrar);
     }
 
     public static void syncAll(ServerPlayer player, boolean revisionMatches) {

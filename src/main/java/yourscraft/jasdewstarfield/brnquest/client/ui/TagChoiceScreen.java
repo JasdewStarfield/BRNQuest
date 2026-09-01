@@ -6,7 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 
@@ -23,9 +23,8 @@ public final class TagChoiceScreen extends Screen {
     private final ItemStack source;
     private final List<ResourceLocation> tags;
     private final Consumer<ResourceLocation> selectionConsumer;
-    private final EditorSmoothScroll scroll = new EditorSmoothScroll();
+    private final EditorListPanel<ResourceLocation> list = new EditorListPanel<>();
     private long previousFrameNanos;
-    private double renderedScroll;
 
     public TagChoiceScreen(Screen parent, ItemStack source, List<ResourceLocation> tags,
                            Consumer<ResourceLocation> selectionConsumer) {
@@ -34,6 +33,13 @@ public final class TagChoiceScreen extends Screen {
         this.source = source.copyWithCount(1);
         this.tags = List.copyOf(tags);
         this.selectionConsumer = selectionConsumer;
+    }
+
+    @Override
+    protected void init() {
+        super.init();
+        // New geometry after resize must be drawn before it becomes interactive.
+        list.invalidate();
     }
 
     @Override
@@ -63,20 +69,15 @@ public final class TagChoiceScreen extends Screen {
         double elapsed = previousFrameNanos == 0 ? 1.0 / 60.0
                 : Math.min(0.1, Math.max(0.0, (now - previousFrameNanos) / 1_000_000_000.0));
         previousFrameNanos = now;
-        renderedScroll = scroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
-                tags.size() * ROW_HEIGHT, viewport.height(), elapsed,
-                BrnQuestClientConfig.VALUES.smoothSpeed.get());
-
-        graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
-        for (int index = 0; index < tags.size(); index++) {
-            UiRect row = row(index);
-            if (row.bottom() <= viewport.top() || row.top() >= viewport.bottom()) continue;
-            int background = row.contains(mouseX, mouseY) ? 0xFF56697C : 0xFF2A313C;
-            graphics.fill(row.left(), row.top(), row.right(), row.bottom() - 1, background);
-            String text = font.plainSubstrByWidth(tags.get(index).toString(), row.width() - 10);
-            graphics.drawString(font, text, row.left() + 5, row.top() + 5, 0xFFFFFFFF, false);
-        }
-        graphics.disableScissor();
+        list.advance(viewport, panel, viewport.right() + 2, ROW_HEIGHT, 1, tags.size(), tags::get,
+                elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
+        list.render(graphics, row -> {
+            UiRect rect = row.bounds();
+            int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF56697C : 0xFF2A313C;
+            graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), background);
+            String text = font.plainSubstrByWidth(row.key().toString(), Math.max(0, rect.width() - 10));
+            graphics.drawString(font, text, rect.left() + 5, rect.top() + 5, 0xFFFFFFFF, false);
+        }, () -> {});
 
         EditorButton.renderInteractive(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
@@ -90,9 +91,10 @@ public final class TagChoiceScreen extends Screen {
             onClose();
             return true;
         }
-        int index = rowAt(mouseX, mouseY);
-        if (button == 0 && index >= 0) {
-            selectionConsumer.accept(tags.get(index));
+        if (list.mouseClicked(mouseX, mouseY, button)) return true;
+        var selected = list.rowAt(mouseX, mouseY);
+        if (button == 0 && selected.isPresent()) {
+            selectionConsumer.accept(selected.orElseThrow().key());
             onClose();
             return true;
         }
@@ -101,12 +103,7 @@ public final class TagChoiceScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        UiRect viewport = viewport();
-        if (viewport.contains(mouseX, mouseY)) {
-            scroll.scrollWheel(scrollY, BrnQuestClientConfig.VALUES.scrollStep.get(),
-                    tags.size() * ROW_HEIGHT, viewport.height());
-            return true;
-        }
+        if (list.mouseScrolled(mouseX, mouseY, scrollY, BrnQuestClientConfig.VALUES.scrollStep.get())) return true;
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
@@ -115,28 +112,18 @@ public final class TagChoiceScreen extends Screen {
         if (minecraft != null) minecraft.setScreen(parent);
     }
 
-    private int rowAt(double mouseX, double mouseY) {
-        UiRect viewport = viewport();
-        if (!viewport.contains(mouseX, mouseY)) return -1;
-        int index = (int) ((mouseY - viewport.top() + renderedScroll) / ROW_HEIGHT);
-        return index >= 0 && index < tags.size() ? index : -1;
-    }
-
-    private UiRect row(int index) {
-        UiRect viewport = viewport();
-        int top = viewport.top() + index * ROW_HEIGHT - (int) Math.round(renderedScroll);
-        return new UiRect(viewport.left(), top, viewport.right(), top + ROW_HEIGHT);
-    }
-
     private UiRect panel() {
-        int left = (width - PANEL_WIDTH) / 2;
-        int top = Math.max(4, (height - PANEL_HEIGHT) / 2);
-        return new UiRect(left, top, left + PANEL_WIDTH, top + PANEL_HEIGHT);
+        int panelWidth = Math.max(0, Math.min(PANEL_WIDTH, width - 8));
+        int panelHeight = Math.max(0, Math.min(PANEL_HEIGHT, height - 8));
+        int left = (width - panelWidth) / 2, top = (height - panelHeight) / 2;
+        return new UiRect(left, top, left + panelWidth, top + panelHeight);
     }
 
     private UiRect viewport() {
         UiRect panel = panel();
-        return new UiRect(panel.left() + 7, panel.top() + 47, panel.right() - 9, panel.bottom() - 29);
+        int bottom = Math.max(panel.top(), cancelBounds().top() - 7);
+        return new UiRect(panel.left() + 7, Math.min(panel.top() + 47, bottom),
+                Math.max(panel.left() + 7, panel.right() - 9), bottom);
     }
 
     private UiRect cancelBounds() {

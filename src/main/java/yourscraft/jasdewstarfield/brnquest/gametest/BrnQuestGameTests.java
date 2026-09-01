@@ -47,6 +47,8 @@ import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycle;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
+import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 
 import java.util.List;
 import java.util.Map;
@@ -161,7 +163,11 @@ public final class BrnQuestGameTests {
         player.getInventory().add(new ItemStack(Items.STONE, 2));
         ProgressEngine.get().reconcile(player);
 
-        var result = ProgressEngine.get().complete(player, quest.id(), false);
+        // Quest-wide checks cannot bypass the explicit item submission/slot-selection boundary.
+        var premature = ProgressEngine.get().complete(player, quest.id(), false);
+        helper.assertTrue(!premature.success(), "inventory readiness alone must not finish the quest");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "a check must not consume items");
+        var result = ProgressEngine.get().completeTask(player, quest.id(), task.id());
 
         helper.assertTrue(result.success(), result.message());
         helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0, "submitted items must be consumed exactly once");
@@ -330,6 +336,93 @@ public final class BrnQuestGameTests {
         helper.assertTrue(completed.success(), completed.message());
         helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()), QuestStatus.COMPLETED,
                 "the final row click must complete the quest transaction");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void holdingObjectivesRequireSeparateReceiptsWithoutConsumingItems(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        var engine = ProgressEngine.get();
+        Map<String, String> config = Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "2",
+                "consume_items", "false");
+        TaskDefinition first = new TaskDefinition(id("book"), id("hold_first"), id("item"), config, false);
+        TaskDefinition second = new TaskDefinition(id("book"), id("hold_second"), id("item_choice"), config, false);
+        QuestDefinition quest = quest("separate_holding", List.of(), List.of(first, second), List.of());
+        install(quest);
+        engine.reconcile(player);
+        player.getInventory().items.set(0, new ItemStack(Items.STONE, 2));
+
+        helper.assertTrue(!engine.complete(player, quest.id(), false).success(), "inventory checks cannot auto-complete");
+        engine.completeTask(player, quest.id(), first.id());
+        helper.assertValueEqual(engine.progress(player).taskProgress(first.id().toString()), 1L, "first receipt stored");
+        helper.assertValueEqual(engine.progress(player).taskProgress(second.id().toString()), 0L, "sibling remains unsubmitted");
+        helper.assertValueEqual(engine.progress(player).status(quest.id().toString()), QuestStatus.AVAILABLE,
+                "quest waits for the second click even when the same inventory satisfies both");
+        helper.assertTrue(engine.completeTask(player, quest.id(), second.id()).success(), "second click completes");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "holding objectives never consume");
+        helper.assertTrue(!engine.completeTask(player, quest.id(), first.id()).changed(), "replayed click is a no-op");
+        helper.assertTrue(!TaskTypeExecutor.reevaluateOnInventoryChange(TaskTypeRegistry.get(first.typeId()), ApiViews.task(first)),
+                "built-in holding tasks no longer opt into passive inventory completion");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void completingOneRowNeverConsumesUnsubmittedSiblingOrOptionalItems(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        var engine = ProgressEngine.get();
+        TaskDefinition check = new TaskDefinition(id("book"), id("explicit_check"), id("checkmark"), Map.of(), false);
+        TaskDefinition item = consumingStoneTask("explicit_stone", 2);
+        TaskDefinition optional = new TaskDefinition(id("book"), id("optional_dirt"), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:dirt\"}", "count", "1", "consume_items", "true"), true);
+        QuestDefinition quest = quest("no_implicit_consumption", List.of(), List.of(check, item, optional), List.of());
+        install(quest);
+        engine.reconcile(player);
+        player.getInventory().items.set(0, new ItemStack(Items.STONE, 2));
+        player.getInventory().items.set(1, new ItemStack(Items.DIRT, 1));
+        engine.completeTask(player, quest.id(), check.id());
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "sibling's items stay untouched");
+        helper.assertValueEqual(engine.progress(player).taskProgress(item.id().toString()), 0L, "item awaits explicit submission");
+        helper.assertTrue(engine.completeTask(player, quest.id(), item.id(), new TaskSubmissionSelection(List.of(0))).success(),
+                "selected item row finishes the required objectives");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 0, "only selected required items consumed");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIRT), 1, "optional items are not consumed at completion");
+        helper.assertValueEqual(engine.progress(player).taskProgress(optional.id().toString()), 0L, "no invented optional receipt");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void newObjectivesPreserveHistoricalCompletionAndRewardClaims(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        var engine = ProgressEngine.get();
+        TaskDefinition first = new TaskDefinition(id("book"), id("historical_first"), id("checkmark"), Map.of(), false);
+        RewardDefinition reward = new RewardDefinition(id("book"), id("historical_reward"), id("item"),
+                Map.of("item", "{count:1,id:\"minecraft:diamond\"}"), "auto", false);
+        QuestDefinition original = quest("historical_quest", List.of(), List.of(first), List.of(reward));
+        install(original);
+        engine.reconcile(player);
+        helper.assertTrue(engine.completeTask(player, original.id(), first.id()).success(), "original quest completes");
+        long completedAt = engine.progress(player).completedAt(original.id().toString());
+
+        // Install a new definition with the same stable quest ID, exactly as edit/reload reconciliation sees it.
+        TaskDefinition added = consumingStoneTask("historical_added", 2);
+        install(quest("historical_quest", List.of(), List.of(first, added), List.of(reward)));
+        engine.reconcile(player);
+        player.getInventory().items.set(1, new ItemStack(Items.STONE, 2));
+        helper.assertValueEqual(engine.progress(player).status(original.id().toString()), QuestStatus.REWARD_CLAIMED,
+                "author edits do not revoke historical completion");
+        helper.assertValueEqual(engine.progress(player).taskProgress(first.id().toString()), 1L, "old receipt preserved");
+        helper.assertValueEqual(engine.progress(player).taskProgress(added.id().toString()), 0L, "new objective gets no receipt");
+        helper.assertValueEqual(engine.progress(player).completedAt(original.id().toString()), completedAt, "timestamp preserved");
+        helper.assertTrue(!engine.completeTask(player, original.id(), added.id()).success(), "history does not accept extra submissions");
+        helper.assertTrue(!engine.claim(player, reward.id()).changed(), "historical reward cannot be granted twice");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 1, "one reward only");
+        helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "new requirement does not consume retroactively");
+        var restored = yourscraft.jasdewstarfield.brnquest.progress.PlayerProgress.load(engine.progress(player).save());
+        helper.assertTrue(restored.isClaimed(reward.id().toString()), "reward claim survives ledger serialization");
+        helper.assertValueEqual(restored.taskProgress(added.id().toString()), 0L, "serialization does not invent receipts");
         helper.succeed();
     }
 

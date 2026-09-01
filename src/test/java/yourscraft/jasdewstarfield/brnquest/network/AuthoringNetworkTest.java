@@ -23,6 +23,34 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class AuthoringNetworkTest {
     private static final Gson GSON = new Gson();
+
+    @Test void unchangedItemRewardUsesRewardSchemaDespiteSharingTheItemTaskId() {
+        var bookId = ResourceLocation.parse("test:reward_book");
+        var questId = ResourceLocation.parse("test:quest");
+        var chapterId = ResourceLocation.parse("test:chapter");
+        var groupId = ResourceLocation.parse("test:group");
+        var rewardId = ResourceLocation.parse("test:reward");
+        Map<String, String> config = Map.of("item", "{count:1,id:\"minecraft:jungle_door\"}",
+                "count", "2", "extension_field", "keep me");
+        var reward = new yourscraft.jasdewstarfield.brnquest.data.RewardDefinition(bookId, rewardId,
+                ResourceLocation.parse("brnquest:item"), config, "manual", false);
+        var quest = new QuestDefinition(bookId, questId, chapterId, "Quest", "", "", "", 0, 0,
+                List.of(), List.of(), List.of(reward), "");
+        var book = new QuestBookDefinition(bookId, 1, "Book",
+                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)),
+                List.of(new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0, List.of(quest))), Map.of());
+
+        // Exercise the same replacement path as UPDATE_REWARD, not just the bounding helper.
+        var replacement = AuthoringNetwork.rewardReplacement(book, questId, rewardId, rewardId,
+                config, "manual", false);
+        assertEquals(reward, replacement);
+        assertEquals(config, AuthoringNetwork.rewardMutationConfig(config), "ADD_REWARD preserves the same schema");
+        var error = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor.configError(
+                yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId()),
+                yourscraft.jasdewstarfield.brnquest.api.ApiViews.reward(replacement));
+        assertTrue(error.isEmpty(), error.toString());
+    }
+
     @Test void typedMutationConfigIsCopiedBeforeUse() {
         Map<String, String> source = new LinkedHashMap<>();
         source.put("item", "{id:\"minecraft:stone\",count:1}");

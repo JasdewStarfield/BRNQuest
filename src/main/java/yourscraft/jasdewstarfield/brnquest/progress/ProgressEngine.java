@@ -133,8 +133,9 @@ public final class ProgressEngine {
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                // A row submitted earlier has already applied its one-time consumption.
-                if (type != null && progress.taskProgress(task.id().toString()) < 1
+                // Submitted rows already consumed once; unsubmitted optional rows must not be
+                // swept into another row's completion transaction or spend the player's items.
+                if (type != null && !task.optional() && progress.taskProgress(task.id().toString()) < 1
                         && !TaskTypeExecutor.consume(type, taskContext(player, quest, task, progress))) {
                     restoreMainInventory(player, inventoryBeforeConsume);
                     return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");

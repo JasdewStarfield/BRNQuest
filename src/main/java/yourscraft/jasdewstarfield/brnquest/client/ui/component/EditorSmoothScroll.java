@@ -14,9 +14,15 @@ public final class EditorSmoothScroll {
     public double frameAndRender(GuiGraphics graphics, int x, int top, int bottom,
                                  int contentHeight, int viewportHeight, double elapsedSeconds,
                                  double smoothSpeed) {
+        advanceFrame(contentHeight, viewportHeight, elapsedSeconds, smoothSpeed);
+        EditorScrollbar.render(graphics, x, top, bottom, contentHeight, viewportHeight, visual);
+        return visual;
+    }
+
+    /** Advances without drawing so composed list panels can share one immutable frame with input. */
+    public double advanceFrame(int contentHeight, int viewportHeight, double elapsedSeconds, double smoothSpeed) {
         constrain(contentHeight, viewportHeight);
         visual = motion.advanceFrame(elapsedSeconds, smoothSpeed);
-        EditorScrollbar.render(graphics, x, top, bottom, contentHeight, viewportHeight, visual);
         return visual;
     }
 

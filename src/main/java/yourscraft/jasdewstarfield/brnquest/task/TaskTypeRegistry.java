@@ -123,16 +123,15 @@ public final class TaskTypeRegistry {
 
         @Override
         public boolean satisfied(TaskContext context, Map<String, String> config) {
-            if (context.progress() >= 1) return true;
-            ItemChoiceMatcher.MatchPlan plan = plan(context, config, TaskSubmissionSelection.AUTOMATIC);
-            return plan != null && plan.satisfied();
+            // Inventory matching is readiness, not completion: every item objective needs its own receipt.
+            return context.progress() >= 1;
         }
 
         @Override
         public boolean consume(TaskContext context, Map<String, String> config) {
-            if (!consumesItems(config)) return true;
-            ItemChoiceMatcher.MatchPlan plan = plan(context, config, TaskSubmissionSelection.AUTOMATIC);
-            return plan != null && ItemChoiceMatcher.consume(context.player().getInventory().items, plan);
+            // Whole-quest completion must never choose inventory slots on behalf of the player.
+            // Consumption belongs exclusively to submit(), inside the single-objective transaction.
+            return context.progress() >= 1;
         }
 
         @Override
@@ -156,7 +155,7 @@ public final class TaskTypeRegistry {
         public boolean allowsManualSubmission(Map<String, String> config) { return true; }
 
         @Override
-        public boolean reevaluateOnInventoryChange(Map<String, String> config) { return !consumesItems(config); }
+        public boolean reevaluateOnInventoryChange(Map<String, String> config) { return false; }
 
         @Override
         public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task,

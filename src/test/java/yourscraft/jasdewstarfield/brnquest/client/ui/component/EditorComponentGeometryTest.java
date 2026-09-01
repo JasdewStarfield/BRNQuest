@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -85,14 +86,16 @@ class EditorComponentGeometryTest {
 
     @Test void pickerMapsOnlyVisibleTwoLineRowsToAbsoluteEntries() {
         UiRect bounds = new UiRect(100, 50, 500, 252);
-        EditorSmoothScroll scroll = new EditorSmoothScroll();
-        scroll.snap(3 * EditorPickerList.ROW_HEIGHT);
-
-        assertEquals(6, EditorPickerList.visibleRows(bounds));
-        assertEquals(-1, EditorPickerList.entryAt(bounds, scroll, 20, 120, 60));
-        assertEquals(3, EditorPickerList.entryAt(bounds, scroll, 20, 120, 72));
-        assertEquals(8, EditorPickerList.entryAt(bounds, scroll, 20, 120, 221));
-        assertEquals(-1, EditorPickerList.entryAt(bounds, scroll, 5, 120, 221));
+        EditorPickerList<Integer> picker = new EditorPickerList<>();
+        picker.advance(bounds, bounds, 20, i -> i, 0, 12);
+        assertEquals(180, EditorPickerList.rowsBounds(bounds).height());
+        picker.mouseClicked(496, 70 + 180 * (90.0 / 420), 0);
+        picker.advance(bounds, bounds, 20, i -> i, 0, 12);
+        assertTrue(picker.entryAt(120, 60).isEmpty());
+        assertEquals(3, picker.entryAt(120, 72).orElseThrow());
+        assertEquals(8, picker.entryAt(120, 221).orElseThrow());
+        picker.advance(bounds, bounds, 5, i -> i, 0, 12);
+        assertTrue(picker.entryAt(120, 221).isEmpty());
     }
 
     @Test void compactPropertyRowsReserveStableLabelAndFieldColumns() {

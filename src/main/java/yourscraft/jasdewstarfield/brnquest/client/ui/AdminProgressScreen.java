@@ -18,7 +18,9 @@ public final class AdminProgressScreen extends Screen {
     private enum Page { PLAYERS, DETAIL, CONFIRM, TECHNICAL }
     private final Screen parent;
     private final String bookId, revision, questId, taskId;
+    // Variable-height explanatory text and fixed-height player choices deliberately have separate hosts.
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
+    private final EditorListPanel<AdminProgressService.PlayerEntry> playerList = new EditorListPanel<>();
     private EditorTextField search;
     private Page page = Page.PLAYERS, technicalParent = Page.DETAIL;
     private List<AdminProgressService.PlayerEntry> players = List.of();
@@ -50,10 +52,14 @@ public final class AdminProgressScreen extends Screen {
     }
 
     @Override protected void init() {
+        playerList.invalidate();
         if (search == null) {
             search = new EditorTextField(font, text("search"), 64);
             search.setHint(text("search"));
-            search.setResponder(value -> searchChanged = System.nanoTime());
+            search.setResponder(value -> {
+                searchChanged = System.nanoTime();
+                playerList.reset();
+            });
         }
         // Explicit foreground rendering keeps EditBox above the parent and the modal panel.
         addWidget(search);
@@ -115,7 +121,10 @@ public final class AdminProgressScreen extends Screen {
             }
             return;
         }
-        if (requestMode.equals("CATALOG")) players = List.copyOf(reply.players());
+        if (requestMode.equals("CATALOG")) {
+            players = List.copyOf(reply.players());
+            playerList.invalidate();
+        }
         if (reply.view() != null) view = reply.view();
         if (requestMode.equals("PREVIEW")) {
             token = reply.token();
@@ -152,29 +161,30 @@ public final class AdminProgressScreen extends Screen {
         long now = System.nanoTime();
         double elapsed = previousFrame == 0 ? 1.0 / 60 : Math.min(0.1, (now - previousFrame) / 1_000_000_000.0);
         previousFrame = now;
-        double offset = scroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
-                contentHeight, viewport.height(), elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
-        graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
         if (page == Page.PLAYERS) {
-            for (int index = 0; index < players.size(); index++) {
-                int y = viewport.top() + index * 22 - (int) Math.round(offset);
-                UiRect row = new UiRect(viewport.left(), y, viewport.right(), y + 21);
-                if (row.bottom() <= viewport.top() || row.top() >= viewport.bottom()) continue;
-                EditorButton.renderInteractive(graphics, font, row, EditorButton.Definition.text(
-                        Component.literal(players.get(index).name()), null), !busy, false,
-                        EditorButton.Tone.PRIMARY, viewport.contains(mouseX, mouseY) ? mouseX : -1, mouseY);
-            }
-            if (players.isEmpty() && !busy) graphics.drawString(font, text("no_players"), viewport.left() + 4,
-                    viewport.top() + 5, 0xFF9FB0C2, false);
+            playerList.advance(viewport, panel, viewport.right() + 2, 22, 1,
+                    players.size(), players::get, elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
+            playerList.render(graphics, row -> EditorButton.renderInteractive(graphics, font,
+                    row.bounds(), EditorButton.Definition.text(Component.literal(row.key().name()), null),
+                    playerListInputReady(), false, EditorButton.Tone.PRIMARY,
+                    row.visible().containsExclusive(mouseX, mouseY) ? mouseX : -1, mouseY),
+                    () -> {
+                        if (!busy) graphics.drawString(font, text("no_players"), viewport.left() + 4,
+                                viewport.top() + 5, 0xFF9FB0C2, false);
+                    });
         } else {
+            // The text page keeps its own scroll model, but its thumb must also respect a tiny viewport.
+            graphics.enableScissor(viewport.left(), viewport.top(), viewport.right() + 5, viewport.bottom());
+            double offset = scroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
+                    contentHeight, viewport.height(), elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
             for (int index = 0; index < lines.size(); index++) {
                 graphics.drawString(font, lines.get(index), viewport.left() + 4,
                         viewport.top() + index * 12 - (int) Math.round(offset), 0xFFE0E6EE, false);
             }
+            graphics.disableScissor();
         }
-        graphics.disableScissor();
         if (message != null) {
-            var statusLines = font.split(message, panel.width() - 18);
+            var statusLines = MixedTextLayout.split(font, message, panel.width() - 18);
             for (int index = 0; index < Math.min(2, statusLines.size()); index++) graphics.drawString(font,
                     statusLines.get(index), panel.left() + 9, panel.bottom() - 51 + index * 10,
                     failed ? 0xFFFF9393 : 0xFF9FB0C2, false);
@@ -204,7 +214,7 @@ public final class AdminProgressScreen extends Screen {
                 body.add(text(view.clearsRewardClaims() ? "clears_claims" : "keeps_claims"));
                 body.add(text("may_recomplete"));
             }
-            return body.stream().flatMap(line -> font.split(line, availableWidth).stream()).toList();
+            return body.stream().flatMap(line -> MixedTextLayout.split(font, line, availableWidth).stream()).toList();
         }
         if (selected != null) body.add(text("player", selected.name()));
         if (view != null) {
@@ -235,7 +245,7 @@ public final class AdminProgressScreen extends Screen {
             if (view != null) body.add(Component.literal("Owner: " + view.owner()));
             body.add(Component.literal("Result: " + code));
         }
-        return body.stream().flatMap(line -> font.split(line, availableWidth).stream()).toList();
+        return body.stream().flatMap(line -> MixedTextLayout.split(font, line, availableWidth).stream()).toList();
     }
 
     @Override public boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -261,31 +271,42 @@ public final class AdminProgressScreen extends Screen {
             return true;
         }
         UiRect viewport = viewport();
-        if (!busy && scroll.handleTrackClick(mouseX, mouseY, viewport.right() + 2, viewport.top(), viewport.bottom(),
-                contentHeight, viewport.height())) return true;
-        if (!busy && page == Page.PLAYERS && viewport.contains(mouseX, mouseY)) {
-            int index = scroll.rowAt(mouseY, viewport.top(), viewport.bottom(), 22, players.size());
-            if (index >= 0) {
-                selected = players.get(index);
-                page = Page.DETAIL;
-                view = null;
-                scroll.snap(0);
-                search.hide();
-                setFocused(null);
-                request("INSPECT");
+        if (page == Page.PLAYERS) {
+            if (playerListInputReady()) {
+                if (playerList.mouseClicked(mouseX, mouseY, button)) return true;
+                var chosen = playerList.rowAt(mouseX, mouseY);
+                if (chosen.isPresent()) {
+                    // Retain the UUID actually shown, even if a refreshed catalog uses a different order.
+                    selected = chosen.orElseThrow().key();
+                    page = Page.DETAIL;
+                    view = null;
+                    scroll.snap(0);
+                    playerList.invalidate();
+                    search.hide();
+                    setFocused(null);
+                    request("INSPECT");
+                    return true;
+                }
             }
-            return true;
-        }
+        } else if (!busy && scroll.handleTrackClick(mouseX, mouseY, viewport.right() + 2,
+                viewport.top(), viewport.bottom(), contentHeight, viewport.height())) return true;
         return page == Page.PLAYERS && super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (page == Page.PLAYERS) return playerList.mouseScrolled(x, y, vertical,
+                BrnQuestClientConfig.VALUES.scrollStep.get());
         UiRect viewport = viewport();
-        if (viewport.contains(x, y)) {
+        if (viewport.containsExclusive(x, y)) {
             scroll.scrollWheel(vertical, BrnQuestClientConfig.VALUES.scrollStep.get(), contentHeight, viewport.height());
             return true;
         }
         return false;
+    }
+
+    /** A pending/failed filtered query must not make old choices look like results for the new text. */
+    private boolean playerListInputReady() {
+        return page == Page.PLAYERS && !busy && !failed && search.getValue().equals(lastFilter);
     }
 
     @Override public void onClose() { back(); }
@@ -300,7 +321,7 @@ public final class AdminProgressScreen extends Screen {
         }
         if (page == Page.TECHNICAL) page = technicalParent;
         else if (page == Page.CONFIRM) { token = ""; page = Page.DETAIL; }
-        else { page = Page.PLAYERS; request("CATALOG"); }
+        else { page = Page.PLAYERS; playerList.reset(); request("CATALOG"); }
         scroll.snap(0);
     }
 
@@ -336,8 +357,9 @@ public final class AdminProgressScreen extends Screen {
     }
     private UiRect viewport() {
         UiRect panel = panel();
-        return new UiRect(panel.left() + 9, panel.top() + (page == Page.PLAYERS ? 50 : 28),
-                panel.right() - 13, Math.max(panel.top() + 52, panel.bottom() - 58));
+        int bottom = Math.max(panel.top(), panel.bottom() - 58);
+        return new UiRect(panel.left() + 9, Math.min(bottom, panel.top() + (page == Page.PLAYERS ? 50 : 28)),
+                Math.max(panel.left() + 9, panel.right() - 13), bottom);
     }
     private UiRect buttonBounds(int index, int count) {
         UiRect panel = panel();

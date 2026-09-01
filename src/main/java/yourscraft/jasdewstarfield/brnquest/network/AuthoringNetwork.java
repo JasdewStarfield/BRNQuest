@@ -840,7 +840,7 @@ public final class AuthoringNetwork {
                         wire.draftRevision(), requireId(targetId), requireId(sourceId));
                 case "ADD_TASK" -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                typedMutationConfig(player, sourceId, wire.config()), false));
+                                taskMutationConfig(player, sourceId, wire.config()), false));
                 case "UPDATE_TASK" -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), requireId(sourceId), taskReplacement(player, current.value().book(),
                                 parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
@@ -853,9 +853,9 @@ public final class AuthoringNetwork {
                         requireId(parentId), requireId(targetId));
                 case "ADD_REWARD" -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                typedMutationConfig(player, sourceId, wire.config()), "manual", false));
+                                rewardMutationConfig(wire.config()), "manual", false));
                 case "UPDATE_REWARD" -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), rewardReplacement(player, current.value().book(),
+                        requireId(parentId), requireId(sourceId), rewardReplacement(current.value().book(),
                                 parentId, sourceId, requireId(targetId), wire.config(), boundedClaimPolicy(wire.title()),
                                 wire.targetIndex() != 0));
                 case "COPY_REWARD" -> editor.copyReward(player, sessionId, bookId, wire.draftRevision(),
@@ -1207,7 +1207,7 @@ public final class AuthoringNetwork {
         return Map.copyOf(bounded);
     }
 
-    private static Map<String, String> typedMutationConfig(ServerPlayer player, ResourceLocation typeId,
+    private static Map<String, String> taskMutationConfig(ServerPlayer player, ResourceLocation typeId,
                                                            Map<String, String> config) {
         Map<String, String> bounded = boundedConfig(config);
         if (TaskTypes.ITEM.equals(typeId) || TaskTypes.ITEM_CHOICE.equals(typeId)) {
@@ -1232,10 +1232,10 @@ public final class AuthoringNetwork {
         TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Selected task no longer exists"));
         return new TaskDefinition(book.id(), replacementId, source.typeId(),
-                typedMutationConfig(player, source.typeId(), config), optional);
+                taskMutationConfig(player, source.typeId(), config), optional);
     }
 
-    private static RewardDefinition rewardReplacement(ServerPlayer player, QuestBookDefinition book,
+    static RewardDefinition rewardReplacement(QuestBookDefinition book,
                                                        ResourceLocation questId, ResourceLocation sourceId,
                                                        ResourceLocation replacementId, Map<String, String> config,
                                                        String claimPolicy, boolean teamReward) {
@@ -1243,7 +1243,12 @@ public final class AuthoringNetwork {
         RewardDefinition source = quest.rewards().stream().filter(reward -> reward.id().equals(sourceId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Selected reward no longer exists"));
         return new RewardDefinition(book.id(), replacementId, source.typeId(),
-                typedMutationConfig(player, source.typeId(), config), claimPolicy, teamReward);
+                rewardMutationConfig(config), claimPolicy, teamReward);
+    }
+
+    /** Reward and task registries may share IDs; only task configs use item-matcher migration. */
+    static Map<String, String> rewardMutationConfig(Map<String, String> config) {
+        return boundedConfig(config);
     }
 
     private static String boundedClaimPolicy(String policy) {

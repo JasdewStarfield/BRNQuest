@@ -26,6 +26,8 @@
   "screen.brnquest.task.awaiting_confirmation": "Awaiting confirmation",
   "screen.brnquest.task.submitted": "Submitted",
   "screen.brnquest.task.completed": "Completed",
+  "screen.brnquest.task.historical": "No submission needed",
+  "screen.brnquest.task.historical_hint": "This objective has no submission record; the quest keeps its earlier completion.",
   "screen.brnquest.reward.claimed": "Reward claimed",
   "screen.brnquest.reward.click_to_claim": "Click to claim this reward",
   "screen.brnquest.type.task.checkmark": "Checkmark objective",

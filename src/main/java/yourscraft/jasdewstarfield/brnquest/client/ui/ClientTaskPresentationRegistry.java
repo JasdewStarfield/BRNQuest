@@ -53,6 +53,11 @@ public final class ClientTaskPresentationRegistry {
     public static synchronized void freeze() { frozen = true; }
     public static boolean isFrozen() { return frozen; }
 
+    /** Shared receipt rule for legacy and unified item presentations, independent of a running client. */
+    static boolean itemObjectiveSubmitted(long storedProgress) {
+        return storedProgress >= 1;
+    }
+
     /** Schema-1 counts remain strings, so presentation parsing mirrors the authoritative codec bounds. */
     static int requiredCount(TaskView task) {
         ItemChoiceMatcher.Spec spec = itemSpec(task);
@@ -146,9 +151,8 @@ public final class ClientTaskPresentationRegistry {
         public boolean interactive(TaskView task) { return true; }
 
         public boolean satisfied(TaskPresentationContext context) {
-            if (ClientTaskPresentation.super.satisfied(context)) return true;
-            if (context.displayedItem().isEmpty() || context.minecraft().player == null) return false;
-            return present(context.minecraft(), context.displayedItem()) >= requiredCount(context.task());
+            // The quest-wide submit affordance must agree with the server's receipt-only rule.
+            return itemObjectiveSubmitted(context.storedProgress());
         }
 
         public Component progressText(TaskPresentationContext context, boolean satisfied) {
@@ -244,9 +248,8 @@ public final class ClientTaskPresentationRegistry {
 
         @Override
         public boolean satisfied(TaskPresentationContext context) {
-            if (ClientTaskPresentation.super.satisfied(context)) return true;
-            ItemChoiceMatcher.MatchPlan plan = plan(context);
-            return plan != null && plan.satisfied();
+            // Readiness still comes from the match plan, but only a receipt satisfies the quest.
+            return itemObjectiveSubmitted(context.storedProgress());
         }
 
         @Override

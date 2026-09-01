@@ -13,6 +13,10 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorActionGroup;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryRow;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListViewport;
@@ -22,17 +26,21 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorFormFields;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSelectionFocus;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.TransientChildScreenParent;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.TransientScreenLifecycle;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
@@ -65,15 +73,12 @@ import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
 /** Quest-book UI with grouped navigation, a scalable directed graph, and intent-only details. */
 public final class QuestScreen extends Screen implements RecipeLookupSource, TransientChildScreenParent {
     private static final int NAV_LEFT = 0;
-    private static final int NAV_GROUP_HEIGHT = 13;
-    private static final int NAV_CHAPTER_HEIGHT = 15;
     private static final int CANVAS_MARGIN = 0;
     private static final int NODE_BASE_SIZE = 18;
     private static final int EDITOR_CHROME_HEIGHT = QuestScreenLayout.EDITOR_CONTROL_HEIGHT;
@@ -93,9 +98,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
     private static final int ATTENTION_PING_SIZE = 10;
-    private static final long NODE_LONG_PRESS_NANOS = 220_000_000L;
-    private static final double NODE_PAN_INTENT_PIXELS = 4.0;
-    private static final double NODE_DRAG_START_PIXELS = 2.0;
     private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             BRNQuest.MOD_ID, "textures/gui/reward_ping.png");
     private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
@@ -107,8 +109,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private double renderedPanX;
     private double renderedPanY;
     private double renderedZoom;
-    private double renderedNavigationScroll;
-    private double renderedDetailScroll;
     private int attentionPingOffsetY;
     private long previousMotionFrameNanos;
     private double currentMotionFrameSeconds = 1.0 / 60.0;
@@ -116,14 +116,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorSmoothValue zoomMotion = new EditorSmoothValue(1.0, 0.00001);
     private final EditorSmoothValue navigationDrawerMotion = new EditorSmoothValue(1.0, 0.001);
     private final EditorSmoothValue detailsDrawerMotion = new EditorSmoothValue(0.0, 0.001);
-    private final EditorSmoothValue focusPanXMotion = new EditorSmoothValue(0.0, 0.01);
-    private final EditorSmoothValue focusPanYMotion = new EditorSmoothValue(0.0, 0.01);
-    private final EditorSmoothScroll navigationScroll = new EditorSmoothScroll();
-    private final EditorSmoothScroll detailScroll = new EditorSmoothScroll();
+    private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
+    private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private int navigationContentHeight;
-    private int detailContentHeight;
     private int chapterIndex;
     private QuestScreenLayout cachedLayout;
+    // Scoped to one render call; this is not a second revision cache.
+    private RenderFrame renderFrame;
+    private record RenderFrame(QuestBookSnapshot snapshot, QuestScreenLayout layout) {}
     private ResourceLocation rememberedChapterId;
     private boolean rememberedChapterResolved;
     private double dragX;
@@ -131,31 +131,32 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean dragging;
     private boolean detailsOpen;
     private boolean navigationCollapsed;
-    private boolean observedDetailsOpen;
-    private ResourceLocation observedDetailsQuestId;
-    private ResourceLocation focusingQuestId;
-    private boolean focusTargetInitialized;
     private String serverContextId = "unknown";
     private ResourceLocation viewportBookId;
     private ResourceLocation editorSelectedQuest;
     private boolean editorSelectionMode;
     private boolean catalogRequested;
-    private final EditorSmoothScroll catalogScroll = new EditorSmoothScroll();
+    private final EditorPickerList<ClientEditorState.CatalogEntry> catalogPicker = new EditorPickerList<>();
     private String catalogFilter = "";
-    private EditorTextField questTitleField;
-    private EditorTextField questSubtitleField;
-    private EditorTextField questDescriptionField;
-    private EditorTextField questIdField;
-    private EditorTextField questIconField;
-    private EditorTextField questXField;
-    private EditorTextField questYField;
     private String questEditorOriginalIconItemId = "";
     private IconEditorMode questEditorIconMode = IconEditorMode.ITEM;
     private IconEditorMode questEditorOriginalIconMode = IconEditorMode.ITEM;
     private String questEditorItemIconValue = "";
     private String questEditorTextureIconValue = "";
-    private EditorTextField structureIdField;
-    private EditorTextField structureTitleField;
+    private final EditorFormFields<String> questFields = new EditorFormFields<String>()
+            .define("title", "screen.brnquest.editor.quest.title", 256)
+            .define("subtitle", "screen.brnquest.editor.quest.subtitle", 256)
+            .define("description", "screen.brnquest.editor.quest.description", 32768)
+            .define("id", "screen.brnquest.editor.quest.id", 256)
+            .define("icon", "screen.brnquest.editor.quest.icon", 256)
+            .define("x", "screen.brnquest.editor.quest.position_x", 64)
+            .define("y", "screen.brnquest.editor.quest.position_y", 64);
+    private final EditorFormFields<String> structureFields = new EditorFormFields<String>()
+            .define("id", "screen.brnquest.editor.structure.id", 256)
+            .define("title", "screen.brnquest.editor.structure.title", 256);
+    private final EditorFormFields<String> typedFields = new EditorFormFields<String>()
+            .define("id", "screen.brnquest.editor.typed.property.id", 256)
+            .define("claim", "screen.brnquest.editor.typed.property.claim_policy", 64);
     private EditorTextField quickTextField;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
@@ -165,15 +166,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component questEditorMessage;
     private boolean dependencyEditorOpen;
     private ResourceLocation dependencyEditorQuestId;
-    private final EditorSmoothScroll dependencyScroll = new EditorSmoothScroll();
+    private final EditorListPanel<ResourceLocation> dependencyList = new EditorListPanel<>();
+    private final EditorActionGroup<ResourceLocation> dependencyActions = new EditorActionGroup<>();
+    private QuestBookSnapshot dependencyListSnapshot;
     private String dependencyFilter = "";
-    private final EditorSmoothScroll dependencyPickerScroll = new EditorSmoothScroll();
+    private final EditorPickerList<QuestDependencyEditorModel.Candidate> dependencyPicker = new EditorPickerList<>();
     private Component dependencyEditorMessage;
     private boolean typedEditorOpen;
     private TypedKind typedEditorKind = TypedKind.TASK;
     private ResourceLocation typedEditorQuestId;
-    private final EditorSmoothScroll typedEditorScroll = new EditorSmoothScroll();
-    private final EditorSmoothScroll typedTypePickerScroll = new EditorSmoothScroll();
+    private final EditorEntryListPanel<ResourceLocation, TypedActionKey> typedEntries = new EditorEntryListPanel<>();
+    // The rendered frame is usable only while the same authoritative display snapshot is installed.
+    private QuestBookSnapshot typedListSnapshot;
+    private final EditorPickerList<ResourceLocation> typedTypePicker = new EditorPickerList<>();
     private Component typedEditorMessage;
     private boolean typedPropertyOpen;
     private ResourceLocation typedPropertyOriginalId;
@@ -181,9 +186,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ConfigEditorSchema typedPropertySchema;
     private Map<String, String> typedPropertyOriginalConfig = Map.of();
     private Map<String, String> typedPropertyRawConfig = Map.of();
-    private EditorTextField typedPropertyIdField;
-    private EditorTextField typedPropertyClaimPolicyField;
-    private final List<EditorTextField> typedPropertyConfigFields = new ArrayList<>();
+    private final EditorFormFields<Integer> configFields = createConfigFields();
     private boolean typedPropertyOptional;
     private boolean typedPropertyTeamReward;
     private boolean typedPropertyRenameArmed;
@@ -192,7 +195,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final Map<String, String> typedPropertyServerIssues = new LinkedHashMap<>();
     private ResourceLocation discardSwitchTarget;
     private boolean discardClosesScreen;
-    private boolean editorChildScreenOpening;
+    private final TransientScreenLifecycle childLifecycle = new TransientScreenLifecycle();
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
     private ContextKind editContextKind = ContextKind.NONE;
     private ResourceLocation editContextTarget;
@@ -211,25 +214,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ResourceLocation deleteTarget;
     private String deleteImpact = "";
     private final Set<ResourceLocation> editorSelection = new LinkedHashSet<>();
-    private Set<ResourceLocation> nodeDragSelectionBeforePress = Set.of();
-    private final Map<ResourceLocation, DraftBookEditor.Position> dragPreview = new LinkedHashMap<>();
-    private final Map<ResourceLocation, DraftBookEditor.Position> dragSnapPreview = new LinkedHashMap<>();
-    private Map<ResourceLocation, DraftBookEditor.Position> dragOrigins = Map.of();
-    private boolean nodeDragging;
-    private boolean nodeDragPickedUp;
-    private boolean nodeDragMoved;
-    private long nodeDragPressStartedNanos;
-    private ResourceLocation nodeDragAnchorId;
-    private double nodeDragStartX;
-    private double nodeDragStartY;
-    private double nodeDragPressScreenX;
-    private double nodeDragPressScreenY;
+    private final EditorSelectionFocus<ResourceLocation> selectionFocus = new EditorSelectionFocus<>();
+    private final QuestNodeDrag nodeDrag = new QuestNodeDrag();
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
     private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
     private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
     private final List<TaskCandidateHitbox> taskCandidateHitboxes = new ArrayList<>();
-    private final List<DependencyHitbox> dependencyHitboxes = new ArrayList<>();
-    private final List<TypedEditorHitbox> typedEditorHitboxes = new ArrayList<>();
     private final List<QuickTextHitbox> quickTextHitboxes = new ArrayList<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
@@ -254,34 +244,27 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     protected void init() {
         super.init();
+        childLifecycle.returnedToParent();
+        navigationPanel.invalidate();
+        configureOverlayRoutes();
+        // Resize/return from a child invalidates old hit geometry, not the remembered scroll position.
+        typedListSnapshot = null;
+        typedEntries.actions().clear();
+        dependencyList.invalidate();
+        dependencyListSnapshot = null;
+        dependencyActions.clear();
+        catalogPicker.invalidate();
+        dependencyPicker.invalidate();
+        typedTypePicker.invalidate();
         // setScreen(parent) initializes this same QuestScreen again after an item/raw-config child
         // closes. Re-register existing fields instead of replacing them, preserving the complete
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
-        questTitleField = reinitializeEditorField(questTitleField, "screen.brnquest.editor.quest.title", 256);
-        questSubtitleField = reinitializeEditorField(questSubtitleField, "screen.brnquest.editor.quest.subtitle", 256);
-        questDescriptionField = reinitializeEditorField(questDescriptionField,
-                "screen.brnquest.editor.quest.description", 32_768);
-        questIdField = reinitializeEditorField(questIdField, "screen.brnquest.editor.quest.id", 256);
-        questIconField = reinitializeEditorField(questIconField, "screen.brnquest.editor.quest.icon", 256);
-        questXField = reinitializeEditorField(questXField, "screen.brnquest.editor.quest.position_x", 64);
-        questYField = reinitializeEditorField(questYField, "screen.brnquest.editor.quest.position_y", 64);
-        structureIdField = reinitializeEditorField(structureIdField, "screen.brnquest.editor.structure.id", 256);
-        structureTitleField = reinitializeEditorField(structureTitleField,
-                "screen.brnquest.editor.structure.title", 256);
+        questFields.bind(font, this::addRenderableWidget);
+        structureFields.bind(font, this::addRenderableWidget);
+        typedFields.bind(font, this::addRenderableWidget);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 32_768);
-        typedPropertyIdField = reinitializeEditorField(typedPropertyIdField,
-                "screen.brnquest.editor.typed.property.id", 256);
-        typedPropertyClaimPolicyField = reinitializeEditorField(typedPropertyClaimPolicyField,
-                "screen.brnquest.editor.typed.property.claim_policy", 64);
-        if (typedPropertyConfigFields.isEmpty()) {
-            for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
-                typedPropertyConfigFields.add(editorField("screen.brnquest.editor.typed.property.config", 65_536));
-            }
-        } else {
-            typedPropertyConfigFields.replaceAll(field -> reinitializeEditorField(field,
-                    "screen.brnquest.editor.typed.property.config", 65_536));
-        }
+        configFields.bind(font, this::addRenderableWidget);
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
             catalogRequested = true;
@@ -295,10 +278,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // Save graph-space center coordinates rather than raw screen pixels, making
         // restoration independent of resolution and either side panel's width.
         saveViewport(currentChapterId());
-        if (editorChildScreenOpening) {
+        if (childLifecycle.consumeRemoval()) {
             // A normal setScreen call gives JEI its full Opening/Init lifecycle. The selector owns
             // this same QuestScreen as a suspended parent, so this removal must not close its lease.
-            editorChildScreenOpening = false;
             super.removed();
             return;
         }
@@ -382,7 +364,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (result.selectedId() != null && target != null) {
             selectChapterContaining(target, result.selectedId());
         } else {
-            detailScroll.snap(0);
+            detailsPanel.scroll().snap(0);
             closeQuestEditingPanels();
         }
         editorSelectionMode = nextEditorMode;
@@ -427,94 +409,60 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         ensureViewportBook(snapshot.book().id());
-        double motionFrameSeconds = motionFrameSeconds();
-        currentMotionFrameSeconds = motionFrameSeconds;
-        advanceZoomMotion(motionFrameSeconds);
-        advanceDrawerMotion(motionFrameSeconds);
-        // Sample once per frame so every visible notification hops in lockstep.
-        attentionPingOffsetY = AttentionPingAnimation.verticalOffset(System.nanoTime());
+        renderFrame = new RenderFrame(snapshot, layout());
+        try {
+            double motionFrameSeconds = motionFrameSeconds();
+            currentMotionFrameSeconds = motionFrameSeconds;
+            advanceZoomMotion(motionFrameSeconds);
+            advanceDrawerMotion(motionFrameSeconds);
+            // Sample once per frame so every visible notification hops in lockstep.
+            attentionPingOffsetY = AttentionPingAnimation.verticalOffset(System.nanoTime());
 
-        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
-        ChapterDefinition selectedChapter = null;
-        if (!chapters.isEmpty()) {
-            resolveRememberedChapter(chapters);
-            chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
-            selectedChapter = chapters.get(chapterIndex);
+            List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
+            ChapterDefinition selectedChapter = null;
+            if (!chapters.isEmpty()) {
+                resolveRememberedChapter(chapters);
+                chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
+                selectedChapter = chapters.get(chapterIndex);
+            }
+            updateSelectedQuestFocus(snapshot, motionFrameSeconds);
+            renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
+            if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
+            else graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
+                    height - bottomToolbarHeight(), 0xD0151820);
+            if (detailsDrawerVisible() && !structureFormOpen()) {
+                int visibleLeft = canvasRight();
+                graphics.enableScissor(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight());
+                int detailMouseX = detailsPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
+                int detailMouseY = detailsPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
+                graphics.pose().pushPose();
+                graphics.pose().translate(detailsDrawerOffsetX(), 0, 0);
+                renderDetails(graphics, detailMouseX, detailMouseY, motionFrameSeconds);
+                graphics.pose().popPose();
+                graphics.disableScissor();
+            }
+            renderEditorChrome(graphics, snapshot.book(), mouseX, mouseY);
+            if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
+            offsetDetailsDrawerFieldsForMotion();
+            super.render(graphics, mouseX, mouseY, partialTick);
+            renderDeferredTooltip(graphics, mouseX, mouseY);
+        } finally {
+            renderFrame = null;
         }
-        updateSelectedQuestFocus(snapshot, motionFrameSeconds);
-        renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
-        if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
-        else graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
-                height - bottomToolbarHeight(), 0xD0151820);
-        if (detailsDrawerVisible() && !structureFormOpen()) {
-            int visibleLeft = canvasRight();
-            graphics.enableScissor(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight());
-            int detailMouseX = detailsPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
-            int detailMouseY = detailsPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
-            graphics.pose().pushPose();
-            graphics.pose().translate(detailsDrawerOffsetX(), 0, 0);
-            renderDetails(graphics, detailMouseX, detailMouseY, motionFrameSeconds);
-            graphics.pose().popPose();
-            graphics.disableScissor();
-        }
-        renderEditorChrome(graphics, snapshot.book(), mouseX, mouseY);
-        if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
-        offsetDetailsDrawerFieldsForMotion();
-        super.render(graphics, mouseX, mouseY, partialTick);
-        renderDeferredTooltip(graphics, mouseX, mouseY);
     }
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter,
                                   int mouseX, int mouseY, double motionFrameSeconds) {
-        int panelVisibleRight = navigationHandleLeft();
-        int viewportHeight = navigationViewportHeight();
-        navigationContentHeight = navigationContentHeight(book);
-        if (panelVisibleRight > NAV_LEFT) {
-            int drawerOffsetX = navigationDrawerOffsetX();
-            // Translate the complete fixed-layout drawer; scissoring only hides the off-screen portion.
-            graphics.enableScissor(NAV_LEFT, navigationTop(), panelVisibleRight,
-                    height - navigationBottomMargin());
-            graphics.pose().pushPose();
-            graphics.pose().translate(drawerOffsetX, 0, 0);
-            graphics.fill(NAV_LEFT, navigationTop(), navigationWidth() + 4,
-                    height - navigationBottomMargin(), 0xB8181E27);
-            renderedNavigationScroll = navigationScroll.frameAndRender(graphics, navigationWidth() + 2,
-                    navigationTop(), navigationListBottom(), navigationContentHeight, viewportHeight,
-                    motionFrameSeconds, scrollSmoothSpeed());
-            int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
-            graphics.enableScissor(Math.max(NAV_LEFT, NAV_LEFT + drawerOffsetX), navigationTop(),
-                    Math.min(panelVisibleRight, navigationWidth() + 6 + drawerOffsetX), navigationListBottom());
-            for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
-                if (entry.group() != null) {
-                    graphics.fill(NAV_LEFT, y, navigationWidth(), y + NAV_GROUP_HEIGHT, 0xE01B222C);
-                    drawFittedString(graphics, Component.literal("▾ " + entry.group().title()),
-                            NAV_LEFT + 4, y + 2, navigationWidth() - NAV_LEFT - 8, 0xFFB7C5D8, 0.75F);
-                    y += NAV_GROUP_HEIGHT;
-                    continue;
-                }
-                ChapterDefinition chapter = entry.chapter();
-                int color = selectedChapter != null && chapter.id().equals(selectedChapter.id())
-                        ? 0xFF4A6A88 : 0xE0262D38;
-                graphics.fill(NAV_LEFT + 4, y, navigationWidth(), y + NAV_CHAPTER_HEIGHT, color);
-                drawFittedString(graphics, Component.literal(chapter.title()), NAV_LEFT + 9, y + 3,
-                        navigationWidth() - NAV_LEFT - 13, 0xFFFFFFFF, 0.75F);
-                y += NAV_CHAPTER_HEIGHT;
-            }
-            graphics.disableScissor();
-            int navigationMouseX = navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
-            int navigationMouseY = navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
-            if (ClientEditorState.get().editing()) {
-                renderNavigationEditorButtons(graphics, navigationMouseX, navigationMouseY);
-            }
-            graphics.pose().popPose();
-            graphics.disableScissor();
-        }
-        int handleLeft = navigationHandleLeft();
-        graphics.fill(handleLeft, navigationTop(), handleLeft + navigationHandleWidth(),
-                height - navigationBottomMargin(), 0xD01B222C);
-        graphics.drawCenteredString(font, navigationCollapsed ? "›" : "‹",
-                handleLeft + navigationHandleWidth() / 2,
-                contentCenterY() - 4, 0xFFB7C5D8);
+        navigationContentHeight = navigationPanel.contentHeight(book);
+        navigationPanel.render(graphics, font, book, selectedChapter,
+                new QuestNavigationPanel.Layout(navigationWidth(), navigationTop(), height - navigationBottomMargin(),
+                        navigationListBottom(), navigationHandleLeft(), navigationDrawerOffsetX(),
+                        navigationHandleWidth(), contentCenterY(), navigationCollapsed),
+                motionFrameSeconds, scrollSmoothSpeed(), () -> {
+                    if (ClientEditorState.get().editing()) renderNavigationEditorButtons(graphics,
+                            navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE,
+                            navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE);
+                });
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
@@ -531,7 +479,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         double graphBottom = graphY(bottom);
         double graphMouseX = graphX(mouseX);
         double graphMouseY = graphY(mouseY);
-        updateNodeDragGesture(graphMouseX, graphMouseY, mouseX, mouseY, System.nanoTime());
+        nodeDrag.update(graphMouseX, graphMouseY, mouseX, mouseY, System.nanoTime());
         graphics.pose().pushPose();
         graphics.pose().translate((float) graphOriginX(), (float) graphOriginY(), 0.0F);
         graphics.pose().scale((float) renderedZoom, (float) renderedZoom, 1.0F);
@@ -624,7 +572,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             double top, double bottom, double mouseX, double mouseY) {
         int x = nodeGraphX(quest);
         int y = nodeGraphY(quest);
-        boolean pickedUp = nodeDragPickedUp && quest.id().equals(nodeDragAnchorId);
+        boolean pickedUp = nodeDrag.pickedUp() && quest.id().equals(nodeDrag.anchor());
         int size = NODE_BASE_SIZE + (pickedUp ? 4 : 0);
         int radius = size / 2;
         // Keep partially visible nodes; cull only after their entire bounds leave the canvas.
@@ -655,7 +603,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderNodeAttentionPing(graphics, REWARD_PING_TEXTURE, x, y, size);
         }
 
-        if (!nodeDragging && mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
+        if (!nodeDrag.active() && mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
                 && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
             List<Component> tooltip = new ArrayList<>();
             tooltip.add(Component.literal(questTitle(quest)).withStyle(ChatFormatting.WHITE));
@@ -669,8 +617,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Draws the server-bound grid destination below the freely moving picked-up node. */
     private void renderNodeSnapGhost(GuiGraphics graphics, QuestDefinition quest, double left, double right,
                                      double top, double bottom) {
-        DraftBookEditor.Position target = dragSnapPreview.get(quest.id());
-        if (!nodeDragPickedUp || target == null) return;
+        DraftBookEditor.Position target = nodeDrag.snapPreview(quest.id());
+        if (!nodeDrag.pickedUp() || target == null) return;
         int x = graphCoordinate(target.x());
         int y = graphCoordinate(target.y());
         int radius = NODE_BASE_SIZE / 2 + 3;
@@ -727,131 +675,38 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         QuestStatus status = status(quest);
         boolean editing = ClientEditorState.get().editing();
         if (editing && questEditorOpen && quest.id().equals(questEditorQuestId)) {
-            detailContentHeight = 0;
-            detailScroll.snap(0);
+            detailsPanel.reset();
             renderQuestPropertyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         if (editing && dependencyEditorOpen && quest.id().equals(dependencyEditorQuestId)) {
-            detailContentHeight = 0;
-            detailScroll.snap(0);
+            detailsPanel.reset();
             renderDependencyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         if (editing && typedEditorOpen && quest.id().equals(typedEditorQuestId)) {
-            detailContentHeight = 0;
-            detailScroll.snap(0);
+            detailsPanel.reset();
             renderTypedEditor(graphics, quest, mouseX, mouseY);
             return;
         }
-        int contentLeft = left + 10;
-        int contentWidth = detailsWidth() - 24;
-        int viewportHeight = detailViewportHeight();
-        renderedDetailScroll = detailScroll.frameAndRender(graphics, width - 8, detailContentTop(),
-                detailContentBottom(), detailContentHeight, viewportHeight,
-                motionFrameSeconds, scrollSmoothSpeed());
-        int y = detailContentTop() - (int) Math.round(renderedDetailScroll);
-        graphics.enableScissor(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
-                Math.min(width, width - 10 + detailsDrawerOffsetX()),
-                detailContentBottom());
-        int titleTop = y;
-        y = drawWrapped(graphics, questTitle(quest), contentLeft, y, contentWidth - 14, 0xFFFFFF);
-        if (editing) addQuickTextHitbox(QuickTextKind.TITLE, contentLeft, titleTop, contentWidth - 14, y);
-        y += 3;
-
-        if (editing || !quest.subtitle().isBlank()) {
-            int subtitleTop = y;
-            String subtitle = quest.subtitle().isBlank()
-                    ? Component.translatable("screen.brnquest.editor.quick_edit.empty_subtitle").getString()
-                    : quest.subtitle();
-            y = drawWrapped(graphics, subtitle, contentLeft, y, contentWidth,
-                    quest.subtitle().isBlank() ? 0xFF718096 : 0xFFB7C5D8);
-            if (editing) addQuickTextHitbox(QuickTextKind.SUBTITLE, contentLeft, subtitleTop, contentWidth, y);
-            y += 4;
-        }
-
-        boolean ready = canSubmit(quest, status);
-        Component statusText = !gameplayAllowed()
-                ? Component.translatable("screen.brnquest.editor.preview")
-                : Component.translatable(QuestPresentation.statusTranslationKey(
-                        quest, status, ClientQuestState.get().claimed()));
-        graphics.drawString(font, statusText, contentLeft, y, statusColor(status), false);
-        int statusTop = y;
-        int statusWidth = font.width(statusText);
-        if (gameplayAllowed() && status == QuestStatus.LOCKED) {
-            // Cyan underline and info glyph advertise that the locked reason is inspectable.
-            graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
-            graphics.drawString(font, Component.literal("ⓘ"), contentLeft + statusWidth + 4, y, 0xFF68BDE8, false);
-            statusWidth += 4 + font.width("ⓘ");
-        }
-        if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
-            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int pinX = detailTrackX(pin);
-            graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : 0xFFB7C5D8, false);
-            if (mouseX >= pinX - 2 && mouseX <= pinX + font.width(pin) + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
-                hoveredDetailText = Component.translatable(status == QuestStatus.ACTIVE
-                        ? "screen.brnquest.untrack" : "screen.brnquest.track");
-            }
-        }
-        if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
-            graphics.drawString(font, Component.translatable("screen.brnquest.ready"), contentLeft + font.width(statusText) + 6, y, 0xFF72D88D, false);
-        }
-        y += 16;
-
-        if (editing || !quest.description().isBlank()) {
-            int descriptionTop = y;
-            String description = quest.description().isBlank()
-                    ? Component.translatable("screen.brnquest.editor.quick_edit.empty_description").getString()
-                    : quest.description();
-            y = drawWrapped(graphics, description, contentLeft, y, contentWidth,
-                    quest.description().isBlank() ? 0xFF718096 : 0xFFE1E6EE);
-            if (editing) addQuickTextHitbox(QuickTextKind.DESCRIPTION,
-                    contentLeft, descriptionTop, contentWidth, y);
-            y += 8;
-        }
-
-        if (editing) {
-            for (QuickTextHitbox hitbox : quickTextHitboxes) {
-                if (hitbox.bounds().contains(mouseX, mouseY)) {
-                    hoveredComponentTooltip = List.of(Component.translatable(
-                            "screen.brnquest.editor.quick_edit.hint"));
-                    break;
-                }
-            }
-        }
-
-        graphics.drawString(font, Component.translatable("screen.brnquest.requirements"), contentLeft, y, 0xFF8FB8E2, false);
-        y += 13;
-        if (quest.tasks().isEmpty()) {
-            graphics.drawString(font, Component.translatable("screen.brnquest.no_requirements"), contentLeft, y, 0xFF9AA6B5, false);
-            y += 18;
-        } else {
-            for (TaskDefinition task : quest.tasks()) y = renderTask(graphics, quest, task, status, contentLeft, y, contentWidth, mouseX, mouseY);
-        }
-
-        if (!quest.rewards().isEmpty()) {
-            y += 4;
-            graphics.drawString(font, Component.translatable("screen.brnquest.rewards"), contentLeft, y, 0xFFE6B55B, false);
-            y += 13;
-            int rewardTop = y;
-            int rewardColumns = Math.max(1, contentWidth / QuestViewportMath.REWARD_ROW_HEIGHT);
-            int column = 0;
-            for (RewardDefinition reward : quest.rewards()) {
-                int rewardX = contentLeft + column * QuestViewportMath.REWARD_ROW_HEIGHT;
-                renderReward(graphics, reward, rewardX, y, status, mouseX, mouseY);
-                column++;
-                if (column >= rewardColumns) {
-                    column = 0;
-                    y += QuestViewportMath.REWARD_ROW_HEIGHT;
-                }
-            }
-            // Compute from row count so a partially populated final row is never clipped.
-            y = rewardTop + QuestViewportMath.rewardGridHeight(quest.rewards().size(), rewardColumns);
-        }
-        detailContentHeight = Math.max(0, y + (int) Math.round(renderedDetailScroll) - detailContentTop() + 8);
-        detailScroll.constrain(detailContentHeight, viewportHeight);
-        graphics.disableScissor();
-
+        Component statusText = !gameplayAllowed() ? Component.translatable("screen.brnquest.editor.preview")
+                : Component.translatable(QuestPresentation.statusTranslationKey(quest, status, ClientQuestState.get().claimed()));
+        UiRect content = new UiRect(left + 10, detailContentTop(), left + 10 + detailsWidth() - 24, detailContentBottom());
+        UiRect clip = new UiRect(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
+                Math.min(width, width - 10 + detailsDrawerOffsetX()), detailContentBottom());
+        var result = detailsPanel.render(graphics, font, new QuestDetailsPanel.Layout(content, clip, width - 8),
+                new QuestDetailsPanel.Model(quest, questTitle(quest), status, statusText, statusColor(status),
+                        editing, gameplayAllowed(), canSubmit(quest, status)), new QuestDetailsPanel.Rows() {
+                    public int task(TaskDefinition task, int x, int y, int rowWidth) {
+                        return renderTask(graphics, quest, task, status, x, y, rowWidth, mouseX, mouseY);
+                    }
+                    public void reward(RewardDefinition reward, int x, int y) {
+                        renderReward(graphics, reward, x, y, status, mouseX, mouseY);
+                    }
+                }, mouseX, mouseY, motionFrameSeconds, scrollSmoothSpeed());
+        result.textAreas().forEach((key, bounds) -> quickTextHitboxes.add(new QuickTextHitbox(QuickTextKind.valueOf(key), bounds)));
+        if (result.hint() != null) hoveredComponentTooltip = List.of(result.hint());
+        if (result.lockedStatusHovered()) hoveredComponentTooltip = dependencyTooltip(quest);
         if (editing) {
             renderDetailEditorEntry(graphics, questPropertyButtonBounds(), "✎",
                     "screen.brnquest.editor.quest.properties", mouseX, mouseY);
@@ -861,13 +716,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     "screen.brnquest.editor.typed.rewards", mouseX, mouseY);
             renderDetailEditorEntry(graphics, questDependencyButtonBounds(), "→",
                     "screen.brnquest.editor.dependency.edit", mouseX, mouseY);
-        }
-
-        int visibleStatusY = statusTop;
-        if (gameplayAllowed() && status == QuestStatus.LOCKED && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
-                && mouseY >= visibleStatusY && mouseY <= visibleStatusY + font.lineHeight
-                && visibleStatusY >= detailContentTop() && visibleStatusY < detailContentBottom()) {
-            hoveredComponentTooltip = dependencyTooltip(quest);
         }
 
     }
@@ -882,14 +730,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Registers only the visible portion, so scrolled-away text cannot capture a right click. */
-    private void addQuickTextHitbox(QuickTextKind kind, int left, int top, int width, int bottom) {
-        int visibleTop = Math.max(top, detailContentTop());
-        int visibleBottom = Math.min(bottom, detailContentBottom());
-        if (visibleBottom > visibleTop) {
-            quickTextHitboxes.add(new QuickTextHitbox(kind,
-                    new UiRect(left, visibleTop, left + width, visibleBottom)));
-        }
-    }
+
 
     private int renderTask(GuiGraphics graphics, QuestDefinition quest, TaskDefinition task, QuestStatus status,
                            int x, int y, int width, int mouseX, int mouseY) {
@@ -908,64 +749,23 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             presentationContext = new TaskPresentationContext(minecraft, taskView, status,
                     storedProgress, stack);
         }
-        boolean locallySatisfied = presentation.satisfied(presentationContext);
-        TaskDisplayState displayState = taskDisplayState(task, status, presentation, presentationContext);
-        graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
-        if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
-        else graphics.drawCenteredString(font, presentation.symbol(taskView), x + 11, y + 8, 0xFFFFFFFF);
-        if (displayState == TaskDisplayState.READY && !stack.isEmpty()) {
-            renderAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x + 17, y - 2);
+        TaskDisplayState state = taskDisplayState(task, status, presentation, presentationContext);
+        var row = QuestDetailRows.task(graphics, font, task, presentation, presentationContext, state,
+                x, y, width, detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
+        if (row.action() != null) {
+            UiRect bounds = row.action();
+            taskHitboxes.add(new TaskHitbox(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), quest, task));
         }
-
-        boolean visible = visibleTaskRow(y);
-        boolean candidateMenu = presentation.hasCandidateMenu(presentationContext);
-        UiRect candidateBounds = candidateMenu
-                ? new UiRect(x + 21, y + 4, x + 35, y + 20) : null;
-        if (candidateBounds != null) {
-            graphics.fill(candidateBounds.left(), candidateBounds.top(), candidateBounds.right(),
-                    candidateBounds.bottom(), candidateBounds.contains(mouseX, mouseY) ? 0xFF526C84 : 0xFF394858);
-            graphics.drawCenteredString(font, Component.literal("…"), candidateBounds.centerX(),
-                    candidateBounds.top() + 4, 0xFFFFFFFF);
-            if (visibleTaskRow(y)) taskCandidateHitboxes.add(new TaskCandidateHitbox(candidateBounds, task));
-        }
-        int textInset = candidateMenu ? 43 : 28;
-        Component title = presentation.objectiveTitle(presentationContext);
-        UiRect titleHintBounds = drawTaskObjectiveTitle(graphics, task, presentation, presentationContext,
-                title, x + width - 4, y + 3, Math.max(1, width - textInset),
-                taskTitleColor(displayState));
-        Component progress = taskStateText(presentation, presentationContext, displayState, locallySatisfied);
-        if (task.optional()) progress = progress.copy().append(" · ").append(Component.translatable("screen.brnquest.optional"));
-        drawFittedStringRight(graphics, progress, x + width - 4, y + 13,
-                Math.max(1, width - textInset), taskProgressColor(displayState), 0.75F);
-        UiRect itemBounds = new UiRect(x + 3, y + 4, x + 19, y + 20);
-        boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
-                detailRecipeLookupViewport(), mouseX, mouseY);
-        boolean interactive = displayState.actionable();
-        if (interactive && visible) taskHitboxes.add(new TaskHitbox(x, y, x + width, y + 24, quest, task));
-        boolean rowHovered = visible && mouseX >= x && mouseX < x + width
-                && mouseY >= y && mouseY < y + 24;
-        boolean titleHintHovered = visible && titleHintBounds != null && titleHintBounds.contains(mouseX, mouseY);
-        if (itemHovered) {
-            // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
-            hoveredDetailStack = stack;
-        } else if (titleHintHovered) {
-            hoveredDetailText = task.config().getOrDefault("title", "").isBlank()
-                    ? ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView)
-                    : ClientTaskPresentationRegistry.defaultItemObjectiveTitle(presentationContext);
-        } else if (candidateBounds != null && visible && candidateBounds.contains(mouseX, mouseY)) {
-            hoveredDetailText = Component.translatable("screen.brnquest.item_choice.view_candidates");
-        } else if (interactive && rowHovered) {
-            // The item and semantic qualifier keep their more specific help; the remaining row
-            // communicates that the complete actionable row submits this objective.
-            hoveredDetailText = Component.translatable("screen.brnquest.task.click_to_submit");
-        } else if (stack.isEmpty() && rowHovered) {
-            hoveredDetailText = presentation.interactionHint(presentationContext, interactive);
-        }
-        return y + 28;
+        if (row.candidates() != null) taskCandidateHitboxes.add(new TaskCandidateHitbox(row.candidates(), task));
+        acceptDetailRowHover(row);
+        return row.nextY();
     }
 
-    private boolean visibleTaskRow(int y) {
-        return y >= detailContentTop() && y + 24 <= detailContentBottom();
+    private void acceptDetailRowHover(QuestDetailRows.Result row) {
+        if (row.lookup() != null) {
+            hoveredRecipeLookupTarget = row.lookup();
+            hoveredDetailStack = row.lookup().stack();
+        } else if (row.hint() != null) hoveredDetailText = row.hint();
     }
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
@@ -976,70 +776,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         String itemSnbt = presentation.itemSnbt(rewardView);
         ItemStack parsedStack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
         ItemStack stack = presentation.displayedItem(rewardView, parsedStack);
-        if (!stack.isEmpty()) {
-            graphics.renderItem(stack, x + 4, y + 4);
-            // Match vanilla slot rendering so configured reward multipliers appear at bottom-right.
-            graphics.renderItemDecorations(font, stack, x + 4, y + 4);
+        var context = new RewardPresentationContext(minecraft, rewardView, claimable, claimed, stack);
+        var row = QuestDetailRows.reward(graphics, font, presentation, context, x, y,
+                detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
+        if (row.action() != null) {
+            UiRect bounds = row.action();
+            rewardHitboxes.add(new RewardHitbox(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), reward));
         }
-        else graphics.drawCenteredString(font, presentation.symbol(rewardView), x + 12, y + 8, 0xFFFFFFFF);
-        if (claimable && !stack.isEmpty()) {
-            renderAttentionPing(graphics, REWARD_PING_TEXTURE, x + 18, y - 2);
-        }
-        // Keep the claimed marker above the icon; the bottom-right corner belongs to vanilla count text.
-        if (claimed) renderClaimedRewardCheck(graphics, x + 17, y - 2);
-        boolean visible = y >= detailContentTop() && y + 24 <= detailContentBottom();
-        UiRect itemBounds = new UiRect(x + 4, y + 4, x + 20, y + 20);
-        boolean itemHovered = visible && registerRecipeLookupTarget(stack, itemBounds,
-                detailRecipeLookupViewport(), mouseX, mouseY);
-        if (claimable && visible) rewardHitboxes.add(new RewardHitbox(x, y, x + 24, y + 24, reward));
-        if (itemHovered) {
-            // Item tooltip and recipe lookup now stop together at the icon's exclusive edges.
-            hoveredDetailStack = stack;
-        } else if (stack.isEmpty() && visible && mouseX >= x && mouseX < x + 24
-                && mouseY >= y && mouseY < y + 24) {
-            RewardPresentationContext presentationContext = new RewardPresentationContext(minecraft, rewardView,
-                    claimable, claimed, stack);
-            hoveredDetailText = presentation.interactionHint(presentationContext);
-        }
+        acceptDetailRowHover(row);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (editorOverlays.mouseClicked(mouseX, mouseY, button)) return true;
         var snapshot = displaySnapshot();
         if (snapshot == null) return super.mouseClicked(mouseX, mouseY, button);
-        switch (editorOverlays.active()) {
-            case STRUCTURE_FORM -> {
-                return handleStructureFormClick(mouseX, mouseY, button);
-            }
-            case DELETE_CONFIRMATION -> {
-                return handleDeleteConfirmationClick(mouseX, mouseY, button);
-            }
-            case DISCARD_CONFIRMATION -> {
-                return handleDiscardConfirmationClick(mouseX, mouseY, button);
-            }
-            case QUEST_RENAME_CONFIRMATION -> {
-                return handleQuestRenameConfirmationClick(mouseX, mouseY, button);
-            }
-            case PUBLISH_CONFIRMATION -> {
-                return handlePublishConfirmationClick(mouseX, mouseY, button);
-            }
-            case CONFLICT_RECOVERY -> {
-                return handleConflictRecoveryClick(mouseX, mouseY, button);
-            }
-            case CONTEXT_MENU -> {
-                return handleEditContextClick(mouseX, mouseY, button, snapshot.book());
-            }
-            case DEPENDENCY_PICKER -> {
-                return handleDependencyPickerClick(mouseX, mouseY, button);
-            }
-            case TYPED_TYPE_PICKER -> {
-                return handleTypedTypePickerClick(mouseX, mouseY, button);
-            }
-            case QUICK_TEXT -> {
-                return handleQuickTextEditorClick(mouseX, mouseY, button);
-            }
-            default -> { }
-        }
         if (handleEditorChromeClick(mouseX, mouseY, button, snapshot.book())) return true;
 
         if (dependencyEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
@@ -1055,9 +806,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 rememberCurrentIconInput();
                 questEditorIconMode = questEditorIconMode == IconEditorMode.ITEM
                         ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
-                questIconField.setValue(questEditorIconMode == IconEditorMode.ITEM
+                questFields.field("icon").setValue(questEditorIconMode == IconEditorMode.ITEM
                         ? questEditorItemIconValue : questEditorTextureIconValue);
-                setFocused(questIconField);
+                setFocused(questFields.field("icon"));
                 return true;
             }
             if (button == 0 && questEditorIconMode == IconEditorMode.ITEM
@@ -1087,15 +838,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         if (navigationPanelAcceptsPointer(mouseX) && mouseX >= navigationWidth()
                 && navigationContentHeight > navigationViewportHeight()) {
-            navigationScroll.snapFromTrack(mouseY, navigationTop(), navigationListBottom(),
+            navigationPanel.scroll().snapFromTrack(mouseY, navigationTop(), navigationListBottom(),
                     navigationContentHeight, navigationViewportHeight());
             return true;
         }
         if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 12
-                && detailContentHeight > detailViewportHeight()
+                && detailsPanel.contentHeight() > detailViewportHeight()
                 && mouseY >= detailContentTop() && mouseY <= detailContentBottom()) {
-            detailScroll.snapFromTrack(mouseY, detailContentTop(), detailContentBottom(),
-                    detailContentHeight, detailViewportHeight());
+            detailsPanel.scroll().snapFromTrack(mouseY, detailContentTop(), detailContentBottom(),
+                    detailsPanel.contentHeight(), detailViewportHeight());
             return true;
         }
 
@@ -1125,7 +876,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             rememberedChapterId = navigationChoice.id();
             rememberedChapterResolved = true;
             editorSelection.clear();
-            dragPreview.clear();
+            nodeDrag.clearPreview();
             zoomMotion.snap(renderedZoom);
             zoom = renderedZoom;
             panX = 0;
@@ -1133,7 +884,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderedPanX = 0;
             renderedPanY = 0;
             detailsOpen = false;
-            detailScroll.snap(0);
+            detailsPanel.scroll().snap(0);
             closeQuestEditingPanels();
             return true;
         }
@@ -1146,7 +897,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 18
                 && mouseY >= topToolbarHeight() && mouseY <= topToolbarHeight() + 16) {
             detailsOpen = false;
-            detailScroll.snap(0);
+            detailsPanel.scroll().snap(0);
             closeQuestEditingPanels();
             return true;
         }
@@ -1243,7 +994,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         return true;
                     }
                     if (button == 0) {
-                        nodeDragSelectionBeforePress = Set.copyOf(editorSelection);
+                        nodeDrag.rememberSelection(editorSelection);
                         if (hasControlDown()) {
                             if (!editorSelection.add(hit.id())) editorSelection.remove(hit.id());
                             if (editorSelection.isEmpty()) editorSelection.add(hit.id());
@@ -1261,7 +1012,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (button == 0) {
                     closeQuestEditingPanels();
                     openDetailsPanel();
-                    detailScroll.snap(0);
+                    detailsPanel.scroll().snap(0);
                     if (!ClientEditorState.get().editing()) {
                         BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), hit.id().toString());
                     }
@@ -1284,16 +1035,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseReleased(double x, double y, int button) {
-        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) {
-            return editorOverlays.isOpen(EditorOverlayHost.Kind.STRUCTURE_FORM)
-                    || editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)
-                    ? super.mouseReleased(x, y, button) : true;
-        }
-        if (nodeDragging && button == 0) {
-            if (nodeDragPickedUp) {
+        if (editorOverlays.mouseReleased(x, y, button, super::mouseReleased)) return true;
+        if (nodeDrag.active() && button == 0) {
+            if (nodeDrag.pickedUp()) {
                 commitNodeDrag();
             } else {
-                ResourceLocation clickedQuestId = nodeDragAnchorId;
+                ResourceLocation clickedQuestId = nodeDrag.anchor();
                 cancelNodeDrag();
                 openEditorQuestDetails(clickedQuestId);
             }
@@ -1305,19 +1052,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
-        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) {
-            return editorOverlays.isOpen(EditorOverlayHost.Kind.STRUCTURE_FORM)
-                    || editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)
-                    ? super.mouseDragged(x, y, button, dx, dy) : true;
-        }
-        if (nodeDragging && button == 0) {
+        if (editorOverlays.mouseDragged(x, y, button, dx, dy, super::mouseDragged)) return true;
+        if (nodeDrag.active() && button == 0) {
             long nowNanos = System.nanoTime();
-            if (!nodeDragPickedUp && nodeGestureRequestsCanvasPan(x, y, nowNanos)) {
+            if (!nodeDrag.pickedUp() && nodeDrag.requestsPan(x, y, nowNanos)) {
                 // Motion before the hold threshold is a canvas-pan intent, not an accidental
                 // node move. Apply the displacement already travelled before handing off.
-                double pressX = nodeDragPressScreenX;
-                double pressY = nodeDragPressScreenY;
-                Set<ResourceLocation> selectionBeforePress = nodeDragSelectionBeforePress;
+                double pressX = nodeDrag.pressX();
+                double pressY = nodeDrag.pressY();
+                Set<ResourceLocation> selectionBeforePress = nodeDrag.previousSelection();
                 cancelNodeDrag();
                 // Panning from a node should behave like panning from empty canvas and therefore
                 // must not leave behind the provisional selection made on pointer-down.
@@ -1332,7 +1075,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 dragY = y;
                 return true;
             }
-            updateNodeDragGesture(graphX(x), graphY(y), x, y, nowNanos);
+            nodeDrag.update(graphX(x), graphY(y), x, y, nowNanos);
             return true;
         }
         if (dragging) {
@@ -1349,61 +1092,25 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION) && publishReview != null) {
-            EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
-            publishReviewScroll.scrollWheel(vertical, scrollStep(),
-                    publishReviewRowCount() * EditorPublishReviewPanel.ROW_HEIGHT,
-                    reviewLayout.list().height());
-            return true;
-        }
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) {
-            int visibleRows = EditorPickerList.visibleRows(dependencyPickerBounds());
-            dependencyPickerScroll.scrollWheel(vertical, scrollStep(),
-                    dependencyCandidates().size() * EditorPickerList.ROW_HEIGHT,
-                    visibleRows * EditorPickerList.ROW_HEIGHT);
-            return true;
-        }
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) {
-            int visibleRows = EditorPickerList.visibleRows(typedTypePickerBounds());
-            typedTypePickerScroll.scrollWheel(vertical, scrollStep(),
-                    typedTypeCandidates().size() * EditorPickerList.ROW_HEIGHT,
-                    visibleRows * EditorPickerList.ROW_HEIGHT);
-            return true;
-        }
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) && editorCatalogBounds().contains(x, y)) {
-            int visibleRows = editorCatalogVisibleRows();
-            catalogScroll.scrollWheel(vertical, scrollStep(),
-                    editorCatalogEntries().size() * EDITOR_CATALOG_ROW_HEIGHT,
-                    visibleRows * EDITOR_CATALOG_ROW_HEIGHT);
-            return true;
-        }
-        // Any open editor overlay owns wheel input, even outside its visible bounds.
-        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE) return true;
+        if (editorOverlays.mouseScrolled(x, y, vertical)) return true;
         if (dependencyEditorOpen && detailsPanelAcceptsPointer(x)) {
-            QuestDefinition quest = selectedQuest();
-            int visibleRows = dependencyVisibleRows();
-            dependencyScroll.scrollWheel(vertical, scrollStep(),
-                    (quest == null ? 0 : quest.dependencies().size()) * DEPENDENCY_ROW_HEIGHT,
-                    visibleRows * DEPENDENCY_ROW_HEIGHT);
+            if (dependencyListInputReady()) dependencyList.mouseScrolled(x, y, vertical, scrollStep());
             return true;
         }
         if (typedEditorOpen && detailsPanelAcceptsPointer(x)) {
-            QuestDefinition quest = selectedQuest();
-            int count = quest == null ? 0 : typedEditorKind.size(quest);
-            typedEditorScroll.scrollWheel(vertical, scrollStep(), count * TYPED_ROW_HEIGHT,
-                    typedEditorViewport().height());
+            if (typedListInputReady()) typedEntries.list().mouseScrolled(x, y, vertical, scrollStep());
             return true;
         }
         if (navigationPanelVisibleAt(x) && isContentY(y)) {
             if (navigationPanelAcceptsPointer(x)) {
-                navigationScroll.scrollWheel(vertical, scrollStep(),
+                navigationPanel.scroll().scrollWheel(vertical, scrollStep(),
                         navigationContentHeight, navigationViewportHeight());
             }
             return true;
         }
         if (detailsPanelVisibleAt(x) && isContentY(y)) {
             if (detailsPanelAcceptsPointer(x)) {
-                detailScroll.scrollWheel(vertical, scrollStep(), detailContentHeight, detailViewportHeight());
+                detailsPanel.scroll().scrollWheel(vertical, scrollStep(), detailsPanel.contentHeight(), detailViewportHeight());
             }
             return true;
         }
@@ -1417,15 +1124,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == 256 && editorOverlays.active() != EditorOverlayHost.Kind.NONE) {
-            closeActiveEditorOverlay();
-            return true;
-        }
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)
-                && (keyCode == 257 || keyCode == 335)) {
-            submitQuickTextEdit();
-            return true;
-        }
+        if (editorOverlays.keyPressed(keyCode, scanCode, modifiers)) return true;
         if (keyCode == 256 && questEditorOpen) {
             closeQuestEditor();
             return true;
@@ -1442,17 +1141,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             closeTypedEditor();
             return true;
         }
-        if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
-                && !catalogFilter.isEmpty()) {
-            catalogFilter = catalogFilter.substring(0, catalogFilter.length() - 1);
-            catalogScroll.snap(0);
+        // The composed list follows its visible action order, including footer controls.
+        if (typedListInputReady() && keyCode == 258) {
+            typedEntries.actions().focusNext(hasShiftDown());
             return true;
         }
-        if (keyCode == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
-                && !dependencyFilter.isEmpty()) {
-            dependencyFilter = dependencyFilter.substring(0, dependencyFilter.length() - 1);
-            dependencyPickerScroll.snap(0);
-            return true;
+        if (typedListInputReady() && (keyCode == 257 || keyCode == 335 || keyCode == 32)) {
+            return typedEntries.actions().activateFocused();
         }
         if (editorKeyboardSurfaceReady() && keyCode == 258) {
             // Follow visible left-to-right controls; live mode has no hidden save/publish tab stops.
@@ -1508,12 +1203,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             return true;
         }
-        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE
-                && !editorOverlays.isOpen(EditorOverlayHost.Kind.STRUCTURE_FORM)
-                && !editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) return true;
         if (keyCode == 256 && detailsOpen) {
             detailsOpen = false;
-            detailScroll.snap(0);
+            detailsPanel.scroll().snap(0);
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -1524,6 +1216,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientEditorState editor = ClientEditorState.get();
         Component status = editorStatus();
         if (!editor.hasLease()) return super.getNarrationMessage();
+        if (typedListInputReady() && typedEntries.actions().narration().isPresent()) {
+            return Component.translatable("screen.brnquest.editor.narration", getTitle(),
+                    status == null ? "" : status, typedEntries.actions().narration().orElseThrow());
+        }
         Component action = editorKeyboardFocus < 0 ? Component.translatable("screen.brnquest.editor.keyboard.help")
                 : Component.translatable("screen.brnquest.editor.keyboard.focus",
                 Component.translatable(editorKeyboardActionKey(editorKeyboardFocus)));
@@ -1584,49 +1280,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
-                && !Character.isISOControl(codePoint) && catalogFilter.length() < 48) {
-            catalogFilter += codePoint;
-            catalogScroll.snap(0);
-            return true;
-        }
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
-                && !Character.isISOControl(codePoint) && dependencyFilter.length() < 48) {
-            dependencyFilter += codePoint;
-            dependencyPickerScroll.snap(0);
-            return true;
-        }
-        if (editorOverlays.active() != EditorOverlayHost.Kind.NONE
-                && !editorOverlays.isOpen(EditorOverlayHost.Kind.STRUCTURE_FORM)
-                && !editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) return true;
-        return super.charTyped(codePoint, modifiers);
+        return editorOverlays.charTyped(codePoint, modifiers) || super.charTyped(codePoint, modifiers);
     }
 
     private ChapterDefinition navigationChoice(QuestBookDefinition book, double mouseX, double mouseY) {
-        if (!navigationPanelAcceptsPointer(mouseX) || mouseX > navigationWidth()
-                || mouseY >= navigationListBottom()) return null;
-        int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
-        for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
-            if (entry.group() != null) {
-                y += NAV_GROUP_HEIGHT;
-            } else {
-                if (mouseY >= y && mouseY <= y + NAV_CHAPTER_HEIGHT) return entry.chapter();
-                y += NAV_CHAPTER_HEIGHT;
-            }
-        }
-        return null;
+        var entry = navigationEntry(book, mouseX, mouseY);
+        return entry == null ? null : entry.chapter();
     }
 
     private QuestPresentation.NavigationEntry navigationEntry(QuestBookDefinition book, double mouseX, double mouseY) {
-        if (!navigationPanelAcceptsPointer(mouseX) || mouseX > navigationWidth()
-                || mouseY >= navigationListBottom()) return null;
-        int y = navigationTop() - (int) Math.round(renderedNavigationScroll);
-        for (QuestPresentation.NavigationEntry entry : QuestPresentation.navigation(book)) {
-            int rowHeight = entry.group() != null ? NAV_GROUP_HEIGHT : NAV_CHAPTER_HEIGHT;
-            if (mouseY >= y && mouseY <= y + rowHeight) return entry;
-            y += rowHeight;
-        }
-        return null;
+        return navigationPanelAcceptsPointer(mouseX) ? navigationPanel.entryAt(book, mouseX, mouseY) : null;
     }
 
     /** Adds editor controls as overlays so switching modes never resizes the established three regions. */
@@ -1741,21 +1404,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             recoveryCopyBookId = recoveryCopyId(editor.bookId());
             editorOverlays.show(EditorOverlayHost.Kind.CONFLICT_RECOVERY);
         }
-        switch (editorOverlays.active()) {
-            case CATALOG -> {
-                if (editor.allowed()) renderEditorCatalog(graphics, mouseX, mouseY);
-            }
-            case CONTEXT_MENU -> renderEditContextMenu(graphics, mouseX, mouseY);
-            case DEPENDENCY_PICKER -> renderDependencyPicker(graphics, mouseX, mouseY);
-            case TYPED_TYPE_PICKER -> renderTypedTypePicker(graphics, mouseX, mouseY);
-            case QUICK_TEXT -> renderQuickTextEditor(graphics, mouseX, mouseY);
-            case DISCARD_CONFIRMATION -> renderDiscardConfirmation(graphics, mouseX, mouseY);
-            case DELETE_CONFIRMATION -> renderDeleteConfirmation(graphics, mouseX, mouseY);
-            case QUEST_RENAME_CONFIRMATION -> renderQuestRenameConfirmation(graphics, mouseX, mouseY);
-            case PUBLISH_CONFIRMATION -> renderPublishConfirmation(graphics, mouseX, mouseY);
-            case CONFLICT_RECOVERY -> renderConflictRecovery(graphics, mouseX, mouseY);
-            default -> { }
-        }
+        editorOverlays.render(graphics, mouseX, mouseY);
         graphics.pose().popPose();
     }
 
@@ -1968,13 +1617,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         editorOverlays.show(EditorOverlayHost.Kind.CONTEXT_MENU);
     }
 
-    private void openTypedEntryContext(TypedEditorHitbox hitbox, int x, int y) {
-        openEditContext(ContextKind.TYPED_ENTRY, hitbox.id(), x, y, 0, 0);
-        editContextTypedIndex = hitbox.index();
+    private void openTypedEntryContext(ResourceLocation id, int x, int y) {
+        QuestDefinition quest = selectedQuest();
+        if (quest == null) return;
+        // Resolve ordering at dispatch time; a row's stable ID is never an old list index.
+        for (int index = 0; index < typedEditorKind.size(quest); index++) {
+            if (!typedEditorKind.value(quest, index).id().equals(id)) continue;
+            openEditContext(ContextKind.TYPED_ENTRY, id, x, y, 0, 0);
+            editContextTypedIndex = index;
+            return;
+        }
     }
 
-    private void openDependencyEntryContext(DependencyHitbox hitbox, int x, int y) {
-        openEditContext(ContextKind.DEPENDENCY_ENTRY, hitbox.dependencyId(), x, y, 0, 0);
+    private void openDependencyEntryContext(ResourceLocation dependencyId, int x, int y) {
+        openEditContext(ContextKind.DEPENDENCY_ENTRY, dependencyId, x, y, 0, 0);
     }
 
     private void closeEditContext() {
@@ -2026,23 +1682,100 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Closes the sole input-capturing overlay and clears its associated payload. */
+    /** Routes are installed once per init, never from render; callbacks resolve current business state. */
+    private void configureOverlayRoutes() {
+        editorOverlays.focusRestoration(() -> {
+            var previous = getFocused();
+            return () -> {
+                if (previous == null || children().contains(previous)) setFocused(previous);
+            };
+        });
+        registerOverlay(EditorOverlayHost.Kind.STRUCTURE_FORM, null, this::handleStructureFormClick);
+        registerOverlay(EditorOverlayHost.Kind.DELETE_CONFIRMATION, this::renderDeleteConfirmation, this::handleDeleteConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.DISCARD_CONFIRMATION, this::renderDiscardConfirmation, this::handleDiscardConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION, this::renderQuestRenameConfirmation, this::handleQuestRenameConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, this::renderPublishConfirmation, this::handlePublishConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.CONFLICT_RECOVERY, this::renderConflictRecovery, this::handleConflictRecoveryClick);
+        registerOverlay(EditorOverlayHost.Kind.CONTEXT_MENU, this::renderEditContextMenu, (x, y, button) -> displaySnapshot() != null && handleEditContextClick(x, y, button, displaySnapshot().book()));
+        registerOverlay(EditorOverlayHost.Kind.DEPENDENCY_PICKER, this::renderDependencyPicker, this::handleDependencyPickerClick);
+        registerOverlay(EditorOverlayHost.Kind.TYPED_TYPE_PICKER, this::renderTypedTypePicker, this::handleTypedTypePickerClick);
+        registerOverlay(EditorOverlayHost.Kind.QUICK_TEXT, this::renderQuickTextEditor, this::handleQuickTextEditorClick);
+        registerOverlay(EditorOverlayHost.Kind.CATALOG, (g, x, y) -> { if (ClientEditorState.get().allowed()) renderEditorCatalog(g, x, y); }, (x, y, button) -> displaySnapshot() != null && handleEditorChromeClick(x, y, button, displaySnapshot().book()));
+    }
+
+    private void registerOverlay(EditorOverlayHost.Kind kind, EditorOverlayHost.Draw draw, EditorOverlayHost.Click click) {
+        editorOverlays.register(kind, new EditorOverlayHost.Route(draw, click,
+                this::handleOverlayKey, this::handleOverlayText, this::handleOverlayWheel, this::closeActiveEditorOverlay,
+                kind == EditorOverlayHost.Kind.STRUCTURE_FORM || kind == EditorOverlayHost.Kind.QUICK_TEXT));
+    }
+
+    private boolean handleOverlayKey(int key, int scan, int modifiers) {
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT) && (key == 257 || key == 335)) {
+            submitQuickTextEdit();
+            return true;
+        }
+        if (key == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) && !catalogFilter.isEmpty()) {
+            catalogFilter = catalogFilter.substring(0, catalogFilter.length() - 1);
+            catalogPicker.reset();
+            return true;
+        }
+        if (key == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER) && !dependencyFilter.isEmpty()) {
+            dependencyFilter = dependencyFilter.substring(0, dependencyFilter.length() - 1);
+            dependencyPicker.reset();
+            return true;
+        }
+        if (structureFormOpen() || editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) {
+            return super.keyPressed(key, scan, modifiers);
+        }
+        return true;
+    }
+
+    private boolean handleOverlayText(char character, int modifiers) {
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
+                && !Character.isISOControl(character) && catalogFilter.length() < 48) {
+            catalogFilter += character;
+            catalogPicker.reset();
+        } else if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)
+                && !Character.isISOControl(character) && dependencyFilter.length() < 48) {
+            dependencyFilter += character;
+            dependencyPicker.reset();
+        } else if (structureFormOpen() || editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) {
+            return super.charTyped(character, modifiers);
+        }
+        return true;
+    }
+
+    private void handleOverlayWheel(double x, double y, double amount) {
+        switch (editorOverlays.active()) {
+            case CATALOG -> catalogPicker.mouseScrolled(x, y, amount, scrollStep());
+            case DEPENDENCY_PICKER -> dependencyPicker.mouseScrolled(x, y, amount, scrollStep());
+            case TYPED_TYPE_PICKER -> typedTypePicker.mouseScrolled(x, y, amount, scrollStep());
+            case PUBLISH_CONFIRMATION -> {
+                if (publishReview != null) publishReviewScroll.scrollWheel(amount, scrollStep(),
+                        publishReviewRowCount() * EditorPublishReviewPanel.ROW_HEIGHT,
+                        EditorPublishReviewPanel.layout(layout()).list().height());
+            }
+            default -> { }
+        }
+    }
+
     private void closeActiveEditorOverlay() {
         switch (editorOverlays.active()) {
             case CATALOG -> {
                 catalogFilter = "";
-                catalogScroll.snap(0);
+                catalogPicker.reset();
                 editorOverlays.close();
             }
             case CONTEXT_MENU -> closeEditContext();
             case STRUCTURE_FORM -> closeStructureForm();
             case DEPENDENCY_PICKER -> {
                 dependencyFilter = "";
-                dependencyPickerScroll.snap(0);
+                dependencyPicker.reset();
                 editorOverlays.close();
             }
             case TYPED_TYPE_PICKER -> {
                 // Esc, outside clicks and the visible close button share this path.
-                typedTypePickerScroll.snap(0);
+                typedTypePicker.reset();
                 editorOverlays.close();
             }
             case QUICK_TEXT -> closeQuickTextEditor();
@@ -2084,8 +1817,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case NONE -> "";
         };
         quickTextField.setValue(value);
-        setFocused(quickTextField);
         editorOverlays.show(EditorOverlayHost.Kind.QUICK_TEXT);
+        setFocused(quickTextField);
     }
 
     private void renderQuickTextEditor(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -2209,26 +1942,23 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderStructureForm(GuiGraphics graphics, int mouseX, int mouseY) {
-        // This modal owns the pointer, so navigation and canvas hover surfaces must stay hidden.
         hoveredDetailStack = ItemStack.EMPTY;
         hoveredDetailText = null;
         hoveredComponentTooltip = List.of();
         UiRect form = structureFormBounds();
         graphics.fill(0, 0, width, height, 0x88000000);
-        graphics.fill(form.left(), form.top(), form.right(), form.bottom(), 0xFF202832);
-        graphics.drawCenteredString(font, Component.translatable(structureFormKind.translationKey()),
-                form.centerX(), form.top() + 10, 0xFFFFFFFF);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.structure.id"),
-                form.left() + 12, form.top() + 30, 0xFF9FB0C2, false);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.structure.title"),
-                form.left() + 12, form.top() + 62, 0xFF9FB0C2, false);
-        positionEditorField(structureIdField, form.left() + 82, form.top() + 25, form.width() - 94);
-        positionEditorField(structureTitleField, form.left() + 82, form.top() + 57, form.width() - 94);
-        structureIdField.active = structureFormKind.createsStableId();
-        renderEditorTextButton(graphics, structureFormCancelBounds(), Component.translatable("gui.cancel"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        renderEditorTextButton(graphics, structureFormDoneBounds(), Component.translatable("gui.done"),
-                null, true, EditorButton.Tone.PRIMARY, mouseX, mouseY);
+        EditorPropertyPanel.renderCentered(graphics, font,
+                new EditorPropertyPanel.Layout(form, form.left() + 12, form.width() - 24,
+                        form.top() + 10, form.top() + 25, 32),
+                Component.translatable(structureFormKind.translationKey()), 0xFFFFFFFF,
+                List.of(EditorPropertyPanel.text(font, structureFields.field("id"),
+                                "screen.brnquest.editor.structure.id", 70, null, structureFormKind.createsStableId()),
+                        EditorPropertyPanel.text(font, structureFields.field("title"),
+                                "screen.brnquest.editor.structure.title", 70, null, !ClientEditorState.get().busy())),
+                new EditorPropertyPanel.Footer(structureFormCancelBounds(), structureFormDoneBounds(),
+                        Component.translatable("gui.done"), true, EditorButton.Tone.PRIMARY),
+                (g, bounds, label, enabled, tone) -> renderEditorTextButton(
+                        g, bounds, label, null, enabled, tone, mouseX, mouseY));
     }
 
     private boolean handleStructureFormClick(double mouseX, double mouseY, int button) {
@@ -2278,20 +2008,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }
             }
         }
-        structureIdField.setValue(id == null ? "" : id.toString());
-        structureTitleField.setValue(title);
-        structureIdField.setVisible(true);
-        structureTitleField.setVisible(true);
-        setFocused(kind.createsStableId() ? structureIdField : structureTitleField);
+        structureFields.field("id").setValue(id == null ? "" : id.toString());
+        structureFields.field("title").setValue(title);
+        structureFields.field("id").setVisible(true);
+        structureFields.field("title").setVisible(true);
         editorOverlays.show(EditorOverlayHost.Kind.STRUCTURE_FORM);
+        setFocused(kind.createsStableId() ? structureFields.field("id") : structureFields.field("title"));
     }
 
     private void submitStructureForm() {
         ClientEditorState editor = ClientEditorState.get();
         QuestBookDefinition book = displaySnapshot().book();
-        ResourceLocation id = ResourceLocation.tryParse(structureIdField.getValue());
-        if (id == null || structureTitleField.getValue().isBlank()) return;
-        String title = structureTitleField.getValue();
+        ResourceLocation id = ResourceLocation.tryParse(structureFields.field("id").getValue());
+        if (id == null || structureFields.field("title").getValue().isBlank()) return;
+        String title = structureFields.field("title").getValue();
         switch (structureFormKind) {
             case ADD_GROUP -> sendMutation("ADD_GROUP", id, null, null, title,
                     book.chapterGroups().size(), 0, 0, List.of());
@@ -2324,7 +2054,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         structureFormTarget = null;
         structureFormParent = null;
         setFocused(null);
-        for (EditorTextField field : List.of(structureIdField, structureTitleField)) {
+        for (EditorTextField field : List.of(structureFields.field("id"), structureFields.field("title"))) {
             if (field == null) continue;
             field.hide();
         }
@@ -2517,50 +2247,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderEditorCatalog(GuiGraphics graphics, int mouseX, int mouseY) {
         List<ClientEditorState.CatalogEntry> entries = editorCatalogEntries();
         UiRect bounds = editorCatalogBounds();
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xF0202632);
-        int searchBottom = bounds.top() + EDITOR_CATALOG_SEARCH_HEIGHT;
-        graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2, searchBottom, 0xFF151A22);
+        catalogPicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
+                entries.size(), entries::get, currentMotionFrameSeconds, scrollSmoothSpeed());
         Component searchText = catalogFilter.isBlank()
                 ? Component.translatable("screen.brnquest.editor.catalog.search_hint")
                 : Component.literal("⌕ " + catalogFilter);
-        graphics.drawString(font, searchText, bounds.left() + 6, bounds.top() + 6,
-                catalogFilter.isBlank() ? 0xFF7F8B99 : 0xFFFFFFFF, false);
-        if (entries.isEmpty()) {
-            Component empty = Component.translatable(catalogFilter.isBlank()
-                    ? "screen.brnquest.editor.catalog.current_missing" : "screen.brnquest.editor.catalog.no_match");
-            graphics.drawCenteredString(font, empty, bounds.centerX(), searchBottom + 7, 0xFF9AA6B5);
-            return;
-        }
-        int visibleRows = editorCatalogVisibleRows();
-        int rowsTop = searchBottom + 2;
-        int rowsBottom = rowsTop + visibleRows * EDITOR_CATALOG_ROW_HEIGHT;
-        catalogScroll.frameAndRender(graphics, bounds.right() - 4, rowsTop, rowsBottom,
-                entries.size() * EDITOR_CATALOG_ROW_HEIGHT, visibleRows * EDITOR_CATALOG_ROW_HEIGHT,
-                currentMotionFrameSeconds, scrollSmoothSpeed());
-        int firstIndex = catalogScroll.firstIndex(EDITOR_CATALOG_ROW_HEIGHT);
-        int rowOffset = catalogScroll.rowOffset(EDITOR_CATALOG_ROW_HEIGHT);
-        graphics.enableScissor(bounds.left(), rowsTop, bounds.right(), rowsBottom);
-        for (int row = 0; row <= visibleRows && row + firstIndex < entries.size(); row++) {
-            ClientEditorState.CatalogEntry entry = entries.get(row + firstIndex);
-            int top = rowsTop + rowOffset + row * EDITOR_CATALOG_ROW_HEIGHT;
-            boolean selected = entry.bookId().equals(ClientEditorState.get().bookId());
-            boolean hovered = mouseX >= bounds.left() + 2 && mouseX <= bounds.right() - 6
-                    && mouseY >= top && mouseY < top + EDITOR_CATALOG_ROW_HEIGHT;
-            graphics.fill(bounds.left() + 2, top, bounds.right() - 6, top + EDITOR_CATALOG_ROW_HEIGHT,
-                    selected ? 0xFF385A72 : hovered ? 0xE0343D49 : 0xA02A323E);
-            String title = entry.title().isBlank() ? entry.bookId().toString() : entry.title();
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(title, bounds.width() - 12)),
-                    bounds.left() + 6, top + 4, 0xFFFFFFFF, false);
-            String fullId = entry.bookId().toString();
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(fullId, bounds.width() - 12)),
-                    bounds.left() + 6, top + 16, 0xFF9FB0C2, false);
-            if (hovered) {
-                hoveredComponentTooltip = List.of(Component.literal(title), Component.literal(fullId),
-                        Component.translatable("screen.brnquest.editor.catalog.origin." +
-                                entry.origin().name().toLowerCase(java.util.Locale.ROOT)));
-            }
-        }
-        graphics.disableScissor();
+        Component empty = Component.translatable(catalogFilter.isBlank()
+                ? "screen.brnquest.editor.catalog.current_missing" : "screen.brnquest.editor.catalog.no_match");
+        List<Component> tooltip = catalogPicker.render(graphics, font, searchText, catalogFilter.isBlank(), entry -> {
+            Component title = Component.literal(entry.title().isBlank() ? entry.bookId().toString() : entry.title());
+            Component id = Component.literal(entry.bookId().toString());
+            return new EditorPickerList.Entry(title, id, EditorPickerList.Tone.NORMAL,
+                    entry.bookId().equals(ClientEditorState.get().bookId()), List.of(title, id,
+                    Component.translatable("screen.brnquest.editor.catalog.origin." +
+                            entry.origin().name().toLowerCase(java.util.Locale.ROOT))));
+        }, empty, mouseX, mouseY);
+        if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
     }
 
     private boolean handleEditorChromeClick(double mouseX, double mouseY, int button,
@@ -2570,19 +2272,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
             UiRect catalogBounds = editorCatalogBounds();
             if (catalogBounds.contains(mouseX, mouseY)) {
-                int rowsTop = catalogBounds.top() + EDITOR_CATALOG_SEARCH_HEIGHT + 2;
-                if (mouseY < rowsTop) return true;
-                int viewportHeight = editorCatalogVisibleRows() * EDITOR_CATALOG_ROW_HEIGHT;
-                if (catalogScroll.handleTrackClick(mouseX, mouseY, catalogBounds.right() - 4,
-                        rowsTop, rowsTop + viewportHeight,
-                        editorCatalogEntries().size() * EDITOR_CATALOG_ROW_HEIGHT, viewportHeight)) return true;
-                // Hit testing consumes the exact filtered list that was rendered above.
-                List<ClientEditorState.CatalogEntry> entries = editorCatalogEntries();
-                int index = catalogScroll.rowAt(mouseY, rowsTop,
-                        rowsTop + editorCatalogVisibleRows() * EDITOR_CATALOG_ROW_HEIGHT,
-                        EDITOR_CATALOG_ROW_HEIGHT, entries.size());
-                if (index >= 0) {
-                    ResourceLocation target = entries.get(index).bookId();
+                if (catalogPicker.mouseClicked(mouseX, mouseY, button)) return true;
+                var chosen = catalogPicker.entryAt(mouseX, mouseY);
+                if (chosen.isPresent()) {
+                    ResourceLocation target = chosen.orElseThrow().bookId();
+                    if (editorCatalogEntries().stream().noneMatch(entry -> entry.bookId().equals(target))) return true;
                     editorOverlays.close();
                     catalogFilter = "";
                     if (editor.hasLease()) {
@@ -2606,7 +2300,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (opening) {
                 editorOverlays.show(EditorOverlayHost.Kind.CATALOG);
                 catalogFilter = "";
-                catalogScroll.snap(0);
+                catalogPicker.reset();
             }
             return true;
         }
@@ -2695,132 +2389,115 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderTypedEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
         if (typedPropertyOpen) {
+            typedEntries.actions().clear();
+            typedListSnapshot = null;
             renderTypedPropertyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
-        typedEditorHitboxes.clear();
-        int left = detailLeft() + 10;
-        int right = width - 10;
-        graphics.fill(detailLeft() + 4, topToolbarHeight() + 4, width - 4,
-                height - bottomToolbarHeight() - 4, 0xFF202632);
-        graphics.drawString(font, Component.translatable(typedEditorKind.headingKey()),
-                left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
-        int count = typedEditorKind.size(quest);
-        EditorListViewport viewport = typedEditorViewport();
-        int listTop = viewport.top();
-        int listBottom = viewport.bottom();
-        typedEditorScroll.frameAndRender(graphics, width - 8, listTop, listBottom,
-                count * TYPED_ROW_HEIGHT, viewport.height(),
-                currentMotionFrameSeconds, scrollSmoothSpeed());
-        int firstIndex = typedEditorScroll.firstIndex(TYPED_ROW_HEIGHT);
-        int rowOffset = typedEditorScroll.rowOffset(TYPED_ROW_HEIGHT);
-        graphics.enableScissor(detailLeft() + 4 + detailsDrawerOffsetX(), listTop,
-                Math.min(width, width - 4 + detailsDrawerOffsetX()), listBottom);
-        if (count == 0) {
-            graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.typed.empty"),
-                    (left + right) / 2, listTop + 8, 0xFF9AA6B5);
-        }
-        int rowsToRender = (viewport.height() + TYPED_ROW_HEIGHT - 1) / TYPED_ROW_HEIGHT + 1;
-        for (int row = 0; row < rowsToRender && firstIndex + row < count; row++) {
-            int index = firstIndex + row;
-            TypedValue value = typedEditorKind.value(quest, index);
-            int top = listTop + rowOffset + row * TYPED_ROW_HEIGHT;
-            UiRect rowBounds = new UiRect(left, top, right, top + TYPED_ROW_HEIGHT - 2);
-            if (!viewport.intersects(rowBounds)) continue;
-            int actionWidth = 18;
-            UiRect more = new UiRect(right - actionWidth, top + 9, right, top + 27);
-            UiRect edit = new UiRect(more.left() - actionWidth - 2, top + 9, more.left() - 2, top + 27);
-            graphics.fill(rowBounds.left(), rowBounds.top(), rowBounds.right(), rowBounds.bottom(), 0xA02A323E);
-            TypedRowPresentation rowPresentation = typedRowPresentation(quest, index);
-            if (!rowPresentation.stack().isEmpty()) {
-                graphics.renderItem(rowPresentation.stack(), rowBounds.left() + 4, top + 10);
-                if (registerRecipeLookupTarget(rowPresentation.stack(),
-                        new UiRect(rowBounds.left() + 4, top + 10, rowBounds.left() + 20, top + 26),
-                        new UiRect(rowBounds.left(), viewport.top(), rowBounds.right(), viewport.bottom()),
-                        mouseX, mouseY)) {
-                    hoveredDetailStack = rowPresentation.stack();
-                }
-            } else {
-                graphics.drawCenteredString(font, rowPresentation.symbol(), rowBounds.left() + 12, top + 14,
-                        0xFFFFFFFF);
+        int offset = detailsDrawerOffsetX();
+        // The parent draws the drawer with a translated pose. Composable elements use screen-space
+        // rectangles instead: undo that pose once, translate their bounds once, and share with input.
+        graphics.pose().pushPose();
+        graphics.pose().translate(-offset, 0, 0);
+        try {
+            int left = detailLeft() + 10 + offset;
+            int right = width - 10 + offset;
+            graphics.fill(detailLeft() + 4 + offset, topToolbarHeight() + 4, width - 4 + offset,
+                    height - bottomToolbarHeight() - 4, 0xFF202632);
+            graphics.drawString(font, Component.translatable(typedEditorKind.headingKey()),
+                    left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
+            EditorListViewport vertical = typedEditorViewport();
+            UiRect bounds = new UiRect(left, vertical.top(), right, vertical.bottom());
+            UiRect screenClip = new UiRect(canvasRight(), topToolbarHeight(), width, height - bottomToolbarHeight());
+            typedListSnapshot = displaySnapshot();
+            List<EditorActionGroup.Placed<TypedActionKey>> actions = new ArrayList<>();
+            boolean enabled = !ClientEditorState.get().busy();
+            if (typedEditorMessage != null) {
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
+                                typedEditorMessage.getString(), detailsWidth() - 24)),
+                        left, typedEditorAddBounds().top() - 12, 0xFFFFA070, false);
             }
-            int textLeft = rowBounds.left() + 26;
-            int textWidth = Math.max(8, edit.left() - textLeft - 4);
-            boolean known = typedEditorKind.known(value.typeId());
-            drawFittedString(graphics, rowPresentation.typeName(), textLeft, top + 4,
-                    textWidth, 0xFFFFFFFF, 0.75F);
-            Component summary = typedRowSummary(quest, index, known);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), textWidth)),
-                    textLeft, top + 18, known ? 0xFF9FB0C2 : 0xFFFFA070, false);
-            // Scissoring only affects pixels, so suppress button hover outside the same visible viewport.
-            int hoverMouseX = viewport.containsY(mouseY) ? mouseX : Integer.MIN_VALUE;
-            int hoverMouseY = viewport.containsY(mouseY) ? mouseY : Integer.MIN_VALUE;
-            renderEditorIconButton(graphics, edit, Component.literal("✎"),
-                    Component.translatable("screen.brnquest.editor.action.edit"), true, false,
-                    hoverMouseX, hoverMouseY);
-            renderEditorIconButton(graphics, more, Component.literal("⋯"),
-                    Component.translatable("screen.brnquest.editor.action.more"), true, false,
-                    hoverMouseX, hoverMouseY);
-            typedEditorHitboxes.add(new TypedEditorHitbox(value.id(), index, rowBounds, edit, more));
+            Component add = Component.translatable("screen.brnquest.editor.typed.add");
+            actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
+                    new TypedActionKey(null, "add"), EditorButton.Definition.iconAndText(add, add,
+                    EditorIcon.glyph(Component.literal("+"))), enabled, EditorButton.Tone.PRIMARY,
+                    (x, y) -> {
+                        if (!typedListInputReady() || ClientEditorState.get().busy()) return;
+                        typedTypePicker.reset();
+                        typedEditorMessage = null;
+                        editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
+                    }), typedEditorAddBounds().translated(offset, 0), screenClip));
+            actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
+                    new TypedActionKey(null, "done"), EditorButton.Definition.text(Component.translatable("gui.done"), null),
+                    true, EditorButton.Tone.NEUTRAL, (x, y) -> closeTypedEditor()),
+                    typedEditorDoneBounds().translated(offset, 0), screenClip));
+            var hover = typedEntries.render(graphics, font, bounds, screenClip, width - 8 + offset,
+                    TYPED_ROW_HEIGHT, typedEditorKind.size(quest), index -> typedEditorKind.value(quest, index).id(),
+                    currentMotionFrameSeconds, scrollSmoothSpeed(), row -> {
+                        TypedValue value = typedEditorKind.value(quest, row.index());
+                        TypedRowPresentation presentation = typedRowPresentation(quest, row.index());
+                        boolean known = typedEditorKind.known(value.typeId());
+                        EditorIcon icon = presentation.stack().isEmpty()
+                                ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack());
+                        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, presentation.typeName(),
+                                typedRowSummary(quest, row.index(), known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.stack());
+                    }, id -> List.of(typedEntryAction(id, "edit", "✎", enabled),
+                            typedEntryAction(id, "more", "⋯", enabled)), actions,
+                    Component.translatable("screen.brnquest.editor.typed.empty"), mouseX, mouseY);
+            if (hover.item() != null) {
+                hoveredRecipeLookupTarget = hover.item();
+                hoveredDetailStack = hover.item().stack();
+            }
+            if (!hover.tooltip().isEmpty()) hoveredComponentTooltip = hover.tooltip();
+        } finally {
+            graphics.pose().popPose();
         }
-        graphics.disableScissor();
-        if (typedEditorMessage != null) {
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            typedEditorMessage.getString(), detailsWidth() - 24)),
-                    left, typedEditorAddBounds().top() - 12, 0xFFFFA070, false);
-        }
-        Component add = Component.translatable("screen.brnquest.editor.typed.add");
-        renderEditorActionButton(graphics, typedEditorAddBounds(), EditorButton.Definition.iconAndText(
-                        add, add, EditorIcon.glyph(Component.literal("+"))),
-                !ClientEditorState.get().busy(), -1, EditorButton.Tone.PRIMARY, mouseX, mouseY);
-        renderEditorTextButton(graphics, typedEditorDoneBounds(), Component.translatable("gui.done"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    private EditorActionGroup.Action<TypedActionKey> typedEntryAction(ResourceLocation id, String action,
+                                                                     String glyph, boolean enabled) {
+        Component label = Component.translatable("screen.brnquest.editor.action." + action);
+        return new EditorActionGroup.Action<>(new TypedActionKey(id, action),
+                EditorButton.Definition.iconOnly(label, label, EditorIcon.glyph(Component.literal(glyph))),
+                enabled, EditorButton.Tone.PRIMARY, (x, y) -> {
+                    if (!typedListInputReady() || ClientEditorState.get().busy()) return;
+                    QuestDefinition quest = selectedQuest();
+                    if (quest == null || typedEditorKind.entry(quest, id) == null) return;
+                    if ("edit".equals(action)) openTypedPropertyEditor(quest, id);
+                    else openTypedEntryContext(id, x.intValue(), y.intValue());
+                });
     }
 
     private boolean handleTypedEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
         if (typedPropertyOpen) return handleTypedPropertyEditorClick(mouseX, mouseY);
-        EditorListViewport viewport = typedEditorViewport();
-        int typedViewportHeight = viewport.height();
-        QuestDefinition displayedQuest = selectedQuest();
-        int typedCount = displayedQuest == null ? 0 : typedEditorKind.size(displayedQuest);
-        if (button == 0 && typedEditorScroll.handleTrackClick(mouseX, mouseY, width - 8,
-                viewport.top(), viewport.bottom(),
-                typedCount * TYPED_ROW_HEIGHT, typedViewportHeight)) return true;
-        if (button == 0 && typedEditorDoneBounds().contains(mouseX, mouseY)) {
-            closeTypedEditor();
-            return true;
-        }
-        if (button == 0 && typedEditorAddBounds().contains(mouseX, mouseY)) {
-            if (!ClientEditorState.get().busy()) {
-                typedTypePickerScroll.snap(0);
-                typedEditorMessage = null;
-                editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
-            }
-            return true;
-        }
-        // Rows clipped by the list viewport must never retain an invisible interactive area.
-        if (!viewport.containsY(mouseY)) return true;
+        if (!typedListInputReady()) return true;
+        if (typedEntries.list().mouseClicked(mouseX, mouseY, button)) return true;
+        if (typedEntries.actions().mouseClicked(mouseX, mouseY, button)) return true;
         if (ClientEditorState.get().busy()) return true;
-        QuestBookSnapshot snapshot = displaySnapshot();
-        QuestDefinition quest = selectedQuest();
-        if (snapshot == null || quest == null) return true;
-        for (TypedEditorHitbox hitbox : typedEditorHitboxes) {
-            if (button == 0 && hitbox.edit().contains(mouseX, mouseY)) {
-                openTypedPropertyEditor(quest, hitbox.id());
-                return true;
-            }
-            if ((button == 0 && hitbox.more().contains(mouseX, mouseY))
-                    || (button == 1 && hitbox.row().contains(mouseX, mouseY))) {
-                openTypedEntryContext(hitbox, (int) mouseX, (int) mouseY);
-                return true;
-            }
-            if (button == 0 && hitbox.row().contains(mouseX, mouseY)) {
-                openTypedPropertyEditor(quest, hitbox.id());
-                return true;
-            }
-        }
+        typedEntries.list().rowAt(mouseX, mouseY).ifPresent(row -> {
+            QuestDefinition quest = selectedQuest();
+            if (quest == null || typedEditorKind.entry(quest, row.key()) == null) return;
+            if (button == 1) openTypedEntryContext(row.key(), (int) mouseX, (int) mouseY);
+            else openTypedPropertyEditor(quest, row.key());
+        });
         return true;
+    }
+
+    /** Do not dispatch old row callbacks after a network update, mode switch or overlay transition. */
+    private boolean typedListInputReady() {
+        return typedEditorOpen && !typedPropertyOpen && typedListSnapshot != null
+                && ClientEditorState.get().editing()
+                && typedListSnapshot == displaySnapshot()
+                && selectedQuest() != null && selectedQuest().id().equals(typedEditorQuestId)
+                && editorOverlays.active() == EditorOverlayHost.Kind.NONE
+                && detailsOpen && detailsDrawerMotion.current() >= 1.0;
+    }
+
+    private void resetTypedList() {
+        typedEntries.list().reset();
+        typedEntries.actions().clear();
+        typedListSnapshot = null;
     }
 
     private Component typedRowSummary(QuestDefinition quest, int index, boolean known) {
@@ -2871,8 +2548,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyMessage = null;
         typedPropertySubmissionPending = false;
         typedPropertyServerIssues.clear();
-        typedPropertyIdField.setValue(entry.id().toString());
-        typedPropertyClaimPolicyField.setValue(entry.claimPolicy());
+        typedFields.field("id").setValue(entry.id().toString());
+        typedFields.field("claim").setValue(entry.claimPolicy());
         typedPropertySchema = typedEditorKind == TypedKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
                 : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
@@ -2881,77 +2558,58 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // not silently survive a successful canonical save.
         typedPropertyOriginalConfig = typedPropertySchema.rawConfig();
         typedPropertyRawConfig = typedPropertySchema.rawConfig();
-        for (int index = 0; index < typedPropertyConfigFields.size(); index++) {
+        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
             String value = index < typedPropertySchema.fields().size()
                     ? typedPropertySchema.rawConfig().getOrDefault(typedPropertySchema.fields().get(index).key(),
                     typedPropertySchema.fields().get(index).defaultValue().orElse("")) : "";
-            typedPropertyConfigFields.get(index).setValue(value);
+            configFields.field(index).setValue(value);
         }
-        setFocused(typedPropertyIdField);
+        setFocused(typedFields.field("id"));
     }
 
-    private void renderTypedPropertyEditor(GuiGraphics graphics, QuestDefinition quest,
-                                           int mouseX, int mouseY) {
+    private void renderTypedPropertyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
         refreshTypedPropertySubmission();
         if (!typedPropertyOpen) return;
-        int left = detailLeft() + 10;
-        int width = detailsWidth() - 24;
-        graphics.fill(detailLeft() + 4, topToolbarHeight() + 4, this.width - 4,
-                height - bottomToolbarHeight() - 4, 0xFF202632);
-        Map<String, String> localIssues = typedPropertyLocalIssues();
-        Component heading = typedPropertyMessage == null ? firstTypedIssue(localIssues)
-                : typedPropertyMessage;
+        boolean enabled = !ClientEditorState.get().busy();
+        Map<String, String> issues = typedPropertyLocalIssues();
+        Component heading = typedPropertyMessage == null ? firstTypedIssue(issues) : typedPropertyMessage;
         if (heading == null) heading = Component.translatable("screen.brnquest.editor.typed.property.heading");
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(heading.getString(), width)),
-                left, topToolbarHeight() + 7, typedPropertyMessage == null && localIssues.isEmpty()
-                        && typedPropertyServerIssues.isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, false);
-
-        int top = topToolbarHeight() + 20;
-        renderTypedReadOnlyRow(graphics, "screen.brnquest.editor.typed.property.type",
-                typedTypeName(quest, typedPropertyOriginalId), left, top, width);
-        renderTypedTextRow(graphics, typedPropertyIdField, "screen.brnquest.editor.typed.property.id",
-                left, top + 22, width, typedPropertyServerIssues.get("id"));
-
-        typedPropertyConfigFields.forEach(EditorTextField::hide);
-        typedPropertyClaimPolicyField.hide();
-        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
-        int visibleFields = Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS);
-        for (int index = 0; index < visibleFields; index++) {
-            ConfigFieldDescriptor descriptor = fields.get(index);
-            int rowTop = top + 44 + index * 22;
-            renderTypedConfigRow(graphics, descriptor, index, left, rowTop, width,
-                    localIssues.getOrDefault(descriptor.key(), typedPropertyServerIssues.get(descriptor.key())),
-                    mouseX, mouseY);
+        List<EditorPropertyPanel.RowContent> rows = new ArrayList<>();
+        rows.add(EditorPropertyPanel.readOnly(font, "screen.brnquest.editor.typed.property.type",
+                typedTypeName(quest, typedPropertyOriginalId), 68));
+        rows.add(EditorPropertyPanel.text(font, typedFields.field("id"),
+                "screen.brnquest.editor.typed.property.id", 68, typedPropertyServerIssues.get("id"), enabled));
+        configFields.hide();
+        typedFields.field("claim").hide();
+        List<ConfigFieldDescriptor> descriptors = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        for (int index = 0; index < Math.min(descriptors.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
+            ConfigFieldDescriptor descriptor = descriptors.get(index);
+            int fieldIndex = index;
+            rows.add((g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w,
+                    issues.getOrDefault(descriptor.key(), typedPropertyServerIssues.get(descriptor.key())), mouseX, mouseY));
         }
-        int semanticsTop = top + 44 + visibleFields * 22;
         if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
-            if (typedPropertyRawEditable()) {
-                renderTypedRawConfigRow(graphics, left, semanticsTop, width, typedPropertyRawIssue(),
-                        mouseX, mouseY);
-            } else {
-                graphics.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
-                        left, semanticsTop + 5, 0xFFFFA070, false);
-            }
-            semanticsTop += 22;
+            rows.add((g, x, y, w) -> {
+                if (typedPropertyRawEditable()) renderTypedRawConfigRow(g, x, y, w, typedPropertyRawIssue(), mouseX, mouseY);
+                else g.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
+                        x, y + 5, 0xFFFFA070, false);
+            });
         }
         if (typedEditorKind == TypedKind.TASK) {
-            renderTypedToggleRow(graphics, "screen.brnquest.editor.typed.property.optional",
-                    typedPropertyOptional, left, semanticsTop, width, mouseX, mouseY);
+            rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.optional",
+                    typedPropertyOptional, x, y, w, mouseX, mouseY));
         } else {
-            renderTypedTextRow(graphics, typedPropertyClaimPolicyField,
-                    "screen.brnquest.editor.typed.property.claim_policy", left, semanticsTop, width,
-                    typedPropertyServerIssues.get("claim_policy"));
-            renderTypedToggleRow(graphics, "screen.brnquest.editor.typed.property.team_reward",
-                    typedPropertyTeamReward, left, semanticsTop + 22, width, mouseX, mouseY);
+            rows.add(EditorPropertyPanel.text(font, typedFields.field("claim"),
+                    "screen.brnquest.editor.typed.property.claim_policy", 68,
+                    typedPropertyServerIssues.get("claim_policy"), enabled));
+            rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.team_reward",
+                    typedPropertyTeamReward, x, y, w, mouseX, mouseY));
         }
-
-        renderEditorTextButton(graphics, typedPropertyCancelBounds(), Component.translatable("gui.cancel"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        Component done = Component.translatable(typedPropertyRenameArmed
-                ? "screen.brnquest.editor.typed.property.confirm_rename" : "gui.done");
-        renderEditorTextButton(graphics, typedPropertyDoneBounds(), done, null,
-                !ClientEditorState.get().busy(), typedPropertyRenameArmed
-                        ? EditorButton.Tone.WARNING : EditorButton.Tone.PRIMARY, mouseX, mouseY);
+        renderPropertyPanel(graphics, heading, typedPropertyMessage == null && issues.isEmpty()
+                        && typedPropertyServerIssues.isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, rows,
+                Component.translatable(typedPropertyRenameArmed
+                        ? "screen.brnquest.editor.typed.property.confirm_rename" : "gui.done"),
+                typedPropertyRenameArmed ? EditorButton.Tone.WARNING : EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
     private Component typedTypeName(QuestDefinition quest, ResourceLocation typedId) {
@@ -2962,31 +2620,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : ClientRewardPresentationRegistry.get(entry.typeId()).typeName(ApiViews.reward(entry.reward()));
     }
 
-    private void renderTypedReadOnlyRow(GuiGraphics graphics, String labelKey, Component value,
-                                        int left, int top, int width) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
-        drawTypedLabel(graphics, labelKey, row.label());
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(value.getString(), row.field().width())),
-                row.field().left(), row.field().top() + 5, 0xFFFFFFFF, false);
-    }
-
-    private void renderTypedTextRow(GuiGraphics graphics, EditorTextField field, String labelKey,
-                                    int left, int top, int width) {
-        renderTypedTextRow(graphics, field, labelKey, left, top, width, null);
-    }
-
-    private void renderTypedTextRow(GuiGraphics graphics, EditorTextField field, String labelKey,
-                                    int left, int top, int width, String issue) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
-        drawTypedLabel(graphics, labelKey, row.label(), issue);
-        field.show(row.field(), !ClientEditorState.get().busy());
-    }
-
     private void renderTypedConfigRow(GuiGraphics graphics, ConfigFieldDescriptor descriptor, int index,
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, typedConfigLabel(descriptor.key()), row.label(), issue);
-        EditorTextField field = typedPropertyConfigFields.get(index);
+        EditorTextField field = configFields.field(index);
         if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
@@ -3047,11 +2685,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void drawTypedLabel(GuiGraphics graphics, String labelKey, UiRect bounds, String issue) {
-        String prefix = issue == null || issue.isBlank() ? "" : "! ";
-        String label = font.plainSubstrByWidth(prefix + Component.translatable(labelKey).getString(),
-                bounds.width() - 4);
-        graphics.drawString(font, Component.literal(label), bounds.left(), bounds.top() + 5,
-                prefix.isEmpty() ? 0xFF9FB0C2 : 0xFFFF7070, false);
+        EditorPropertyRow.label(graphics, font, Component.translatable(labelKey), bounds, issue);
     }
 
     private String typedConfigLabel(String key) {
@@ -3080,7 +2714,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             ConfigFieldDescriptor descriptor = fields.get(index);
             UiRect bounds = typedPropertyConfigBounds(index);
             if (!bounds.contains(mouseX, mouseY)) continue;
-            EditorTextField field = typedPropertyConfigFields.get(index);
+            EditorTextField field = configFields.field(index);
             if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
                 field.setValue(Boolean.toString(!booleanValue(field.getValue())));
                 return true;
@@ -3123,21 +2757,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openTypedPropertyItemSelector(int fieldIndex) {
         if (minecraft == null) return;
         openEditorItemSelector(stack -> {
-            if (minecraft.level == null || fieldIndex >= typedPropertyConfigFields.size()) return;
-            typedPropertyConfigFields.get(fieldIndex).setValue(
+            if (minecraft.level == null || fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
+            configFields.field(fieldIndex).setValue(
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
             itemCache.remove(typedPropertyOriginalId);
         });
     }
 
     private void openTypedPropertyMatcherEditor(int fieldIndex) {
-        if (fieldIndex >= typedPropertyConfigFields.size()) return;
+        if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
         ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
-                typedPropertyConfigFields.get(fieldIndex).getValue()).result().orElse(null);
+                configFields.field(fieldIndex).getValue()).result().orElse(null);
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (initial != null && requiredIndex >= 0) {
             try {
-                int required = Integer.parseInt(typedPropertyConfigFields.get(requiredIndex).getValue());
+                int required = Integer.parseInt(configFields.field(requiredIndex).getValue());
                 initial = initial.withRequiredEntries(required);
             } catch (IllegalArgumentException ignored) {
                 // The target-level field keeps its own inline validation; child editing still opens.
@@ -3151,11 +2785,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
-        if (fieldIndex >= typedPropertyConfigFields.size()) return;
-        typedPropertyConfigFields.get(fieldIndex).setValue(spec.encode());
+        if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
+        configFields.field(fieldIndex).setValue(spec.encode());
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (requiredIndex >= 0) {
-            typedPropertyConfigFields.get(requiredIndex).setValue(Integer.toString(spec.requiredEntries()));
+            configFields.field(requiredIndex).setValue(Integer.toString(spec.requiredEntries()));
         }
         itemCache.remove(typedPropertyOriginalId);
         typedPropertyMessage = null;
@@ -3171,7 +2805,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
         if (minecraft == null) return;
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
     }
 
@@ -3198,7 +2832,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openAdminProgress(ResourceLocation questId, ResourceLocation taskId) {
         if (!canManageProgress(questId, taskId)) return;
         var active = ClientQuestState.get().book().orElseThrow();
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
                 questId.toString(), taskId == null ? "" : taskId.toString()));
     }
@@ -3212,7 +2846,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                          : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_QUEST)
                 : (reset ? yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_TASK
                          : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_TASK);
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
                 questId.toString(), taskId == null ? "" : taskId.toString(), action));
     }
@@ -3225,14 +2859,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openItemChoiceScreen(ItemChoiceMatcher.Spec initial, boolean editing,
                                       java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
         if (minecraft == null) return;
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
     }
 
     private void openGameplayItemChoiceScreen(QuestDefinition quest, TaskDefinition task,
                                               ItemChoiceMatcher.Spec spec) {
         if (minecraft == null) return;
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         boolean selectable = gameplayAllowed() && needsManualItemSelection(task, spec)
                 && ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) < 1;
         if (!selectable) {
@@ -3260,7 +2894,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void openTypedPropertyRawEditor() {
         if (minecraft == null || !typedPropertyRawEditable()) return;
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertyRawConfig, config -> {
             typedPropertyRawConfig = Map.copyOf(config);
             // A corrected local value supersedes old field diagnostics; the server will return
@@ -3271,7 +2905,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void prepareTypedPropertyEdit() {
-        ResourceLocation replacementId = ResourceLocation.tryParse(typedPropertyIdField.getValue().strip());
+        ResourceLocation replacementId = ResourceLocation.tryParse(typedFields.field("id").getValue().strip());
         if (replacementId == null) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.invalid_id");
             return;
@@ -3289,16 +2923,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
             return;
         }
-        if (typedEditorKind == TypedKind.REWARD && typedPropertyClaimPolicyField.getValue().isBlank()) {
+        if (typedEditorKind == TypedKind.REWARD && typedFields.field("claim").getValue().isBlank()) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.claim_required");
             typedPropertyServerIssues.put("claim_policy", typedPropertyMessage.getString());
-            setFocused(typedPropertyClaimPolicyField);
+            setFocused(typedFields.field("claim"));
             return;
         }
         typedPropertyServerIssues.clear();
         if (!sendMutation("UPDATE_" + typedEditorKind.actionPrefix(), replacementId, typedEditorQuestId,
                 typedPropertyOriginalId, typedEditorKind == TypedKind.REWARD
-                        ? typedPropertyClaimPolicyField.getValue().strip() : "",
+                        ? typedFields.field("claim").getValue().strip() : "",
                 typedEditorKind == TypedKind.TASK ? (typedPropertyOptional ? 1 : 0)
                         : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config)) return;
         typedPropertySubmissionPending = true;
@@ -3319,9 +2953,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertySubmissionPending = false;
         typedPropertyServerIssues.clear();
         setFocused(null);
-        if (typedPropertyIdField != null) typedPropertyIdField.hide();
-        if (typedPropertyClaimPolicyField != null) typedPropertyClaimPolicyField.hide();
-        typedPropertyConfigFields.forEach(EditorTextField::hide);
+        if (typedFields.field("id") != null) typedFields.field("id").hide();
+        if (typedFields.field("claim") != null) typedFields.field("claim").hide();
+        configFields.hide();
     }
 
     private int typedPropertySemanticsTop() {
@@ -3356,7 +2990,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             String key = fields.get(index).key();
-            String value = typedPropertyConfigFields.get(index).getValue().strip();
+            String value = configFields.field(index).getValue().strip();
             if (value.isEmpty()) config.remove(key); else config.put(key, value);
         }
         return config;
@@ -3413,7 +3047,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             if (fields.get(index).key().equals(fieldKey)) {
                 if (fields.get(index).valueType() != ConfigValueType.ITEM_STACK) {
-                    setFocused(typedPropertyConfigFields.get(index));
+                    setFocused(configFields.field(index));
                 }
                 return;
             }
@@ -3441,8 +3075,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (!typedPropertyServerIssues.isEmpty()) {
             String fieldKey = typedPropertyServerIssues.keySet().iterator().next();
-            if ("id".equals(fieldKey)) setFocused(typedPropertyIdField);
-            else if ("claim_policy".equals(fieldKey)) setFocused(typedPropertyClaimPolicyField);
+            if ("id".equals(fieldKey)) setFocused(typedFields.field("id"));
+            else if ("claim_policy".equals(fieldKey)) setFocused(typedFields.field("claim"));
             else focusTypedConfigField(fieldKey);
         }
     }
@@ -3454,7 +3088,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedEditorOpen = true;
         typedEditorKind = kind;
         typedEditorQuestId = quest.id();
-        typedEditorScroll.snap(0);
+        resetTypedList();
         typedEditorMessage = null;
     }
 
@@ -3462,7 +3096,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         closeTypedPropertyEditor();
         typedEditorOpen = false;
         typedEditorQuestId = null;
-        typedEditorScroll.snap(0);
+        resetTypedList();
         typedEditorMessage = null;
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) closeActiveEditorOverlay();
     }
@@ -3470,21 +3104,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderTypedTypePicker(GuiGraphics graphics, int mouseX, int mouseY) {
         List<ResourceLocation> candidates = typedTypeCandidates();
         UiRect bounds = typedTypePickerBounds();
-        List<EditorPickerList.Entry> entries = candidates.stream().map(type -> new EditorPickerList.Entry(
-                Component.literal(type.toString()), Component.translatable(typedEditorKind.addable(type)
-                        ? typedEditorKind.choiceBacked(type)
-                                ? "screen.brnquest.editor.typed.click_to_select_candidates"
-                                : typedEditorKind.itemBacked(type)
-                                ? "screen.brnquest.editor.typed.click_to_select_item"
-                                : "screen.brnquest.editor.typed.click_to_add"
-                        : "screen.brnquest.editor.typed.requires_config"),
-                typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING)).toList();
-        EditorPickerList.render(graphics, font, bounds,
-                Component.translatable("screen.brnquest.editor.typed.type_heading"), false, entries,
-                typedTypePickerScroll, currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
+        typedTypePicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
+                candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
+        typedTypePicker.render(graphics, font, Component.translatable("screen.brnquest.editor.typed.type_heading"),
+                false, type -> new EditorPickerList.Entry(Component.literal(type.toString()),
+                        Component.translatable(typedEditorKind.addable(type)
+                                ? typedEditorKind.choiceBacked(type) ? "screen.brnquest.editor.typed.click_to_select_candidates"
+                                : typedEditorKind.itemBacked(type) ? "screen.brnquest.editor.typed.click_to_select_item"
+                                : "screen.brnquest.editor.typed.click_to_add" : "screen.brnquest.editor.typed.requires_config"),
+                        typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING),
+                null, mouseX, mouseY);
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
-                Component.translatable("screen.brnquest.editor.action.close"),
-                true, false, mouseX, mouseY);
+                Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);
     }
 
     private boolean handleTypedTypePickerClick(double mouseX, double mouseY, int button) {
@@ -3496,17 +3127,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             closeActiveEditorOverlay();
             return true;
         }
-        List<ResourceLocation> candidates = typedTypeCandidates();
-        UiRect pickerBounds = typedTypePickerBounds();
-        int pickerRowsTop = pickerBounds.top() + EditorPickerList.SEARCH_HEIGHT + 2;
-        int pickerViewportHeight = EditorPickerList.visibleRows(pickerBounds) * EditorPickerList.ROW_HEIGHT;
-        if (typedTypePickerScroll.handleTrackClick(mouseX, mouseY, pickerBounds.right() - 4,
-                pickerRowsTop, pickerRowsTop + pickerViewportHeight,
-                candidates.size() * EditorPickerList.ROW_HEIGHT, pickerViewportHeight)) return true;
-        int index = EditorPickerList.entryAt(typedTypePickerBounds(), typedTypePickerScroll,
-                candidates.size(), mouseX, mouseY);
-        if (index < 0) return true;
-        ResourceLocation typeId = candidates.get(index);
+        if (typedTypePicker.mouseClicked(mouseX, mouseY, button)) return true;
+        ResourceLocation typeId = typedTypePicker.entryAt(mouseX, mouseY).orElse(null);
+        if (typeId == null || !typedTypeCandidates().contains(typeId) || ClientEditorState.get().busy()) return true;
         if (!typedEditorKind.addable(typeId)) {
             typedEditorMessage = Component.translatable("screen.brnquest.editor.typed.requires_config");
             closeActiveEditorOverlay();
@@ -3539,7 +3162,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Opens a real child Screen so JEI initializes ghost dragging before the first interaction. */
     private void openEditorItemSelector(java.util.function.Consumer<ItemStack> selectionConsumer) {
         if (minecraft == null) return;
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
         minecraft.setScreen(new EditorItemSelectorScreen(this, selectionConsumer));
     }
 
@@ -3603,7 +3226,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int desiredHeight = EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT * 6 + 4;
         int maximumHeight = Math.max(EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT + 4,
                 height - topToolbarHeight() - bottomToolbarHeight() - 16);
-        return layout().centeredDialog(430, 260, 20, Math.min(desiredHeight, maximumHeight));
+        return layout().centeredDialog(430, 260, 20, Math.min(desiredHeight, maximumHeight)).intersection(pickerScreenBounds());
     }
 
     private UiRect typedTypePickerCloseBounds() {
@@ -3612,105 +3235,104 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderDependencyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
-        dependencyHitboxes.clear();
-        int left = detailLeft() + 10;
-        int panelRight = width - 10;
-        graphics.fill(detailLeft() + 4, topToolbarHeight() + 4, width - 4,
-                height - bottomToolbarHeight() - 4, 0xFF202632);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.heading"),
-                left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.direction"),
-                left, topToolbarHeight() + 27, 0xFF9FB0C2, false);
-
-        QuestBookSnapshot snapshot = displaySnapshot();
-        int visibleRows = dependencyVisibleRows();
-        int listTop = dependencyListTop();
-        int listBottom = listTop + visibleRows * DEPENDENCY_ROW_HEIGHT;
-        dependencyScroll.frameAndRender(graphics, width - 8, listTop, listBottom,
-                quest.dependencies().size() * DEPENDENCY_ROW_HEIGHT,
-                visibleRows * DEPENDENCY_ROW_HEIGHT, currentMotionFrameSeconds, scrollSmoothSpeed());
-        int firstIndex = dependencyScroll.firstIndex(DEPENDENCY_ROW_HEIGHT);
-        int rowOffset = dependencyScroll.rowOffset(DEPENDENCY_ROW_HEIGHT);
-        graphics.enableScissor(detailLeft() + 4 + detailsDrawerOffsetX(), listTop,
-                Math.min(width, width - 4 + detailsDrawerOffsetX()), listBottom);
-        if (quest.dependencies().isEmpty()) {
-            graphics.drawCenteredString(font,
-                    Component.translatable("screen.brnquest.editor.dependency.empty"),
-                    (left + panelRight) / 2, listTop + 8, 0xFF9AA6B5);
-        }
-        for (int row = 0; row <= visibleRows && firstIndex + row < quest.dependencies().size(); row++) {
-            ResourceLocation dependencyId = quest.dependencies().get(firstIndex + row);
-            QuestDefinition dependency = snapshot == null ? null : snapshot.quests().get(dependencyId);
-            int top = listTop + rowOffset + row * DEPENDENCY_ROW_HEIGHT;
-            UiRect rowBounds = new UiRect(left, top, panelRight, top + DEPENDENCY_ROW_HEIGHT - 2);
-            UiRect remove = new UiRect(panelRight - 20, top + 5, panelRight - 2, top + 23);
-            graphics.fill(rowBounds.left(), rowBounds.top(), rowBounds.right(), rowBounds.bottom(), 0xA02A323E);
-            String dependencyTitle = dependency == null ? dependencyId.toString() : questTitle(dependency);
-            String direction = Component.translatable("screen.brnquest.editor.dependency.edge",
-                    dependencyTitle, questTitle(quest)).getString();
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(direction, rowBounds.width() - 30)),
-                    rowBounds.left() + 5, top + 4, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, false);
-            Component secondary = dependency == null
-                    ? Component.translatable("screen.brnquest.editor.dependency.missing")
-                    : Component.literal(chapterTitle(snapshot.book(), dependency.chapterId()));
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            secondary.getString(), rowBounds.width() - 30)),
-                    rowBounds.left() + 5, top + 16, dependency == null ? 0xFFFFA070 : 0xFF9FB0C2, false);
-            renderEditorIconButton(graphics, remove, Component.literal("×"),
-                    Component.translatable("screen.brnquest.editor.dependency.remove"),
-                    !ClientEditorState.get().busy(), true, mouseX, mouseY);
-            dependencyHitboxes.add(new DependencyHitbox(rowBounds, remove, dependencyId));
-            if (rowBounds.contains(mouseX, mouseY) && !remove.contains(mouseX, mouseY)) {
-                hoveredComponentTooltip = List.of(Component.translatable(
-                        "screen.brnquest.editor.dependency.more_hint"));
+        int offset = detailsDrawerOffsetX();
+        graphics.pose().pushPose();
+        graphics.pose().translate(-offset, 0, 0);
+        try {
+            int left = detailLeft() + 10 + offset, right = width - 10 + offset;
+            graphics.fill(detailLeft() + 4 + offset, topToolbarHeight() + 4, width - 4 + offset,
+                    height - bottomToolbarHeight() - 4, 0xFF202632);
+            graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.heading"),
+                    left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
+            graphics.drawString(font, Component.translatable("screen.brnquest.editor.dependency.direction"),
+                    left, topToolbarHeight() + 27, 0xFF9FB0C2, false);
+            QuestBookSnapshot snapshot = displaySnapshot();
+            dependencyListSnapshot = snapshot;
+            UiRect viewport = dependencyListBounds().translated(offset, 0);
+            UiRect clip = new UiRect(canvasRight(), topToolbarHeight(), width, height - bottomToolbarHeight());
+            dependencyList.advance(viewport, clip, width - 8 + offset, DEPENDENCY_ROW_HEIGHT, 2,
+                    quest.dependencies().size(), quest.dependencies()::get, currentMotionFrameSeconds, scrollSmoothSpeed());
+            List<EditorActionGroup.Placed<ResourceLocation>> actions = new ArrayList<>();
+            dependencyList.render(graphics, row -> {
+                QuestDefinition dependency = snapshot == null ? null : snapshot.quests().get(row.key());
+                UiRect rect = row.bounds();
+                UiRect remove = new UiRect(rect.right() - 20, rect.top() + 5, rect.right() - 2, rect.top() + 23);
+                graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), 0xA02A323E);
+                String title = dependency == null ? row.key().toString() : questTitle(dependency);
+                String direction = Component.translatable("screen.brnquest.editor.dependency.edge", title, questTitle(quest)).getString();
+                int textWidth = Math.max(0, rect.width() - 30);
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(direction, textWidth)),
+                        rect.left() + 5, rect.top() + 4, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, false);
+                Component secondary = dependency == null ? Component.translatable("screen.brnquest.editor.dependency.missing")
+                        : Component.literal(chapterTitle(snapshot.book(), dependency.chapterId()));
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(secondary.getString(), textWidth)),
+                        rect.left() + 5, rect.top() + 16, dependency == null ? 0xFFFFA070 : 0xFF9FB0C2, false);
+                Component label = Component.translatable("screen.brnquest.editor.dependency.remove");
+                actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(row.key(),
+                        EditorButton.Definition.iconOnly(label, label, EditorIcon.glyph(Component.literal("×"))),
+                        !ClientEditorState.get().busy(), EditorButton.Tone.DANGER, (x, y) -> {
+                            if (!dependencyListInputReady() || ClientEditorState.get().busy()) return;
+                            if (!selectedQuest().dependencies().contains(row.key())) return;
+                            sendMutation("REMOVE_DEPENDENCY", dependencyEditorQuestId, null,
+                                    row.key(), "", 0, 0, 0, List.of());
+                            dependencyEditorMessage = null;
+                        }), remove, row.visible()));
+                if (row.visible().containsExclusive(mouseX, mouseY) && !row.clip(remove).containsExclusive(mouseX, mouseY)) {
+                    hoveredComponentTooltip = List.of(Component.translatable("screen.brnquest.editor.dependency.more_hint"));
+                }
+            }, () -> graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.dependency.empty"),
+                    (left + right) / 2, viewport.top() + 8, 0xFF9AA6B5));
+            dependencyActions.setActions(actions);
+            List<Component> tooltip = dependencyActions.render(graphics, font, mouseX, mouseY);
+            if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
+            if (dependencyEditorMessage != null) {
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
+                                dependencyEditorMessage.getString(), detailsWidth() - 24)),
+                        left, dependencyAddBounds().top() - 12, 0xFFFFA070, false);
             }
+            Component add = Component.translatable("screen.brnquest.editor.dependency.add");
+            renderEditorActionButton(graphics, dependencyAddBounds().translated(offset, 0),
+                    EditorButton.Definition.iconAndText(add, add, EditorIcon.glyph(Component.literal("+"))),
+                    !ClientEditorState.get().busy(), -1, EditorButton.Tone.PRIMARY, mouseX, mouseY);
+            renderEditorTextButton(graphics, dependencyDoneBounds().translated(offset, 0), Component.translatable("gui.done"),
+                    null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        } finally {
+            graphics.pose().popPose();
         }
-        graphics.disableScissor();
-
-        if (dependencyEditorMessage != null) {
-            String visible = font.plainSubstrByWidth(dependencyEditorMessage.getString(), detailsWidth() - 24);
-            graphics.drawString(font, Component.literal(visible), left, dependencyAddBounds().top() - 12,
-                    0xFFFFA070, false);
-        }
-        Component add = Component.translatable("screen.brnquest.editor.dependency.add");
-        renderEditorActionButton(graphics, dependencyAddBounds(), EditorButton.Definition.iconAndText(
-                        add, add, EditorIcon.glyph(Component.literal("+"))),
-                !ClientEditorState.get().busy(), -1, EditorButton.Tone.PRIMARY, mouseX, mouseY);
-        renderEditorTextButton(graphics, dependencyDoneBounds(), Component.translatable("gui.done"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     private boolean handleDependencyEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
-        int dependencyViewportHeight = dependencyVisibleRows() * DEPENDENCY_ROW_HEIGHT;
-        QuestDefinition displayedQuest = selectedQuest();
-        int dependencyCount = displayedQuest == null ? 0 : displayedQuest.dependencies().size();
-        if (button == 0 && dependencyScroll.handleTrackClick(mouseX, mouseY, width - 8,
-                dependencyListTop(), dependencyListTop() + dependencyViewportHeight,
-                dependencyCount * DEPENDENCY_ROW_HEIGHT, dependencyViewportHeight)) return true;
         if (button == 0 && dependencyDoneBounds().contains(mouseX, mouseY)) {
             closeDependencyEditor();
             return true;
         }
+        if (!dependencyListInputReady()) return true;
+        if (dependencyList.mouseClicked(mouseX, mouseY, button)) return true;
         if (button == 0 && dependencyAddBounds().contains(mouseX, mouseY)) {
             if (!ClientEditorState.get().busy()) openDependencyPicker();
             return true;
         }
-        if (!ClientEditorState.get().busy()) {
-            for (DependencyHitbox hitbox : dependencyHitboxes) {
-                if (button == 0 && hitbox.removeBounds().contains(mouseX, mouseY)) {
-                    sendMutation("REMOVE_DEPENDENCY", dependencyEditorQuestId, null,
-                            hitbox.dependencyId(), "", 0, 0, 0, List.of());
-                    dependencyEditorMessage = null;
-                    return true;
-                }
-                if (button == 1 && hitbox.rowBounds().contains(mouseX, mouseY)) {
-                    openDependencyEntryContext(hitbox, (int) mouseX, (int) mouseY);
-                    return true;
-                }
-            }
+        if (dependencyActions.mouseClicked(mouseX, mouseY, button)) return true;
+        if (button == 1 && !ClientEditorState.get().busy()) {
+            dependencyList.rowAt(mouseX, mouseY).ifPresent(row ->
+                    openDependencyEntryContext(row.key(), (int) mouseX, (int) mouseY));
         }
         return true;
+    }
+
+    private boolean dependencyListInputReady() {
+        return dependencyEditorOpen && dependencyListSnapshot != null && dependencyListSnapshot == displaySnapshot()
+                && ClientEditorState.get().editing() && selectedQuest() != null
+                && selectedQuest().id().equals(dependencyEditorQuestId)
+                && editorOverlays.active() == EditorOverlayHost.Kind.NONE
+                && detailsOpen && detailsDrawerMotion.current() >= 1.0;
+    }
+
+    private void resetDependencyList() {
+        dependencyList.reset();
+        dependencyActions.clear();
+        dependencyListSnapshot = null;
     }
 
     private void openDependencyEditor(QuestDefinition quest) {
@@ -3719,14 +3341,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         closeActiveEditorOverlay();
         dependencyEditorOpen = true;
         dependencyEditorQuestId = quest.id();
-        dependencyScroll.snap(0);
+        resetDependencyList();
         dependencyEditorMessage = null;
     }
 
     private void closeDependencyEditor() {
         dependencyEditorOpen = false;
         dependencyEditorQuestId = null;
-        dependencyScroll.snap(0);
+        resetDependencyList();
         dependencyEditorMessage = null;
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) closeActiveEditorOverlay();
     }
@@ -3741,7 +3363,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (!dependencyEditorOpen || dependencyEditorQuestId == null) return;
         closeActiveEditorOverlay();
         dependencyFilter = "";
-        dependencyPickerScroll.snap(0);
+        dependencyPicker.reset();
         dependencyEditorMessage = null;
         editorOverlays.show(EditorOverlayHost.Kind.DEPENDENCY_PICKER);
     }
@@ -3749,28 +3371,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderDependencyPicker(GuiGraphics graphics, int mouseX, int mouseY) {
         List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
         UiRect bounds = dependencyPickerBounds();
-        List<EditorPickerList.Entry> entries = candidates.stream().map(candidate -> new EditorPickerList.Entry(
-                Component.literal((candidate.createsCycle() ? "⚠ " : "") + candidate.title()),
-                dependencyCandidateSubtitle(candidate),
-                candidate.createsCycle() ? EditorPickerList.Tone.WARNING : EditorPickerList.Tone.NORMAL)).toList();
         Component searchText = dependencyFilter.isBlank()
-                ? Component.translatable("screen.brnquest.editor.dependency.search_hint")
-                : Component.literal("⌕ " + dependencyFilter);
+                ? Component.translatable("screen.brnquest.editor.dependency.search_hint") : Component.literal("⌕ " + dependencyFilter);
         graphics.fill(0, 0, width, height, 0x66000000);
-        EditorPickerList.render(graphics, font, bounds, searchText, dependencyFilter.isBlank(),
-                entries, dependencyPickerScroll, currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
-        if (entries.isEmpty()) {
-            graphics.drawCenteredString(font,
-                    Component.translatable("screen.brnquest.editor.dependency.no_candidates"),
-                    bounds.centerX(), bounds.top() + EditorPickerList.SEARCH_HEIGHT + 10, 0xFF9AA6B5);
-        }
-        int hovered = EditorPickerList.entryAt(bounds, dependencyPickerScroll, entries.size(), mouseX, mouseY);
-        if (hovered >= 0) {
-            QuestDependencyEditorModel.Candidate candidate = candidates.get(hovered);
-            hoveredComponentTooltip = List.of(Component.translatable(candidate.createsCycle()
-                    ? "screen.brnquest.editor.dependency.cycle_warning"
-                    : "screen.brnquest.editor.dependency.click_to_add"));
-        }
+        dependencyPicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
+                candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
+        List<Component> tooltip = dependencyPicker.render(graphics, font, searchText, dependencyFilter.isBlank(),
+                candidate -> new EditorPickerList.Entry(
+                        Component.literal((candidate.createsCycle() ? "⚠ " : "") + candidate.title()),
+                        dependencyCandidateSubtitle(candidate),
+                        candidate.createsCycle() ? EditorPickerList.Tone.WARNING : EditorPickerList.Tone.NORMAL,
+                        false, List.of(Component.translatable(candidate.createsCycle()
+                                ? "screen.brnquest.editor.dependency.cycle_warning" : "screen.brnquest.editor.dependency.click_to_add"))),
+                Component.translatable("screen.brnquest.editor.dependency.no_candidates"), mouseX, mouseY);
+        if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
     }
 
     static Component dependencyCandidateSubtitle(QuestDependencyEditorModel.Candidate candidate) {
@@ -3790,15 +3404,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             closeActiveEditorOverlay();
             return true;
         }
-        List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
-        int rowsTop = bounds.top() + EditorPickerList.SEARCH_HEIGHT + 2;
-        int viewportHeight = EditorPickerList.visibleRows(bounds) * EditorPickerList.ROW_HEIGHT;
-        if (dependencyPickerScroll.handleTrackClick(mouseX, mouseY, bounds.right() - 4,
-                rowsTop, rowsTop + viewportHeight, candidates.size() * EditorPickerList.ROW_HEIGHT,
-                viewportHeight)) return true;
-        int index = EditorPickerList.entryAt(bounds, dependencyPickerScroll, candidates.size(), mouseX, mouseY);
-        if (index < 0) return true;
-        QuestDependencyEditorModel.Candidate candidate = candidates.get(index);
+        if (dependencyPicker.mouseClicked(mouseX, mouseY, button)) return true;
+        var shown = dependencyPicker.entryAt(mouseX, mouseY).orElse(null);
+        if (shown == null) return true;
+        // Recheck current dependencies/cycles by the displayed ID, not by an index into a freshly filtered list.
+        var candidate = dependencyCandidates().stream().filter(value -> value.questId().equals(shown.questId()))
+                .findFirst().orElse(null);
+        if (candidate == null) return true;
         if (candidate.createsCycle()) {
             dependencyEditorMessage = Component.translatable("screen.brnquest.editor.dependency.cycle_warning");
             return true;
@@ -3822,15 +3434,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int maximumHeight = Math.max(EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT + 4,
                 height - topToolbarHeight() - bottomToolbarHeight() - 16);
         int desiredHeight = EditorPickerList.SEARCH_HEIGHT + EditorPickerList.ROW_HEIGHT * 8 + 4;
-        return layout().centeredDialog(480, 300, 20, Math.min(desiredHeight, maximumHeight));
+        return layout().centeredDialog(480, 300, 20, Math.min(desiredHeight, maximumHeight)).intersection(pickerScreenBounds());
     }
 
     private int dependencyListTop() {
         return topToolbarHeight() + 44;
     }
 
-    private int dependencyVisibleRows() {
-        return Math.max(1, (dependencyAddBounds().top() - 16 - dependencyListTop()) / DEPENDENCY_ROW_HEIGHT);
+    private UiRect dependencyListBounds() {
+        // Keep the existing whole-row layout, allowing only a partial row when the window is very short.
+        int maximumBottom = Math.max(topToolbarHeight(), dependencyAddBounds().top() - 16);
+        int top = Math.min(dependencyListTop(), maximumBottom);
+        int available = maximumBottom - top;
+        int listHeight = available >= DEPENDENCY_ROW_HEIGHT ? available / DEPENDENCY_ROW_HEIGHT * DEPENDENCY_ROW_HEIGHT : available;
+        return new UiRect(detailLeft() + 10, top, width - 10, top + listHeight);
     }
 
     private UiRect dependencyAddBounds() {
@@ -3841,15 +3458,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return questDependencyButtonBounds();
     }
 
-    private EditorTextField editorField(String translationKey, int maximumLength) {
-        EditorTextField field = new EditorTextField(font, Component.translatable(translationKey), maximumLength);
-        return addRenderableWidget(field);
-    }
-
-    private EditorTextField reinitializeEditorField(EditorTextField field, String translationKey, int maximumLength) {
-        if (field == null) return editorField(translationKey, maximumLength);
-        field.hide();
-        return addRenderableWidget(field);
+    private static EditorFormFields<Integer> createConfigFields() {
+        EditorFormFields<Integer> fields = new EditorFormFields<>();
+        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
+            fields.define(index, "screen.brnquest.editor.typed.property.config", 65_536);
+        }
+        return fields;
     }
 
     /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
@@ -3864,42 +3478,33 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Uses the middle section of the existing detail drawer as a compact property form. */
     private void renderQuestPropertyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
-        int left = detailLeft() + 10;
-        int fieldWidth = detailsWidth() - 24;
-        int fieldTop = topToolbarHeight() + 20;
-        int pitch = 22;
-        graphics.fill(detailLeft() + 4, topToolbarHeight() + 4, width - 4,
-                height - bottomToolbarHeight() - 4, 0xFF202632);
+        boolean enabled = !ClientEditorState.get().busy();
+        List<EditorPropertyPanel.RowContent> rows = new ArrayList<>();
+        for (String key : List.of("id", "title", "subtitle", "description")) {
+            rows.add(EditorPropertyPanel.text(font, questFields.field(key),
+                    "screen.brnquest.editor.quest." + key, 78, null, enabled));
+        }
+        rows.add((g, x, y, w) -> renderQuestIconEditorField(g, x, y, w, mouseX, mouseY));
+        rows.add(this::renderQuestPositionEditorField);
         Component heading = questEditorMessage == null
                 ? Component.translatable("screen.brnquest.editor.quest.heading") : questEditorMessage;
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(heading.getString(), fieldWidth)),
-                left, topToolbarHeight() + 7, questEditorMessage == null ? 0xFFFFFFFF : 0xFFFF8B8B, false);
-        renderQuestEditorField(graphics, questIdField, "screen.brnquest.editor.quest.id",
-                left, fieldTop, fieldWidth);
-        renderQuestEditorField(graphics, questTitleField, "screen.brnquest.editor.quest.title",
-                left, fieldTop + pitch, fieldWidth);
-        renderQuestEditorField(graphics, questSubtitleField, "screen.brnquest.editor.quest.subtitle",
-                left, fieldTop + pitch * 2, fieldWidth);
-        renderQuestEditorField(graphics, questDescriptionField, "screen.brnquest.editor.quest.description",
-                left, fieldTop + pitch * 3, fieldWidth);
-        renderQuestIconEditorField(graphics,
-                left, fieldTop + pitch * 4, fieldWidth, mouseX, mouseY);
-        renderQuestPositionEditorField(graphics, left, fieldTop + pitch * 5, fieldWidth);
-
-        renderEditorTextButton(graphics, questEditorCancelBounds(), Component.translatable("gui.cancel"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        renderEditorTextButton(graphics, questEditorSaveBounds(), Component.translatable("gui.done"),
-                null, !ClientEditorState.get().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
+        renderPropertyPanel(graphics, heading, questEditorMessage == null ? 0xFFFFFFFF : 0xFFFF8B8B,
+                rows, Component.translatable("gui.done"), EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
-    private void renderQuestEditorField(GuiGraphics graphics, EditorTextField field, String labelKey,
-                                        int left, int top, int width) {
-        int labelWidth = 78;
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, labelWidth);
-        String label = font.plainSubstrByWidth(Component.translatable(labelKey).getString(), row.label().width() - 4);
-        graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
-                0xFF9FB0C2, false);
-        field.show(row.field(), !ClientEditorState.get().busy());
+    /** The same row surface composes basic and descriptor-driven forms without owning their transactions. */
+    private void renderPropertyPanel(GuiGraphics graphics, Component heading, int headingColor,
+                                     List<EditorPropertyPanel.RowContent> rows, Component done,
+                                     EditorButton.Tone tone, int mouseX, int mouseY) {
+        EditorPropertyPanel.Layout form = new EditorPropertyPanel.Layout(
+                new UiRect(detailLeft() + 4, topToolbarHeight() + 4, width - 4,
+                        height - bottomToolbarHeight() - 4), detailLeft() + 10, detailsWidth() - 24,
+                topToolbarHeight() + 7, topToolbarHeight() + 20, 22);
+        EditorPropertyPanel.render(graphics, font, form, heading, headingColor, rows,
+                new EditorPropertyPanel.Footer(questEditorCancelBounds(), questEditorSaveBounds(), done,
+                        !ClientEditorState.get().busy(), tone),
+                (g, bounds, label, enabled, buttonTone) -> renderEditorTextButton(
+                        g, bounds, label, null, enabled, buttonTone, mouseX, mouseY));
     }
 
     /** Shows an ordinary item ID while retaining the native SNBT representation behind the form. */
@@ -3915,8 +3520,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         renderEditorTextButton(graphics, mode, Component.translatable(questEditorIconMode.translationKey),
                 null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         UiRect input = new UiRect(mode.right() + 3, row.field().top(), row.field().right() - 22, row.field().bottom());
-        questIconField.show(input, !ClientEditorState.get().busy());
-        ResourceLocation iconId = ResourceLocation.tryParse(questIconField.getValue().strip());
+        questFields.field("icon").show(input, !ClientEditorState.get().busy());
+        ResourceLocation iconId = ResourceLocation.tryParse(questFields.field("icon").getValue().strip());
         if (questEditorIconMode == IconEditorMode.ITEM
                 && iconId != null && BuiltInRegistries.ITEM.containsKey(iconId)) {
             Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
@@ -3931,13 +3536,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
             renderEditorActionButton(graphics, questIconPickerBounds(), EditorButton.Definition.iconOnly(
                             select, select, EditorIcon.glyph(Component.literal(
-                                    questIconField.getValue().isBlank() ? "+" : "?"))),
+                                    questFields.field("icon").getValue().isBlank() ? "+" : "?"))),
                     !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (questEditorIconMode == IconEditorMode.TEXTURE && iconId != null) {
             graphics.blit(iconId, row.field().right() - 18, row.field().top() + 1,
                     0.0F, 0.0F, 16, 16, 16, 16);
         } else {
-            graphics.drawCenteredString(font, questIconField.getValue().isBlank() ? "−" : "?",
+            graphics.drawCenteredString(font, questFields.field("icon").getValue().isBlank() ? "−" : "?",
                     row.field().right() - 10, row.field().top() + 5, 0xFF9FB0C2);
         }
     }
@@ -3961,9 +3566,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int yInputLeft = yLabelLeft + axisLabelWidth;
         graphics.drawString(font, "X", xLabelLeft + 1, row.field().top() + 5, 0xFF9FB0C2, false);
         graphics.drawString(font, "Y", yLabelLeft + 1, row.field().top() + 5, 0xFF9FB0C2, false);
-        questXField.show(new UiRect(xInputLeft, row.field().top(), xInputLeft + inputWidth, row.field().bottom()),
+        questFields.field("x").show(new UiRect(xInputLeft, row.field().top(), xInputLeft + inputWidth, row.field().bottom()),
                 !ClientEditorState.get().busy());
-        questYField.show(new UiRect(yInputLeft, row.field().top(), row.field().right(), row.field().bottom()),
+        questFields.field("y").show(new UiRect(yInputLeft, row.field().top(), row.field().right(), row.field().bottom()),
                 !ClientEditorState.get().busy());
     }
 
@@ -3973,14 +3578,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(stack.getItem());
             if (itemId == null) return;
             String value = itemId.toString();
-            questIconField.setValue(value);
+            questFields.field("icon").setValue(value);
             questEditorItemIconValue = value;
             questEditorMessage = null;
         });
-    }
-
-    private void positionEditorField(EditorTextField field, int x, int y, int fieldWidth) {
-        field.show(new UiRect(x, y, x + fieldWidth, y + 18), !ClientEditorState.get().busy());
     }
 
     private void openQuestEditor(QuestDefinition quest) {
@@ -3990,10 +3591,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorOpen = true;
         questEditorQuestId = quest.id();
         questEditorMessage = null;
-        questIdField.setValue(quest.id().toString());
-        questTitleField.setValue(quest.title());
-        questSubtitleField.setValue(quest.subtitle());
-        questDescriptionField.setValue(quest.description());
+        questFields.field("id").setValue(quest.id().toString());
+        questFields.field("title").setValue(quest.title());
+        questFields.field("subtitle").setValue(quest.subtitle());
+        questFields.field("description").setValue(quest.description());
         questEditorIconMode = QuestIconValue.isTexture(quest.icon()) ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
         questEditorOriginalIconMode = questEditorIconMode;
         questEditorOriginalIconItemId = questEditorIconMode == IconEditorMode.TEXTURE
@@ -4002,19 +3603,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorItemIconValue = questEditorIconMode == IconEditorMode.ITEM ? questEditorOriginalIconItemId : "";
         questEditorTextureIconValue = questEditorIconMode == IconEditorMode.TEXTURE
                 ? questEditorOriginalIconItemId : "";
-        questIconField.setValue(questEditorOriginalIconItemId);
-        questXField.setValue(Double.toString(quest.x()));
-        questYField.setValue(Double.toString(quest.y()));
-        setFocused(questIdField);
+        questFields.field("icon").setValue(questEditorOriginalIconItemId);
+        questFields.field("x").setValue(Double.toString(quest.x()));
+        questFields.field("y").setValue(Double.toString(quest.y()));
+        setFocused(questFields.field("id"));
     }
 
     private void prepareQuestPropertyEdit() {
-        ResourceLocation replacementId = ResourceLocation.tryParse(questIdField.getValue());
+        ResourceLocation replacementId = ResourceLocation.tryParse(questFields.field("id").getValue());
         if (replacementId == null) {
             questEditorMessage = Component.translatable("screen.brnquest.editor.quest.invalid_id");
             return;
         }
-        String iconItemId = questIconField.getValue().strip();
+        String iconItemId = questFields.field("icon").getValue().strip();
         ResourceLocation parsedIcon = iconItemId.isEmpty() ? null : ResourceLocation.tryParse(iconItemId);
         if (!iconItemId.isEmpty() && (parsedIcon == null || (questEditorIconMode == IconEditorMode.ITEM
                 && !BuiltInRegistries.ITEM.containsKey(parsedIcon)))) {
@@ -4022,8 +3623,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     ? "screen.brnquest.editor.quest.invalid_icon" : "screen.brnquest.editor.quest.invalid_texture");
             return;
         }
-        Double x = parseFiniteCoordinate(questXField);
-        Double y = parseFiniteCoordinate(questYField);
+        Double x = parseFiniteCoordinate(questFields.field("x"));
+        Double y = parseFiniteCoordinate(questFields.field("y"));
         if (x == null || y == null) {
             questEditorMessage = Component.translatable("screen.brnquest.editor.quest.invalid_position");
             return;
@@ -4070,12 +3671,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         itemCache.remove(oldId);
         itemCache.remove(replacementId);
         AuthoringNetwork.updateQuest(editor.sessionId(), editor.bookId(), editor.draftRevision(), questEditorQuestId,
-                replacementId, questTitleField.getValue(), questSubtitleField.getValue(),
-                questDescriptionField.getValue(), questEditorIconMode.name(), questIconField.getValue().strip(),
+                replacementId, questFields.field("title").getValue(), questFields.field("subtitle").getValue(),
+                questFields.field("description").getValue(), questEditorIconMode.name(), questFields.field("icon").getValue().strip(),
                 questEditorIconMode == questEditorOriginalIconMode
-                        && questIconField.getValue().strip().equals(questEditorOriginalIconItemId),
-                Double.parseDouble(questXField.getValue().strip()),
-                Double.parseDouble(questYField.getValue().strip()));
+                        && questFields.field("icon").getValue().strip().equals(questEditorOriginalIconItemId),
+                Double.parseDouble(questFields.field("x").getValue().strip()),
+                Double.parseDouble(questFields.field("y").getValue().strip()));
         editorSelectedQuest = replacementId;
         closeQuestEditingPanels();
         editorOverlays.close();
@@ -4091,8 +3692,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorItemIconValue = "";
         questEditorTextureIconValue = "";
         setFocused(null);
-        for (EditorTextField field : List.of(questIdField, questTitleField, questSubtitleField,
-                questDescriptionField, questIconField, questXField, questYField)) {
+        for (EditorTextField field : List.of(questFields.field("id"), questFields.field("title"), questFields.field("subtitle"),
+                questFields.field("description"), questFields.field("icon"), questFields.field("x"), questFields.field("y"))) {
             if (field == null) continue;
             field.hide();
         }
@@ -4100,21 +3701,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** EditBox widgets render through Screen after custom panels, so apply the drawer translation explicitly. */
     private void offsetDetailsDrawerFieldsForMotion() {
-        int offsetX = detailsDrawerOffsetX();
-        EditorTextField[] fields = {questIdField, questTitleField, questSubtitleField,
-                questDescriptionField, questIconField, questXField, questYField,
-                typedPropertyIdField, typedPropertyClaimPolicyField};
         if (!detailsOpen && !detailsDrawerVisible()) {
-            for (EditorTextField field : fields) {
-                if (field != null) field.hide();
-            }
-            typedPropertyConfigFields.forEach(EditorTextField::hide);
+            questFields.hide();
+            typedFields.hide();
+            configFields.hide();
             return;
         }
-        for (EditorTextField field : fields) {
-            if (field != null) field.offsetForDrawerAnimation(offsetX);
-        }
-        typedPropertyConfigFields.forEach(field -> field.offsetForDrawerAnimation(offsetX));
+        int offset = detailsDrawerOffsetX();
+        questFields.offsetForDrawerAnimation(offset);
+        typedFields.offsetForDrawerAnimation(offset);
+        configFields.offsetForDrawerAnimation(offset);
     }
 
     private static String iconItemId(String iconSnbt) {
@@ -4130,9 +3726,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Retains each mode's in-progress value so comparing item and texture choices is non-destructive. */
     private void rememberCurrentIconInput() {
         if (questEditorIconMode == IconEditorMode.ITEM) {
-            questEditorItemIconValue = questIconField.getValue();
+            questEditorItemIconValue = questFields.field("icon").getValue();
         } else {
-            questEditorTextureIconValue = questIconField.getValue();
+            questEditorTextureIconValue = questFields.field("icon").getValue();
         }
     }
 
@@ -4155,7 +3751,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         if (action == EditorConfirmDialog.Action.CONFIRM) {
-            ResourceLocation replacementId = ResourceLocation.tryParse(questIdField.getValue());
+            ResourceLocation replacementId = ResourceLocation.tryParse(questFields.field("id").getValue());
             if (replacementId != null) submitQuestPropertyEdit(replacementId);
         }
         return true;
@@ -4417,7 +4013,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             editorSelectedQuest = quest.id();
             selectOnly(quest.id());
             openDetailsPanel();
-            detailScroll.snap(0);
+            detailsPanel.scroll().snap(0);
         }
         if (chapter == null) return quest != null;
         List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(book);
@@ -4426,7 +4022,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             chapterIndex = index;
             rememberedChapterId = chapter.id();
             rememberedChapterResolved = true;
-            navigationScroll.snap(0);
+            navigationPanel.scroll().snap(0);
         }
         return true;
     }
@@ -4487,7 +4083,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int left = Math.max(4, title.centerX() - catalogWidth / 2);
         int right = Math.min(width - 4, left + catalogWidth);
         left = Math.max(4, right - catalogWidth);
-        return new UiRect(left, title.bottom() + 2, right, title.bottom() + 2 + height);
+        return new UiRect(left, title.bottom() + 2, right, title.bottom() + 2 + height).intersection(pickerScreenBounds());
+    }
+
+    /** Picker chrome and its list share the same available screen area, including on very short windows. */
+    private UiRect pickerScreenBounds() {
+        return new UiRect(4, topToolbarHeight(), Math.max(4, width - 4),
+                Math.max(topToolbarHeight(), height - bottomToolbarHeight() - 4));
     }
 
     private int editorCatalogVisibleRows() {
@@ -4540,40 +4142,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 .anyMatch(state -> state == TaskDisplayState.READY);
     }
 
-    private Component taskStateText(ClientTaskPresentation presentation, TaskPresentationContext context,
-                                    TaskDisplayState state, boolean locallySatisfied) {
-        return switch (state) {
-            case READY, UNMET -> presentation.progressText(context, locallySatisfied);
-            case PENDING -> Component.translatable("screen.brnquest.task.awaiting_confirmation");
-            case SUBMITTED -> Component.translatable("screen.brnquest.task.submitted");
-            case COMPLETED -> Component.translatable("screen.brnquest.task.completed");
-        };
-    }
-
-    private int taskRowBackground(TaskDisplayState state) {
-        return switch (state) {
-            case READY, PENDING -> 0x665F512D;
-            case SUBMITTED, COMPLETED -> 0x663B6749;
-            case UNMET -> 0x66343D49;
-        };
-    }
-
-    private int taskTitleColor(TaskDisplayState state) {
-        return switch (state) {
-            case READY, PENDING -> 0xFFF2C96D;
-            case SUBMITTED, COMPLETED -> 0xFF8BE2A0;
-            case UNMET -> 0xFFFFFFFF;
-        };
-    }
-
-    private int taskProgressColor(TaskDisplayState state) {
-        return switch (state) {
-            case READY, PENDING -> 0xFFE6B55B;
-            case SUBMITTED, COMPLETED -> 0xFF72D88D;
-            case UNMET -> 0xFFABB7C6;
-        };
-    }
-
     /** Editing adds controls; only isolated drafts or unacknowledged live revisions suppress gameplay. */
     private boolean gameplayAllowed() {
         return ClientEditorState.get().gameplayAllowed(ClientQuestState.get().revision());
@@ -4620,20 +4188,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Renders a 10px authored badge above ItemRenderer's GUI depth. */
     private void renderAttentionPing(GuiGraphics graphics, ResourceLocation texture, int x, int y) {
-        graphics.pose().pushPose();
-        graphics.pose().translate(0, 0, 300);
-        graphics.blit(texture, x, y + attentionPingOffsetY, 0.0F, 0.0F,
-                ATTENTION_PING_SIZE, ATTENTION_PING_SIZE, ATTENTION_PING_SIZE, ATTENTION_PING_SIZE);
-        graphics.pose().popPose();
+        QuestDetailRows.renderAttentionPing(graphics, texture, x, y, attentionPingOffsetY);
     }
 
     /** Keeps the claimed check above the item while leaving its vanilla count corner unobstructed. */
-    private void renderClaimedRewardCheck(GuiGraphics graphics, int x, int y) {
-        graphics.pose().pushPose();
-        graphics.pose().translate(0, 0, 300);
-        graphics.drawString(font, "✓", x, y, 0xFF8BE2A0, true);
-        graphics.pose().popPose();
-    }
+
 
     private int statusColor(QuestStatus status) {
         return switch (status) {
@@ -4670,7 +4229,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     public void prepareForTransientChildScreen() {
         // The matching ScreenEvent.Opening is raised before removed(), allowing a recipe viewer
         // to suspend this exact editor object without closing its server-authoritative lease.
-        editorChildScreenOpening = true;
+        childLifecycle.prepareChild();
     }
 
     /** Records only the visible pixels of an item icon; the last rendered layer wins hover priority. */
@@ -4731,13 +4290,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return fallback.equals(task.typeId().toString()) ? quest.title() : fallback;
     }
 
-    private int detailStatusY(QuestDefinition quest) {
-        int width = detailsWidth() - 38;
-        int y = detailContentTop() - (int) Math.round(renderedDetailScroll);
-        y += font.split(Component.literal(questTitle(quest)), width).size() * font.lineHeight + 3;
-        if (!quest.subtitle().isBlank()) y += font.split(Component.literal(quest.subtitle()), width).size() * font.lineHeight + 4;
-        return y;
-    }
+    private int detailStatusY(QuestDefinition quest) { return detailsPanel.statusY(); }
 
     private int detailTrackX(String pin) {
         // Reserve a clear gap from the close glyph so their hitboxes can never overlap.
@@ -4755,100 +4308,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         });
     }
 
-    private int drawWrapped(GuiGraphics graphics, String text, int x, int y, int width, int color) {
-        Component component = Component.literal(text);
-        graphics.drawWordWrap(font, component, x, y, width, color);
-        return y + font.split(component, width).size() * font.lineHeight;
-    }
-
     /** Shrinks compact one-line labels before truncating them, preserving more meaningful text. */
-    private void drawFittedString(GuiGraphics graphics, Component text, int x, int y,
-                                  int maximumWidth, int color, float minimumScale) {
-        int measuredWidth = font.width(text);
-        float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
-        int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
-        graphics.pose().pushPose();
-        graphics.pose().translate(x, y, 0);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawString(font, visible, 0, 0, color, false);
-        graphics.pose().popPose();
-    }
+
 
     /** Right-aligns compact detail text while using the same shrink-before-truncate policy. */
-    private void drawFittedStringRight(GuiGraphics graphics, Component text, int right, int y,
-                                       int maximumWidth, int color, float minimumScale) {
-        int measuredWidth = font.width(text);
-        float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
-        int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
-        int left = right - Math.round(font.width(visible) * scale);
-        graphics.pose().pushPose();
-        graphics.pose().translate(left, y, 0);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawString(font, visible, 0, 0, color, false);
-        graphics.pose().popPose();
-    }
+
 
     /**
      * Draws built-in item semantics as a styled prefix and returns that prefix's exact hover area.
      * Other presentations retain the public objective-title path and do not inherit item semantics.
      */
-    private UiRect drawTaskObjectiveTitle(GuiGraphics graphics, TaskDefinition task,
-                                          ClientTaskPresentation presentation,
-                                          TaskPresentationContext context, Component fallbackTitle,
-                                          int right, int y, int maximumWidth, int color) {
-        if (!task.typeId().equals(TaskTypes.ITEM) && !task.typeId().equals(TaskTypes.ITEM_CHOICE)) {
-            drawFittedStringRight(graphics, fallbackTitle, right, y, maximumWidth, color, 0.75F);
-            return null;
-        }
 
-        String configuredTitle = task.config().getOrDefault("title", "");
-        if (!configuredTitle.isBlank()) {
-            Component customTitle = Component.literal(configuredTitle);
-            float scale = EditorTextLayout.fittedScale(font.width(customTitle), maximumWidth, 0.75F);
-            int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-            String visible = font.plainSubstrByWidth(configuredTitle, unscaledWidth);
-            int left = right - Math.round(font.width(visible) * scale);
-            graphics.pose().pushPose();
-            graphics.pose().translate(left, y, 0);
-            graphics.pose().scale(scale, scale, 1.0F);
-            graphics.drawString(font, visible, 0, 0, color, false);
-            graphics.pose().popPose();
-            return new UiRect(left, y, right, y + Math.max(1, Math.round(font.lineHeight * scale)));
-        }
-
-        Component qualifier = ClientTaskPresentationRegistry.itemObjectiveQualifier(context.task());
-        String qualifierText = qualifier.getString();
-        ItemChoiceMatcher.Spec itemSpec = ClientTaskPresentationRegistry.itemSpec(context.task());
-        String subject = itemSpec != null && itemSpec.entries().size() > 1
-                ? Component.translatable("screen.brnquest.task.item_choice.requirement",
-                        itemSpec.entries().size(), itemSpec.requiredEntries()).getString()
-                : presentation.title(context).getString() + (itemSpec == null ? ""
-                        : " ×" + itemSpec.entries().getFirst().requiredCount());
-        String fullText = qualifierText + " " + subject;
-        float scale = EditorTextLayout.fittedScale(font.width(fullText), maximumWidth, 0.75F);
-        int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(fullText, unscaledWidth);
-        int left = right - Math.round(font.width(visible) * scale);
-        int visibleQualifierLength = Math.min(qualifierText.length(), visible.length());
-
-        var styledText = Component.empty().append(
-                Component.literal(visible.substring(0, visibleQualifierLength))
-                        .withStyle(ChatFormatting.UNDERLINE));
-        if (visibleQualifierLength < visible.length()) {
-            styledText.append(Component.literal(visible.substring(visibleQualifierLength)));
-        }
-        graphics.pose().pushPose();
-        graphics.pose().translate(left, y, 0);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawString(font, styledText, 0, 0, color, false);
-        graphics.pose().popPose();
-
-        int qualifierWidth = Math.round(font.width(visible.substring(0, visibleQualifierLength)) * scale);
-        int lineHeight = Math.max(1, Math.round(font.lineHeight * scale));
-        return new UiRect(left, y, left + qualifierWidth, y + lineHeight);
-    }
 
     private void fillChamfer(GuiGraphics graphics, int x, int y, int size, int color) {
         int radius = size / 2;
@@ -4889,12 +4359,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int nodeGraphX(QuestDefinition quest) {
-        DraftBookEditor.Position preview = dragPreview.get(quest.id());
+        DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
         return graphCoordinate(preview == null ? quest.x() : preview.x());
     }
 
     private int nodeGraphY(QuestDefinition quest) {
-        DraftBookEditor.Position preview = dragPreview.get(quest.id());
+        DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
         return graphCoordinate(preview == null ? quest.y() : preview.y());
     }
 
@@ -4917,46 +4387,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                double screenMouseX, double screenMouseY, QuestBookDefinition book) {
         Map<ResourceLocation, DraftBookEditor.Position> origins = new LinkedHashMap<>();
         for (QuestDefinition quest : book.quests()) {
-            if (editorSelection.contains(quest.id())) {
-                origins.put(quest.id(), new DraftBookEditor.Position(quest.x(), quest.y()));
-            }
+            if (editorSelection.contains(quest.id())) origins.put(quest.id(), new DraftBookEditor.Position(quest.x(), quest.y()));
         }
-        if (origins.isEmpty()) return;
-        dragOrigins = Map.copyOf(origins);
-        dragPreview.clear();
-        dragPreview.putAll(origins);
-        nodeDragStartX = graphMouseX;
-        nodeDragStartY = graphMouseY;
-        nodeDragPressScreenX = screenMouseX;
-        nodeDragPressScreenY = screenMouseY;
-        nodeDragAnchorId = anchorId;
-        nodeDragPressStartedNanos = System.nanoTime();
-        nodeDragPickedUp = false;
-        nodeDragMoved = false;
-        dragSnapPreview.clear();
-        nodeDragging = true;
-        dragging = false;
+        nodeDrag.begin(origins, anchorId, graphMouseX, graphMouseY, screenMouseX, screenMouseY, System.nanoTime());
+        if (nodeDrag.active()) dragging = false;
     }
 
     /** Resolves click versus long-press independently from render or mouse-event frequency. */
-    private void updateNodeDragGesture(double graphMouseX, double graphMouseY,
-                                       double screenMouseX, double screenMouseY, long nowNanos) {
-        if (!nodeDragging || dragOrigins.isEmpty()) return;
-        // A pointer that travelled before the deadline belongs to canvas panning. mouseDragged
-        // performs the actual handoff; render-time long-press detection must not pick it up first.
-        if (!nodeDragPickedUp && nodeGestureRequestsCanvasPan(screenMouseX, screenMouseY, nowNanos)) return;
-        if (!nodeDragPickedUp && nowNanos - nodeDragPressStartedNanos >= NODE_LONG_PRESS_NANOS) {
-            nodeDragPickedUp = true;
-        }
-        if (!nodeDragPickedUp) return;
-        updateNodeDrag(graphMouseX, graphMouseY);
-    }
-
-    private boolean nodeGestureRequestsCanvasPan(double screenMouseX, double screenMouseY, long nowNanos) {
-        return QuestViewportMath.shouldPanBeforeLongPress(nowNanos - nodeDragPressStartedNanos,
-                NODE_LONG_PRESS_NANOS, screenMouseX - nodeDragPressScreenX,
-                screenMouseY - nodeDragPressScreenY, NODE_PAN_INTENT_PIXELS);
-    }
 
     /** Completes the click branch only after release proves that no drag gesture was intended. */
     private void openEditorQuestDetails(ResourceLocation questId) {
@@ -4964,79 +4401,27 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         editorSelectedQuest = questId;
         closeQuestEditingPanels();
         openDetailsPanel();
-        detailScroll.snap(0);
-    }
-
-    private void updateNodeDrag(double graphMouseX, double graphMouseY) {
-        double deltaX = (graphMouseX - nodeDragStartX) / QuestViewportMath.GRID_SCALE;
-        double deltaY = (graphMouseY - nodeDragStartY) / QuestViewportMath.GRID_SCALE;
-        nodeDragMoved = Math.hypot(graphMouseX - nodeDragStartX, graphMouseY - nodeDragStartY)
-                >= NODE_DRAG_START_PIXELS;
-        dragPreview.clear();
-        dragOrigins.forEach((id, position) -> dragPreview.put(id,
-                new DraftBookEditor.Position(position.x() + deltaX, position.y() + deltaY)));
-        dragSnapPreview.clear();
-        if (!nodeDragMoved) return;
-        DraftBookEditor.Position anchor = dragOrigins.get(nodeDragAnchorId);
-        if (anchor == null) return;
-        double snappedDeltaX = QuestViewportMath.snappedGroupDelta(anchor.x(), deltaX);
-        double snappedDeltaY = QuestViewportMath.snappedGroupDelta(anchor.y(), deltaY);
-        dragOrigins.forEach((id, position) -> dragSnapPreview.put(id, new DraftBookEditor.Position(
-                QuestViewportMath.limitDraggedPrecision(position.x() + snappedDeltaX),
-                QuestViewportMath.limitDraggedPrecision(position.y() + snappedDeltaY))));
+        detailsPanel.scroll().snap(0);
     }
 
     private void commitNodeDrag() {
-        nodeDragging = false;
-        if (!nodeDragMoved || dragSnapPreview.isEmpty() || dragSnapPreview.equals(dragOrigins)) {
-            cancelNodeDrag();
-            return;
-        }
-        Map<ResourceLocation, DraftBookEditor.Position> committed = Map.copyOf(dragSnapPreview);
+        var committed = nodeDrag.releaseMove();
+        if (committed.isEmpty()) return;
         List<AuthoringNetwork.PositionWire> positions = committed.entrySet().stream()
                 .map(entry -> new AuthoringNetwork.PositionWire(entry.getKey().toString(),
                         entry.getValue().x(), entry.getValue().y())).toList();
-        // Hold the exact server-bound position on screen until the authoritative patch arrives.
-        dragPreview.clear();
-        dragPreview.putAll(committed);
-        sendMutation("MOVE_QUESTS", null, null, null, "", 0, 0, 0, positions);
-        dragOrigins = Map.of();
-        dragSnapPreview.clear();
-        nodeDragPickedUp = false;
-        nodeDragMoved = false;
-        nodeDragAnchorId = null;
-        nodeDragPressStartedNanos = 0L;
-        nodeDragPressScreenX = 0.0D;
-        nodeDragPressScreenY = 0.0D;
-        nodeDragSelectionBeforePress = Set.of();
+        if (!sendMutation("MOVE_QUESTS", null, null, null, "", 0, 0, 0, positions)) nodeDrag.clearPreview();
     }
 
-    private void cancelNodeDrag() {
-        nodeDragging = false;
-        nodeDragPickedUp = false;
-        nodeDragMoved = false;
-        nodeDragAnchorId = null;
-        nodeDragPressStartedNanos = 0L;
-        nodeDragPressScreenX = 0.0D;
-        nodeDragPressScreenY = 0.0D;
-        nodeDragSelectionBeforePress = Set.of();
-        dragOrigins = Map.of();
-        dragPreview.clear();
-        dragSnapPreview.clear();
-    }
+    private void cancelNodeDrag() { nodeDrag.cancel(); }
 
     private void reconcileDragPreview() {
-        if (nodeDragging || dragPreview.isEmpty()) return;
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null) return;
-        boolean synchronizedPositions = dragPreview.entrySet().stream().allMatch(entry -> {
-            QuestDefinition quest = snapshot.quests().get(entry.getKey());
-            return quest != null && Double.compare(quest.x(), entry.getValue().x()) == 0
-                    && Double.compare(quest.y(), entry.getValue().y()) == 0;
-        });
-        if (synchronizedPositions || ClientEditorState.get().mode() == ClientEditorState.Mode.ERROR) {
-            dragPreview.clear();
-        }
+        nodeDrag.reconcile(id -> {
+            QuestDefinition quest = snapshot.quests().get(id);
+            return quest == null ? null : new DraftBookEditor.Position(quest.x(), quest.y());
+        }, ClientEditorState.get().mode() == ClientEditorState.Mode.ERROR);
     }
 
     private double graphX(double screenX) {
@@ -5154,6 +4539,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private QuestScreenLayout layout() {
+        if (renderFrame != null) return renderFrame.layout();
         QuestScreenLayout current = cachedLayout;
         if (current == null || current.width() != width || current.height() != height
                 || current.navigationCollapsed() != navigationCollapsed || current.detailsOpen() != detailsOpen) {
@@ -5195,6 +4581,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private QuestBookSnapshot displaySnapshot() {
+        if (renderFrame != null) return renderFrame.snapshot();
         return ClientEditorState.get().draft().orElseGet(() -> ClientQuestState.get().book().orElse(null));
     }
 
@@ -5221,20 +4608,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         panY = QuestViewportMath.panForGraphCenter(remembered.centerY(), zoom);
         renderedPanX = panX;
         renderedPanY = panY;
-        focusPanXMotion.snap(panX);
-        focusPanYMotion.snap(panY);
+        selectionFocus.reset(panX, panY);
         rememberedChapterId = remembered.chapterId();
         navigationCollapsed = remembered.navigationCollapsed();
         navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
         rememberedChapterResolved = false;
-        navigationScroll.snap(0);
-        detailScroll.snap(0);
+        navigationPanel.scroll().snap(0);
+        detailsPanel.scroll().snap(0);
         detailsOpen = false;
         detailsDrawerMotion.snap(0.0);
-        observedDetailsOpen = false;
-        observedDetailsQuestId = null;
-        focusingQuestId = null;
-        focusTargetInitialized = false;
         editorSelectedQuest = null;
     }
 
@@ -5269,67 +4651,39 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Starts one focus pass for a newly opened or newly selected quest, then releases manual control. */
     private void updateSelectedQuestFocus(QuestBookSnapshot snapshot, double elapsedSeconds) {
         QuestDefinition selected = detailsOpen ? selectedQuest() : null;
-        ResourceLocation selectedId = selected == null ? null : selected.id();
-        boolean focusRequested = detailsOpen
-                && (!observedDetailsOpen || !Objects.equals(observedDetailsQuestId, selectedId));
-        observedDetailsOpen = detailsOpen;
-        observedDetailsQuestId = selectedId;
-
+        ResourceLocation id = selected == null ? null : selected.id();
+        boolean requested = selectionFocus.observe(detailsOpen, id);
         if (!autoFocusSelectedQuest() || !detailsOpen || selected == null) {
             cancelSelectedQuestFocus();
             return;
         }
-        if (focusRequested) {
+        if (requested) {
             finishZoomMotion();
-            focusPanXMotion.snap(renderedPanX);
-            focusPanYMotion.snap(renderedPanY);
-            focusingQuestId = selectedId;
-            focusTargetInitialized = false;
+            selectionFocus.start(id, renderedPanX, renderedPanY);
         }
-        if (focusingQuestId == null) return;
-        QuestDefinition focusQuest = snapshot.quests().get(focusingQuestId);
-        if (focusQuest == null) {
+        ResourceLocation focusing = selectionFocus.focusing();
+        if (focusing == null) return;
+        QuestDefinition target = snapshot.quests().get(focusing);
+        if (target == null) {
             cancelSelectedQuestFocus();
             return;
         }
-        // Defer until a click-versus-drag gesture resolves, avoiding camera movement under a held node.
-        if (dragging || nodeDragging) {
-            focusPanXMotion.snap(renderedPanX);
-            focusPanYMotion.snap(renderedPanY);
-            return;
-        }
-
-        if (!focusTargetInitialized) {
-            QuestScreenLayout finalLayout = layout();
-            // Capture the destination once from the drawers' final states. Recomputing it from
-            // their animated edges bends the camera path and can produce a visible end jitter.
-            double targetX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
-                    + finalLayout.canvasRight(detailsOpen ? 1.0 : 0.0)) / 2.0;
-            double targetY = finalLayout.contentCenterY();
-            focusPanXMotion.target(QuestViewportMath.panForGraphPoint(
-                    nodeGraphX(focusQuest), targetX, screenOriginX(), renderedZoom));
-            focusPanYMotion.target(QuestViewportMath.panForGraphPoint(
-                    nodeGraphY(focusQuest), targetY, finalLayout.contentCenterY(), renderedZoom));
-            focusTargetInitialized = true;
-        }
-        panX = focusPanXMotion.advanceFrame(elapsedSeconds, focusSmoothSpeed());
-        panY = focusPanYMotion.advanceFrame(elapsedSeconds, focusSmoothSpeed());
-        renderedPanX = panX;
-        renderedPanY = panY;
-
-        boolean cameraSettled = focusPanXMotion.current() == focusPanXMotion.target()
-                && focusPanYMotion.current() == focusPanYMotion.target();
-        if (cameraSettled) {
-            focusingQuestId = null;
-            focusTargetInitialized = false;
-        }
+        EditorSelectionFocus.Point point = selectionFocus.advance(dragging || nodeDrag.active(),
+                renderedPanX, renderedPanY, () -> {
+                    QuestScreenLayout finalLayout = layout();
+                    double targetX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
+                            + finalLayout.canvasRight(detailsOpen ? 1.0 : 0.0)) / 2.0;
+                    return new EditorSelectionFocus.Point(
+                            QuestViewportMath.panForGraphPoint(nodeGraphX(target), targetX, screenOriginX(), renderedZoom),
+                            QuestViewportMath.panForGraphPoint(nodeGraphY(target), finalLayout.contentCenterY(),
+                                    finalLayout.contentCenterY(), renderedZoom));
+                }, elapsedSeconds, focusSmoothSpeed());
+        panX = renderedPanX = point.x();
+        panY = renderedPanY = point.y();
     }
 
     private void cancelSelectedQuestFocus() {
-        focusingQuestId = null;
-        focusTargetInitialized = false;
-        focusPanXMotion.snap(renderedPanX);
-        focusPanYMotion.snap(renderedPanY);
+        selectionFocus.cancel(renderedPanX, renderedPanY);
         panX = renderedPanX;
         panY = renderedPanY;
     }
@@ -5405,11 +4759,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return integrated == null ? "unknown" : "integrated:" + integrated.getWorldData().getLevelName();
     }
 
-    private int navigationContentHeight(QuestBookDefinition book) {
-        return QuestPresentation.navigation(book).stream()
-                .mapToInt(entry -> entry.group() != null ? NAV_GROUP_HEIGHT : NAV_CHAPTER_HEIGHT).sum();
-    }
-
     private int navigationViewportHeight() {
         return Math.max(1, navigationListBottom() - navigationTop());
     }
@@ -5436,9 +4785,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private record TaskCandidateHitbox(UiRect bounds, TaskDefinition task) {}
 
-    private record DependencyHitbox(UiRect rowBounds, UiRect removeBounds, ResourceLocation dependencyId) {}
 
-    private record TypedEditorHitbox(ResourceLocation id, int index, UiRect row, UiRect edit, UiRect more) {}
+    private record TypedActionKey(ResourceLocation entryId, String action) {}
 
     private record QuickTextHitbox(QuickTextKind kind, UiRect bounds) {}
 

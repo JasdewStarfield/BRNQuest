@@ -17,6 +17,8 @@ public final class NativeBookJson {
         root.addProperty("schema_version", BrnQuestConstants.DATA_SCHEMA);
         root.addProperty("id", book.id().toString());
         root.addProperty("title", book.title());
+        root.add("localization", encodeLocalization(book.localization()));
+        root.add("extensions", encodeStringMap(book.extensions()));
         JsonArray groups = new JsonArray();
         book.chapterGroups().stream().sorted(Comparator.comparingInt(ChapterGroupDefinition::order)
                 .thenComparing(g -> g.id().toString())).forEach(group -> {
@@ -55,7 +57,8 @@ public final class NativeBookJson {
         for (JsonElement element : root.getAsJsonArray("chapters")) chapters.add(decodeChapter(bookId, element.getAsJsonObject()));
         Map<String, ResourceLocation> aliases = new TreeMap<>();
         if (root.has("legacy_ids")) root.getAsJsonObject("legacy_ids").entrySet().forEach(e -> aliases.put(e.getKey(), id(e.getValue().getAsString())));
-        return new QuestBookDefinition(bookId, schema, text(root, "title"), groups, chapters, aliases);
+        return new QuestBookDefinition(bookId, schema, text(root, "title"), groups, chapters, aliases,
+                decodeLocalization(root), stringMap(root, "extensions"));
     }
 
     private static JsonObject encodeChapter(ChapterDefinition chapter) {
@@ -65,6 +68,7 @@ public final class NativeBookJson {
         value.addProperty("title", chapter.title());
         value.addProperty("icon", chapter.icon());
         value.addProperty("order", chapter.order());
+        value.add("extensions", encodeStringMap(chapter.extensions()));
         JsonArray quests = new JsonArray();
         // Quest, task, and reward list order is author-visible presentation data.
         chapter.quests().forEach(quest -> quests.add(encodeQuest(quest)));
@@ -82,6 +86,13 @@ public final class NativeBookJson {
         value.addProperty("x", quest.x());
         value.addProperty("y", quest.y());
         value.addProperty("legacy_id", quest.legacyId());
+        JsonObject appearance = new JsonObject();
+        appearance.addProperty("shape", quest.appearance().shape());
+        appearance.addProperty("size", quest.appearance().size());
+        appearance.addProperty("icon_scale", quest.appearance().iconScale());
+        appearance.addProperty("min_width", quest.appearance().minWidth());
+        value.add("appearance", appearance);
+        value.add("extensions", encodeStringMap(quest.extensions()));
         JsonArray dependencies = new JsonArray();
         quest.dependencies().stream().sorted(Comparator.comparing(ResourceLocation::toString)).forEach(id -> dependencies.add(id.toString()));
         value.add("dependencies", dependencies);
@@ -121,7 +132,8 @@ public final class NativeBookJson {
         ResourceLocation chapterId = id(value.get("id").getAsString());
         List<QuestDefinition> quests = new ArrayList<>();
         for (JsonElement element : value.getAsJsonArray("quests")) quests.add(decodeQuest(bookId, chapterId, element.getAsJsonObject()));
-        return new ChapterDefinition(bookId, chapterId, id(value.get("group_id").getAsString()), text(value, "title"), text(value, "icon"), integer(value, "order"), quests);
+        return new ChapterDefinition(bookId, chapterId, id(value.get("group_id").getAsString()), text(value, "title"),
+                text(value, "icon"), integer(value, "order"), quests, stringMap(value, "extensions"));
     }
 
     private static QuestDefinition decodeQuest(ResourceLocation bookId, ResourceLocation chapterId, JsonObject value) {
@@ -137,19 +149,59 @@ public final class NativeBookJson {
             JsonObject reward = element.getAsJsonObject();
             rewards.add(new RewardDefinition(bookId, id(reward.get("id").getAsString()), id(reward.get("type").getAsString()), config(reward), text(reward, "claim_policy"), bool(reward, "team_reward")));
         }
+        JsonObject appearance = value.has("appearance") ? value.getAsJsonObject("appearance") : new JsonObject();
         return new QuestDefinition(bookId, id(value.get("id").getAsString()), chapterId,
                 text(value, "title"), text(value, "subtitle"), text(value, "description"), text(value, "icon"),
-                value.get("x").getAsDouble(), value.get("y").getAsDouble(), dependencies, tasks, rewards, text(value, "legacy_id"));
+                decimal(value, "x", 0.0), decimal(value, "y", 0.0), dependencies, tasks, rewards, text(value, "legacy_id"),
+                new QuestAppearance(text(appearance, "shape", "chamfer"), decimal(appearance, "size", 1.0),
+                        decimal(appearance, "icon_scale", 1.0), decimal(appearance, "min_width", 0.0)),
+                stringMap(value, "extensions"));
+    }
+
+    private static JsonObject encodeLocalization(BookLocalization localization) {
+        JsonObject value = new JsonObject();
+        value.addProperty("fallback_locale", localization.fallbackLocale());
+        JsonObject translations = new JsonObject();
+        localization.translations().entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> translations.add(entry.getKey(), encodeStringMap(entry.getValue())));
+        value.add("translations", translations);
+        return value;
+    }
+
+    private static BookLocalization decodeLocalization(JsonObject root) {
+        if (!root.has("localization")) return BookLocalization.EMPTY;
+        JsonObject value = root.getAsJsonObject("localization");
+        Map<String, Map<String, String>> translations = new TreeMap<>();
+        if (value.has("translations")) value.getAsJsonObject("translations").entrySet()
+                .forEach(entry -> translations.put(entry.getKey(), stringMap(entry.getValue().getAsJsonObject())));
+        return new BookLocalization(text(value, "fallback_locale", "en_us"), translations);
+    }
+
+    private static JsonObject encodeStringMap(Map<String, String> values) {
+        JsonObject result = new JsonObject();
+        values.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> result.addProperty(entry.getKey(), entry.getValue()));
+        return result;
     }
 
     private static Map<String, String> config(JsonObject value) {
+        return stringMap(value, "config");
+    }
+
+    private static Map<String, String> stringMap(JsonObject parent, String key) {
+        return parent.has(key) ? stringMap(parent.getAsJsonObject(key)) : Map.of();
+    }
+
+    private static Map<String, String> stringMap(JsonObject value) {
         Map<String, String> result = new TreeMap<>();
-        value.getAsJsonObject("config").entrySet().forEach(e -> result.put(e.getKey(), e.getValue().getAsString()));
+        value.entrySet().forEach(e -> result.put(e.getKey(), e.getValue().getAsString()));
         return result;
     }
 
     private static String text(JsonObject value, String key) { return value.has(key) ? value.get(key).getAsString() : ""; }
+    private static String text(JsonObject value, String key, String fallback) { return value.has(key) ? value.get(key).getAsString() : fallback; }
     private static int integer(JsonObject value, String key) { return value.has(key) ? value.get(key).getAsInt() : 0; }
+    private static double decimal(JsonObject value, String key, double fallback) { return value.has(key) ? value.get(key).getAsDouble() : fallback; }
     private static boolean bool(JsonObject value, String key) { return value.has(key) && value.get(key).getAsBoolean(); }
     private static ResourceLocation id(String value) {
         ResourceLocation result = ResourceLocation.tryParse(value);

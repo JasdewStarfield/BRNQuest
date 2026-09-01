@@ -38,6 +38,26 @@ class QuestBookDifferTest {
         assertTrue(QuestBookDiffer.diff(book, decoded).empty());
     }
 
+    @Test void reportsLocalizationAppearanceAndExtensionChanges() {
+        QuestBookDefinition before = book("quest", "Quest", 0, List.of(),
+                new TaskDefinition(id("task"), id("task"), id("checkmark"), Map.of(), false));
+        QuestDefinition source = before.quests().getFirst();
+        QuestDefinition changedQuest = new QuestDefinition(source.bookId(), source.id(), source.chapterId(),
+                source.title(), source.subtitle(), source.description(), source.icon(), source.x(), source.y(),
+                source.dependencies(), source.tasks(), source.rewards(), source.legacyId(),
+                new QuestAppearance("circle", 2, 0.5, 1), Map.of("ftb.hide", "1b"));
+        ChapterDefinition chapter = before.chapters().getFirst();
+        QuestBookDefinition after = new QuestBookDefinition(before.id(), before.schemaVersion(), before.title(),
+                before.chapterGroups(), List.of(new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(),
+                chapter.title(), chapter.icon(), chapter.order(), List.of(changedQuest), Map.of())), before.legacyIds(),
+                new BookLocalization("en_us", Map.of("zh_cn", Map.of("quest.LEGACY.title", "任务"))), Map.of());
+
+        QuestBookDiff diff = QuestBookDiffer.diff(before, after);
+        assertTrue(diff.entries().stream().anyMatch(entry -> entry.path().equals("appearance.shape")));
+        assertTrue(diff.entries().stream().anyMatch(entry -> entry.path().equals("extensions.ftb.hide")));
+        assertTrue(diff.entries().stream().anyMatch(entry -> entry.path().contains("localization.zh_cn")));
+    }
+
     private static QuestBookDefinition book(String questPath, String title, double x,
                                              List<ResourceLocation> dependencies, TaskDefinition task) {
         ResourceLocation bookId = id("book");

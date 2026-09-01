@@ -534,10 +534,12 @@ public final class ClientEditorState {
                     applied[0]++;
                     return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(),
                             quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
-                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
-                }).toList())).toList();
+                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
+                            quest.appearance(), quest.extensions());
+                }).toList(), chapter.extensions())).toList();
         QuestBookSnapshot candidate = QuestBookSnapshot.of(new QuestBookDefinition(current.id(),
-                current.schemaVersion(), current.title(), current.chapterGroups(), chapters, current.legacyIds()));
+                current.schemaVersion(), current.title(), current.chapterGroups(), chapters, current.legacyIds(),
+                current.localization(), current.extensions()));
         if (applied[0] != positions.size() || !candidate.revision().equals(response.draftRevision())) {
             fail("POSITION_PATCH_REVISION_MISMATCH", "The position update did not match the server revision");
             return;

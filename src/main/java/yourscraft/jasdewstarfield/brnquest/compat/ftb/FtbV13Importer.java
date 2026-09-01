@@ -25,7 +25,13 @@ public final class FtbV13Importer {
         List<ChapterGroupDefinition> groups = new ArrayList<>();
         List<ChapterDefinition> chapters = new ArrayList<>();
         Map<String, ResourceLocation> aliases = new TreeMap<>();
-        Map<String, String> translations = new HashMap<>();
+        Map<String, Map<String, String>> localeTranslations = new TreeMap<>();
+        List<FtbFieldConversion> conversions = new ArrayList<>();
+        String fallbackLocale = "en_us";
+        String defaultAutoClaim = "disabled";
+        InheritedAppearance defaultAppearance = new InheritedAppearance("chamfer", 1.0);
+        Map<String, InheritedAppearance> presets = new TreeMap<>();
+        Map<String, String> fileExtensions = new TreeMap<>();
 
         try {
             CompoundTag data = reader.read(source.resolve("data.snbt"));
@@ -33,26 +39,72 @@ public final class FtbV13Importer {
                 report.add(problem(Diagnostic.Severity.FATAL, "BQF-001", "data.snbt", "version", "",
                         "Expected FTB Quests format 13, got " + data.getInt("version")));
             }
-            Path lang = source.resolve("lang/zh_cn.snbt");
-            if (Files.isRegularFile(lang)) readTranslations(reader.read(lang), translations);
+            recordMappedFields(data, "data.snbt", "data", conversions, Map.ofEntries(
+                    Map.entry("version", "schema_version"), Map.entry("fallback_locale", "localization.fallback_locale"),
+                    Map.entry("default_autoclaim_rewards", "reward_defaults.claim_policy"),
+                    Map.entry("default_quest_shape", "appearance_defaults.shape"),
+                    Map.entry("presets", "appearance_presets"), Map.entry("preset", "appearance_defaults.preset")));
+            defaultAutoClaim = data.getString("default_autoclaim_rewards");
+            if (data.getBoolean("suppress_all_autoclaiming")) defaultAutoClaim = "disabled";
+            fallbackLocale = BookLocalization.normalizeLocale(data.getString("fallback_locale"));
+            presets.putAll(readPresets(data.getCompound("presets")));
+            defaultAppearance = inheritedAppearance(data, defaultAppearance, presets);
+            fileExtensions.putAll(extensions(data, Set.of("version", "title", "default_autoclaim_rewards"),
+                    "data.snbt", "data", conversions));
+            readAllTranslations(source.resolve("lang"), localeTranslations, report);
+            String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
+                    : localeTranslations.containsKey("zh_cn") ? "zh_cn"
+                    : localeTranslations.isEmpty() ? fallbackLocale : localeTranslations.keySet().iterator().next();
+            Map<String, String> translations = localeTranslations.getOrDefault(sourceTextLocale, Map.of());
             readGroups(reader.read(source.resolve("chapter_groups.snbt")), bookId, namespace, translations, aliases, groups);
 
             Path chapterDir = source.resolve("chapters");
+            String inheritedAutoClaim = defaultAutoClaim;
+            InheritedAppearance inheritedAppearance = defaultAppearance;
+            Map<String, InheritedAppearance> inheritedPresets = Map.copyOf(presets);
             try (var files = Files.list(chapterDir)) {
                 files.filter(p -> p.getFileName().toString().endsWith(".snbt"))
                         .sorted(Comparator.comparing(p -> p.getFileName().toString()))
-                        .forEach(path -> readChapter(path, bookId, namespace, translations, aliases, chapters, report));
+                        .forEach(path -> readChapter(path, bookId, namespace, translations, aliases, chapters,
+                                inheritedAutoClaim, inheritedAppearance, inheritedPresets, report, conversions));
             }
         } catch (Exception exception) {
             report.add(problem(Diagnostic.Severity.FATAL, "BQF-002", source.toString(), "", "", exception.getMessage()));
         }
 
         validateGraph(chapters, report);
+        String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
+                : localeTranslations.containsKey("zh_cn") ? "zh_cn"
+                : localeTranslations.isEmpty() ? fallbackLocale : localeTranslations.keySet().iterator().next();
+        Map<String, String> fallbackTranslations = localeTranslations.getOrDefault(sourceTextLocale, Map.of());
+        fileExtensions.put("ftb.default_autoclaim_rewards", defaultAutoClaim);
         QuestBookDefinition book = new QuestBookDefinition(bookId, BrnQuestConstants.DATA_SCHEMA,
-                translations.getOrDefault("title", bookId.toString()), groups, chapters, aliases);
+                fallbackTranslations.getOrDefault("title", bookId.toString()), groups, chapters, aliases,
+                new BookLocalization(fallbackLocale, localeTranslations), fileExtensions);
         int taskCount = book.quests().stream().mapToInt(q -> q.tasks().size()).sum();
         int rewardCount = book.quests().stream().mapToInt(q -> q.rewards().size()).sum();
-        return new FtbImportResult(book, report, groups.size(), chapters.size(), book.quests().size(), taskCount, rewardCount);
+        return new FtbImportResult(book, report, groups.size(), chapters.size(), book.quests().size(), taskCount,
+                rewardCount, conversions);
+    }
+
+    private void readAllTranslations(Path directory, Map<String, Map<String, String>> target,
+                                     DiagnosticReport report) throws IOException {
+        if (!Files.isDirectory(directory)) return;
+        try (var files = Files.list(directory)) {
+            for (Path path : files.filter(file -> file.getFileName().toString().endsWith(".snbt"))
+                    .sorted().toList()) {
+                String filename = path.getFileName().toString();
+                String locale = BookLocalization.normalizeLocale(filename.substring(0, filename.length() - 5));
+                Map<String, String> translations = new TreeMap<>();
+                try {
+                    readTranslations(reader.read(path), translations);
+                    target.put(locale, translations);
+                } catch (Exception exception) {
+                    report.add(problem(Diagnostic.Severity.ERROR, "BQF-105", filename, "", "",
+                            "Language file could not be read: " + exception.getMessage()));
+                }
+            }
+        }
     }
 
     private void readTranslations(CompoundTag tag, Map<String, String> target) {
@@ -83,7 +135,10 @@ public final class FtbV13Importer {
 
     private void readChapter(Path path, ResourceLocation bookId, String namespace,
                              Map<String, String> translations, Map<String, ResourceLocation> aliases,
-                             List<ChapterDefinition> target, DiagnosticReport report) {
+                             List<ChapterDefinition> target, String defaultAutoClaim,
+                             InheritedAppearance defaultAppearance, Map<String, InheritedAppearance> presets,
+                             DiagnosticReport report,
+                             List<FtbFieldConversion> conversions) {
         try {
             CompoundTag raw = reader.read(path);
             String legacy = raw.getString("id");
@@ -92,15 +147,23 @@ public final class FtbV13Importer {
             ResourceLocation groupId = groupLegacy.isBlank()
                     ? ResourceLocation.fromNamespaceAndPath(namespace, "ungrouped") : remember(namespace, groupLegacy, aliases);
             List<QuestDefinition> quests = new ArrayList<>();
+            recordMappedFields(raw, path.getFileName().toString(), "chapter[" + legacy + "]", conversions,
+                    Map.of("id", "id", "group", "group_id", "icon", "icon", "order_index", "order",
+                            "quests", "quests", "default_quest_shape", "appearance_defaults.shape",
+                            "default_quest_size", "appearance_defaults.size", "preset", "appearance_defaults.preset"));
+            InheritedAppearance chapterAppearance = inheritedAppearance(raw, defaultAppearance, presets);
             ListTag questTags = raw.getList("quests", Tag.TAG_COMPOUND);
             for (int index = 0; index < questTags.size(); index++) {
                 quests.add(readQuest(questTags.getCompound(index), bookId, chapterId, namespace,
-                        translations, aliases, path.getFileName().toString(), index, report));
+                        translations, aliases, path.getFileName().toString(), index, defaultAutoClaim, report,
+                        conversions, chapterAppearance, presets));
             }
             target.add(new ChapterDefinition(bookId, chapterId, groupId,
                     translations.getOrDefault("chapter." + legacy + ".title", legacy),
                     raw.contains("icon") ? raw.get("icon").toString() : "",
-                    raw.getInt("order_index"), quests));
+                    raw.getInt("order_index"), quests,
+                    extensions(raw, Set.of("id", "group", "title", "icon", "order_index", "quests"),
+                            path.getFileName().toString(), "chapter[" + legacy + "]", conversions)));
         } catch (Exception exception) {
             report.add(problem(Diagnostic.Severity.FATAL, "BQF-003", path.getFileName().toString(), "", "", exception.getMessage()));
         }
@@ -109,24 +172,42 @@ public final class FtbV13Importer {
     private QuestDefinition readQuest(CompoundTag raw, ResourceLocation bookId, ResourceLocation chapterId,
                                       String namespace, Map<String, String> translations,
                                       Map<String, ResourceLocation> aliases, String file, int index,
-                                      DiagnosticReport report) {
+                                      String defaultAutoClaim, DiagnosticReport report,
+                                      List<FtbFieldConversion> conversions,
+                                      InheritedAppearance inheritedAppearance,
+                                      Map<String, InheritedAppearance> presets) {
         String legacy = raw.getString("id");
         ResourceLocation id = remember(namespace, legacy, aliases);
         List<ResourceLocation> dependencies = new ArrayList<>();
         ListTag dependencyTags = raw.getList("dependencies", Tag.TAG_STRING);
         for (int i = 0; i < dependencyTags.size(); i++) dependencies.add(remember(namespace, dependencyTags.getString(i), aliases));
         List<TaskDefinition> tasks = readTasks(raw.getList("tasks", Tag.TAG_COMPOUND), bookId, namespace,
-                translations, aliases, file, legacy, report);
+                translations, aliases, file, legacy, report, conversions);
         List<RewardDefinition> rewards = readRewards(raw.getList("rewards", Tag.TAG_COMPOUND), bookId, namespace,
-                translations, aliases, file, legacy, report);
+                translations, aliases, file, legacy, defaultAutoClaim, report, conversions);
         String translatedTitle = translations.getOrDefault("quest." + legacy + ".title", "");
         String title = translatedTitle.isBlank() ? defaultTaskTitle(tasks, legacy) : translatedTitle;
+        recordMappedFields(raw, file, "quests[" + legacy + "]", conversions, Map.ofEntries(
+                Map.entry("id", "id"), Map.entry("x", "x"), Map.entry("y", "y"),
+                Map.entry("icon", "icon"), Map.entry("dependencies", "dependencies"),
+                Map.entry("tasks", "tasks"), Map.entry("rewards", "rewards"),
+                Map.entry("shape", "appearance.shape"), Map.entry("size", "appearance.size"),
+                Map.entry("icon_scale", "appearance.icon_scale"), Map.entry("min_width", "appearance.min_width"),
+                Map.entry("preset", "appearance.preset")));
+        InheritedAppearance resolved = inheritedAppearance(raw, inheritedAppearance, presets);
+        QuestAppearance appearance = new QuestAppearance(resolved.shape(),
+                raw.contains("size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("size") : resolved.size(),
+                raw.contains("icon_scale", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("icon_scale") : 1.0,
+                raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : 0.0);
         return new QuestDefinition(bookId, id, chapterId,
                 title,
                 translations.getOrDefault("quest." + legacy + ".quest_subtitle", ""),
                 translations.getOrDefault("quest." + legacy + ".quest_desc", ""),
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
-                dependencies, tasks, rewards, legacy);
+                dependencies, tasks, rewards, legacy, appearance,
+                extensions(raw, Set.of("id", "title", "subtitle", "description", "icon", "x", "y",
+                        "dependencies", "tasks", "rewards", "shape", "size", "icon_scale", "min_width"),
+                        file, "quests[" + legacy + "]", conversions));
     }
 
     /** Gives untitled imported quests a stable author-facing label; clients localize item names at render time. */
@@ -150,7 +231,7 @@ public final class FtbV13Importer {
     private List<TaskDefinition> readTasks(ListTag list, ResourceLocation bookId, String namespace,
                                            Map<String, String> translations,
                                            Map<String, ResourceLocation> aliases, String file, String quest,
-                                           DiagnosticReport report) {
+                                           DiagnosticReport report, List<FtbFieldConversion> conversions) {
         List<TaskDefinition> result = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) {
             CompoundTag raw = list.getCompound(i);
@@ -158,9 +239,18 @@ public final class FtbV13Importer {
             String type = raw.getString("type");
             validateCount(raw, file, "quests[" + quest + "].tasks[" + legacy + "]", legacy, report);
             warnUnknown(type, file, "quests[" + quest + "].tasks[" + legacy + "]", legacy, report);
-            Map<String, String> config = flatten(raw);
+            ResourceLocation mappedType = typeId(type);
+            recordTypeConversion(file, "quests[" + quest + "].tasks[" + legacy + "]", type, mappedType, conversions);
+            Map<String, String> config = flatten(raw, Set.of("optional_task"));
+            recordConfigFields(raw, Set.of("id", "type", "optional_task"), file,
+                    "quests[" + quest + "].tasks[" + legacy + "]", conversions);
             config.put("title", translations.getOrDefault("task." + legacy + ".title", ""));
-            result.add(new TaskDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), config, raw.getBoolean("optional")));
+            boolean optional = raw.getBoolean("optional_task");
+            conversions.add(new FtbFieldConversion(file, "quests[" + quest + "].tasks[" + legacy + "]",
+                    "optional_task", "optional", raw.contains("optional_task")
+                    ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.DEFAULTED,
+                    Boolean.toString(optional)));
+            result.add(new TaskDefinition(bookId, remember(namespace, legacy, aliases), mappedType, config, optional));
         }
         return result;
     }
@@ -168,7 +258,8 @@ public final class FtbV13Importer {
     private List<RewardDefinition> readRewards(ListTag list, ResourceLocation bookId, String namespace,
                                                Map<String, String> translations,
                                                Map<String, ResourceLocation> aliases, String file, String quest,
-                                               DiagnosticReport report) {
+                                               String defaultAutoClaim, DiagnosticReport report,
+                                               List<FtbFieldConversion> conversions) {
         List<RewardDefinition> result = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) {
             CompoundTag raw = list.getCompound(i);
@@ -176,24 +267,77 @@ public final class FtbV13Importer {
             String type = raw.getString("type");
             validateCount(raw, file, "quests[" + quest + "].rewards[" + legacy + "]", legacy, report);
             warnUnknown(type, file, "quests[" + quest + "].rewards[" + legacy + "]", legacy, report);
-            Map<String, String> config = flatten(raw);
+            ResourceLocation mappedType = typeId(type);
+            recordTypeConversion(file, "quests[" + quest + "].rewards[" + legacy + "]", type, mappedType, conversions);
+            Map<String, String> config = flatten(raw, Set.of("auto", "team_reward"));
+            recordConfigFields(raw, Set.of("id", "type", "auto", "team_reward"), file,
+                    "quests[" + quest + "].rewards[" + legacy + "]", conversions);
             config.put("title", translations.getOrDefault("reward." + legacy + ".title", ""));
-            result.add(new RewardDefinition(bookId, remember(namespace, legacy, aliases), typeId(type), config,
-                    raw.getBoolean("autoclaim") ? "auto" : "manual", raw.getBoolean("team_reward")));
+            String ftbAuto = raw.contains("auto", Tag.TAG_STRING) ? raw.getString("auto") : "default";
+            String policy = rewardPolicy(ftbAuto, defaultAutoClaim);
+            conversions.add(new FtbFieldConversion(file, "quests[" + quest + "].rewards[" + legacy + "]",
+                    "auto", "claim_policy", FtbFieldConversion.Status.MAPPED, ftbAuto + " -> " + policy));
+            result.add(new RewardDefinition(bookId, remember(namespace, legacy, aliases), mappedType, config,
+                    policy, raw.getBoolean("team_reward")));
         }
         return result;
     }
 
-    private Map<String, String> flatten(CompoundTag raw) {
+    private Map<String, String> flatten(CompoundTag raw, Set<String> semanticFields) {
         Map<String, String> result = new TreeMap<>();
-        for (String key : raw.getAllKeys()) if (!key.equals("id") && !key.equals("type")) result.put(key, raw.get(key).toString());
+        for (String key : raw.getAllKeys()) if (!key.equals("id") && !key.equals("type")
+                && !semanticFields.contains(key)) result.put(key, raw.get(key).toString());
+        return result;
+    }
+
+    private void recordMappedFields(CompoundTag raw, String file, String path,
+                                    List<FtbFieldConversion> conversions, Map<String, String> mappings) {
+        mappings.forEach((source, target) -> {
+            if (raw.contains(source)) conversions.add(new FtbFieldConversion(file, path, source, target,
+                    FtbFieldConversion.Status.MAPPED, "Converted to native field"));
+        });
+    }
+
+    private void recordConfigFields(CompoundTag raw, Set<String> excluded, String file, String path,
+                                    List<FtbFieldConversion> conversions) {
+        for (String key : raw.getAllKeys()) {
+            if (!excluded.contains(key)) conversions.add(new FtbFieldConversion(file, path, key, "config." + key,
+                    FtbFieldConversion.Status.MAPPED, "Preserved as typed configuration"));
+        }
+    }
+
+    private Map<String, String> extensions(CompoundTag raw, Set<String> known, String file, String path,
+                                           List<FtbFieldConversion> conversions) {
+        Map<String, String> result = new TreeMap<>();
+        for (String key : raw.getAllKeys()) {
+            if (known.contains(key)) continue;
+            result.put("ftb." + key, raw.get(key).toString());
+            conversions.add(new FtbFieldConversion(file, path, key, "extensions.ftb." + key,
+                    FtbFieldConversion.Status.PRESERVED_EXTENSION, "Preserved as SNBT"));
+        }
         return result;
     }
 
     private void warnUnknown(String type, String file, String path, String id, DiagnosticReport report) {
-        if (!Set.of("checkmark", "item", "custom").contains(type)) {
+        String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
+        boolean supported = Set.of("checkmark", "item", "custom").contains(normalized)
+                || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom").contains(normalized);
+        if (!supported && !normalized.contains(":")) {
             report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
         }
+    }
+
+    private void recordTypeConversion(String file, String path, String sourceType, ResourceLocation targetType,
+                                      List<FtbFieldConversion> conversions) {
+        String normalized = sourceType == null ? "" : sourceType.toLowerCase(Locale.ROOT);
+        boolean builtIn = Set.of("checkmark", "item", "custom", "ftbquests:checkmark", "ftbquests:item",
+                "ftbquests:custom").contains(normalized);
+        boolean namespaced = sourceType != null && sourceType.contains(":");
+        FtbFieldConversion.Status status = builtIn ? FtbFieldConversion.Status.MAPPED
+                : namespaced ? FtbFieldConversion.Status.PRESERVED_EXTENSION
+                : FtbFieldConversion.Status.UNSUPPORTED;
+        conversions.add(new FtbFieldConversion(file, path, "type", "type", status,
+                sourceType + " -> " + targetType));
     }
 
     private void validateCount(CompoundTag raw, String file, String path, String id, DiagnosticReport report) {
@@ -237,8 +381,49 @@ public final class FtbV13Importer {
     }
 
     private ResourceLocation typeId(String type) {
-        return ResourceLocation.fromNamespaceAndPath("brnquest", type.isBlank() ? "unknown" : type.toLowerCase(Locale.ROOT));
+        String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
+        String builtInPath = normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
+        if (Set.of("checkmark", "item", "custom").contains(builtInPath)) {
+            return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
+        }
+        ResourceLocation namespaced = ResourceLocation.tryParse(normalized);
+        if (namespaced != null && normalized.contains(":")) return namespaced;
+        return ResourceLocation.fromNamespaceAndPath("ftbquests", normalized.isBlank() ? "unknown" : normalized);
     }
+
+    private String rewardPolicy(String value, String inherited) {
+        String resolved = value == null || value.isBlank() || value.equalsIgnoreCase("default") ? inherited : value;
+        return switch (resolved == null ? "" : resolved.toLowerCase(Locale.ROOT)) {
+            case "enabled" -> RewardClaimPolicy.AUTO_VISIBLE.serializedName();
+            case "no_toast" -> RewardClaimPolicy.AUTO_SILENT.serializedName();
+            case "invisible" -> RewardClaimPolicy.AUTO_HIDDEN.serializedName();
+            default -> RewardClaimPolicy.MANUAL.serializedName();
+        };
+    }
+
+    private Map<String, InheritedAppearance> readPresets(CompoundTag raw) {
+        Map<String, InheritedAppearance> result = new TreeMap<>();
+        for (String name : raw.getAllKeys()) {
+            CompoundTag value = raw.getCompound(name);
+            result.put(name, new InheritedAppearance(value.getString("shape"),
+                    value.contains("size", Tag.TAG_ANY_NUMERIC) ? value.getDouble("size") : 1.0));
+        }
+        return result;
+    }
+
+    private InheritedAppearance inheritedAppearance(CompoundTag raw, InheritedAppearance parent,
+                                                     Map<String, InheritedAppearance> presets) {
+        InheritedAppearance preset = presets.getOrDefault(raw.getString("preset"), parent);
+        String shape = raw.getString("shape");
+        if (shape.isBlank()) shape = raw.getString("default_quest_shape");
+        if (shape.isBlank()) shape = preset.shape();
+        double size = raw.contains("size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("size")
+                : raw.contains("default_quest_size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("default_quest_size")
+                : preset.size();
+        return new InheritedAppearance(shape, size);
+    }
+
+    private record InheritedAppearance(String shape, double size) {}
 
     private Diagnostic problem(Diagnostic.Severity severity, String code, String file, String path, String id, String message) {
         return new Diagnostic(severity, code, file, path, id, Objects.requireNonNullElse(message, "Unknown error"));

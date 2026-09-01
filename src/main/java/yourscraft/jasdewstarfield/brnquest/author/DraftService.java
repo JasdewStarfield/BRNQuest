@@ -77,10 +77,12 @@ public final class DraftService {
                 .toList();
         List<ChapterDefinition> chapters = original.chapters().stream().map(chapter ->
                 new ChapterDefinition(targetBookId, chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
-                        chapter.order(), chapter.quests().stream().map(quest -> copyQuest(targetBookId, quest)).toList()))
+                        chapter.order(), chapter.quests().stream().map(quest -> copyQuest(targetBookId, quest)).toList(),
+                        chapter.extensions()))
                 .toList();
         QuestBookDefinition copy = new QuestBookDefinition(targetBookId, original.schemaVersion(),
-                original.title() + " (recovered)", groups, chapters, original.legacyIds());
+                original.title() + " (recovered)", groups, chapters, original.legacyIds(),
+                original.localization(), original.extensions());
         return copy;
     }
 
@@ -91,7 +93,7 @@ public final class DraftService {
                 reward.id(), reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward())).toList();
         return new QuestDefinition(bookId, quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(), tasks, rewards,
-                quest.legacyId());
+                quest.legacyId(), quest.appearance(), quest.extensions());
     }
 
     private static MinecraftServer authorizedServer(ServerPlayer player) {

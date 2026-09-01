@@ -271,6 +271,50 @@ class DraftBookEditorTest {
         assertFalse(result.success());
     }
 
+    @Test void localizedQuestTextUpdatesOneLocaleWithoutReplacingNativeContent() {
+        QuestBookDefinition book = bookWithDependency();
+        QuestBookDefinition localized = value(DraftBookEditor.updateQuestTranslation(book, id("root"),
+                "zh-CN", "根任务", "副标题", "第一行\n第二行"));
+
+        QuestDefinition quest = localized.quests().stream().filter(value -> value.id().equals(id("root")))
+                .findFirst().orElseThrow();
+        assertEquals("root", quest.title());
+        assertEquals("根任务", localized.localization().resolve("zh_cn",
+                "quest.brnquest:root.title", quest.title()));
+        assertEquals("第一行\n第二行", localized.localization().translations().get("zh_cn")
+                .get("quest.brnquest:root.quest_desc"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> localized.localization().translations().get("zh_cn").put("x", "y"));
+
+        QuestDefinition renamed = new QuestDefinition(id("book"), id("renamed_localized"), id("chapter"),
+                quest.title(), quest.subtitle(), quest.description(), quest.icon(), quest.x(), quest.y(),
+                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
+        QuestBookDefinition afterRename = value(DraftBookEditor.updateQuestBasics(localized, quest.id(), renamed));
+        assertEquals("根任务", afterRename.localization().resolve("zh_cn",
+                "quest.brnquest:renamed_localized.title", ""));
+        assertFalse(afterRename.localization().translations().get("zh_cn")
+                .containsKey("quest.brnquest:root.title"));
+    }
+
+    @Test void fallbackLocaleTextUsesNativeFieldsAndRemovesShadowingTranslations() {
+        QuestBookDefinition book = bookWithDependency();
+        QuestBookDefinition shadowed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
+                book.chapterGroups(), book.chapters(), book.legacyIds(), new BookLocalization("en_us", Map.of(
+                "en_us", Map.of("quest.brnquest:root.title", "Old fallback",
+                        "quest.brnquest:root.quest_subtitle", "Old subtitle",
+                        "quest.brnquest:root.quest_desc", "Old description"))), book.extensions());
+        QuestBookDefinition updated = value(DraftBookEditor.updateQuestTranslation(shadowed, id("root"),
+                "en-US", "Canonical", "Canonical subtitle", "Canonical description"));
+
+        QuestDefinition quest = updated.quests().stream().filter(value -> value.id().equals(id("root")))
+                .findFirst().orElseThrow();
+        assertEquals("Canonical", quest.title());
+        assertEquals("Canonical subtitle", quest.subtitle());
+        assertEquals("Canonical description", quest.description());
+        assertFalse(updated.localization().translations().getOrDefault("en_us", Map.of())
+                .containsKey("quest.brnquest:root.title"));
+    }
+
     private static QuestBookDefinition bookWithDependency() {
         QuestBookDefinition book = emptyBook();
         ChapterGroupDefinition group = new ChapterGroupDefinition(id("book"), id("group"), "Group", 0);

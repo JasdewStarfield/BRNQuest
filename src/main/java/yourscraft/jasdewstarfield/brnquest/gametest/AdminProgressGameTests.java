@@ -190,7 +190,7 @@ public final class AdminProgressGameTests {
                 Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "3", "consume_items", "1b"), false);
         var check = new TaskDefinition(id("book"), id("admin_check"), id("checkmark"), Map.of(), false);
         var reward = new RewardDefinition(id("book"), id("admin_reward"), id("item"),
-                Map.of("item", "{count:1,id:\"minecraft:diamond\"}"), "auto", false);
+                Map.of("item", "{count:1,id:\"minecraft:diamond\"}"), "auto_silent", false);
         return new QuestDefinition(id("book"), id(name), id("chapter"), "管理验收", "", "", "", 0, 0,
                 List.of(), List.of(item, check), List.of(reward), "");
     }

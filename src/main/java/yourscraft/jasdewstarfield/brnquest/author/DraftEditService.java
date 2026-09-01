@@ -135,6 +135,15 @@ public final class DraftEditService {
                 book -> DraftBookEditor.updateQuestPositions(book, positions));
     }
 
+    public AuthorOperationResult<DraftEditResult> updateQuestTranslation(ServerPlayer player, UUID sessionId,
+                                                                          ResourceLocation bookId, String revision,
+                                                                          ResourceLocation questId, String locale,
+                                                                          String title, String subtitle,
+                                                                          String description) {
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateQuestTranslation(
+                book, questId, locale, title, subtitle, description));
+    }
+
     public AuthorOperationResult<DraftEditResult> moveQuest(ServerPlayer player, UUID sessionId,
                                                              ResourceLocation bookId, String revision,
                                                              ResourceLocation questId, ResourceLocation chapterId,

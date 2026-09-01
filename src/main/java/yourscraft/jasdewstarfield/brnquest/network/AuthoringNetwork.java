@@ -29,12 +29,15 @@ import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
 import yourscraft.jasdewstarfield.brnquest.author.SemanticDiffEntry;
 import yourscraft.jasdewstarfield.brnquest.client.ClientPayloadHandler;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
+import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
+import yourscraft.jasdewstarfield.brnquest.data.QuestAppearance;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
@@ -246,7 +249,7 @@ public final class AuthoringNetwork {
     public record QuestUpdateWire(String sessionId, String bookId, String draftRevision, String questId,
                                   String replacementQuestId, String title, String subtitle,
                                   String description, String iconKind, String iconValue, boolean preserveIcon,
-                                  Double x, Double y) {}
+                                  Double x, Double y, String shape, Double size, Double iconScale, Double minWidth) {}
 
     public record PositionWire(String questId, double x, double y) {}
 
@@ -364,7 +367,7 @@ public final class AuthoringNetwork {
                                    String title, String subtitle, String description, String iconKind, String iconValue,
                                    boolean preserveIcon) {
         updateQuest(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle,
-                description, iconKind, iconValue, preserveIcon, null, null);
+                description, iconKind, iconValue, preserveIcon, null, null, null, null, null, null);
     }
 
     /** Optional coordinates let the full property form update exact values without changing quick text edits. */
@@ -372,9 +375,18 @@ public final class AuthoringNetwork {
                                    ResourceLocation questId, ResourceLocation replacementQuestId,
                                    String title, String subtitle, String description, String iconKind, String iconValue,
                                    boolean preserveIcon, Double x, Double y) {
+        updateQuest(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle, description,
+                iconKind, iconValue, preserveIcon, x, y, null, null, null, null);
+    }
+
+    public static void updateQuest(UUID sessionId, ResourceLocation bookId, String draftRevision,
+                                   ResourceLocation questId, ResourceLocation replacementQuestId,
+                                   String title, String subtitle, String description, String iconKind, String iconValue,
+                                   boolean preserveIcon, Double x, Double y, String shape, Double size,
+                                   Double iconScale, Double minWidth) {
         QuestUpdateWire wire = new QuestUpdateWire(sessionId.toString(), bookId.toString(), draftRevision,
                 questId.toString(), replacementQuestId.toString(), title, subtitle, description,
-                iconKind, iconValue, preserveIcon, x, y);
+                iconKind, iconValue, preserveIcon, x, y, shape, size, iconScale, minWidth);
         PacketDistributor.sendToServer(new UpdateQuestPayload(GSON.toJson(wire)));
     }
 
@@ -740,9 +752,21 @@ public final class AuthoringNetwork {
         }
         double replacementX = hasX ? wire.x() : quest.x();
         double replacementY = hasY ? wire.y() : quest.y();
+        QuestAppearance appearance = quest.appearance();
+        if (wire.shape() != null || wire.size() != null || wire.iconScale() != null || wire.minWidth() != null) {
+            if (wire.shape() == null || wire.size() == null || wire.iconScale() == null || wire.minWidth() == null
+                    || wire.shape().isBlank() || !Double.isFinite(wire.size()) || wire.size() <= 0
+                    || !Double.isFinite(wire.iconScale()) || wire.iconScale() <= 0
+                    || !Double.isFinite(wire.minWidth()) || wire.minWidth() < 0) {
+                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                        "INVALID_QUEST_APPEARANCE", "Quest appearance values must be finite and positive");
+                return;
+            }
+            appearance = new QuestAppearance(wire.shape(), wire.size(), wire.iconScale(), wire.minWidth());
+        }
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
                 wire.title(), wire.subtitle(), wire.description(), icon, replacementX, replacementY,
-                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
+                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, quest.extensions());
         // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
         // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.
         var updated = replacementQuestId.equals(questId) && hasX
@@ -834,6 +858,10 @@ public final class AuthoringNetwork {
                         wire.draftRevision(), requireId(targetId));
                 case "MOVE_QUESTS" -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
                         decodePositions(wire.positions()));
+                case "UPDATE_QUEST_TRANSLATION" -> editor.updateQuestTranslation(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId), boundedLocale(wire.title()),
+                        boundedText(wire.config(), "title", 256), boundedText(wire.config(), "subtitle", 256),
+                        boundedText(wire.config(), "description", 32_768));
                 case "ADD_DEPENDENCY" -> editor.addDependency(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), requireId(sourceId));
                 case "REMOVE_DEPENDENCY" -> editor.removeDependency(player, sessionId, bookId,
@@ -1003,7 +1031,7 @@ public final class AuthoringNetwork {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), title,
-                chapter.icon(), order, chapter.quests());
+                chapter.icon(), order, chapter.quests(), chapter.extensions());
     }
 
     private static QuestDefinition questCopy(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
@@ -1024,7 +1052,8 @@ public final class AuthoringNetwork {
                     reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward()));
         }
         return new QuestDefinition(book.id(), targetId, source.chapterId(), title, source.subtitle(),
-                source.description(), source.icon(), x, y, source.dependencies(), tasks, rewards, "");
+                source.description(), source.icon(), x, y, source.dependencies(), tasks, rewards, "",
+                source.appearance(), source.extensions());
     }
 
     /** Copies opaque extension data on the server; the client never reconstructs unknown task config. */
@@ -1253,9 +1282,21 @@ public final class AuthoringNetwork {
 
     private static String boundedClaimPolicy(String policy) {
         String value = policy == null ? "" : policy.strip();
-        if (value.isEmpty() || value.length() > 64) {
-            throw new IllegalArgumentException("Reward claim policy must contain 1-64 characters");
+        if (value.length() > 64 || !RewardClaimPolicy.isKnown(value)) {
+            throw new IllegalArgumentException("Reward claim policy must be manual, auto_visible, auto_silent, or auto_hidden");
         }
+        return RewardClaimPolicy.parse(value).serializedName();
+    }
+
+    private static String boundedLocale(String locale) {
+        String value = BookLocalization.normalizeLocale(locale);
+        if (!value.matches("[a-z0-9_]{2,16}")) throw new IllegalArgumentException("Locale must use a code such as en_us");
+        return value;
+    }
+
+    private static String boundedText(Map<String, String> values, String key, int maximum) {
+        String value = values == null ? "" : values.getOrDefault(key, "");
+        if (value.length() > maximum) throw new IllegalArgumentException(key + " exceeds " + maximum + " characters");
         return value;
     }
 

@@ -16,7 +16,7 @@ public final class DraftBookEditor {
     public static AuthorOperationResult<DraftChange> setBookTitle(QuestBookDefinition book, String title) {
         if (title == null || title.isBlank()) return invalid("BOOK_TITLE_REQUIRED", "Book title is required");
         return changed(new QuestBookDefinition(book.id(), book.schemaVersion(), title,
-                book.chapterGroups(), book.chapters(), book.legacyIds()), book.id());
+                book.chapterGroups(), book.chapters(), book.legacyIds(), book.localization(), book.extensions()), book.id());
     }
 
     public static AuthorOperationResult<DraftChange> addGroup(QuestBookDefinition book, ChapterGroupDefinition group) {
@@ -82,7 +82,8 @@ public final class DraftBookEditor {
         affected.addAll(quests);
         affected.addAll(dependencyReferrers(book, quests));
         return changed(new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), remainingGroups,
-                remainingChapters, pruned.legacyIds()), affected.toArray(ResourceLocation[]::new));
+                remainingChapters, pruned.legacyIds(), book.localization(), book.extensions()),
+                affected.toArray(ResourceLocation[]::new));
     }
 
     public static AuthorOperationResult<DraftChange> addChapter(QuestBookDefinition book, ChapterDefinition chapter) {
@@ -115,7 +116,7 @@ public final class DraftBookEditor {
         }
         // Child quests are owned by their dedicated operations, not an enclosing overwrite.
         ChapterDefinition safe = new ChapterDefinition(book.id(), chapterId, replacement.groupId(), replacement.title(),
-                replacement.icon(), replacement.order(), old.quests());
+                replacement.icon(), replacement.order(), old.quests(), replacement.extensions());
         return replaceChapter(book, chapterId, ignored -> safe, chapterId);
     }
 
@@ -137,7 +138,7 @@ public final class DraftBookEditor {
         List<ChapterDefinition> normalized = book.chapters().stream().map(chapter -> {
             Integer order = orders.get(chapter.id());
             return order == null ? chapter : new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(),
-                    chapter.title(), chapter.icon(), order, chapter.quests());
+                    chapter.title(), chapter.icon(), order, chapter.quests(), chapter.extensions());
         }).toList();
         return changed(withChapters(book, normalized), chapterId);
     }
@@ -172,7 +173,8 @@ public final class DraftBookEditor {
         if (quest(book, quest.id()) != null) return conflict("DUPLICATE_QUEST_ID", quest.id());
         if (questLegacySourceExists(book, quest.id())) return retiredQuestId(quest.id());
         return replaceChapter(book, chapterId, chapter -> new ChapterDefinition(chapter.bookId(), chapter.id(),
-                chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), quest)),
+                chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), quest),
+                chapter.extensions()),
                 questObjectIds(quest));
     }
 
@@ -197,7 +199,8 @@ public final class DraftBookEditor {
                 replacement.subtitle(), replacement.description(), replacement.icon(), replacement.x(), replacement.y(),
                 location.chapter.quests().get(location.index).dependencies(),
                 location.chapter.quests().get(location.index).tasks(),
-                location.chapter.quests().get(location.index).rewards(), replacement.legacyId());
+                location.chapter.quests().get(location.index).rewards(), replacement.legacyId(),
+                replacement.appearance(), replacement.extensions());
         return replaceQuest(book, location, ignored -> safe, questId);
     }
 
@@ -242,7 +245,7 @@ public final class DraftBookEditor {
                     quests.add(new QuestDefinition(book.id(), replacementId, chapter.id(), replacement.title(),
                             replacement.subtitle(), replacement.description(), replacement.icon(),
                             current.x(), current.y(), dependencies, current.tasks(), current.rewards(),
-                            current.legacyId()));
+                            current.legacyId(), replacement.appearance(), replacement.extensions()));
                 } else {
                     quests.add(copyQuest(current, dependencies, current.tasks(), current.rewards()));
                 }
@@ -259,8 +262,11 @@ public final class DraftBookEditor {
             aliases.entrySet().removeIf(entry -> entry.getKey().equals(entry.getValue().toString()));
             aliases.put(questId.toString(), replacementId);
         }
+        BookLocalization localization = replacementId.equals(questId) || !location.chapter.quests().get(location.index)
+                .legacyId().isBlank() ? book.localization()
+                : renameQuestTranslationPrefix(book.localization(), questId.toString(), replacementId.toString());
         QuestBookDefinition changed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
-                book.chapterGroups(), chapters, aliases);
+                book.chapterGroups(), chapters, aliases, localization, book.extensions());
         return changed(changed, affected.toArray(ResourceLocation[]::new));
     }
 
@@ -281,9 +287,55 @@ public final class DraftBookEditor {
                     Position position = positions.get(quest.id());
                     return position == null ? quest : new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
                             quest.title(), quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
-                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId());
-                }).toList())).toList();
+                            quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
+                            quest.appearance(), quest.extensions());
+                }).toList(), chapter.extensions())).toList();
         return changed(withChapters(book, chapters), positions.keySet().toArray(ResourceLocation[]::new));
+    }
+
+    /** Updates one locale without rebuilding or trusting any client-owned quest structure. */
+    public static AuthorOperationResult<DraftChange> updateQuestTranslation(QuestBookDefinition book,
+                                                                             ResourceLocation questId,
+                                                                             String locale, String title,
+                                                                             String subtitle, String description) {
+        QuestDefinition quest = quest(book, questId);
+        if (quest == null) return notFound("QUEST_NOT_FOUND", questId);
+        String normalizedLocale = BookLocalization.normalizeLocale(locale);
+        String sourceId = quest.legacyId().isBlank() ? quest.id().toString() : quest.legacyId();
+        String prefix = "quest." + sourceId + ".";
+        if (normalizedLocale.equals(book.localization().fallbackLocale())) {
+            // The native quest fields are the canonical fallback text. Keeping a second fallback-locale
+            // copy in translations would let it shadow property and quick edits indefinitely.
+            QuestDefinition replacement = new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
+                    title, subtitle, description, quest.icon(), quest.x(), quest.y(), quest.dependencies(),
+                    quest.tasks(), quest.rewards(), quest.legacyId(), quest.appearance(), quest.extensions());
+            AuthorOperationResult<DraftChange> updated = updateQuest(book, questId, replacement);
+            if (!updated.success()) return updated;
+            QuestBookDefinition changedBook = updated.value().book();
+            Map<String, Map<String, String>> translations = new java.util.TreeMap<>(
+                    changedBook.localization().translations());
+            Map<String, String> fallbackValues = new java.util.TreeMap<>(
+                    translations.getOrDefault(normalizedLocale, Map.of()));
+            fallbackValues.keySet().removeAll(List.of(prefix + "title", prefix + "quest_subtitle",
+                    prefix + "quest_desc"));
+            if (fallbackValues.isEmpty()) translations.remove(normalizedLocale);
+            else translations.put(normalizedLocale, fallbackValues);
+            QuestBookDefinition normalized = new QuestBookDefinition(changedBook.id(), changedBook.schemaVersion(),
+                    changedBook.title(), changedBook.chapterGroups(), changedBook.chapters(), changedBook.legacyIds(),
+                    new BookLocalization(changedBook.localization().fallbackLocale(), translations),
+                    changedBook.extensions());
+            return changed(normalized, questId);
+        }
+        Map<String, Map<String, String>> translations = new java.util.TreeMap<>(book.localization().translations());
+        Map<String, String> values = new java.util.TreeMap<>(translations.getOrDefault(normalizedLocale, Map.of()));
+        values.put(prefix + "title", title == null ? "" : title);
+        values.put(prefix + "quest_subtitle", subtitle == null ? "" : subtitle);
+        values.put(prefix + "quest_desc", description == null ? "" : description);
+        translations.put(normalizedLocale, values);
+        QuestBookDefinition changed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
+                book.chapterGroups(), book.chapters(), book.legacyIds(),
+                new BookLocalization(book.localization().fallbackLocale(), translations), book.extensions());
+        return changed(changed, questId);
     }
 
     public record Position(double x, double y) {}
@@ -303,7 +355,8 @@ public final class DraftBookEditor {
                 ? new ArrayList<>(sourceQuests) : new ArrayList<>(chapters.get(targetChapterIndex).quests());
         int insertion = Math.max(0, Math.min(targetIndex, targetQuests.size()));
         QuestDefinition relocated = new QuestDefinition(book.id(), moved.id(), targetChapterId, moved.title(), moved.subtitle(),
-                moved.description(), moved.icon(), moved.x(), moved.y(), moved.dependencies(), moved.tasks(), moved.rewards(), moved.legacyId());
+                moved.description(), moved.icon(), moved.x(), moved.y(), moved.dependencies(), moved.tasks(), moved.rewards(),
+                moved.legacyId(), moved.appearance(), moved.extensions());
         targetQuests.add(insertion, relocated);
         chapters.set(targetChapterIndex, withQuests(chapters.get(targetChapterIndex), targetQuests));
         return changed(withChapters(book, chapters), questId, source.chapter.id(), targetChapterId);
@@ -506,21 +559,25 @@ public final class DraftBookEditor {
     }
 
     private static QuestBookDefinition withGroups(QuestBookDefinition book, List<ChapterGroupDefinition> groups) {
-        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), groups, book.chapters(), book.legacyIds());
+        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), groups, book.chapters(),
+                book.legacyIds(), book.localization(), book.extensions());
     }
 
     private static QuestBookDefinition withChapters(QuestBookDefinition book, List<ChapterDefinition> chapters) {
-        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), book.chapterGroups(), chapters, book.legacyIds());
+        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), book.chapterGroups(), chapters,
+                book.legacyIds(), book.localization(), book.extensions());
     }
 
     private static ChapterDefinition withQuests(ChapterDefinition chapter, List<QuestDefinition> quests) {
-        return new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), quests);
+        return new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
+                chapter.order(), quests, chapter.extensions());
     }
 
     private static QuestDefinition copyQuest(QuestDefinition quest, List<ResourceLocation> dependencies,
                                              List<TaskDefinition> tasks, List<RewardDefinition> rewards) {
         return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
-                quest.description(), quest.icon(), quest.x(), quest.y(), dependencies, tasks, rewards, quest.legacyId());
+                quest.description(), quest.icon(), quest.x(), quest.y(), dependencies, tasks, rewards, quest.legacyId(),
+                quest.appearance(), quest.extensions());
     }
 
     private static QuestBookDefinition removeQuestSetAndReferences(QuestBookDefinition book,
@@ -543,12 +600,27 @@ public final class DraftBookEditor {
         aliases.entrySet().removeIf(entry -> removedQuestIds.contains(entry.getValue())
                 || entry.getKey().startsWith("@task:") && !remainingTasks.contains(entry.getValue())
                 || entry.getKey().startsWith("@reward:") && !remainingRewards.contains(entry.getValue()));
-        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), book.chapterGroups(), chapters, aliases);
+        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), book.chapterGroups(), chapters,
+                aliases, book.localization(), book.extensions());
     }
 
     private static List<ResourceLocation> dependencyReferrers(QuestBookDefinition book, Set<ResourceLocation> removedIds) {
         return book.quests().stream().filter(quest -> !removedIds.contains(quest.id())
                 && quest.dependencies().stream().anyMatch(removedIds::contains)).map(QuestDefinition::id).toList();
+    }
+
+    private static BookLocalization renameQuestTranslationPrefix(BookLocalization localization,
+                                                                  String oldId, String newId) {
+        String oldPrefix = "quest." + oldId + ".";
+        String newPrefix = "quest." + newId + ".";
+        Map<String, Map<String, String>> translations = new java.util.TreeMap<>();
+        localization.translations().forEach((locale, source) -> {
+            Map<String, String> values = new java.util.TreeMap<>();
+            source.forEach((key, value) -> values.put(key.startsWith(oldPrefix)
+                    ? newPrefix + key.substring(oldPrefix.length()) : key, value));
+            translations.put(locale, values);
+        });
+        return new BookLocalization(localization.fallbackLocale(), translations);
     }
 
     private static ResourceLocation[] containedIds(ChapterDefinition chapter) {
@@ -610,7 +682,7 @@ public final class DraftBookEditor {
         aliases.entrySet().removeIf(entry -> entry.getKey().equals(prefix + entry.getValue()));
         aliases.put(prefix + oldId, newId);
         QuestBookDefinition renamed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
-                book.chapterGroups(), book.chapters(), aliases);
+                book.chapterGroups(), book.chapters(), aliases, book.localization(), book.extensions());
         return changed(renamed, oldId, newId);
     }
 
@@ -630,7 +702,7 @@ public final class DraftBookEditor {
                 ? !rewards.contains(entry.getValue()) : !quests.contains(entry.getValue()));
         if (aliases.equals(book.legacyIds())) return updated;
         QuestBookDefinition pruned = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),
-                book.chapterGroups(), book.chapters(), aliases);
+                book.chapterGroups(), book.chapters(), aliases, book.localization(), book.extensions());
         return AuthorOperationResult.success("DRAFT_CHANGED", "Draft candidate changed",
                 new DraftChange(pruned, change.affectedObjects()));
     }

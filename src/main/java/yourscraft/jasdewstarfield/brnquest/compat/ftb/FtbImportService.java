@@ -56,7 +56,7 @@ public final class FtbImportService {
 
     private void writeReport(Path reports, String namespace, String bookId, FtbImportResult result) throws IOException {
         Files.createDirectories(reports);
-        Files.writeString(reports.resolve("import-" + namespace + "-" + bookId + ".json"), result.report().toJson() + "\n",
+        Files.writeString(reports.resolve("import-" + namespace + "-" + bookId + ".json"), result.reportJson() + "\n",
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 

@@ -7,12 +7,14 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.*;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Detail section composition. The caller supplies row renderers; this panel owns text flow and scrolling. */
 final class QuestDetailsPanel {
     record Layout(UiRect content, UiRect clip, int trackX) {}
-    record Model(QuestDefinition quest, String title, QuestStatus status, Component statusText,
+    record Model(QuestDefinition quest, String title, String subtitle, String description,
+                 QuestStatus status, Component statusText,
                  int statusColor, boolean editing, boolean gameplay, boolean ready) {}
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
@@ -49,13 +51,13 @@ final class QuestDetailsPanel {
         if (editing) addTextArea(textAreas, layout.content(), "TITLE", contentLeft, titleTop, contentWidth - 14, y);
         y += 3;
 
-        if (editing || !quest.subtitle().isBlank()) {
+        if (editing || !model.subtitle().isBlank()) {
             int subtitleTop = y;
-            String subtitle = quest.subtitle().isBlank()
+            String subtitle = model.subtitle().isBlank()
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_subtitle").getString()
-                    : quest.subtitle();
+                    : model.subtitle();
             y = EditorTextRenderer.drawWrapped(graphics, font, subtitle, contentLeft, y, contentWidth,
-                    quest.subtitle().isBlank() ? 0xFF718096 : 0xFFB7C5D8);
+                    model.subtitle().isBlank() ? 0xFF718096 : 0xFFB7C5D8);
             if (editing) addTextArea(textAreas, layout.content(), "SUBTITLE", contentLeft, subtitleTop, contentWidth, y);
             y += 4;
         }
@@ -85,22 +87,24 @@ final class QuestDetailsPanel {
         }
         y += 16;
 
-        if (editing || !quest.description().isBlank()) {
+        if (editing || !model.description().isBlank()) {
             int descriptionTop = y;
-            String description = quest.description().isBlank()
+            String description = model.description().isBlank()
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_description").getString()
-                    : quest.description();
+                    : model.description();
             y = EditorTextRenderer.drawWrapped(graphics, font, description, contentLeft, y, contentWidth,
-                    quest.description().isBlank() ? 0xFF718096 : 0xFFE1E6EE);
+                    model.description().isBlank() ? 0xFF718096 : 0xFFE1E6EE);
             if (editing) addTextArea(textAreas, layout.content(), "DESCRIPTION",
                     contentLeft, descriptionTop, contentWidth, y);
             y += 8;
         }
 
         if (editing) {
-            for (UiRect area : textAreas.values()) {
-                if (area.containsExclusive(mouseX, mouseY)) {
-                    hint = Component.translatable("screen.brnquest.editor.quick_edit.hint");
+            for (Map.Entry<String, UiRect> entry : textAreas.entrySet()) {
+                if (entry.getValue().containsExclusive(mouseX, mouseY)) {
+                    hint = Component.translatable(entry.getKey().equals("DESCRIPTION")
+                            ? "screen.brnquest.editor.quick_edit.open_editor_hint"
+                            : "screen.brnquest.editor.quick_edit.hint");
                     break;
                 }
             }
@@ -115,14 +119,16 @@ final class QuestDetailsPanel {
             for (TaskDefinition task : quest.tasks()) y = rows.task(task, contentLeft, y, contentWidth);
         }
 
-        if (!quest.rewards().isEmpty()) {
+        List<RewardDefinition> visibleRewards = quest.rewards().stream()
+                .filter(reward -> reward.policy().visible() || editing).toList();
+        if (!visibleRewards.isEmpty()) {
             y += 4;
             graphics.drawString(font, Component.translatable("screen.brnquest.rewards"), contentLeft, y, 0xFFE6B55B, false);
             y += 13;
             int rewardTop = y;
             int rewardColumns = Math.max(1, contentWidth / QuestViewportMath.REWARD_ROW_HEIGHT);
             int column = 0;
-            for (RewardDefinition reward : quest.rewards()) {
+            for (RewardDefinition reward : visibleRewards) {
                 int rewardX = contentLeft + column * QuestViewportMath.REWARD_ROW_HEIGHT;
                 rows.reward(reward, rewardX, y);
                 column++;
@@ -132,7 +138,7 @@ final class QuestDetailsPanel {
                 }
             }
             // Compute from row count so a partially populated final row is never clipped.
-            y = rewardTop + QuestViewportMath.rewardGridHeight(quest.rewards().size(), rewardColumns);
+            y = rewardTop + QuestViewportMath.rewardGridHeight(visibleRewards.size(), rewardColumns);
         }
         contentHeight = Math.max(0, y + (int) Math.round(drawnScroll) - layout.content().top() + 8);
         scroll.constrain(contentHeight, viewportHeight);

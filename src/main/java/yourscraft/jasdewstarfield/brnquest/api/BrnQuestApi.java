@@ -218,6 +218,24 @@ public final class BrnQuestApi {
                 .orElseGet(List::of);
     }
 
+    /** Returns immutable source translations for integrations that provide their own locale selection. */
+    public static Map<String, Map<String, String>> getTranslations() {
+        return snapshot().map(value -> value.book().localization().translations()).orElseGet(Map::of);
+    }
+
+    /** Resolves a semantic text key with configured fallback-locale behavior. */
+    public static String resolveText(String locale, String key, String fallback) {
+        return snapshot().map(value -> value.book().localization().resolve(locale, key, fallback)).orElse(fallback);
+    }
+
+    /** Returns a quest view whose three author-facing text fields are resolved for the requested locale. */
+    public static Optional<QuestView> getQuest(String questId, String locale) {
+        Optional<ResourceLocation> id = resolve(questId);
+        if (id.isEmpty()) return Optional.empty();
+        return snapshot().flatMap(value -> Optional.ofNullable(value.quests().get(id.orElseThrow()))
+                .map(quest -> ApiViews.quest(value, quest, locale)));
+    }
+
     public static Optional<QuestView> getQuest(String questId) {
         return definition(questId).map(ApiViews::quest);
     }

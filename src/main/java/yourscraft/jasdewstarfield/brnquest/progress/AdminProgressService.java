@@ -228,7 +228,7 @@ public final class AdminProgressService {
                 .filter(task -> task.id().toString().equals(intent.taskId()))
                 .map(task -> task.config().getOrDefault("title", "").isBlank()
                         ? task.typeId().toString() : task.config().get("title")).findFirst().orElse(title);
-        int autoRewards = (int) quest.rewards().stream().filter(reward -> "auto".equals(reward.claimPolicy())
+        int autoRewards = (int) quest.rewards().stream().filter(reward -> reward.policy().automatic()
                 && !state.claimed().contains(reward.id().toString())).count();
         return new View(resolved.player().getScoreboardName(), title, state.status().name(), resolved.owner(),
                 state.tasks().getOrDefault(intent.taskId(), 0L),

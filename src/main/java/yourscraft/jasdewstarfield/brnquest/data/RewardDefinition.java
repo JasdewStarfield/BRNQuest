@@ -18,5 +18,10 @@ public record RewardDefinition(ResourceLocation bookId, ResourceLocation id, Res
             Codec.BOOL.optionalFieldOf("team_reward", false).forGetter(RewardDefinition::teamReward)
     ).apply(i, RewardDefinition::new));
 
-    public RewardDefinition { config = Map.copyOf(config); }
+    public RewardDefinition {
+        config = Map.copyOf(config);
+        claimPolicy = claimPolicy == null || claimPolicy.isBlank() ? "manual" : claimPolicy;
+    }
+
+    public RewardClaimPolicy policy() { return RewardClaimPolicy.parse(claimPolicy); }
 }

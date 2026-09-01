@@ -31,6 +31,7 @@ public final class AuthorValidationService {
         validateLimits(book, report);
         Set<ResourceLocation> affected = new HashSet<>(affectedObjects);
         validatePresentation(book, affected, report);
+        validateLocalization(book, affected, report);
         validateEditorFields(book, affected, report);
         return report.diagnostics();
     }
@@ -39,6 +40,7 @@ public final class AuthorValidationService {
         DiagnosticReport report = structural(book);
         validateLimits(book, report);
         validatePresentation(book, null, report);
+        validateLocalization(book, null, report);
         validateEditorFields(book, null, report);
         return report.diagnostics();
     }
@@ -106,6 +108,12 @@ public final class AuthorValidationService {
             if (!Double.isFinite(quest.x()) || !Double.isFinite(quest.y())) {
                 add(report, "BQA-103", quest.id(), "position", "Quest coordinates must be finite numbers");
             }
+            if (!Double.isFinite(quest.appearance().size()) || quest.appearance().size() <= 0
+                    || !Double.isFinite(quest.appearance().iconScale()) || quest.appearance().iconScale() <= 0
+                    || !Double.isFinite(quest.appearance().minWidth()) || quest.appearance().minWidth() < 0) {
+                add(report, "BQA-104", quest.id(), "appearance",
+                        "Appearance size/icon scale must be positive and minimum width must be non-negative");
+            }
         });
     }
 
@@ -119,6 +127,26 @@ public final class AuthorValidationService {
                     ConfigEditorSchemas.forReward(ApiViews.reward(reward)).issues().forEach(issue ->
                             add(report, "BQA-R-" + issue.code(), reward.id(), "config." + issue.fieldKey(), issue.message())));
         });
+    }
+
+    private static void validateLocalization(QuestBookDefinition book, Set<ResourceLocation> affected,
+                                             DiagnosticReport report) {
+        if (book.localization().translations().isEmpty()) return;
+        for (var quest : book.quests().stream().filter(value -> included(value.id(), affected)).toList()) {
+            String sourceId = quest.legacyId().isBlank() ? quest.id().toString() : quest.legacyId();
+            String prefix = "quest." + sourceId + ".";
+            for (var locale : book.localization().translations().entrySet()) {
+                if (!locale.getValue().containsKey(prefix + "title")) {
+                    warn(report, "BQA-301", quest.id(), "localization." + locale.getKey() + ".title",
+                            "Translation is missing; native/fallback-locale text will be used");
+                }
+            }
+            if (!Set.of("chamfer", "square", "circle", "diamond")
+                    .contains(quest.appearance().shape().toLowerCase(java.util.Locale.ROOT))) {
+                warn(report, "BQA-302", quest.id(), "appearance.shape",
+                        "Unknown shape will render with the chamfer fallback");
+            }
+        }
     }
 
     private static boolean included(ResourceLocation id, Set<ResourceLocation> affected) {
@@ -136,5 +164,9 @@ public final class AuthorValidationService {
 
     private static void add(DiagnosticReport report, String code, ResourceLocation id, String path, String message) {
         report.add(new Diagnostic(Diagnostic.Severity.ERROR, code, "", path, id.toString(), message));
+    }
+
+    private static void warn(DiagnosticReport report, String code, ResourceLocation id, String path, String message) {
+        report.add(new Diagnostic(Diagnostic.Severity.WARN, code, "", path, id.toString(), message));
     }
 }

@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.progress;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.OperationResult;
@@ -229,6 +230,10 @@ public final class ProgressEngine {
     }
 
     public OperationResult claim(ServerPlayer player, ResourceLocation rewardId) {
+        return claim(player, rewardId, false);
+    }
+
+    private OperationResult claim(ServerPlayer player, ResourceLocation rewardId, boolean notifyAutomatic) {
         return synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             if (snapshot == null) return OperationResult.failure("NO_BOOK", "No active book");
@@ -252,6 +257,10 @@ public final class ProgressEngine {
                     snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
                     BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
             BrnQuestNetwork.syncProgress(player, true);
+            if (notifyAutomatic) {
+                player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
+                        rewardId.toString()), true);
+            }
             return OperationResult.success(result.message());
         });
     }
@@ -334,8 +343,8 @@ public final class ProgressEngine {
                 quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
         // only the trigger differs.
-        quest.rewards().stream().filter(reward -> reward.claimPolicy().equals("auto"))
-                .forEach(reward -> claim(player, reward.id()));
+        quest.rewards().stream().filter(reward -> reward.policy().automatic())
+                .forEach(reward -> claim(player, reward.id(), reward.policy().notifyPlayer()));
         // A task-only reset preserves claims; completing it again must not reopen already claimed rewards.
         if (!quest.rewards().isEmpty() && quest.rewards().stream()
                 .allMatch(reward -> progress.isClaimed(reward.id().toString()))) {

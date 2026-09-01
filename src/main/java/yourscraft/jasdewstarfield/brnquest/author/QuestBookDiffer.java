@@ -21,6 +21,12 @@ public final class QuestBookDiffer {
             addWholeBook(entries, before, SemanticDiffEntry.Kind.REMOVED);
         } else if (before != null) {
             property(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "title", before.title(), after.title());
+            property(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "localization.fallback_locale",
+                    before.localization().fallbackLocale(), after.localization().fallbackLocale());
+            mapProperties(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "extensions.",
+                    before.extensions(), after.extensions());
+            mapProperties(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "localization.",
+                    flattenTranslations(before.localization()), flattenTranslations(after.localization()));
             compareGroups(entries, before, after);
             compareChapters(entries, before, after);
             compareQuests(entries, before, after);
@@ -60,6 +66,8 @@ public final class QuestBookDiffer {
             else {
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "title", oldValue.title(), newValue.title());
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "icon", oldValue.icon(), newValue.icon());
+                mapProperties(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "extensions.",
+                        oldValue.extensions(), newValue.extensions());
                 if (!oldValue.groupId().equals(newValue.groupId())) add(entries, SemanticDiffEntry.Kind.MOVED,
                         SemanticDiffEntry.ObjectKind.CHAPTER, id, "group_id", oldValue.groupId().toString(), newValue.groupId().toString());
                 order(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, oldValue.order(), newValue.order());
@@ -106,6 +114,16 @@ public final class QuestBookDiffer {
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "subtitle", oldValue.subtitle(), newValue.subtitle());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "description", oldValue.description(), newValue.description());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "icon", oldValue.icon(), newValue.icon());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.shape",
+                oldValue.appearance().shape(), newValue.appearance().shape());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.size",
+                oldValue.appearance().size(), newValue.appearance().size());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.icon_scale",
+                oldValue.appearance().iconScale(), newValue.appearance().iconScale());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.min_width",
+                oldValue.appearance().minWidth(), newValue.appearance().minWidth());
+        mapProperties(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "extensions.",
+                oldValue.extensions(), newValue.extensions());
         if (!oldValue.chapterId().equals(newValue.chapterId())) add(entries, SemanticDiffEntry.Kind.MOVED,
                 SemanticDiffEntry.ObjectKind.QUEST, id, "chapter_id", oldValue.chapterId().toString(), newValue.chapterId().toString());
         if (Double.compare(oldValue.x(), newValue.x()) != 0 || Double.compare(oldValue.y(), newValue.y()) != 0) {
@@ -167,14 +185,27 @@ public final class QuestBookDiffer {
 
     private static void config(List<SemanticDiffEntry> entries, SemanticDiffEntry.ObjectKind kind,
                                ResourceLocation id, Map<String, String> before, Map<String, String> after) {
+        mapProperties(entries, kind, id, "config.", before, after);
+    }
+
+    private static void mapProperties(List<SemanticDiffEntry> entries, SemanticDiffEntry.ObjectKind kind,
+                                      ResourceLocation id, String prefix,
+                                      Map<String, String> before, Map<String, String> after) {
         Set<String> keys = new TreeSet<>(before.keySet());
         keys.addAll(after.keySet());
         keys.forEach(key -> {
             String oldValue = before.getOrDefault(key, "");
             String newValue = after.getOrDefault(key, "");
             if (!Objects.equals(oldValue, newValue)) add(entries, SemanticDiffEntry.Kind.CONFIG_CHANGED, kind, id,
-                    "config." + key, oldValue, newValue);
+                    prefix + key, oldValue, newValue);
         });
+    }
+
+    private static Map<String, String> flattenTranslations(BookLocalization localization) {
+        Map<String, String> result = new TreeMap<>();
+        localization.translations().forEach((locale, values) -> values.forEach((key, value) ->
+                result.put(locale + "." + key, value)));
+        return result;
     }
 
     private static void addWholeBook(List<SemanticDiffEntry> entries, QuestBookDefinition book,

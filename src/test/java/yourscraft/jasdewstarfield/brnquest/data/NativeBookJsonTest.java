@@ -47,4 +47,29 @@ class NativeBookJsonTest {
         assertEquals(List.of(firstTask.id(), secondTask.id()), decoded.tasks().stream().map(TaskDefinition::id).toList());
         assertEquals(List.of(firstReward.id(), secondReward.id()), decoded.rewards().stream().map(RewardDefinition::id).toList());
     }
+
+    @Test void roundTripsLocalizationAppearanceExtensionsAndRewardPolicies() {
+        ResourceLocation bookId = ResourceLocation.parse("test:localized");
+        ResourceLocation chapterId = ResourceLocation.parse("test:chapter");
+        RewardDefinition reward = new RewardDefinition(bookId, ResourceLocation.parse("test:reward"),
+                ResourceLocation.parse("brnquest:custom"), Map.of(), "auto_hidden", false);
+        QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
+                "Fallback", "", "line one\nline two", "", 0, 0, List.of(), List.of(), List.of(reward), "ABC",
+                new QuestAppearance("circle", 1.5, 0.75, 2.0), Map.of("ftb.hide", "true"));
+        QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Book", List.of(),
+                List.of(new ChapterDefinition(bookId, chapterId, ResourceLocation.parse("test:group"), "Chapter", "",
+                        0, List.of(quest), Map.of("ftb.filename", "\"legacy\""))), Map.of(),
+                new BookLocalization("zh_cn", Map.of("zh_cn", Map.of("quest.ABC.title", "中文标题"))),
+                Map.of("ftb.default_reward_team", "false"));
+
+        QuestBookDefinition decoded = NativeBookJson.decode(
+                JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject());
+        QuestDefinition decodedQuest = decoded.quests().getFirst();
+        assertEquals("中文标题", decoded.localization().resolve("zh_cn", "quest.ABC.title", "Fallback"));
+        assertEquals("line one\nline two", decodedQuest.description());
+        assertEquals(new QuestAppearance("circle", 1.5, 0.75, 2.0), decodedQuest.appearance());
+        assertEquals("true", decodedQuest.extensions().get("ftb.hide"));
+        assertEquals(RewardClaimPolicy.AUTO_HIDDEN, decodedQuest.rewards().getFirst().policy());
+        assertFalse(decodedQuest.rewards().getFirst().policy().visible());
+    }
 }

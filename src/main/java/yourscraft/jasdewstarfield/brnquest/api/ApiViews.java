@@ -38,6 +38,18 @@ public final class ApiViews {
                 quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId());
     }
 
+    public static QuestView quest(QuestBookSnapshot snapshot, QuestDefinition quest, String locale) {
+        String prefix = "quest." + (quest.legacyId().isBlank() ? quest.id() : quest.legacyId()) + ".";
+        var localization = snapshot.book().localization();
+        return new QuestView(quest.bookId(), quest.id(), quest.chapterId(),
+                localization.resolve(locale, prefix + "title", quest.title()),
+                localization.resolve(locale, prefix + "quest_subtitle", quest.subtitle()),
+                localization.resolve(locale, prefix + "quest_desc", quest.description()),
+                quest.icon(), quest.x(), quest.y(), quest.dependencies(),
+                quest.tasks().stream().map(ApiViews::task).toList(),
+                quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId());
+    }
+
     public static TaskView task(TaskDefinition task) {
         return new TaskView(task.bookId(), task.id(), task.typeId(), task.config(), task.optional());
     }

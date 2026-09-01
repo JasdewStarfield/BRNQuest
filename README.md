@@ -1,13 +1,13 @@
 # BRNQuest for Minecraft 1.21.1 (NeoForge)
 
-This worktree contains the first BRNQuest implementation target:
+This worktree contains the active BRNQuest implementation for:
 
 - Minecraft 1.21.1
 - NeoForge 21.1
 - Java 21
 - branch `mc/1.21.1-neoforge`
 
-The initial scaffold is intentionally dependency-free beyond NeoForge. KubeJS, BRNTalk, team-provider, and UI integrations will be added behind optional boundaries as their milestones are implemented.
+BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI integration is optional at runtime; KubeJS, BRNTalk, and shared-progress providers remain future optional integrations rather than required dependencies.
 
 ## Build
 
@@ -19,21 +19,17 @@ Before running Gradle, check for stale Gradle, Java, or Minecraft development pr
 
 The development run configurations are `runClient`, `runServer`, `runGameTestServer`, and `runData`.
 
-The current manual client acceptance procedure is documented in
-[`docs/CLIENT_ACCEPTANCE_zh.md`](docs/CLIENT_ACCEPTANCE_zh.md).
+## Documentation
 
-日常回归优先使用零可选依赖的
-[`docs/TEST_PACK_zh.md`](docs/TEST_PACK_zh.md) 原生验收任务包；EOW fixture 保留用于导入兼容测试。
-
-整合包作者的全局任务工作区、新世界自动部署和显式更新流程见
-[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)。
+- 整合包作者的任务工作区、草稿、部署、更新与恢复流程：[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)
+- Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
+- 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
+- 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)
+- API 版本及兼容策略：[`docs/API_VERSIONING_zh.md`](docs/API_VERSIONING_zh.md)
+- 独立示例附属模组：[`docs/EXAMPLE_ADDON_zh.md`](docs/EXAMPLE_ADDON_zh.md)
 
 ## Source layout
 
-Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. As features are introduced, keep stable API, data/import, progress, task, reward, team, network, client, integration, command, and diagnostics concerns in separate packages as specified by the shared design document.
+Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Stable API, data/import, progress, task, reward, owner, network, client, integration, command, and diagnostics concerns remain separated by package.
 
-Task/reward extension registration, freeze timing, typed schema-1 config decoding, and client presentation boundaries are documented in [`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md).
-
-阶段 3 的公共面分级、不可变查询和结构化操作结果见
-[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)；逐批验收证据见
-[`docs/STAGE3_ACCEPTANCE_zh.md`](docs/STAGE3_ACCEPTANCE_zh.md)。
+Internal implementation plans, validation fixtures, and historical acceptance reports are maintained outside this version worktree and are not part of the user documentation set.

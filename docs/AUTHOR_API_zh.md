@@ -1,12 +1,12 @@
 # BRNQuest 作者 API 与恢复工作流
 
-阶段 4 的作者能力只有一套服务端实现。管理员命令、未来客户端编辑器和附属模组都应调用 `AuthorApi` / `DraftEditService`，不得直接改写任务书 JSON、`QuestBookManager.active()` 或世界数据包。
+BRNQuest 的高级草稿能力只有一套服务端权威实现。管理员命令、游戏内高级草稿编辑器和附属模组都应通过 `AuthorApi` / `DraftEditService` 的事务边界工作，不得直接改写任务书 JSON、`QuestBookManager.active()` 或世界数据包。
 
 ## 权限与线程边界
 
 - 所有入口接收目标服务器当前在线的 `ServerPlayer`，每次操作重新检查权限等级 2。
 - 会话 token 只返回给持有者；后续读取、修改、保存和发布都携带 `sessionId + bookId + expectedDraftRevision`。
-- 调用应发生在服务器线程。客户端只能经阶段 5 的受鉴权网络协议提交结构化意图。
+- 调用应发生在服务器线程。客户端只能经受鉴权网络协议提交结构化意图。
 - `AuthorOperationResult` 的稳定 `status` 和 `code` 用于程序分支，`message` 只用于人类阅读。
 
 ## 核心入口

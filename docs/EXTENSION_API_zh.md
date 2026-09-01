@@ -2,7 +2,7 @@
 
 公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.1` 基线中的 SPI 仍标记为实验性。
 
-阶段 2 的任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书继续使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
+任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
 schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和布尔字段应先用 `Codec.STRING` 安全解析，而不能直接假定收到 JSON number/boolean。示例附属模组的经验奖励展示了带错误结果的字符串整数 Codec。
 
@@ -53,7 +53,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 `ProgressOwnerProviderRegistry.register` 接受服务端 provider，并在首次任务书 reload 前冻结。provider 必须返回自身命名空间下的稳定 `ProgressOwnerId`，并提供不可变成员快照、生命周期和归档证据；解析结果不包含当前玩家、provider ID 不匹配或调用线程错误时，BRNQuest 不会猜测后备队伍身份。
 
-阶段 3 仅激活 `brnquest:personal`。第三方 provider 的注册用于提前验证公共签名和加载隔离，不代表共享进度已经启用；阶段 6 在候选队伍 API、迁移和归档语义通过验证前，不会提供选择外部 provider 的配置入口。
+当前版本仅激活 `brnquest:personal`。第三方 provider 的注册用于验证公共签名和加载隔离，不代表共享进度已经启用；在队伍 API、迁移和归档语义完成验证前，不会提供选择外部 provider 的配置入口。
 
 ## 编辑器字段描述
 

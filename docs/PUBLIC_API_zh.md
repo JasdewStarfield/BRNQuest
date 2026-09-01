@@ -58,8 +58,8 @@
 - `ProgressOwnerId` 由完整 provider `ResourceLocation` 和稳定 UUID 组成；不得使用显示名、可变队名或猜测的队长 UUID 代替稳定身份。
 - `ProgressOwnerProvider` 负责在线玩家解析、成员快照、`ACTIVE` / `ARCHIVED` / `UNAVAILABLE` 生命周期和归档证据查询。
 - provider 在模组构造或 common setup 注册，并在首次任务书 reload 前与服务端 task/reward 注册表一起冻结；完整命名空间同路径不继承内置语义。
-- 阶段 3 唯一激活的 provider 是 `brnquest:personal`：owner UUID 等于玩家 UUID，成员仅包含本人，始终为 `ACTIVE`，不会生成伪归档。
-- 其他 provider 目前可以编译、注册和接受契约测试，但不会被选择为生效 owner。启用共享 provider 必须等阶段 6 明确迁移、退出、换队、解散、奖励和 orphan 语义后进行。
+- 当前唯一激活的 provider 是 `brnquest:personal`：owner UUID 等于玩家 UUID，成员仅包含本人，始终为 `ACTIVE`，不会生成伪归档。
+- 其他 provider 目前可以编译、注册和接受契约测试，但不会被选择为生效 owner。启用共享 provider 必须先明确迁移、退出、换队、解散、奖励和 orphan 语义。
 - schema 1 继续在 NBT 的 `players` 字段按个人 owner UUID 读写，不修改现有世界存档格式；所有事务锁和存储访问已先经过 owner 解析。
 
 ## 写操作结果
@@ -93,7 +93,7 @@
 - `TaskType.configFields` / `RewardType.configFields` 返回不可变 `ConfigFieldDescriptor` 列表；默认空列表明确选择 raw fallback。
 - 字段可声明稳定键、`BOOLEAN` / `INTEGER` / `DECIMAL` / `TEXT` / `ENUM` / `RESOURCE_LOCATION` / `ITEM_STACK` 类型、默认值、必填、数值范围、枚举值、目标资源注册表、帮助文本和自定义校验器。
 - `ConfigEditorSchemas.forTask` / `forReward` 只按注册类型获取描述，不按内置类型 ID 分支。字段描述或可选校验器异常被隔离，退回不丢数据的原始配置。
-- `ConfigEditorSchema.rawConfig` 始终保留完整不可变字符串 Map，包括描述外字段；未知类型、缺失模组或空描述使用 `rawFallback=true`，未来编辑器必须提供安全原始查看方式。
+- `ConfigEditorSchema.rawConfig` 始终保留完整不可变字符串 Map，包括描述外字段；未知类型、缺失模组或空描述使用 `rawFallback=true`，游戏内编辑器会提供不丢字段的原始配置查看与编辑入口。
 - 字段诊断只用于编辑预览。发布仍必须通过服务端 type Codec 和整本任务书校验，字段描述不能绕过权威校验。
 
 ## 线程、权限与生命周期
@@ -117,7 +117,7 @@
 - 至少一个 API `1.0.0` 候选版的外部集成反馈与迁移演练；
 - 将当前实验性清单逐项审阅并明确提升或保留实验性。
 
-阶段 3 已提供仅依赖公共 API 的真实示例附属模组和编译后签名门禁，使用方法见 [`EXAMPLE_ADDON_zh.md`](EXAMPLE_ADDON_zh.md)。
+仓库提供仅依赖公共 API 的真实示例附属模组和编译后签名门禁，使用方法见 [`EXAMPLE_ADDON_zh.md`](EXAMPLE_ADDON_zh.md)。
 
 ## 只读事件
 

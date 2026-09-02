@@ -24,6 +24,8 @@ public final class RewardTypeRegistry {
 
     static {
         register(RewardTypes.ITEM, new ItemReward());
+        register(RewardTypes.XP, new ExperienceReward(false));
+        register(RewardTypes.XP_LEVELS, new ExperienceReward(true));
         register(RewardTypes.CUSTOM, new RewardType<Map<String, String>>() {
             public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
             public RewardResult execute(RewardContext context, Map<String, String> config) {
@@ -100,6 +102,27 @@ public final class RewardTypeRegistry {
                 if (ItemStack.isSameItemSameComponents(candidate, expected)) total += candidate.getCount();
             }
             return total;
+        }
+    }
+
+    /** Experience rewards remain separate IDs because FTB stores points and levels separately. */
+    private record ExperienceReward(boolean levels) implements RewardType<Map<String, String>> {
+        public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(ConfigFieldDescriptor.field(levels ? "xp_levels" : "xp", ConfigValueType.INTEGER)
+                    .withDefault("1").withRange(1, Integer.MAX_VALUE)
+                    .withHelp(levels ? "Whole experience levels to grant" : "Raw experience points to grant"));
+        }
+        public RewardResult execute(RewardContext context, Map<String, String> config) {
+            String key = levels ? "xp_levels" : "xp";
+            try {
+                int amount = Integer.parseInt(config.getOrDefault(key, "1").replaceAll("[^0-9-]", ""));
+                if (amount < 1) return RewardResult.failure("Experience reward must be positive");
+                if (levels) context.player().giveExperienceLevels(amount); else context.player().giveExperiencePoints(amount);
+                return RewardResult.success("Granted " + amount + (levels ? " experience levels" : " experience points"));
+            } catch (NumberFormatException exception) {
+                return RewardResult.failure("Invalid experience reward");
+            }
         }
     }
 }

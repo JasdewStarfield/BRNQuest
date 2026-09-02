@@ -51,6 +51,9 @@
 
 集合、配置 Map 和嵌套视图均为不可变副本。查询保留作者顺序、完整命名空间类型 ID、未知类型配置和 legacy alias，不返回 Codec DTO、运行时索引、SavedData 或可变集合。无效或未知 ID 返回空结果，不抛出 ID 解析异常。
 
+`QuestView.behavior()` 返回实验性的不可变 `QuestBehaviorView`。依赖判定以稳定字符串
+`all_completed`、`one_completed`、`all_started`、`one_started` 表示，避免公共 API 暴露内部存储枚举；其余字段可用于扩展显示任务的可见性、顺序目标和重复周期配置。客户端可见集合及实际可操作状态仍由服务端权威进度决定，扩展不能只按该定义视图自行授权操作。
+
 任务书定义快照可以安全读取；owner 和进度存储只允许在服务端线程读取。因此 `getProgressOwner` / `getProgress` 在玩家无服务器、调用线程错误或无法安全解析 owner 时返回空结果。`ProgressView` 显式携带本次投影对应的 `ProgressOwnerId`。
 
 ## ProgressOwner

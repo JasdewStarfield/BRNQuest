@@ -7,6 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 
 import java.util.HashSet;
 import java.util.HashMap;
@@ -114,6 +115,21 @@ public final class AuthorValidationService {
                 add(report, "BQA-104", quest.id(), "appearance",
                         "Appearance size/icon scale must be positive and minimum width must be non-negative");
             }
+            if (quest.behavior().minimumRequiredDependencies() > quest.dependencies().size()) {
+                add(report, "BQA-105", quest.id(), "behavior.minimum_required_dependencies",
+                        "Minimum required dependencies exceeds the dependency count");
+            }
+            if (!quest.behavior().repeatable() && quest.behavior().repeatCooldownSeconds() > 0) {
+                warn(report, "BQA-303", quest.id(), "behavior.repeat_cooldown_seconds",
+                        "Repeat cooldown has no effect while the quest is not repeatable");
+            }
+            quest.tasks().stream().filter(task -> booleanConfig(task.config(), "only_from_crafting"))
+                    .forEach(task -> ItemChoiceMatcher.parseConfig(task.config()).result().ifPresent(spec -> {
+                        if (spec.entries().size() != 1 || spec.requiredEntries() != 1) {
+                            add(report, "BQA-106", task.id(), "config.only_from_crafting",
+                                    "Crafting-only item objectives require exactly one accepted entry");
+                        }
+                    }));
         });
     }
 
@@ -151,6 +167,11 @@ public final class AuthorValidationService {
 
     private static boolean included(ResourceLocation id, Set<ResourceLocation> affected) {
         return affected == null || affected.contains(id);
+    }
+
+    private static boolean booleanConfig(Map<String, String> config, String key) {
+        String value = config.getOrDefault(key, "false");
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
     }
 
     private static void length(DiagnosticReport report, ResourceLocation id, String path, String value,

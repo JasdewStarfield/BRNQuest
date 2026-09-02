@@ -74,7 +74,18 @@ public final class PlatformModHooks {
     }
 
     private static void onItemPickup(ItemEntityPickupEvent.Post event) { if (event.getPlayer() instanceof net.minecraft.server.level.ServerPlayer player) ItemTaskMonitor.mark(player); }
-    private static void onItemCrafted(PlayerEvent.ItemCraftedEvent event) { if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) ItemTaskMonitor.mark(player); }
+    private static void onItemCrafted(PlayerEvent.ItemCraftedEvent event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            // The crafted stack is authoritative provenance; inventory scanning cannot distinguish crafted output.
+            ProgressEngine.get().recordCraft(player, event.getCrafting());
+            ItemTaskMonitor.mark(player);
+        }
+    }
     private static void onItemDestroyed(PlayerDestroyItemEvent event) { if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) ItemTaskMonitor.mark(player); }
-    private static void onPlayerTick(PlayerTickEvent.Post event) { if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) ItemTaskMonitor.tick(player); }
+    private static void onPlayerTick(PlayerTickEvent.Post event) {
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            ItemTaskMonitor.tick(player);
+            ProgressEngine.get().tick(player);
+        }
+    }
 }

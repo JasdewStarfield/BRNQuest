@@ -1,11 +1,12 @@
 {
   "schema_version": 1,
   "id": "brnquest_test:acceptance",
-  "title": "BRNQuest 原生验收任务书",
+  "title": "BRNQuest 原生验收任务书（第二批）",
   "chapter_groups": [
     { "id": "brnquest_test:core", "title": "核心交互", "order": 0 },
     { "id": "brnquest_test:layout", "title": "布局与边界", "order": 1 },
-    { "id": "brnquest_test:overflow", "title": "章节滚动压力", "order": 2 }
+    { "id": "brnquest_test:batch_two", "title": "第二批兼容能力", "order": 2 },
+    { "id": "brnquest_test:overflow", "title": "章节滚动压力", "order": 3 }
   ],
   "chapters": [
     {
@@ -311,6 +312,410 @@
           ],
           "rewards": [
             { "id": "brnquest_test:unknown_reward", "type": "missing_test_mod:token", "config": {}, "claim_policy": "manual", "team_reward": false }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:visibility_behaviors",
+      "group_id": "brnquest_test:batch_two",
+      "title": "07 可见性与信息隐藏",
+      "icon": "{id:\"minecraft:spyglass\",count:1}",
+      "order": 0,
+      "quests": [
+        {
+          "id": "brnquest_test:visibility_controller",
+          "title": "可见性控制任务",
+          "subtitle": "完成前先观察周围节点",
+          "description": "先不要完成本任务。依次检查另外三个受依赖控制的节点：详情隐藏节点仍可见但详情被替换；隐藏锁图标节点仍显示未解锁文字但没有信息图标；依赖完成前隐藏节点完全不可见。检查完后再完成本目标。",
+          "icon": "{id:\"minecraft:lever\",count:1}",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_VISIBILITY_CONTROLLER",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:visibility_controller_check", "type": "brnquest:checkmark", "config": { "title": "完成后显示或解锁受控节点" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:hidden_details",
+          "title": "启动前隐藏详情",
+          "subtitle": "锁定时只显示隐藏说明",
+          "description": "控制任务完成后，本段文字和目标列表才应显示。",
+          "icon": "{id:\"minecraft:writable_book\",count:1}",
+          "x": 3.0,
+          "y": -3.0,
+          "legacy_id": "TEST_HIDDEN_DETAILS",
+          "behavior": { "hide_details_until_startable": true },
+          "dependencies": ["brnquest_test:visibility_controller"],
+          "tasks": [
+            { "id": "brnquest_test:hidden_details_check", "type": "brnquest:checkmark", "config": { "title": "详情已经正常显示" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:hidden_lock_icon",
+          "title": "隐藏锁定提示图标",
+          "subtitle": "保留状态文字，不显示信息图标",
+          "description": "控制任务未完成时，本节点应显示未解锁状态，但状态旁不出现可悬浮的锁定信息图标。",
+          "icon": "{id:\"minecraft:tripwire_hook\",count:1}",
+          "x": 3.0,
+          "y": 0.0,
+          "legacy_id": "TEST_HIDDEN_LOCK_ICON",
+          "behavior": { "hide_lock_icon": true },
+          "dependencies": ["brnquest_test:visibility_controller"],
+          "tasks": [
+            { "id": "brnquest_test:hidden_lock_icon_check", "type": "brnquest:checkmark", "config": { "title": "锁图标检查完成" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:hidden_until_dependency_complete",
+          "title": "依赖完成前完全隐藏",
+          "subtitle": "完成控制任务后才出现",
+          "description": "本节点在控制任务完成前不应渲染，也不应存在点击或 Tooltip 区域。",
+          "icon": "{id:\"minecraft:ender_eye\",count:1}",
+          "x": 3.0,
+          "y": 3.0,
+          "legacy_id": "TEST_HIDDEN_UNTIL_COMPLETE",
+          "behavior": { "hide_until_dependencies_complete": true },
+          "dependencies": ["brnquest_test:visibility_controller"],
+          "tasks": [
+            { "id": "brnquest_test:hidden_until_dependency_complete_check", "type": "brnquest:checkmark", "config": { "title": "节点已在正确时机出现" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:hidden_text",
+          "title": "完成前隐藏标题与正文",
+          "subtitle": "初始应显示为问号",
+          "description": "完成本任务后，真实标题、副标题和这段正文应立即恢复。",
+          "icon": "{id:\"minecraft:name_tag\",count:1}",
+          "x": 7.0,
+          "y": -3.0,
+          "legacy_id": "TEST_HIDDEN_TEXT",
+          "behavior": { "hide_text_until_complete": true },
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:hidden_text_check", "type": "brnquest:checkmark", "config": { "title": "显示真实文本" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:invisible_crafting_seed",
+          "title": "合成后出现的隐藏节点",
+          "subtitle": "初始不可见，合成橡木按钮后出现",
+          "description": "本节点通过自身合成目标获得进度；完成前整个节点不可见，合成 1 个橡木按钮后应以已完成状态出现。",
+          "icon": "{id:\"minecraft:oak_button\",count:1}",
+          "x": 7.0,
+          "y": 3.0,
+          "legacy_id": "TEST_INVISIBLE_CRAFTING_SEED",
+          "behavior": { "invisible_until_complete": true, "visible_after_tasks": 1 },
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:invisible_crafting_seed_task", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:oak_button\",count:1}", "only_from_crafting": "true" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:hidden_until_dependency_visible",
+          "title": "依赖可见后出现",
+          "subtitle": "跟随隐藏合成节点显示",
+          "description": "本节点依赖左侧的隐藏合成节点，并在该依赖不可见时一同隐藏。合成橡木按钮后，两者应同时出现在画布中。",
+          "icon": "{id:\"minecraft:torch\",count:1}",
+          "x": 10.0,
+          "y": 3.0,
+          "legacy_id": "TEST_HIDDEN_UNTIL_VISIBLE",
+          "behavior": { "hide_until_dependencies_visible": true },
+          "dependencies": ["brnquest_test:invisible_crafting_seed"],
+          "tasks": [
+            { "id": "brnquest_test:hidden_until_dependency_visible_check", "type": "brnquest:checkmark", "config": { "title": "联动显示正常" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:dependency_modes",
+      "group_id": "brnquest_test:batch_two",
+      "title": "08 依赖策略与最少数量",
+      "icon": "{id:\"minecraft:chain\",count:1}",
+      "order": 1,
+      "quests": [
+        {
+          "id": "brnquest_test:dependency_a",
+          "title": "完成依赖 A",
+          "subtitle": "用于 one/minimum 测试",
+          "description": "先只完成 A，观察 one_completed 解锁，而 minimum_two 仍锁定。",
+          "icon": "{id:\"minecraft:red_wool\",count:1}",
+          "x": 0.0,
+          "y": -3.0,
+          "legacy_id": "TEST_DEPENDENCY_A",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:dependency_a_check", "type": "brnquest:checkmark", "config": { "title": "完成 A" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:dependency_b",
+          "title": "完成依赖 B",
+          "subtitle": "第二个完成条件",
+          "description": "完成 A 后再完成 B，minimum_two 应在此时解锁。",
+          "icon": "{id:\"minecraft:green_wool\",count:1}",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_DEPENDENCY_B",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:dependency_b_check", "type": "brnquest:checkmark", "config": { "title": "完成 B" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:dependency_c",
+          "title": "完成依赖 C",
+          "subtitle": "用于确认最少数量不是全部",
+          "description": "minimum_two 在 A、B 完成后应已解锁，不需要先完成 C。",
+          "icon": "{id:\"minecraft:blue_wool\",count:1}",
+          "x": 0.0,
+          "y": 3.0,
+          "legacy_id": "TEST_DEPENDENCY_C",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:dependency_c_check", "type": "brnquest:checkmark", "config": { "title": "完成 C" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:one_completed",
+          "title": "任一依赖完成即可",
+          "subtitle": "one_completed",
+          "description": "A 或 B 任意一个完成后，本任务就应从未解锁变为可完成。",
+          "icon": "{id:\"minecraft:repeater\",count:1}",
+          "x": 4.0,
+          "y": -2.0,
+          "legacy_id": "TEST_ONE_COMPLETED",
+          "behavior": { "dependency_requirement": "one_completed" },
+          "dependencies": ["brnquest_test:dependency_a", "brnquest_test:dependency_b"],
+          "tasks": [
+            { "id": "brnquest_test:one_completed_check", "type": "brnquest:checkmark", "config": { "title": "任一完成判定正常" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:minimum_two_completed",
+          "title": "至少两个依赖完成",
+          "subtitle": "minimum_required_dependencies = 2",
+          "description": "A、B、C 中完成任意两个后解锁，不要求三个全部完成。",
+          "icon": "{id:\"minecraft:comparator\",count:1}",
+          "x": 4.0,
+          "y": 2.0,
+          "legacy_id": "TEST_MINIMUM_TWO",
+          "behavior": { "dependency_requirement": "all_completed", "minimum_required_dependencies": 2 },
+          "dependencies": ["brnquest_test:dependency_a", "brnquest_test:dependency_b", "brnquest_test:dependency_c"],
+          "tasks": [
+            { "id": "brnquest_test:minimum_two_completed_check", "type": "brnquest:checkmark", "config": { "title": "最少数量判定正常" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:started_sticks",
+          "title": "开始状态：木棍 8 个",
+          "subtitle": "先只合成一次得到 4 个",
+          "description": "本目标仅统计合成。第一次合成 4 个木棍后任务尚未完成，但应被判定为已开始。",
+          "icon": "{id:\"minecraft:stick\",count:1}",
+          "x": 8.0,
+          "y": -3.0,
+          "legacy_id": "TEST_STARTED_STICKS",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:started_sticks_task", "type": "brnquest:item", "config": { "count": "8", "item": "{id:\"minecraft:stick\",count:1}", "only_from_crafting": "true" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:started_torches",
+          "title": "开始状态：火把 8 个",
+          "subtitle": "先只合成一次得到 4 个",
+          "description": "本目标仅统计合成。第一次合成 4 个火把后任务尚未完成，但应被判定为已开始。",
+          "icon": "{id:\"minecraft:torch\",count:1}",
+          "x": 8.0,
+          "y": 3.0,
+          "legacy_id": "TEST_STARTED_TORCHES",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:started_torches_task", "type": "brnquest:item", "config": { "count": "8", "item": "{id:\"minecraft:torch\",count:1}", "only_from_crafting": "true" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:one_started",
+          "title": "任一依赖开始即可",
+          "subtitle": "one_started",
+          "description": "只合成一次木棍或火把后，本任务应解锁，即使来源任务尚未完成。",
+          "icon": "{id:\"minecraft:yellow_wool\",count:1}",
+          "x": 12.0,
+          "y": -2.0,
+          "legacy_id": "TEST_ONE_STARTED",
+          "behavior": { "dependency_requirement": "one_started" },
+          "dependencies": ["brnquest_test:started_sticks", "brnquest_test:started_torches"],
+          "tasks": [
+            { "id": "brnquest_test:one_started_check", "type": "brnquest:checkmark", "config": { "title": "任一开始判定正常" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:all_started",
+          "title": "所有依赖开始后解锁",
+          "subtitle": "all_started",
+          "description": "木棍和火把目标都至少产生一次合成进度后解锁；两者都不需要先完成。",
+          "icon": "{id:\"minecraft:clock\",count:1}",
+          "x": 12.0,
+          "y": 2.0,
+          "legacy_id": "TEST_ALL_STARTED",
+          "behavior": { "dependency_requirement": "all_started" },
+          "dependencies": ["brnquest_test:started_sticks", "brnquest_test:started_torches"],
+          "tasks": [
+            { "id": "brnquest_test:all_started_check", "type": "brnquest:checkmark", "config": { "title": "全部开始判定正常" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:sequential_and_crafting",
+      "group_id": "brnquest_test:batch_two",
+      "title": "09 顺序目标与合成检测",
+      "icon": "{id:\"minecraft:crafting_table\",count:1}",
+      "order": 2,
+      "quests": [
+        {
+          "id": "brnquest_test:sequential_objectives",
+          "title": "按顺序完成三个目标",
+          "subtitle": "后续目标必须保持不可提交",
+          "description": "依次点击目标一、二、三。目标二和三在轮到自己之前应保持灰色且不可点击；使用整任务检查时，每次意图也只能推进一个目标。",
+          "icon": "{id:\"minecraft:ladder\",count:1}",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "TEST_SEQUENTIAL",
+          "behavior": { "sequential_tasks": true },
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:sequential_first", "type": "brnquest:checkmark", "config": { "title": "目标一：先完成我" }, "optional": false },
+            { "id": "brnquest_test:sequential_second", "type": "brnquest:checkmark", "config": { "title": "目标二：随后解锁" }, "optional": false },
+            { "id": "brnquest_test:sequential_third", "type": "brnquest:checkmark", "config": { "title": "目标三：最后完成" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:crafting_only_planks",
+          "title": "只统计合成的橡木木板",
+          "subtitle": "背包已有木板不能直接提交",
+          "description": "目标需要合成 8 个橡木木板。先用命令或创造模式拿取木板，确认不能提交；再通过工作台、背包合成或配方书实际合成。一次产出 4 个，累计两次后完成。",
+          "icon": "{id:\"minecraft:oak_planks\",count:1}",
+          "x": 4.0,
+          "y": -2.0,
+          "legacy_id": "TEST_CRAFTING_ONLY_PLANKS",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:crafting_only_planks_task", "type": "brnquest:item", "config": { "count": "8", "item": "{id:\"minecraft:oak_planks\",count:1}", "only_from_crafting": "true" }, "optional": false }
+          ],
+          "rewards": []
+        },
+        {
+          "id": "brnquest_test:inventory_planks_comparison",
+          "title": "普通持有型木板对照",
+          "subtitle": "同样的物品允许背包提交",
+          "description": "背包中有 8 个橡木木板时，本目标应显示可提交并允许点击完成；与上方合成限定目标形成对照，且不会消耗木板。",
+          "icon": "{id:\"minecraft:oak_planks\",count:1}",
+          "x": 4.0,
+          "y": 2.0,
+          "legacy_id": "TEST_INVENTORY_PLANKS",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:inventory_planks_task", "type": "brnquest:item", "config": { "count": "8", "item": "{id:\"minecraft:oak_planks\",count:1}", "consume_items": "false" }, "optional": false }
+          ],
+          "rewards": []
+        }
+      ]
+    },
+    {
+      "id": "brnquest_test:experience_and_repeat",
+      "group_id": "brnquest_test:batch_two",
+      "title": "10 经验与可重复任务",
+      "icon": "{id:\"minecraft:experience_bottle\",count:1}",
+      "order": 3,
+      "quests": [
+        {
+          "id": "brnquest_test:experience_points",
+          "title": "提交 5 点经验值",
+          "subtitle": "奖励 7 点经验值",
+          "description": "先记录经验条，再点击目标。服务端应扣除 5 点原始经验值；领取奖励后增加 7 点，重复点击奖励不得再次增加。",
+          "icon": "{id:\"minecraft:experience_bottle\",count:1}",
+          "x": 0.0,
+          "y": -3.0,
+          "legacy_id": "TEST_EXPERIENCE_POINTS",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:experience_points_task", "type": "brnquest:xp", "config": { "value": "5", "points": "true" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:experience_points_reward", "type": "brnquest:xp", "config": { "xp": "7" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:experience_levels",
+          "title": "提交 2 个经验等级",
+          "subtitle": "奖励 1 个完整等级",
+          "description": "确保当前至少有 2 级。点击目标后当前等级应减少 2；领取奖励后增加 1 个完整等级。",
+          "icon": "{id:\"minecraft:enchanted_book\",count:1}",
+          "x": 0.0,
+          "y": 3.0,
+          "legacy_id": "TEST_EXPERIENCE_LEVELS",
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:experience_levels_task", "type": "brnquest:xp", "config": { "value": "2", "points": "false" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:experience_levels_reward", "type": "brnquest:xp_levels", "config": { "xp_levels": "1" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:repeat_reward_blocked",
+          "title": "领奖后等待 10 秒再重复",
+          "subtitle": "未领取钻石时阻止下一轮",
+          "description": "完成确认目标后先不要领奖：任务应保持已完成且不能开始下一轮。领取钻石后，如冷却未结束则显示剩余秒数；10 秒结束后目标进度清空并重新可完成。退出重进或重启服务器不能跳过冷却。",
+          "icon": "{id:\"minecraft:diamond\",count:1}",
+          "x": 5.0,
+          "y": -2.0,
+          "legacy_id": "TEST_REPEAT_REWARD_BLOCKED",
+          "behavior": { "repeatable": true, "repeat_cooldown_seconds": 10, "ignore_reward_blocking": false },
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:repeat_reward_blocked_check", "type": "brnquest:checkmark", "config": { "title": "完成当前轮次" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:repeat_reward_blocked_diamond", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:diamond\",count:1}" }, "claim_policy": "manual", "team_reward": false }
+          ]
+        },
+        {
+          "id": "brnquest_test:repeat_ignore_reward",
+          "title": "忽略奖励阻塞的重复任务",
+          "subtitle": "10 秒后即使未领奖也进入下一轮",
+          "description": "完成后不要领取绿宝石。冷却结束时任务应重新可完成，上一轮未领取奖励会随轮次重置而失效；这正是 ignore_reward_blocking 的显式语义。",
+          "icon": "{id:\"minecraft:emerald\",count:1}",
+          "x": 5.0,
+          "y": 2.0,
+          "legacy_id": "TEST_REPEAT_IGNORE_REWARD",
+          "behavior": { "repeatable": true, "repeat_cooldown_seconds": 10, "ignore_reward_blocking": true },
+          "dependencies": [],
+          "tasks": [
+            { "id": "brnquest_test:repeat_ignore_reward_check", "type": "brnquest:checkmark", "config": { "title": "完成并等待自动进入下一轮" }, "optional": false }
+          ],
+          "rewards": [
+            { "id": "brnquest_test:repeat_ignore_reward_emerald", "type": "brnquest:item", "config": { "count": "1", "item": "{id:\"minecraft:emerald\",count:1}" }, "claim_policy": "manual", "team_reward": false }
           ]
         }
       ]

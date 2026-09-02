@@ -122,6 +122,8 @@ public final class QuestBookDiffer {
                 oldValue.appearance().iconScale(), newValue.appearance().iconScale());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.min_width",
                 oldValue.appearance().minWidth(), newValue.appearance().minWidth());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "behavior",
+                oldValue.behavior(), newValue.behavior());
         mapProperties(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "extensions.",
                 oldValue.extensions(), newValue.extensions());
         if (!oldValue.chapterId().equals(newValue.chapterId())) add(entries, SemanticDiffEntry.Kind.MOVED,

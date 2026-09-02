@@ -9,6 +9,7 @@ public final class TaskTypes {
     public static final ResourceLocation CUSTOM = id("custom");
     public static final ResourceLocation ITEM = id("item");
     public static final ResourceLocation ITEM_CHOICE = id("item_choice");
+    public static final ResourceLocation XP = id("xp");
 
     private TaskTypes() {}
 

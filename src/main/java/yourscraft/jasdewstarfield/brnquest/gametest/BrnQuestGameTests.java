@@ -44,11 +44,13 @@ import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviderRegistry;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycle;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
 import java.util.Map;
@@ -312,6 +314,145 @@ public final class BrnQuestGameTests {
         helper.assertTrue(result.success(), result.message());
         helper.assertValueEqual(ProgressEngine.get().progress(player).status(second.id().toString()), QuestStatus.AVAILABLE,
                 "dependent quest must unlock in the same server transaction");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void dependencyRelocksAfterPrerequisiteReset(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition prerequisiteTask = new TaskDefinition(id("book"), id("reset_prerequisite_check"),
+                TaskTypes.CHECKMARK, Map.of(), false);
+        QuestDefinition prerequisite = quest("reset_prerequisite", List.of(), List.of(prerequisiteTask), List.of());
+        QuestDefinition dependent = quest("reset_dependent", List.of(prerequisite.id()), List.of(), List.of());
+        install(prerequisite, dependent);
+        ProgressEngine.get().reconcile(player);
+        ProgressEngine.get().completeTask(player, prerequisite.id(), prerequisiteTask.id());
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(dependent.id().toString()),
+                QuestStatus.AVAILABLE, "the completed prerequisite must unlock its dependent");
+
+        ProgressEngine.get().reset(player, prerequisite.id());
+
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(dependent.id().toString()),
+                QuestStatus.LOCKED, "resetting a prerequisite must relock its dependent in the same reconciliation");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void sequentialObjectivesRejectOutOfOrderSubmission(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition first = new TaskDefinition(id("book"), id("sequential_first"), TaskTypes.CHECKMARK,
+                Map.of(), false);
+        TaskDefinition second = new TaskDefinition(id("book"), id("sequential_second"), TaskTypes.CHECKMARK,
+                Map.of(), false);
+        QuestBehavior behavior = new QuestBehavior(false, false, false, 0, false, false, false,
+                DependencyRequirement.ALL_COMPLETED, 0, true, false, 0, false);
+        QuestDefinition quest = quest("sequential", List.of(), List.of(first, second), List.of(), behavior);
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+
+        var rejected = ProgressEngine.get().completeTask(player, quest.id(), second.id());
+        helper.assertValueEqual(rejected.code(), "OUT_OF_SEQUENCE",
+                "a later required objective must remain server-locked");
+        ProgressEngine.get().complete(player, quest.id(), true);
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(first.id().toString()), 1L,
+                "the first objective must retain its receipt while the quest remains incomplete");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(second.id().toString()), 0L,
+                "one quest-wide intent must not skip through every sequential objective");
+        helper.assertTrue(ProgressEngine.get().completeTask(player, quest.id(), second.id()).success(),
+                "the next objective must unlock after the first receipt is stored");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void craftingOnlyItemObjectiveCountsCraftedOutput(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition task = new TaskDefinition(id("book"), id("crafted_stone"), TaskTypes.ITEM,
+                Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "3",
+                        "only_from_crafting", "true"), false);
+        QuestDefinition quest = quest("crafting_only", List.of(), List.of(task), List.of());
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+
+        var manual = ProgressEngine.get().completeTask(player, quest.id(), task.id());
+        helper.assertValueEqual(manual.code(), "NOT_SUBMITTABLE",
+                "crafting-only objectives must reject inventory submission");
+        ProgressEngine.get().recordCraft(player, new ItemStack(Items.STONE, 2));
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 2L,
+                "the server must count the actual crafted stack size");
+        ProgressEngine.get().recordCraft(player, new ItemStack(Items.STONE, 1));
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()),
+                QuestStatus.COMPLETED, "the required crafted output must complete the objective");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void experienceTaskAndRewardsMutatePlayerOnce(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        player.giveExperiencePoints(30);
+        int initialPoints = player.totalExperience;
+        TaskDefinition task = new TaskDefinition(id("book"), id("xp_cost"), TaskTypes.XP,
+                Map.of("value", "5", "points", "true"), false);
+        RewardDefinition points = new RewardDefinition(id("book"), id("xp_points_reward"), RewardTypes.XP,
+                Map.of("xp", "7"), "manual", false);
+        RewardDefinition levels = new RewardDefinition(id("book"), id("xp_levels_reward"), RewardTypes.XP_LEVELS,
+                Map.of("xp_levels", "2"), "manual", false);
+        QuestDefinition quest = quest("experience", List.of(), List.of(task), List.of(points, levels));
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+
+        helper.assertTrue(ProgressEngine.get().completeTask(player, quest.id(), task.id()).success(),
+                "the experience objective must submit when enough points are present");
+        helper.assertValueEqual(player.totalExperience, initialPoints - 5,
+                "the objective must deduct its raw point cost exactly once");
+        helper.assertTrue(ProgressEngine.get().claim(player, points.id()).changed(),
+                "the points reward must claim once");
+        helper.assertValueEqual(player.totalExperience, initialPoints + 2,
+                "the points reward must add seven after the five-point cost");
+        int levelBeforeReward = player.experienceLevel;
+        helper.assertTrue(ProgressEngine.get().claim(player, levels.id()).changed(),
+                "the levels reward must claim once");
+        helper.assertValueEqual(player.experienceLevel, levelBeforeReward + 2,
+                "the levels reward must add whole levels");
+        int afterClaims = player.totalExperience;
+        helper.assertTrue(!ProgressEngine.get().claim(player, points.id()).changed(),
+                "a duplicate experience claim must be an idempotent no-op");
+        helper.assertValueEqual(player.totalExperience, afterClaims,
+                "a duplicate claim must not grant more experience");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void repeatCycleWaitsForManualRewardThenReopens(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        TaskDefinition task = new TaskDefinition(id("book"), id("repeat_check"), TaskTypes.CHECKMARK,
+                Map.of(), false);
+        RewardDefinition reward = new RewardDefinition(id("book"), id("repeat_reward"), RewardTypes.ITEM,
+                Map.of("item", "{count:1,id:\"minecraft:diamond\"}"), "manual", false);
+        QuestBehavior behavior = new QuestBehavior(false, false, false, 0, false, false, false,
+                DependencyRequirement.ALL_COMPLETED, 0, false, true, 0, false);
+        QuestDefinition quest = quest("repeatable", List.of(), List.of(task), List.of(reward), behavior);
+        install(quest);
+        ProgressEngine.get().reconcile(player);
+
+        helper.assertTrue(ProgressEngine.get().completeTask(player, quest.id(), task.id()).success(),
+                "the first repeat cycle must complete");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()),
+                QuestStatus.COMPLETED, "an unclaimed manual reward must block reopening");
+        helper.assertTrue(ProgressEngine.get().claim(player, reward.id()).changed(),
+                "claiming the blocking reward must succeed");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).status(quest.id().toString()),
+                QuestStatus.AVAILABLE, "zero-cooldown repeat must reopen after its reward is claimed");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 0L,
+                "the next cycle must clear objective progress");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).completionCycles(quest.id().toString()), 1,
+                "the completed cycle count must survive reopening");
+        helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 1,
+                "the first cycle must deliver exactly one reward");
         helper.succeed();
     }
 
@@ -931,6 +1072,14 @@ public final class BrnQuestGameTests {
                                          List<TaskDefinition> tasks, List<RewardDefinition> rewards) {
         return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", "", "", 0, 0,
                 dependencies, tasks, rewards, path.toUpperCase(java.util.Locale.ROOT));
+    }
+
+    private static QuestDefinition quest(String path, List<ResourceLocation> dependencies,
+                                         List<TaskDefinition> tasks, List<RewardDefinition> rewards,
+                                         QuestBehavior behavior) {
+        return new QuestDefinition(id("book"), id(path), id("chapter"), path, "", "", "", 0, 0,
+                dependencies, tasks, rewards, path.toUpperCase(java.util.Locale.ROOT),
+                QuestAppearance.DEFAULT, behavior, Map.of());
     }
 
     private static TaskDefinition consumingStoneTask(String path, int count) {

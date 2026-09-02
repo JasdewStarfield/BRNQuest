@@ -152,11 +152,15 @@ public final class FtbV13Importer {
                             "quests", "quests", "default_quest_shape", "appearance_defaults.shape",
                             "default_quest_size", "appearance_defaults.size", "preset", "appearance_defaults.preset"));
             InheritedAppearance chapterAppearance = inheritedAppearance(raw, defaultAppearance, presets);
+            InheritedBehavior chapterBehavior = new InheritedBehavior(
+                    raw.getBoolean("hide_quest_until_deps_visible"), raw.getBoolean("hide_quest_until_deps_complete"),
+                    raw.getBoolean("hide_quest_details_until_startable"), raw.getBoolean("hide_text_until_complete"),
+                    raw.getBoolean("require_sequential_tasks"), raw.getBoolean("default_repeatable_quest"));
             ListTag questTags = raw.getList("quests", Tag.TAG_COMPOUND);
             for (int index = 0; index < questTags.size(); index++) {
                 quests.add(readQuest(questTags.getCompound(index), bookId, chapterId, namespace,
                         translations, aliases, path.getFileName().toString(), index, defaultAutoClaim, report,
-                        conversions, chapterAppearance, presets));
+                        conversions, chapterAppearance, presets, chapterBehavior));
             }
             target.add(new ChapterDefinition(bookId, chapterId, groupId,
                     translations.getOrDefault("chapter." + legacy + ".title", legacy),
@@ -175,7 +179,8 @@ public final class FtbV13Importer {
                                       String defaultAutoClaim, DiagnosticReport report,
                                       List<FtbFieldConversion> conversions,
                                       InheritedAppearance inheritedAppearance,
-                                      Map<String, InheritedAppearance> presets) {
+                                      Map<String, InheritedAppearance> presets,
+                                      InheritedBehavior inheritedBehavior) {
         String legacy = raw.getString("id");
         ResourceLocation id = remember(namespace, legacy, aliases);
         List<ResourceLocation> dependencies = new ArrayList<>();
@@ -193,20 +198,48 @@ public final class FtbV13Importer {
                 Map.entry("tasks", "tasks"), Map.entry("rewards", "rewards"),
                 Map.entry("shape", "appearance.shape"), Map.entry("size", "appearance.size"),
                 Map.entry("icon_scale", "appearance.icon_scale"), Map.entry("min_width", "appearance.min_width"),
-                Map.entry("preset", "appearance.preset")));
+                Map.entry("preset", "appearance.preset"),
+                Map.entry("hide_until_deps_visible", "behavior.hide_until_dependencies_visible"),
+                Map.entry("hide_until_deps_complete", "behavior.hide_until_dependencies_complete"),
+                Map.entry("invisible", "behavior.invisible_until_complete"),
+                Map.entry("invisible_until_tasks", "behavior.visible_after_tasks"),
+                Map.entry("hide_details_until_startable", "behavior.hide_details_until_startable"),
+                Map.entry("hide_text_until_complete", "behavior.hide_text_until_complete"),
+                Map.entry("hide_lock_icon", "behavior.hide_lock_icon"),
+                Map.entry("dependency_requirement", "behavior.dependency_requirement"),
+                Map.entry("min_required_dependencies", "behavior.minimum_required_dependencies"),
+                Map.entry("require_sequential_tasks", "behavior.sequential_tasks"),
+                Map.entry("can_repeat", "behavior.repeatable"),
+                Map.entry("repeat_cooldown", "behavior.repeat_cooldown_seconds"),
+                Map.entry("ignore_reward_blocking", "behavior.ignore_reward_blocking")));
         InheritedAppearance resolved = inheritedAppearance(raw, inheritedAppearance, presets);
         QuestAppearance appearance = new QuestAppearance(resolved.shape(),
                 raw.contains("size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("size") : resolved.size(),
                 raw.contains("icon_scale", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("icon_scale") : 1.0,
                 raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : 0.0);
+        QuestBehavior behavior = new QuestBehavior(
+                inheritedBoolean(raw, "hide_until_deps_visible", inheritedBehavior.hideUntilDependenciesVisible()),
+                inheritedBoolean(raw, "hide_until_deps_complete", inheritedBehavior.hideUntilDependenciesComplete()),
+                raw.getBoolean("invisible"), raw.getInt("invisible_until_tasks"),
+                inheritedBoolean(raw, "hide_details_until_startable", inheritedBehavior.hideDetailsUntilStartable()),
+                inheritedBoolean(raw, "hide_text_until_complete", inheritedBehavior.hideTextUntilComplete()),
+                raw.getBoolean("hide_lock_icon"), DependencyRequirement.parse(raw.getString("dependency_requirement")),
+                raw.getInt("min_required_dependencies"),
+                inheritedBoolean(raw, "require_sequential_tasks", inheritedBehavior.sequentialTasks()),
+                inheritedBoolean(raw, "can_repeat", inheritedBehavior.repeatable()), raw.getInt("repeat_cooldown"),
+                raw.getBoolean("ignore_reward_blocking"));
         return new QuestDefinition(bookId, id, chapterId,
                 title,
                 translations.getOrDefault("quest." + legacy + ".quest_subtitle", ""),
                 translations.getOrDefault("quest." + legacy + ".quest_desc", ""),
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
-                dependencies, tasks, rewards, legacy, appearance,
+                dependencies, tasks, rewards, legacy, appearance, behavior,
                 extensions(raw, Set.of("id", "title", "subtitle", "description", "icon", "x", "y",
-                        "dependencies", "tasks", "rewards", "shape", "size", "icon_scale", "min_width"),
+                        "dependencies", "tasks", "rewards", "shape", "size", "icon_scale", "min_width",
+                        "hide_until_deps_visible", "hide_until_deps_complete", "invisible", "invisible_until_tasks",
+                        "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon",
+                        "dependency_requirement", "min_required_dependencies", "require_sequential_tasks",
+                        "can_repeat", "repeat_cooldown", "ignore_reward_blocking"),
                         file, "quests[" + legacy + "]", conversions));
     }
 
@@ -320,8 +353,9 @@ public final class FtbV13Importer {
 
     private void warnUnknown(String type, String file, String path, String id, DiagnosticReport report) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
-        boolean supported = Set.of("checkmark", "item", "custom").contains(normalized)
-                || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom").contains(normalized);
+        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels").contains(normalized)
+                || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom", "ftbquests:xp",
+                "ftbquests:xp_levels").contains(normalized);
         if (!supported && !normalized.contains(":")) {
             report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
         }
@@ -330,8 +364,8 @@ public final class FtbV13Importer {
     private void recordTypeConversion(String file, String path, String sourceType, ResourceLocation targetType,
                                       List<FtbFieldConversion> conversions) {
         String normalized = sourceType == null ? "" : sourceType.toLowerCase(Locale.ROOT);
-        boolean builtIn = Set.of("checkmark", "item", "custom", "ftbquests:checkmark", "ftbquests:item",
-                "ftbquests:custom").contains(normalized);
+        boolean builtIn = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "ftbquests:checkmark",
+                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels").contains(normalized);
         boolean namespaced = sourceType != null && sourceType.contains(":");
         FtbFieldConversion.Status status = builtIn ? FtbFieldConversion.Status.MAPPED
                 : namespaced ? FtbFieldConversion.Status.PRESERVED_EXTENSION
@@ -383,7 +417,7 @@ public final class FtbV13Importer {
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String builtInPath = normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
-        if (Set.of("checkmark", "item", "custom").contains(builtInPath)) {
+        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels").contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }
         ResourceLocation namespaced = ResourceLocation.tryParse(normalized);
@@ -424,6 +458,15 @@ public final class FtbV13Importer {
     }
 
     private record InheritedAppearance(String shape, double size) {}
+
+    private record InheritedBehavior(boolean hideUntilDependenciesVisible, boolean hideUntilDependenciesComplete,
+                                     boolean hideDetailsUntilStartable, boolean hideTextUntilComplete,
+                                     boolean sequentialTasks, boolean repeatable) {}
+
+    /** FTB tristates are absent when inherited and explicit booleans when overridden. */
+    private boolean inheritedBoolean(CompoundTag raw, String key, boolean inherited) {
+        return raw.contains(key, Tag.TAG_BYTE) ? raw.getBoolean(key) : inherited;
+    }
 
     private Diagnostic problem(Diagnostic.Severity severity, String code, String file, String path, String id, String message) {
         return new Diagnostic(severity, code, file, path, id, Objects.requireNonNullElse(message, "Unknown error"));

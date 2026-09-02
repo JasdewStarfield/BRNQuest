@@ -18,21 +18,28 @@ class QuestModeSelectionTest {
     private static final ResourceLocation QUEST = ResourceLocation.fromNamespaceAndPath("test", "quest");
 
     @Test void keepsTheSameOpenDetailWhenTheTargetModeContainsItsId() {
-        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, true, Set.of(QUEST));
+        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, true, Set.of(QUEST), ignored -> true);
 
         assertEquals(QUEST, result.selectedId());
         assertTrue(result.detailsOpen());
     }
 
     @Test void keepsACompatibleSelectionWithoutOpeningAClosedDrawer() {
-        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, false, Set.of(QUEST));
+        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, false, Set.of(QUEST), ignored -> true);
 
         assertEquals(QUEST, result.selectedId());
         assertFalse(result.detailsOpen());
     }
 
     @Test void closesDetailsInsteadOfUsingAnotherModesHistoricalSelection() {
-        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, true, Set.of());
+        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, true, Set.of(), ignored -> true);
+
+        assertNull(result.selectedId());
+        assertFalse(result.detailsOpen());
+    }
+
+    @Test void closesDetailsWhenAnExistingRuntimeQuestIsHidden() {
+        QuestModeSelection.Result result = QuestModeSelection.resolve(QUEST, true, Set.of(QUEST), ignored -> false);
 
         assertNull(result.selectedId());
         assertFalse(result.detailsOpen());

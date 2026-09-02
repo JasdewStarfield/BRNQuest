@@ -12,7 +12,15 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
                               String title, String subtitle, String description, String icon,
                               double x, double y, List<ResourceLocation> dependencies,
                               List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId,
-                              QuestAppearance appearance, Map<String, String> extensions) {
+                              QuestAppearance appearance, QuestBehavior behavior, Map<String, String> extensions) {
+    private record Metadata(QuestAppearance appearance, QuestBehavior behavior, Map<String, String> extensions) {
+        private static final Codec<Metadata> CODEC = RecordCodecBuilder.create(i -> i.group(
+                QuestAppearance.CODEC.optionalFieldOf("appearance", QuestAppearance.DEFAULT).forGetter(Metadata::appearance),
+                QuestBehavior.CODEC.optionalFieldOf("behavior", QuestBehavior.DEFAULT).forGetter(Metadata::behavior),
+                Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("extensions", Map.of()).forGetter(Metadata::extensions)
+        ).apply(i, Metadata::new));
+    }
+
     public static final Codec<QuestDefinition> CODEC = RecordCodecBuilder.create(i -> i.group(
             ResourceLocation.CODEC.fieldOf("book_id").forGetter(QuestDefinition::bookId),
             ResourceLocation.CODEC.fieldOf("id").forGetter(QuestDefinition::id),
@@ -27,16 +35,28 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
             TaskDefinition.CODEC.listOf().optionalFieldOf("tasks", List.of()).forGetter(QuestDefinition::tasks),
             RewardDefinition.CODEC.listOf().optionalFieldOf("rewards", List.of()).forGetter(QuestDefinition::rewards),
             Codec.STRING.optionalFieldOf("legacy_id", "").forGetter(QuestDefinition::legacyId),
-            QuestAppearance.CODEC.optionalFieldOf("appearance", QuestAppearance.DEFAULT).forGetter(QuestDefinition::appearance),
-            Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("extensions", Map.of()).forGetter(QuestDefinition::extensions)
-    ).apply(i, QuestDefinition::new));
+            Metadata.CODEC.optionalFieldOf("metadata", new Metadata(
+                    QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of()))
+                    .forGetter(quest -> new Metadata(quest.appearance(), quest.behavior(), quest.extensions()))
+    ).apply(i, (bookId, id, chapterId, title, subtitle, description, icon, x, y, dependencies, tasks, rewards, legacyId, metadata) ->
+            new QuestDefinition(bookId, id, chapterId, title, subtitle, description, icon, x, y,
+                    dependencies, tasks, rewards, legacyId, metadata.appearance(), metadata.behavior(), metadata.extensions())));
 
     public QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
                            String title, String subtitle, String description, String icon,
                            double x, double y, List<ResourceLocation> dependencies,
                            List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId) {
         this(bookId, id, chapterId, title, subtitle, description, icon, x, y, dependencies,
-                tasks, rewards, legacyId, QuestAppearance.DEFAULT, Map.of());
+                tasks, rewards, legacyId, QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of());
+    }
+
+    public QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
+                           String title, String subtitle, String description, String icon,
+                           double x, double y, List<ResourceLocation> dependencies,
+                           List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId,
+                           QuestAppearance appearance, Map<String, String> extensions) {
+        this(bookId, id, chapterId, title, subtitle, description, icon, x, y, dependencies,
+                tasks, rewards, legacyId, appearance, QuestBehavior.DEFAULT, extensions);
     }
 
     public QuestDefinition {
@@ -44,6 +64,7 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
         tasks = List.copyOf(tasks);
         rewards = List.copyOf(rewards);
         appearance = appearance == null ? QuestAppearance.DEFAULT : appearance;
+        behavior = behavior == null ? QuestBehavior.DEFAULT : behavior;
         extensions = Map.copyOf(extensions);
     }
 }

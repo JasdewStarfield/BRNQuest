@@ -27,6 +27,22 @@ public final class ClientTaskPresentationRegistry {
         register(TaskTypes.CHECKMARK, new CheckmarkPresentation());
         register(TaskTypes.ITEM, new ItemChoicePresentation());
         register(TaskTypes.ITEM_CHOICE, new ItemChoicePresentation());
+        register(TaskTypes.XP, new ClientTaskPresentation() {
+            public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
+            public String symbol(TaskView task) { return "✦"; }
+            public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.xp"); }
+            public boolean interactive(TaskView task) { return true; }
+            public boolean satisfied(TaskPresentationContext context) { return context.storedProgress() >= 1; }
+            public boolean readyForSubmission(TaskPresentationContext context) {
+                return context.minecraft().player != null && experienceAvailable(context.task(),
+                        context.minecraft().player.totalExperience, context.minecraft().player.experienceLevel);
+            }
+            public Component title(TaskPresentationContext context) {
+                boolean points = usesRawExperiencePoints(context.task());
+                return Component.translatable(points ? "screen.brnquest.task.xp.points" : "screen.brnquest.task.xp.levels",
+                        context.task().config().getOrDefault("value", "1"));
+            }
+        });
         register(TaskTypes.CUSTOM, new ClientTaskPresentation() {
             public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
             public String symbol(TaskView task) { return "◆"; }
@@ -54,8 +70,10 @@ public final class ClientTaskPresentationRegistry {
     public static boolean isFrozen() { return frozen; }
 
     /** Shared receipt rule for legacy and unified item presentations, independent of a running client. */
-    static boolean itemObjectiveSubmitted(long storedProgress) {
-        return storedProgress >= 1;
+    static boolean itemObjectiveSubmitted(TaskView task, long storedProgress) {
+        return booleanConfig(task, "only_from_crafting")
+                ? storedProgress >= requiredCount(task)
+                : storedProgress >= 1;
     }
 
     /** Schema-1 counts remain strings, so presentation parsing mirrors the authoritative codec bounds. */
@@ -75,6 +93,18 @@ public final class ClientTaskPresentationRegistry {
         return ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
     }
 
+    /** Mirrors the server's XP balance check so yellow readiness never promises a rejected submission. */
+    static boolean experienceAvailable(TaskView task, int totalExperience, int experienceLevel) {
+        int required;
+        try {
+            required = Integer.parseInt(task.config().getOrDefault("value", "1").replaceAll("[^0-9-]", ""));
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+        if (required < 1) return false;
+        return usesRawExperiencePoints(task) ? totalExperience >= required : experienceLevel >= required;
+    }
+
     /** Multi-entry objectives describe the required number of types, never a misleading stack count. */
     static Component multipleItemObjectiveTitle(TaskView task, ItemChoiceMatcher.Spec spec) {
         String key = consumesItems(task)
@@ -92,6 +122,9 @@ public final class ClientTaskPresentationRegistry {
 
     /** Short underlined qualifier used by built-in item objectives in the detail row. */
     static Component itemObjectiveQualifier(TaskView task) {
+        if (craftingOnly(task)) {
+            return Component.translatable("screen.brnquest.task.item.crafting.label");
+        }
         return Component.translatable(consumesItems(task)
                 ? "screen.brnquest.task.item.require.label"
                 : "screen.brnquest.task.item.hold.label");
@@ -99,6 +132,9 @@ public final class ClientTaskPresentationRegistry {
 
     /** Explains whether satisfying the built-in item objective consumes matching inventory. */
     static Component itemObjectiveQualifierHint(TaskView task) {
+        if (craftingOnly(task)) {
+            return Component.translatable("screen.brnquest.task.item.crafting.hint");
+        }
         return Component.translatable(consumesItems(task)
                 ? "screen.brnquest.task.item.require.hint"
                 : "screen.brnquest.task.item.hold.hint");
@@ -152,7 +188,7 @@ public final class ClientTaskPresentationRegistry {
 
         public boolean satisfied(TaskPresentationContext context) {
             // The quest-wide submit affordance must agree with the server's receipt-only rule.
-            return itemObjectiveSubmitted(context.storedProgress());
+            return itemObjectiveSubmitted(context.task(), context.storedProgress());
         }
 
         public Component progressText(TaskPresentationContext context, boolean satisfied) {
@@ -224,9 +260,7 @@ public final class ClientTaskPresentationRegistry {
         }
 
         @Override
-        public boolean interactive(TaskView task) {
-            return true;
-        }
+        public boolean interactive(TaskView task) { return !craftingOnly(task); }
 
         @Override
         public ItemStack displayedItem(TaskPresentationContext context) {
@@ -249,17 +283,24 @@ public final class ClientTaskPresentationRegistry {
         @Override
         public boolean satisfied(TaskPresentationContext context) {
             // Readiness still comes from the match plan, but only a receipt satisfies the quest.
-            return itemObjectiveSubmitted(context.storedProgress());
+            return craftingOnly(context.task())
+                    ? context.storedProgress() >= requiredCount(context.task())
+                    : itemObjectiveSubmitted(context.task(), context.storedProgress());
         }
 
         @Override
         public boolean readyForSubmission(TaskPresentationContext context) {
+            if (craftingOnly(context.task())) return false;
             ItemChoiceMatcher.MatchPlan plan = plan(context);
             return plan != null && plan.satisfied();
         }
 
         @Override
         public Component progressText(TaskPresentationContext context, boolean satisfied) {
+            if (craftingOnly(context.task())) {
+                return Component.translatable("screen.brnquest.task.crafted.progress",
+                        Math.min(context.storedProgress(), requiredCount(context.task())), requiredCount(context.task()));
+            }
             ItemChoiceMatcher.MatchPlan plan = plan(context);
             if (plan == null) return ClientTaskPresentation.super.progressText(context, satisfied);
             return Component.translatable("screen.brnquest.task.item_choice.progress",
@@ -305,5 +346,26 @@ public final class ClientTaskPresentationRegistry {
         private ItemChoiceMatcher.Spec spec(TaskView task) {
             return itemSpec(task);
         }
+    }
+
+    private static boolean booleanConfig(TaskView task, String key) {
+        String value = task.config().getOrDefault(key, "false");
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+    }
+
+    static boolean craftingOnly(TaskView task) {
+        return booleanConfig(task, "only_from_crafting");
+    }
+
+    /** Internal receipt interpretation; counted crafting rows require their full configured amount. */
+    static boolean confirmed(TaskView task, long storedProgress) {
+        return task.typeId().equals(TaskTypes.ITEM) || task.typeId().equals(TaskTypes.ITEM_CHOICE)
+                ? itemObjectiveSubmitted(task, storedProgress)
+                : storedProgress >= 1;
+    }
+
+    private static boolean usesRawExperiencePoints(TaskView task) {
+        String value = task.config().getOrDefault("points", "true");
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
     }
 }

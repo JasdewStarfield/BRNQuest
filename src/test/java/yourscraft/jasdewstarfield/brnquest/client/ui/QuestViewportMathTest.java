@@ -50,6 +50,11 @@ class QuestViewportMathTest {
         assertEquals(3, QuestViewportMath.DRAG_DECIMAL_PLACES);
     }
 
+    @Test void pointerCreatedQuestCoordinatesSnapToTheNearestGridIntersection() {
+        assertEquals(3.0, QuestViewportMath.snapQuestCoordinate(2.61), 0.000001);
+        assertEquals(-2.0, QuestViewportMath.snapQuestCoordinate(-2.49), 0.000001);
+    }
+
     @Test void earlyTravelPansCanvasButStationaryHoldAndPickedUpMotionDoNot() {
         long holdNanos = 220_000_000L;
 

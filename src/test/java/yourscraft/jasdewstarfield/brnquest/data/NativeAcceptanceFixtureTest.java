@@ -27,9 +27,9 @@ class NativeAcceptanceFixtureTest {
         QuestBookValidator.validate(book, report);
 
         assertEquals(ResourceLocation.parse("brnquest_test:acceptance"), book.id());
-        assertEquals(3, book.chapterGroups().size());
-        assertEquals(24, book.chapters().size());
-        assertEquals(15, book.quests().size());
+        assertEquals(4, book.chapterGroups().size());
+        assertEquals(28, book.chapters().size());
+        assertEquals(38, book.quests().size());
         assertEquals(2, report.diagnostics().size(), report::toJson);
         assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-117")
                 && diagnostic.objectId().equals("brnquest_test:unknown_task")), report::toJson);
@@ -51,6 +51,25 @@ class NativeAcceptanceFixtureTest {
         QuestDefinition unknown = quest(book, "brnquest_test:unknown_types");
         assertEquals(ResourceLocation.parse("missing_test_mod:counter"), unknown.tasks().getFirst().typeId());
         assertEquals(ResourceLocation.parse("missing_test_mod:token"), unknown.rewards().getFirst().typeId());
+
+        QuestDefinition hidden = quest(book, "brnquest_test:hidden_until_dependency_complete");
+        assertTrue(hidden.behavior().hideUntilDependenciesComplete());
+        assertTrue(quest(book, "brnquest_test:hidden_lock_icon").behavior().hideLockIcon());
+        assertEquals(DependencyRequirement.ONE_COMPLETED,
+                quest(book, "brnquest_test:one_completed").behavior().dependencyRequirement());
+        assertEquals(2, quest(book, "brnquest_test:minimum_two_completed")
+                .behavior().minimumRequiredDependencies());
+        assertTrue(quest(book, "brnquest_test:sequential_objectives").behavior().sequentialTasks());
+        assertEquals("true", quest(book, "brnquest_test:crafting_only_planks")
+                .tasks().getFirst().config().get("only_from_crafting"));
+        assertEquals(ResourceLocation.parse("brnquest:xp"),
+                quest(book, "brnquest_test:experience_points").tasks().getFirst().typeId());
+        assertEquals(ResourceLocation.parse("brnquest:xp_levels"),
+                quest(book, "brnquest_test:experience_levels").rewards().getFirst().typeId());
+        QuestDefinition repeat = quest(book, "brnquest_test:repeat_reward_blocked");
+        assertTrue(repeat.behavior().repeatable());
+        assertEquals(10, repeat.behavior().repeatCooldownSeconds());
+        assertFalse(repeat.behavior().ignoreRewardBlocking());
     }
 
     @Test

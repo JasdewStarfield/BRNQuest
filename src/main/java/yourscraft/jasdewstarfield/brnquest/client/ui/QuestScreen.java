@@ -51,6 +51,7 @@ import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
@@ -77,6 +78,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -119,6 +121,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private double renderedZoom;
     private int attentionPingOffsetY;
     private long previousMotionFrameNanos;
+    private long lastCooldownRecoveryRequestMillis;
     private double currentMotionFrameSeconds = 1.0 / 60.0;
     // Zoom needs a much smaller terminal snap than pixel scrolling; 0.01 zoom is visibly abrupt.
     private final EditorSmoothValue zoomMotion = new EditorSmoothValue(1.0, 0.00001);
@@ -154,6 +157,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuestIconEditorRow.Layout questIconRowLayout;
     private UiRect questLocalizedTextEditorBounds;
     private UiRect questShapeDropdownBounds;
+    private UiRect questBehaviorEditorBounds;
+    private QuestBehavior questEditorBehavior = QuestBehavior.DEFAULT;
     private final EditorFormFields<String> questFields = new EditorFormFields<String>()
             .define("title", "screen.brnquest.editor.quest.title", 256)
             .define("subtitle", "screen.brnquest.editor.quest.subtitle", 256)
@@ -352,6 +357,31 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
         });
         reconcileDragPreview();
+        requestExpiredRepeatRecovery();
+    }
+
+    /**
+     * A server tick normally reopens repeatable quests. This bounded recovery request prevents one
+     * missed delta from leaving an open screen permanently stuck on the completed prior cycle.
+     */
+    private void requestExpiredRepeatRecovery() {
+        if (!gameplayAllowed()) return;
+        QuestBookSnapshot snapshot = ClientQuestState.get().book().orElse(null);
+        if (snapshot == null) return;
+        long now = System.currentTimeMillis();
+        if (now - lastCooldownRecoveryRequestMillis < 1_000L) return;
+        boolean refreshDue = snapshot.book().quests().stream().anyMatch(quest -> {
+            QuestStatus current = status(quest);
+            if (!quest.behavior().repeatable() || !isCompleted(current)) return false;
+            long deadline = ClientQuestState.get().nextAvailableAt(quest.id());
+            if (deadline <= 0 || deadline > now) return false;
+            return quest.behavior().ignoreRewardBlocking() || quest.rewards().isEmpty()
+                    || quest.rewards().stream().allMatch(reward -> ClientQuestState.get().claimed()
+                    .contains(reward.id().toString()));
+        });
+        if (!refreshDue) return;
+        lastCooldownRecoveryRequestMillis = now;
+        BrnQuestNetwork.requestBook(ClientQuestState.get().revision());
     }
 
     /**
@@ -361,13 +391,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
      */
     private void reconcileModeSelection(ClientEditorState editor) {
         boolean nextEditorMode = editor.draft().isPresent();
-        if (nextEditorMode == editorSelectionMode) return;
+        boolean modeChanged = nextEditorMode != editorSelectionMode;
         QuestBookSnapshot target = nextEditorMode
                 ? editor.draft().orElse(null) : ClientQuestState.get().book().orElse(null);
         ResourceLocation preferred = editorSelectionMode
                 ? editorSelectedQuest : ClientQuestState.get().selected();
         Set<ResourceLocation> targetIds = target == null ? Set.of() : target.quests().keySet();
-        QuestModeSelection.Result result = QuestModeSelection.resolve(preferred, detailsOpen, targetIds);
+        QuestModeSelection.Result result = QuestModeSelection.resolve(preferred, detailsOpen, targetIds,
+                nextEditorMode ? ignored -> true : ClientQuestState.get()::visible);
+        boolean selectionChanged = !Objects.equals(preferred, result.selectedId())
+                || detailsOpen != result.detailsOpen();
+        // Recheck within one mode as well: an accepted delete mutation can replace the draft snapshot in place.
+        if (!modeChanged && !selectionChanged) return;
 
         if (nextEditorMode) {
             editorSelectedQuest = result.selectedId();
@@ -508,8 +543,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         if (chapter != null) {
             Map<ResourceLocation, QuestDefinition> chapterQuests = new HashMap<>();
-            chapter.quests().forEach(quest -> chapterQuests.put(quest.id(), quest));
+            chapter.quests().stream().filter(this::questVisible).forEach(quest -> chapterQuests.put(quest.id(), quest));
             for (QuestDefinition quest : chapter.quests()) {
+                if (!questVisible(quest)) continue;
                 for (ResourceLocation dependency : quest.dependencies()) {
                     QuestDefinition parent = chapterQuests.get(dependency);
                     // Large chapters commonly contain off-screen subgraphs. Skip a
@@ -522,9 +558,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }
             }
             for (QuestDefinition quest : chapter.quests()) {
+                if (!questVisible(quest)) continue;
                 renderNodeSnapGhost(graphics, quest, graphLeft, graphRight, graphTop, graphBottom);
             }
             for (QuestDefinition quest : chapter.quests()) {
+                if (!questVisible(quest)) continue;
                 renderNode(graphics, quest, graphLeft, graphRight, graphTop, graphBottom, graphMouseX, graphMouseY);
             }
         }
@@ -628,8 +666,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (!nodeDrag.active() && mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
                 && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
             List<Component> tooltip = new ArrayList<>();
-            tooltip.add(Component.literal(questTitle(quest)).withStyle(ChatFormatting.WHITE));
-            String subtitle = localizedQuestText(quest, "quest_subtitle", quest.subtitle());
+            boolean hiddenText = !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status);
+            tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
+            String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
             if (!subtitle.isBlank()) {
                 tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
             }
@@ -698,6 +737,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (quest == null) return;
         QuestStatus status = status(quest);
         boolean editing = ClientEditorState.get().editing();
+        if (!editing && quest.behavior().hideDetailsUntilStartable()
+                && status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE && !isCompleted(status)) {
+            graphics.drawString(font, Component.translatable("screen.brnquest.quest_details_hidden"),
+                    left + 12, detailContentTop() + 8, 0xFF9AA6B5, false);
+            return;
+        }
         if (editing && questEditorOpen && quest.id().equals(questEditorQuestId)) {
             detailsPanel.reset();
             renderQuestPropertyEditor(graphics, quest, mouseX, mouseY);
@@ -713,15 +758,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderTypedEditor(graphics, quest, mouseX, mouseY);
             return;
         }
+        Component cooldownText = repeatCooldownText(quest, status);
         Component statusText = !gameplayAllowed() ? Component.translatable("screen.brnquest.editor.preview")
+                : cooldownText != null ? cooldownText
                 : Component.translatable(QuestPresentation.statusTranslationKey(quest, status, ClientQuestState.get().claimed()));
         UiRect content = new UiRect(left + 10, detailContentTop(), left + 10 + detailsWidth() - 24, detailContentBottom());
         UiRect clip = new UiRect(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
                 Math.min(width, width - 10 + detailsDrawerOffsetX()), detailContentBottom());
         var result = detailsPanel.render(graphics, font, new QuestDetailsPanel.Layout(content, clip, width - 8),
-                new QuestDetailsPanel.Model(quest, questTitle(quest),
-                        localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
-                        localizedQuestText(quest, "quest_desc", quest.description()),
+                new QuestDetailsPanel.Model(quest,
+                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "???" : questTitle(quest),
+                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
+                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_desc", quest.description()),
                         status, statusText, statusColor(status),
                         editing, gameplayAllowed(), canSubmit(quest, status)), new QuestDetailsPanel.Rows() {
                     public int task(TaskDefinition task, int x, int y, int rowWidth) {
@@ -776,7 +824,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             presentationContext = new TaskPresentationContext(minecraft, taskView, status,
                     storedProgress, stack);
         }
-        TaskDisplayState state = taskDisplayState(task, status, presentation, presentationContext);
+        TaskDisplayState state = taskDisplayState(quest, task, status, presentation, presentationContext);
         var row = QuestDetailRows.task(graphics, font, task, presentation, presentationContext, state,
                 x, y, width, detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
         if (row.action() != null) {
@@ -839,6 +887,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     && questShapeDropdownBounds.contains(mouseX, mouseY)) {
                 openEnumDropdown(questShapeDropdownBounds, QUEST_SHAPES,
                         questFields.field("shape")::setValue);
+                return true;
+            }
+            if (button == 0 && questBehaviorEditorBounds != null
+                    && questBehaviorEditorBounds.contains(mouseX, mouseY)) {
+                minecraft.setScreen(new EditorQuestBehaviorScreen(this, questEditorBehavior,
+                        value -> questEditorBehavior = value));
                 return true;
             }
             if (button == 0 && questIconRowLayout != null && questIconRowLayout.mode().contains(mouseX, mouseY)) {
@@ -2101,8 +2155,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         structureFormKind = kind;
         structureFormTarget = target;
         structureFormParent = parent;
-        structureFormX = x;
-        structureFormY = y;
+        // Pointer-created quests use the same nearest-intersection rule as node dragging.
+        structureFormX = kind == StructureFormKind.ADD_QUEST ? QuestViewportMath.snapQuestCoordinate(x) : x;
+        structureFormY = kind == StructureFormKind.ADD_QUEST ? QuestViewportMath.snapQuestCoordinate(y) : y;
         ResourceLocation id = target;
         String title = "";
         if (kind == StructureFormKind.RENAME_GROUP) {
@@ -3617,6 +3672,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questFields.field("shape").hide();
         questLocalizedTextEditorBounds = null;
         questShapeDropdownBounds = null;
+        questBehaviorEditorBounds = null;
         questIconRowLayout = null;
         rows.add(EditorPropertyPanel.text(font, questFields.field("id"),
                 "screen.brnquest.editor.quest.id", 78, null, enabled));
@@ -3627,6 +3683,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             rows.add(EditorPropertyPanel.text(font, questFields.field(key),
                     "screen.brnquest.editor.quest." + key, 78, null, enabled));
         }
+        rows.add((g, x, y, w) -> renderQuestBehaviorEditorField(g, x, y, w, enabled, mouseX, mouseY));
         rows.add((g, x, y, w) -> renderQuestIconEditorField(g, x, y, w, mouseX, mouseY));
         rows.add(this::renderQuestPositionEditorField);
         Component heading = questEditorMessage == null
@@ -3655,6 +3712,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questShapeDropdownBounds = row.field();
         renderEditorTextButton(graphics, row.field(),
                 Component.literal(questFields.field("shape").getValue() + " ▾"), null,
+                enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    private void renderQuestBehaviorEditorField(GuiGraphics graphics, int left, int top, int width,
+                                                boolean enabled, int mouseX, int mouseY) {
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 78);
+        EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.editor.quest.behavior"),
+                row.label(), null);
+        questBehaviorEditorBounds = row.field();
+        renderEditorTextButton(graphics, row.field(),
+                Component.translatable("screen.brnquest.editor.quest.behavior_open"), null,
                 enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
@@ -3774,6 +3842,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questFields.field("size").setValue(Double.toString(quest.appearance().size()));
         questFields.field("icon_scale").setValue(Double.toString(quest.appearance().iconScale()));
         questFields.field("min_width").setValue(Double.toString(quest.appearance().minWidth()));
+        questEditorBehavior = quest.behavior();
         setFocused(questFields.field("id"));
     }
 
@@ -3859,7 +3928,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 questFields.field("shape").getValue().strip(),
                 Double.parseDouble(questFields.field("size").getValue().strip()),
                 Double.parseDouble(questFields.field("icon_scale").getValue().strip()),
-                Double.parseDouble(questFields.field("min_width").getValue().strip()));
+                Double.parseDouble(questFields.field("min_width").getValue().strip()),
+                behaviorConfig(questEditorBehavior));
         editorSelectedQuest = replacementId;
         closeQuestEditingPanels();
         editorOverlays.close();
@@ -3874,6 +3944,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questEditorOriginalIconMode = IconEditorMode.ITEM;
         questEditorItemIconValue = "";
         questEditorTextureIconValue = "";
+        questEditorBehavior = QuestBehavior.DEFAULT;
         clearRenderedPropertyGeometry();
         setFocused(null);
         for (EditorTextField field : List.of(questFields.field("id"), questFields.field("title"), questFields.field("subtitle"),
@@ -3890,8 +3961,27 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questIconRowLayout = null;
         questLocalizedTextEditorBounds = null;
         questShapeDropdownBounds = null;
+        questBehaviorEditorBounds = null;
         typedClaimDropdownBounds = null;
         typedEnumDropdownBounds.clear();
+    }
+
+    private Map<String, String> behaviorConfig(QuestBehavior value) {
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("hide_until_dependencies_visible", Boolean.toString(value.hideUntilDependenciesVisible()));
+        result.put("hide_until_dependencies_complete", Boolean.toString(value.hideUntilDependenciesComplete()));
+        result.put("invisible_until_complete", Boolean.toString(value.invisibleUntilComplete()));
+        result.put("visible_after_tasks", Integer.toString(value.visibleAfterTasks()));
+        result.put("hide_details_until_startable", Boolean.toString(value.hideDetailsUntilStartable()));
+        result.put("hide_text_until_complete", Boolean.toString(value.hideTextUntilComplete()));
+        result.put("hide_lock_icon", Boolean.toString(value.hideLockIcon()));
+        result.put("dependency_requirement", value.dependencyRequirement().serializedName());
+        result.put("minimum_required_dependencies", Integer.toString(value.minimumRequiredDependencies()));
+        result.put("sequential_tasks", Boolean.toString(value.sequentialTasks()));
+        result.put("repeatable", Boolean.toString(value.repeatable()));
+        result.put("repeat_cooldown_seconds", Integer.toString(value.repeatCooldownSeconds()));
+        result.put("ignore_reward_blocking", Boolean.toString(value.ignoreRewardBlocking()));
+        return result;
     }
 
     /** EditBox widgets render through Screen after custom panels, so apply the drawer translation explicitly. */
@@ -4298,7 +4388,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Builds the same state used by row color, row input and the outer-node attention badge. */
-    private TaskDisplayState taskDisplayState(TaskDefinition task, QuestStatus status) {
+    private TaskDisplayState taskDisplayState(QuestDefinition quest, TaskDefinition task, QuestStatus status) {
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
         var view = ApiViews.task(task);
         String itemSnbt = presentation.itemSnbt(view);
@@ -4306,21 +4396,45 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
         TaskPresentationContext context = new TaskPresentationContext(
                 minecraft, view, status, storedProgress, displayedItem);
-        return taskDisplayState(task, status, presentation, context);
+        return taskDisplayState(quest, task, status, presentation, context);
     }
 
-    private TaskDisplayState taskDisplayState(TaskDefinition task, QuestStatus status,
+    private TaskDisplayState taskDisplayState(QuestDefinition quest, TaskDefinition task, QuestStatus status,
                                               ClientTaskPresentation presentation,
                                               TaskPresentationContext context) {
-        return TaskDisplayState.resolve(status, context.storedProgress(),
+        boolean sequentiallyAvailable = taskSequentiallyAvailable(quest, task, status);
+        return TaskDisplayState.resolve(status,
+                ClientTaskPresentationRegistry.confirmed(context.task(), context.storedProgress()),
                 ClientQuestState.get().isTaskSubmissionPending(task.id().toString()),
-                presentation.interactive(context.task()), presentation.readyForSubmission(context),
+                sequentiallyAvailable && presentation.interactive(context.task()),
+                sequentiallyAvailable && presentation.readyForSubmission(context),
                 !gameplayAllowed());
     }
 
     private boolean questHasAttentionTask(QuestDefinition quest, QuestStatus status) {
-        return quest.tasks().stream().map(task -> taskDisplayState(task, status))
+        return quest.tasks().stream().map(task -> taskDisplayState(quest, task, status))
                 .anyMatch(state -> state == TaskDisplayState.READY);
+    }
+
+    /** Mirrors the server's author-ordered gate for presentation; submission is still revalidated server-side. */
+    private boolean taskSequentiallyAvailable(QuestDefinition quest, TaskDefinition task, QuestStatus status) {
+        if (!quest.behavior().sequentialTasks() || task.optional()) return true;
+        for (TaskDefinition candidate : quest.tasks()) {
+            if (candidate.id().equals(task.id())) return true;
+            if (!candidate.optional() && !taskSatisfied(candidate, status)) return false;
+        }
+        return false;
+    }
+
+    private Component repeatCooldownText(QuestDefinition quest, QuestStatus status) {
+        if (!gameplayAllowed() || !quest.behavior().repeatable() || !isCompleted(status)) return null;
+        boolean rewardsResolved = quest.behavior().ignoreRewardBlocking() || quest.rewards().isEmpty()
+                || quest.rewards().stream().allMatch(reward -> ClientQuestState.get().claimed()
+                .contains(reward.id().toString()));
+        long remainingMillis = ClientQuestState.get().nextAvailableAt(quest.id()) - System.currentTimeMillis();
+        if (!rewardsResolved || remainingMillis <= 0) return null;
+        return Component.translatable("screen.brnquest.repeat_cooldown",
+                Math.max(1L, (remainingMillis + 999L) / 1000L));
     }
 
     /** Editing adds controls; only isolated drafts or unacknowledged live revisions suppress gameplay. */
@@ -4331,6 +4445,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuestStatus status(QuestDefinition quest) {
         if (!gameplayAllowed()) return QuestStatus.LOCKED;
         return ClientQuestState.get().statuses().getOrDefault(quest.id().toString(), QuestStatus.LOCKED);
+    }
+
+    private boolean questVisible(QuestDefinition quest) {
+        return ClientEditorState.get().editing() || ClientQuestState.get().visible(quest.id());
     }
 
     /** Resolves cross-chapter prerequisites from the immutable book already synchronized to the client. */
@@ -4388,7 +4506,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ResourceLocation selectedId = selectedQuestId();
         // Immutable snapshot maps reject null keys, which is a normal state before
         // the player has selected the first quest in view or editor mode.
-        return snapshot == null || selectedId == null ? null : snapshot.quests().get(selectedId);
+        QuestDefinition quest = snapshot == null || selectedId == null ? null : snapshot.quests().get(selectedId);
+        return quest == null || !questVisible(quest) ? null : quest;
     }
 
     private ResourceLocation selectedQuestId() {
@@ -4614,6 +4733,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuestDefinition nodeAt(ChapterDefinition chapter, double graphMouseX, double graphMouseY) {
         for (int index = chapter.quests().size() - 1; index >= 0; index--) {
             QuestDefinition quest = chapter.quests().get(index);
+            if (!questVisible(quest)) continue;
             int radius = QuestNodeGeometry.hitRadius(NODE_BASE_SIZE, quest.appearance());
             if (Math.abs(graphMouseX - nodeGraphX(quest)) <= radius
                     && Math.abs(graphMouseY - nodeGraphY(quest)) <= radius) return quest;
@@ -5124,8 +5244,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         List<ResourceLocation> builtIns() {
             return this == TASK
-                    ? List.of(TaskTypes.CHECKMARK, TaskTypes.CUSTOM, TaskTypes.ITEM)
-                    : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM);
+                    ? List.of(TaskTypes.CHECKMARK, TaskTypes.CUSTOM, TaskTypes.ITEM, TaskTypes.XP)
+                    : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM, RewardTypes.XP, RewardTypes.XP_LEVELS);
         }
 
         boolean known(ResourceLocation typeId) { return builtIns().contains(typeId); }
@@ -5134,7 +5254,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return this == TASK
                     ? typeId.equals(TaskTypes.CHECKMARK) || typeId.equals(TaskTypes.CUSTOM)
                             || typeId.equals(TaskTypes.ITEM)
-                    : typeId.equals(RewardTypes.CUSTOM) || typeId.equals(RewardTypes.ITEM);
+                            || typeId.equals(TaskTypes.XP)
+                    : typeId.equals(RewardTypes.CUSTOM) || typeId.equals(RewardTypes.ITEM)
+                            || typeId.equals(RewardTypes.XP) || typeId.equals(RewardTypes.XP_LEVELS);
         }
 
         boolean itemBacked(ResourceLocation typeId) {

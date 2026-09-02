@@ -23,7 +23,7 @@ class ConfigEditorSchemasTest {
                 "item", "{count:1,id:\"minecraft:stone\"}", "count", "2", "consume_items", "true")));
 
         assertFalse(schema.rawFallback());
-        assertEquals(List.of("title", "required_entries", "consume_items", "matcher"),
+        assertEquals(List.of("title", "required_entries", "consume_items", "only_from_crafting", "matcher"),
                 schema.fields().stream().map(ConfigFieldDescriptor::key).toList());
         assertEquals("1", schema.rawConfig().get("required_entries"));
         assertTrue(schema.rawConfig().get("matcher").contains("\"count\":2"));
@@ -36,7 +36,7 @@ class ConfigEditorSchemasTest {
                 "count", "2", "consume_items", "false")));
 
         assertFalse(schema.rawFallback());
-        assertEquals(List.of("title", "required_entries", "consume_items", "matcher"),
+        assertEquals(List.of("title", "required_entries", "consume_items", "only_from_crafting", "matcher"),
                 schema.fields().stream().map(ConfigFieldDescriptor::key).toList());
         assertEquals(ConfigValueType.ITEM_MATCHER, schema.fields().getLast().valueType());
         assertTrue(schema.issues().stream().anyMatch(issue -> issue.fieldKey().equals("matcher")

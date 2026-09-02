@@ -7,6 +7,8 @@ import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 public final class RewardTypes {
     public static final ResourceLocation CUSTOM = id("custom");
     public static final ResourceLocation ITEM = id("item");
+    public static final ResourceLocation XP = id("xp");
+    public static final ResourceLocation XP_LEVELS = id("xp_levels");
 
     private RewardTypes() {}
 

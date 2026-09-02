@@ -63,6 +63,8 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 内置 `ITEM_MATCHER` 字段会打开下属物品属性 Screen，`brnquest:item` 与兼容保留的 `brnquest:item_choice` 共用该能力。规范 matcher 是 version 2 entries JSON：每个条目保存自己的物品展示栈或 tag 与需求数量，目标所需条目数由上层 `required_entries` 编辑；物品条目按物品类型接受组件不同的同类栈，玩家提交时再选择具体背包格。旧单物品及旧 tag/list matcher 会投影到相同表单；多 tag 物品通过二级列表明确选择。完成子级编辑后才一次性回填，取消不会修改原配置。该能力及带玩家背包槽位选择的提交重载均为内部实现边界；扩展自己的 matcher 仍必须由服务端 Codec 和提交事务重新校验，不能信任客户端槽位、ItemStack 或库存快照。
 
+内置 `brnquest:xp` 目标用 `value` 与 `points` 区分提交原始经验值或完整等级；`brnquest:xp`、`brnquest:xp_levels` 奖励分别发放原始经验值和完整等级。物品目标的 `only_from_crafting=true` 不接受手动背包提交，只统计服务端收到的玩家合成产出事件，并要求恰好一个匹配条目。
+
 ## 注册与 reload 顺序
 
 common task/reward/owner provider 和预留脚本窗口在首次服务端资源 reload 前一起冻结；客户端 presentation 在 client setup 冻结。注册只能发生在对应构造/setup 窗口，`/reload` 不重新执行或开放注册。冻结后的重复或迟到注册都会明确抛出错误。

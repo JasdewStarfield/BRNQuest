@@ -27,7 +27,10 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskType;
 import yourscraft.jasdewstarfield.brnquest.task.TaskContext;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.*;
 
@@ -55,13 +58,45 @@ public final class ProgressEngine {
         Set<String> current = new HashSet<>();
         for (QuestDefinition quest : snapshot.book().quests()) {
             current.add(quest.id().toString());
-            if (progress.status(quest.id().toString()) == QuestStatus.LOCKED && dependenciesComplete(quest, progress)) {
-                progress.status(quest.id().toString(), QuestStatus.AVAILABLE);
-            }
+            advanceRepeatIfReady(quest, progress, System.currentTimeMillis());
+            QuestStatus existing = progress.status(quest.id().toString());
+            QuestStatus reconciled = reconciledAvailability(existing, dependenciesComplete(quest, progress));
+            if (reconciled != existing) progress.status(quest.id().toString(), reconciled);
         }
         progress.questsView().keySet().stream().filter(id -> !current.contains(id)).forEach(progress::orphan);
         progress.revision(snapshot.revision());
         data.setDirty();
+    }
+
+    /** Performs time-based repeat reopening even when no inventory event occurs. */
+    public void tick(ServerPlayer player) {
+        // Server time is the stable cadence source; player tick counters can reset during lifecycle transitions.
+        if (player.getServer().getTickCount() % 20 != 0) return;
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot == null) return;
+        PlayerProgress progress = progress(player);
+        boolean changed = false;
+        long now = System.currentTimeMillis();
+        for (QuestDefinition quest : snapshot.book().quests()) {
+            changed |= advanceRepeatIfReady(quest, progress, now);
+        }
+        if (changed) {
+            QuestProgressData.get(player.getServer()).setDirty();
+            BrnQuestNetwork.syncProgress(player, true);
+        }
+    }
+
+    /** Server-authored visibility set; clients render it but never infer hidden quest access. */
+    public Set<String> visibleQuestIds(ServerPlayer player) {
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot == null) return Set.of();
+        PlayerProgress progress = progress(player);
+        Map<ResourceLocation, Boolean> memo = new HashMap<>();
+        Set<String> visible = new HashSet<>();
+        snapshot.book().quests().forEach(quest -> {
+            if (isVisible(quest, progress, snapshot.book(), memo)) visible.add(quest.id().toString());
+        });
+        return Set.copyOf(visible);
     }
 
     private static ResourceLocation typedLegacyId(String key, String prefix) {
@@ -114,14 +149,17 @@ public final class ProgressEngine {
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
             if (checkmarkIntent) {
                 // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
-                quest.tasks().forEach(task -> {
+                for (TaskDefinition task : quest.tasks()) {
                     TaskType<?> type = TaskTypeRegistry.get(task.typeId());
                     TaskContext context = taskContext(player, quest, task, progress);
-                    if (type != null && TaskTypeExecutor.acceptsQuestCompletionIntent(type, context.task())
+                    if (type != null && taskIsCurrent(player, quest, task, progress)
+                            && TaskTypeExecutor.acceptsQuestCompletionIntent(type, context.task())
                             && TaskTypeExecutor.submit(type, context).success()) {
                         changeTaskProgress(player, quest, task, progress, 1);
+                        // Sequential mode represents one author-ordered step per user intent.
+                        if (quest.behavior().sequentialTasks()) break;
                     }
-                });
+                }
             }
             for (TaskDefinition task : quest.tasks()) {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
@@ -171,6 +209,9 @@ public final class ProgressEngine {
                 return OperationResult.failure("LOCKED", "Quest is not available");
             }
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
+            if (!taskIsCurrent(player, quest, task, progress)) {
+                return OperationResult.failure("OUT_OF_SEQUENCE", "An earlier required objective must be completed first");
+            }
 
             TaskType<?> type = TaskTypeRegistry.get(task.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown task type " + task.typeId());
@@ -223,10 +264,48 @@ public final class ProgressEngine {
         if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown task " + taskId);
         TaskDefinition task = owner.tasks().stream().filter(candidate -> candidate.id().equals(taskId)).findFirst().orElseThrow();
         PlayerProgress progress = progress(player);
+        if (!dependenciesComplete(owner, progress) || !taskIsCurrent(player, owner, task, progress)) {
+            return OperationResult.failure("LOCKED", "Task is not currently progressable");
+        }
         changeTaskProgress(player, owner, task, progress, amount);
         QuestProgressData.get(player.getServer()).setDirty();
         BrnQuestNetwork.syncProgress(player, true);
         return OperationResult.success("Task progress updated");
+    }
+
+    /** Counts actual player crafting output for item objectives marked only_from_crafting. */
+    public void recordCraft(ServerPlayer player, ItemStack crafted) {
+        if (crafted.isEmpty()) return;
+        synchronizedOwner(player, () -> {
+            var snapshot = QuestBookManager.get().active().orElse(null);
+            if (snapshot == null) return null;
+            PlayerProgress progress = progress(player);
+            for (QuestDefinition quest : snapshot.book().quests()) {
+                QuestStatus status = progress.status(quest.id().toString());
+                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE)
+                        || !dependenciesComplete(quest, progress)) continue;
+                for (TaskDefinition task : quest.tasks()) {
+                    if (!TaskTypes.ITEM.equals(task.typeId()) && !TaskTypes.ITEM_CHOICE.equals(task.typeId())) continue;
+                    if (!booleanConfig(task.config(), "only_from_crafting") || !taskIsCurrent(player, quest, task, progress)) continue;
+                    ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
+                    // A single progress counter cannot losslessly represent several independent alternatives.
+                    if (spec == null || spec.entries().size() != 1 || spec.requiredEntries() != 1
+                            || !ItemChoiceMatcher.accepts(player.registryAccess(), spec, crafted)) continue;
+                    long required = spec.entries().stream().filter(entry -> acceptsEntry(player, entry, crafted))
+                            .mapToLong(ItemChoiceMatcher.Entry::requiredCount).min().orElse(1L);
+                    long previous = progress.taskProgress(task.id().toString());
+                    if (previous < required) changeTaskProgress(player, quest, task, progress,
+                            Math.min((long) crafted.getCount(), required - previous));
+                    if (progress.taskProgress(task.id().toString()) >= required) {
+                        complete(player, quest.id(), false);
+                        break;
+                    }
+                }
+            }
+            QuestProgressData.get(player.getServer()).setDirty();
+            BrnQuestNetwork.syncProgress(player, true);
+            return null;
+        });
     }
 
     public OperationResult claim(ServerPlayer player, ResourceLocation rewardId) {
@@ -256,6 +335,7 @@ public final class ProgressEngine {
             BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
                     snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
                     BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
+            advanceRepeatIfReady(owner, progress, System.currentTimeMillis());
             BrnQuestNetwork.syncProgress(player, true);
             if (notifyAutomatic) {
                 player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
@@ -295,6 +375,8 @@ public final class ProgressEngine {
             QuestProgressData.get(player.getServer()).setDirty();
             if (previous != 0) BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(),
                     player.getScoreboardName(), quest.bookId(), quest.id(), taskId, ApiViews.task(task), previous, 0));
+            // A task reset can invalidate descendants, so recompute the owner graph before synchronization.
+            reconcile(player);
             return OperationResult.success("Objective progress reset; reward claims preserved");
         }
         if (progress.taskProgress(taskId.toString()) >= 1) {
@@ -328,17 +410,26 @@ public final class ProgressEngine {
     }
 
     private boolean dependenciesComplete(QuestDefinition quest, PlayerProgress progress) {
-        return quest.dependencies().stream().allMatch(id -> {
-            QuestStatus status = progress.status(id.toString());
-            return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED;
-        });
+        if (quest.dependencies().isEmpty()) return true;
+        long completed = quest.dependencies().stream().filter(id -> dependencyCompleted(id, progress)).count();
+        long started = quest.dependencies().stream().filter(id -> dependencyStarted(id, progress)).count();
+        return QuestDependencyEvaluator.satisfied(quest.behavior().dependencyRequirement(),
+                quest.behavior().minimumRequiredDependencies(), quest.dependencies().size(), completed, started);
+    }
+
+    /** Preserves terminal history while allowing prerequisite edits and resets to demote stale availability. */
+    static QuestStatus reconciledAvailability(QuestStatus current, boolean dependenciesSatisfied) {
+        if (current == QuestStatus.COMPLETED || current == QuestStatus.REWARD_CLAIMED) return current;
+        if (!dependenciesSatisfied) return QuestStatus.LOCKED;
+        return current == QuestStatus.ACTIVE ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE;
     }
 
     private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
-        progress.completedAt(quest.id().toString(), System.currentTimeMillis());
+        long completedAt = System.currentTimeMillis();
+        progress.completedCycle(quest.id().toString(), completedAt,
+                completedAt + quest.behavior().repeatCooldownSeconds() * 1000L);
         data.setDirty();
-        reconcile(player);
         BrnQuestEvents.post(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
                 quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
@@ -350,8 +441,80 @@ public final class ProgressEngine {
                 .allMatch(reward -> progress.isClaimed(reward.id().toString()))) {
             progress.status(quest.id().toString(), QuestStatus.REWARD_CLAIMED);
         }
+        reconcile(player);
         BrnQuestNetwork.syncProgress(player, true);
         return OperationResult.success("Quest completed");
+    }
+
+    private boolean advanceRepeatIfReady(QuestDefinition quest, PlayerProgress progress, long now) {
+        if (!quest.behavior().repeatable()) return false;
+        QuestStatus status = progress.status(quest.id().toString());
+        if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED) return false;
+        boolean rewardsResolved = quest.behavior().ignoreRewardBlocking() || quest.rewards().isEmpty()
+                || quest.rewards().stream().allMatch(reward -> progress.isClaimed(reward.id().toString()));
+        if (!rewardsResolved || now < progress.nextAvailableAt(quest.id().toString())) return false;
+        progress.beginNextCycle(quest.id().toString(), quest.tasks().stream().map(task -> task.id().toString()).toList(),
+                quest.rewards().stream().map(reward -> reward.id().toString()).toList(),
+                dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
+        return true;
+    }
+
+    private boolean taskIsCurrent(ServerPlayer player, QuestDefinition quest, TaskDefinition task, PlayerProgress progress) {
+        if (!quest.behavior().sequentialTasks() || task.optional()) return true;
+        for (TaskDefinition candidate : quest.tasks()) {
+            if (candidate.id().equals(task.id())) return true;
+            if (!candidate.optional()) {
+                TaskType<?> type = TaskTypeRegistry.get(candidate.typeId());
+                if (type == null || !TaskTypeExecutor.satisfied(type, taskContext(player, quest, candidate, progress))) return false;
+            }
+        }
+        return false;
+    }
+
+    private boolean dependencyCompleted(ResourceLocation id, PlayerProgress progress) {
+        QuestStatus status = progress.status(id.toString());
+        return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED
+                || progress.completionCycles(id.toString()) > 0;
+    }
+
+    private boolean dependencyStarted(ResourceLocation id, PlayerProgress progress) {
+        QuestStatus status = progress.status(id.toString());
+        if (status == QuestStatus.ACTIVE || dependencyCompleted(id, progress)) return true;
+        QuestDefinition quest = QuestBookManager.get().active().map(snapshot -> snapshot.quests().get(id)).orElse(null);
+        return quest != null && quest.tasks().stream().anyMatch(task -> progress.taskProgress(task.id().toString()) > 0);
+    }
+
+    private boolean isVisible(QuestDefinition quest, PlayerProgress progress, QuestBookDefinition book,
+                              Map<ResourceLocation, Boolean> memo) {
+        Boolean cached = memo.get(quest.id());
+        if (cached != null) return cached;
+        memo.put(quest.id(), false); // validated DAG guard
+        QuestStatus status = progress.status(quest.id().toString());
+        boolean complete = status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED
+                || progress.completionCycles(quest.id().toString()) > 0;
+        long completedTasks = quest.tasks().stream().filter(task -> progress.taskProgress(task.id().toString()) >= 1).count();
+        if (quest.behavior().invisibleUntilComplete() && !complete
+                && (quest.behavior().visibleAfterTasks() <= 0
+                || completedTasks < quest.behavior().visibleAfterTasks())) return false;
+        if (quest.behavior().hideUntilDependenciesComplete() && !dependenciesComplete(quest, progress)) return false;
+        if (quest.behavior().hideUntilDependenciesVisible()) for (ResourceLocation dependency : quest.dependencies()) {
+            QuestDefinition parent = book.quests().stream().filter(value -> value.id().equals(dependency)).findFirst().orElse(null);
+            if (parent != null && !isVisible(parent, progress, book, memo)) return false;
+        }
+        memo.put(quest.id(), true);
+        return true;
+    }
+
+    private boolean acceptsEntry(ServerPlayer player, ItemChoiceMatcher.Entry entry, ItemStack stack) {
+        try {
+            ItemChoiceMatcher.Spec one = new ItemChoiceMatcher.Spec(List.of(entry), 1);
+            return ItemChoiceMatcher.accepts(player.registryAccess(), one, stack);
+        } catch (IllegalArgumentException ignored) { return false; }
+    }
+
+    private boolean booleanConfig(Map<String, String> config, String key) {
+        String value = config.getOrDefault(key, "false");
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
     }
 
     private void restoreMainInventory(ServerPlayer player, List<net.minecraft.world.item.ItemStack> snapshot) {

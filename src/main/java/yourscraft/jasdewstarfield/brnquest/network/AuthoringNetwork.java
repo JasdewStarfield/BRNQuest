@@ -36,6 +36,8 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.QuestAppearance;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
+import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
@@ -249,7 +251,8 @@ public final class AuthoringNetwork {
     public record QuestUpdateWire(String sessionId, String bookId, String draftRevision, String questId,
                                   String replacementQuestId, String title, String subtitle,
                                   String description, String iconKind, String iconValue, boolean preserveIcon,
-                                  Double x, Double y, String shape, Double size, Double iconScale, Double minWidth) {}
+                                  Double x, Double y, String shape, Double size, Double iconScale, Double minWidth,
+                                  Map<String, String> behavior) {}
 
     public record PositionWire(String questId, double x, double y) {}
 
@@ -384,9 +387,19 @@ public final class AuthoringNetwork {
                                    String title, String subtitle, String description, String iconKind, String iconValue,
                                    boolean preserveIcon, Double x, Double y, String shape, Double size,
                                    Double iconScale, Double minWidth) {
+        updateQuest(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle, description,
+                iconKind, iconValue, preserveIcon, x, y, shape, size, iconScale, minWidth, Map.of());
+    }
+
+    public static void updateQuest(UUID sessionId, ResourceLocation bookId, String draftRevision,
+                                   ResourceLocation questId, ResourceLocation replacementQuestId,
+                                   String title, String subtitle, String description, String iconKind, String iconValue,
+                                   boolean preserveIcon, Double x, Double y, String shape, Double size,
+                                   Double iconScale, Double minWidth, Map<String, String> behavior) {
         QuestUpdateWire wire = new QuestUpdateWire(sessionId.toString(), bookId.toString(), draftRevision,
                 questId.toString(), replacementQuestId.toString(), title, subtitle, description,
-                iconKind, iconValue, preserveIcon, x, y, shape, size, iconScale, minWidth);
+                iconKind, iconValue, preserveIcon, x, y, shape, size, iconScale, minWidth,
+                behavior == null ? Map.of() : Map.copyOf(behavior));
         PacketDistributor.sendToServer(new UpdateQuestPayload(GSON.toJson(wire)));
     }
 
@@ -684,6 +697,15 @@ public final class AuthoringNetwork {
         return revision.length() <= 12 ? revision : revision.substring(0, 12);
     }
 
+    private static boolean bool(Map<String, String> values, String key) {
+        String value = values.getOrDefault(key, "false");
+        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+    }
+
+    private static int integer(Map<String, String> values, String key) {
+        return Integer.parseInt(values.getOrDefault(key, "0").replaceAll("[^0-9-]", ""));
+    }
+
     private static void updateQuest(ServerPlayer player, String json) {
         QuestUpdateWire wire;
         try {
@@ -764,9 +786,27 @@ public final class AuthoringNetwork {
             }
             appearance = new QuestAppearance(wire.shape(), wire.size(), wire.iconScale(), wire.minWidth());
         }
+        QuestBehavior behavior = quest.behavior();
+        if (wire.behavior() != null && !wire.behavior().isEmpty()) {
+            try {
+                Map<String, String> values = wire.behavior();
+                behavior = new QuestBehavior(bool(values, "hide_until_dependencies_visible"),
+                        bool(values, "hide_until_dependencies_complete"), bool(values, "invisible_until_complete"),
+                        integer(values, "visible_after_tasks"), bool(values, "hide_details_until_startable"),
+                        bool(values, "hide_text_until_complete"), bool(values, "hide_lock_icon"),
+                        DependencyRequirement.parse(values.get("dependency_requirement")),
+                        integer(values, "minimum_required_dependencies"), bool(values, "sequential_tasks"),
+                        bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"),
+                        bool(values, "ignore_reward_blocking"));
+            } catch (RuntimeException exception) {
+                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                        "INVALID_QUEST_BEHAVIOR", "Quest behavior contains an invalid number or enum");
+                return;
+            }
+        }
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
                 wire.title(), wire.subtitle(), wire.description(), icon, replacementX, replacementY,
-                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, quest.extensions());
+                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior, quest.extensions());
         // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
         // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.
         var updated = replacementQuestId.equals(questId) && hasX
@@ -1053,7 +1093,7 @@ public final class AuthoringNetwork {
         }
         return new QuestDefinition(book.id(), targetId, source.chapterId(), title, source.subtitle(),
                 source.description(), source.icon(), x, y, source.dependencies(), tasks, rewards, "",
-                source.appearance(), source.extensions());
+                source.appearance(), source.behavior(), source.extensions());
     }
 
     /** Copies opaque extension data on the server; the client never reconstructs unknown task config. */

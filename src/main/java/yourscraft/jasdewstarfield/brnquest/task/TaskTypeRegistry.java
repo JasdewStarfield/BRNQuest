@@ -27,6 +27,7 @@ public final class TaskTypeRegistry {
         register(TaskTypes.ITEM, new UnifiedItemTask());
         // The historical type ID remains readable, but both IDs now share one model and editor.
         register(TaskTypes.ITEM_CHOICE, new UnifiedItemTask());
+        register(TaskTypes.XP, new ExperienceTask());
     }
 
     private TaskTypeRegistry() {}
@@ -111,6 +112,8 @@ public final class TaskTypeRegistry {
                             }),
                     ConfigFieldDescriptor.field("consume_items", ConfigValueType.BOOLEAN).withDefault("false")
                             .withHelp("Consume only the selected entries when submitted"),
+                    ConfigFieldDescriptor.field("only_from_crafting", ConfigValueType.BOOLEAN).withDefault("false")
+                            .withHelp("Count only items produced by this player in a crafting operation"),
                     ConfigFieldDescriptor.field("matcher", ConfigValueType.ITEM_MATCHER).asRequired()
                             .withHelp("Open the child item-property editor")
             );
@@ -124,7 +127,7 @@ public final class TaskTypeRegistry {
         @Override
         public boolean satisfied(TaskContext context, Map<String, String> config) {
             // Inventory matching is readiness, not completion: every item objective needs its own receipt.
-            return context.progress() >= 1;
+            return context.progress() >= (craftedOnly(config) ? craftingRequired(config) : 1);
         }
 
         @Override
@@ -137,6 +140,9 @@ public final class TaskTypeRegistry {
         @Override
         public TaskSubmissionResult submit(TaskContext context, Map<String, String> config,
                                            TaskSubmissionSelection selection) {
+            if (craftedOnly(config)) {
+                return TaskSubmissionResult.failure("CRAFTING_ONLY", "This objective advances only from crafting events");
+            }
             ItemChoiceMatcher.MatchPlan plan = plan(context, config, selection);
             if (plan == null || !plan.satisfied()) {
                 return TaskSubmissionResult.failure("UNSATISFIED", "Item objective requirements are incomplete");
@@ -152,7 +158,7 @@ public final class TaskTypeRegistry {
         }
 
         @Override
-        public boolean allowsManualSubmission(Map<String, String> config) { return true; }
+        public boolean allowsManualSubmission(Map<String, String> config) { return !craftedOnly(config); }
 
         @Override
         public boolean reevaluateOnInventoryChange(Map<String, String> config) { return false; }
@@ -175,6 +181,44 @@ public final class TaskTypeRegistry {
             String value = config.getOrDefault("consume_items", "");
             if (value.isBlank()) value = config.getOrDefault("consume", "false");
             return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+        }
+
+        private boolean craftedOnly(Map<String, String> config) {
+            return Boolean.parseBoolean(config.getOrDefault("only_from_crafting", "false").replace("1b", "true"));
+        }
+
+        private long craftingRequired(Map<String, String> config) {
+            return ItemChoiceMatcher.parseConfig(config).result().map(spec -> (long) spec.entries().stream()
+                    .mapToInt(ItemChoiceMatcher.Entry::requiredCount).min().orElse(1)).orElse(1L);
+        }
+    }
+
+    /** Submits either raw experience points or whole levels in one server-side transaction. */
+    private static final class ExperienceTask implements TaskType<Map<String, String>> {
+        public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(
+                    ConfigFieldDescriptor.field("value", ConfigValueType.INTEGER).withDefault("1").withRange(1, Integer.MAX_VALUE)
+                            .withHelp("Experience amount to submit"),
+                    ConfigFieldDescriptor.field("points", ConfigValueType.BOOLEAN).withDefault("true")
+                            .withHelp("Use raw experience points instead of whole levels"));
+        }
+        public boolean satisfied(TaskContext context, Map<String, String> config) { return context.progress() >= 1; }
+        public boolean allowsManualSubmission(Map<String, String> config) { return true; }
+        public TaskSubmissionResult submit(TaskContext context, Map<String, String> config) {
+            int value;
+            try { value = Integer.parseInt(config.getOrDefault("value", "1").replaceAll("[^0-9-]", "")); }
+            catch (NumberFormatException exception) { return TaskSubmissionResult.failure("INVALID_XP", "Invalid experience amount"); }
+            if (value < 1) return TaskSubmissionResult.failure("INVALID_XP", "Experience amount must be positive");
+            boolean points = Boolean.parseBoolean(config.getOrDefault("points", "true").replace("1b", "true"));
+            if (points && context.player().totalExperience < value) return TaskSubmissionResult.failure("INSUFFICIENT_XP", "Not enough experience points");
+            if (!points && context.player().experienceLevel < value) return TaskSubmissionResult.failure("INSUFFICIENT_XP", "Not enough experience levels");
+            if (points) context.player().giveExperiencePoints(-value); else context.player().giveExperienceLevels(-value);
+            return TaskSubmissionResult.accepted();
+        }
+        public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, Map<String, String> config) {
+            boolean points = Boolean.parseBoolean(config.getOrDefault("points", "true").replace("1b", "true"));
+            return Component.literal(config.getOrDefault("value", "1") + (points ? " experience points" : " levels"));
         }
     }
 }

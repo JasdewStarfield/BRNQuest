@@ -200,7 +200,7 @@ public final class DraftBookEditor {
                 location.chapter.quests().get(location.index).dependencies(),
                 location.chapter.quests().get(location.index).tasks(),
                 location.chapter.quests().get(location.index).rewards(), replacement.legacyId(),
-                replacement.appearance(), replacement.extensions());
+                replacement.appearance(), replacement.behavior(), replacement.extensions());
         return replaceQuest(book, location, ignored -> safe, questId);
     }
 
@@ -245,7 +245,7 @@ public final class DraftBookEditor {
                     quests.add(new QuestDefinition(book.id(), replacementId, chapter.id(), replacement.title(),
                             replacement.subtitle(), replacement.description(), replacement.icon(),
                             current.x(), current.y(), dependencies, current.tasks(), current.rewards(),
-                            current.legacyId(), replacement.appearance(), replacement.extensions()));
+                            current.legacyId(), replacement.appearance(), replacement.behavior(), replacement.extensions()));
                 } else {
                     quests.add(copyQuest(current, dependencies, current.tasks(), current.rewards()));
                 }
@@ -288,7 +288,7 @@ public final class DraftBookEditor {
                     return position == null ? quest : new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
                             quest.title(), quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
                             quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
-                            quest.appearance(), quest.extensions());
+                            quest.appearance(), quest.behavior(), quest.extensions());
                 }).toList(), chapter.extensions())).toList();
         return changed(withChapters(book, chapters), positions.keySet().toArray(ResourceLocation[]::new));
     }
@@ -308,7 +308,7 @@ public final class DraftBookEditor {
             // copy in translations would let it shadow property and quick edits indefinitely.
             QuestDefinition replacement = new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(),
                     title, subtitle, description, quest.icon(), quest.x(), quest.y(), quest.dependencies(),
-                    quest.tasks(), quest.rewards(), quest.legacyId(), quest.appearance(), quest.extensions());
+                    quest.tasks(), quest.rewards(), quest.legacyId(), quest.appearance(), quest.behavior(), quest.extensions());
             AuthorOperationResult<DraftChange> updated = updateQuest(book, questId, replacement);
             if (!updated.success()) return updated;
             QuestBookDefinition changedBook = updated.value().book();
@@ -356,7 +356,7 @@ public final class DraftBookEditor {
         int insertion = Math.max(0, Math.min(targetIndex, targetQuests.size()));
         QuestDefinition relocated = new QuestDefinition(book.id(), moved.id(), targetChapterId, moved.title(), moved.subtitle(),
                 moved.description(), moved.icon(), moved.x(), moved.y(), moved.dependencies(), moved.tasks(), moved.rewards(),
-                moved.legacyId(), moved.appearance(), moved.extensions());
+                moved.legacyId(), moved.appearance(), moved.behavior(), moved.extensions());
         targetQuests.add(insertion, relocated);
         chapters.set(targetChapterIndex, withQuests(chapters.get(targetChapterIndex), targetQuests));
         return changed(withChapters(book, chapters), questId, source.chapter.id(), targetChapterId);
@@ -577,7 +577,7 @@ public final class DraftBookEditor {
                                              List<TaskDefinition> tasks, List<RewardDefinition> rewards) {
         return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), dependencies, tasks, rewards, quest.legacyId(),
-                quest.appearance(), quest.extensions());
+                quest.appearance(), quest.behavior(), quest.extensions());
     }
 
     private static QuestBookDefinition removeQuestSetAndReferences(QuestBookDefinition book,

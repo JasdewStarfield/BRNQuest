@@ -24,6 +24,10 @@ public final class ClientQuestState {
     private Map<String, QuestStatus> statuses = Map.of();
     private Map<String, Long> taskProgress = Map.of();
     private Set<String> claimed = Set.of();
+    private Set<String> visible = Set.of();
+    private boolean visibilityAuthoritative;
+    private Map<String, Integer> completionCycles = Map.of();
+    private Map<String, Long> nextAvailable = Map.of();
     private final Set<String> pendingTaskSubmissions = new HashSet<>();
     private ResourceLocation selected;
 
@@ -33,6 +37,9 @@ public final class ClientQuestState {
     public Map<String, QuestStatus> statuses() { return statuses; }
     public Map<String, Long> taskProgress() { return taskProgress; }
     public Set<String> claimed() { return claimed; }
+    public boolean visible(ResourceLocation questId) { return !visibilityAuthoritative || visible.contains(questId.toString()); }
+    public int completionCycles(ResourceLocation questId) { return completionCycles.getOrDefault(questId.toString(), 0); }
+    public long nextAvailableAt(ResourceLocation questId) { return nextAvailable.getOrDefault(questId.toString(), 0L); }
     public ResourceLocation selected() { return selected; }
     public void selected(ResourceLocation selected) { this.selected = selected; }
     public String revision() { return book == null ? "" : book.revision(); }
@@ -70,6 +77,10 @@ public final class ClientQuestState {
         statuses = wire.quests() == null ? Map.of() : Map.copyOf(wire.quests());
         taskProgress = wire.tasks() == null ? Map.of() : Map.copyOf(wire.tasks());
         claimed = wire.claimed() == null ? Set.of() : Set.copyOf(wire.claimed());
+        visible = wire.visible() == null ? Set.of() : Set.copyOf(wire.visible());
+        visibilityAuthoritative = wire.visible() != null;
+        completionCycles = wire.cycles() == null ? Map.of() : Map.copyOf(wire.cycles());
+        nextAvailable = wire.nextAvailable() == null ? Map.of() : Map.copyOf(wire.nextAvailable());
         // The server sends a progress response for every task submission, including rejected
         // attempts, so receipt is the acknowledgement that makes task rows clickable again.
         pendingTaskSubmissions.clear();

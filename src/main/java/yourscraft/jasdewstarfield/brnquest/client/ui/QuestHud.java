@@ -18,7 +18,7 @@ public final class QuestHud {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.options.hideGui) return;
         ClientQuestState.get().trackedQuest().flatMap(id -> ClientQuestState.get().book().map(s -> s.quests().get(id))).ifPresent(quest -> {
-            if (quest == null) return;
+            if (quest == null || !ClientQuestState.get().visible(quest.id())) return;
             int taskLines = Math.min(3, quest.tasks().size());
             String questTitle = displayTitle(minecraft, quest.title(), quest.legacyId(), quest.tasks().isEmpty() ? null : quest.tasks().getFirst());
             int width = Math.max(120, minecraft.font.width(questTitle) + 20);

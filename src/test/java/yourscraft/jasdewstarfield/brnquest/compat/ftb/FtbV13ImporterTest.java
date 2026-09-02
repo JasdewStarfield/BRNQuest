@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
+import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -59,11 +60,17 @@ class FtbV13ImporterTest {
         Files.writeString(temporary.resolve("chapters/test.snbt"), """
                 {id:"B000000000000001",group:"A000000000000001",mystery:"kept",quests:[{
                   id:"C000000000000001",x:1d,y:2d,shape:"circle",size:1.5d,icon_scale:0.75d,min_width:2d,
-                  hide:true,tasks:[{id:"D000000000000001",type:"examplemod:counter",optional_task:true}],
+                  hide_until_deps_complete:true,invisible:true,invisible_until_tasks:2,
+                  dependency_requirement:"one_completed",min_required_dependencies:0,
+                  require_sequential_tasks:true,can_repeat:true,repeat_cooldown:30,
+                  tasks:[{id:"D000000000000001",type:"examplemod:counter",optional_task:true},
+                    {id:"D000000000000002",type:"xp",value:5,points:true}],
                   rewards:[
                     {id:"E000000000000001",type:"custom",auto:"default"},
                     {id:"E000000000000002",type:"custom",auto:"no_toast"},
-                    {id:"E000000000000003",type:"custom",auto:"invisible"}
+                    {id:"E000000000000003",type:"custom",auto:"invisible"},
+                    {id:"E000000000000004",type:"xp",xp:7},
+                    {id:"E000000000000005",type:"xp_levels",xp_levels:2}
                   ]
                 }]}
                 """, StandardCharsets.UTF_8);
@@ -80,13 +87,22 @@ class FtbV13ImporterTest {
         assertEquals(ResourceLocation.parse("examplemod:counter"), quest.tasks().getFirst().typeId());
         assertEquals(List.of(RewardClaimPolicy.AUTO_VISIBLE, RewardClaimPolicy.AUTO_SILENT,
                         RewardClaimPolicy.AUTO_HIDDEN),
-                quest.rewards().stream().map(reward -> reward.policy()).toList());
+                quest.rewards().subList(0, 3).stream().map(reward -> reward.policy()).toList());
         assertEquals("你好", result.book().localization().resolve("zh_cn", "quest.C000000000000001.title", ""));
         assertEquals("Hello", result.book().localization().resolve("en_us", "quest.C000000000000001.title", ""));
         assertEquals("第一行\n第二行", result.book().localization().resolve("zh_cn",
                 "quest.C000000000000001.quest_desc", quest.description()));
         assertEquals("circle", quest.appearance().shape());
-        assertEquals("1b", quest.extensions().get("ftb.hide"));
+        assertTrue(quest.behavior().hideUntilDependenciesComplete());
+        assertTrue(quest.behavior().invisibleUntilComplete());
+        assertEquals(2, quest.behavior().visibleAfterTasks());
+        assertEquals(DependencyRequirement.ONE_COMPLETED, quest.behavior().dependencyRequirement());
+        assertTrue(quest.behavior().sequentialTasks());
+        assertTrue(quest.behavior().repeatable());
+        assertEquals(30, quest.behavior().repeatCooldownSeconds());
+        assertEquals(ResourceLocation.parse("brnquest:xp"), quest.tasks().get(1).typeId());
+        assertEquals(List.of(ResourceLocation.parse("brnquest:xp"), ResourceLocation.parse("brnquest:xp_levels")),
+                quest.rewards().subList(3, 5).stream().map(reward -> reward.typeId()).toList());
         assertEquals("\"kept\"", result.book().chapters().getFirst().extensions().get("ftb.mystery"));
         assertTrue(result.fieldConversions().stream().anyMatch(conversion ->
                 conversion.sourceField().equals("optional_task") && conversion.targetField().equals("optional")));

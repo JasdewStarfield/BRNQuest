@@ -13,9 +13,9 @@ enum TaskDisplayState {
     SUBMITTED,
     HISTORICAL;
 
-    static TaskDisplayState resolve(QuestStatus questStatus, long storedProgress, boolean pending,
+    static TaskDisplayState resolve(QuestStatus questStatus, boolean confirmed, boolean pending,
                                     boolean interactive, boolean readyForSubmission, boolean editing) {
-        if (storedProgress >= 1) return SUBMITTED;
+        if (confirmed) return SUBMITTED;
         // A completed quest may predate this objective. Preserve history without inventing a receipt.
         if (questStatus == QuestStatus.COMPLETED || questStatus == QuestStatus.REWARD_CLAIMED) return HISTORICAL;
         boolean questOperable = questStatus == QuestStatus.AVAILABLE || questStatus == QuestStatus.ACTIVE;

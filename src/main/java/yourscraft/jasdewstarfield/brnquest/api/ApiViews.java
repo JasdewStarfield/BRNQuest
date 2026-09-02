@@ -35,7 +35,7 @@ public final class ApiViews {
         return new QuestView(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(),
                 quest.tasks().stream().map(ApiViews::task).toList(),
-                quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId());
+                quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId(), behavior(quest));
     }
 
     public static QuestView quest(QuestBookSnapshot snapshot, QuestDefinition quest, String locale) {
@@ -47,7 +47,16 @@ public final class ApiViews {
                 localization.resolve(locale, prefix + "quest_desc", quest.description()),
                 quest.icon(), quest.x(), quest.y(), quest.dependencies(),
                 quest.tasks().stream().map(ApiViews::task).toList(),
-                quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId());
+                quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId(), behavior(quest));
+    }
+
+    private static QuestBehaviorView behavior(QuestDefinition quest) {
+        var value = quest.behavior();
+        return new QuestBehaviorView(value.hideUntilDependenciesVisible(), value.hideUntilDependenciesComplete(),
+                value.invisibleUntilComplete(), value.visibleAfterTasks(), value.hideDetailsUntilStartable(),
+                value.hideTextUntilComplete(), value.hideLockIcon(), value.dependencyRequirement().serializedName(),
+                value.minimumRequiredDependencies(), value.sequentialTasks(), value.repeatable(),
+                value.repeatCooldownSeconds(), value.ignoreRewardBlocking());
     }
 
     public static TaskView task(TaskDefinition task) {

@@ -67,7 +67,7 @@ final class QuestDetailsPanel {
         graphics.drawString(font, statusText, contentLeft, y, model.statusColor(), false);
         int statusTop = y;
         int statusWidth = font.width(statusText);
-        if (model.gameplay() && status == QuestStatus.LOCKED) {
+        if (model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()) {
             // Cyan underline and info glyph advertise that the locked reason is inspectable.
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
             graphics.drawString(font, Component.literal("ⓘ"), contentLeft + statusWidth + 4, y, 0xFF68BDE8, false);
@@ -146,7 +146,7 @@ final class QuestDetailsPanel {
 
 
         statusY = statusTop;
-        boolean locked = model.gameplay() && status == QuestStatus.LOCKED
+        boolean locked = model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()
                 && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();

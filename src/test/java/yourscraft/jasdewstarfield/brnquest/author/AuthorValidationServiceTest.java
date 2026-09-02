@@ -58,6 +58,20 @@ class AuthorValidationServiceTest {
         assertTrue(AuthorValidationService.blocksCommit(diagnostics, AuthorValidationService.full(baseline)));
     }
 
+    @Test
+    void craftingOnlyObjectiveRejectsSeveralAcceptedEntries() {
+        String matcher = "{\"mode\":\"list\",\"items\":["
+                + "\"{count:1,id:\\\"minecraft:stone\\\"}\","
+                + "\"{count:1,id:\\\"minecraft:dirt\\\"}\"],\"required\":1}";
+        QuestBookDefinition invalid = itemBook(Map.of("matcher", matcher, "required_entries", "1",
+                "only_from_crafting", "true"));
+
+        var diagnostics = AuthorValidationService.full(invalid);
+
+        assertTrue(diagnostics.stream().anyMatch(value -> value.code().equals("BQA-106")));
+        assertTrue(AuthorValidationService.blocksCommit(diagnostics));
+    }
+
     private static QuestBookDefinition book(String questTitle) {
         ResourceLocation bookId = ResourceLocation.parse("test:book");
         ResourceLocation groupId = ResourceLocation.parse("test:group");

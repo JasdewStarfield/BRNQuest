@@ -39,6 +39,8 @@ public final class ClientRewardPresentationRegistry {
                 return Component.translatable("screen.brnquest.type.reward.custom");
             }
         });
+        register(RewardTypes.XP, experience(false));
+        register(RewardTypes.XP_LEVELS, experience(true));
     }
 
     private ClientRewardPresentationRegistry() {}
@@ -67,5 +69,14 @@ public final class ClientRewardPresentationRegistry {
             multiplier = 1;
         }
         return (int) Math.min(Integer.MAX_VALUE, (long) Math.max(1, baseCount) * multiplier);
+    }
+
+    private static ClientRewardPresentation experience(boolean levels) {
+        return new ClientRewardPresentation() {
+            public String symbol(RewardView reward) { return "✦"; }
+            public Component typeName(RewardView reward) {
+                return Component.translatable(levels ? "screen.brnquest.type.reward.xp_levels" : "screen.brnquest.type.reward.xp");
+            }
+        };
     }
 }

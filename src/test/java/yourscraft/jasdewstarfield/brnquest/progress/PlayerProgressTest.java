@@ -21,6 +21,7 @@ class PlayerProgressTest {
         progress.addTaskProgress("test:first", 1);
         progress.addTaskProgress("test:second", 1);
         progress.claim("test:reward");
+        progress.completedCycle("test:quest", 42, 84);
         progress.resetTask("test:quest", "test:first", QuestStatus.AVAILABLE);
         PlayerProgress loaded = PlayerProgress.load(progress.save());
         assertEquals(QuestStatus.AVAILABLE, loaded.status("test:quest"));
@@ -28,6 +29,8 @@ class PlayerProgressTest {
         assertEquals(0, loaded.taskProgress("test:first"));
         assertEquals(1, loaded.taskProgress("test:second"));
         assertTrue(loaded.isClaimed("test:reward"));
+        assertEquals(0, loaded.completionCycles("test:quest"));
+        assertEquals(0, loaded.nextAvailableAt("test:quest"));
         loaded.resetTask("test:quest", "test:first", QuestStatus.LOCKED);
         assertEquals(QuestStatus.LOCKED, loaded.status("test:quest"));
         assertTrue(loaded.isClaimed("test:reward"));
@@ -46,6 +49,25 @@ class PlayerProgressTest {
         assertTrue(loaded.isClaimed("test:reward"));
         assertTrue(loaded.orphanedQuestIds().contains("test:old"));
         assertEquals("ABC", loaded.revision());
+    }
+
+    @Test void repeatCyclePersistsAndStartsWithoutReopeningOldClaims() {
+        PlayerProgress progress = new PlayerProgress();
+        progress.status("test:quest", QuestStatus.REWARD_CLAIMED);
+        progress.addTaskProgress("test:task", 4);
+        progress.claim("test:reward");
+        progress.completedCycle("test:quest", 100L, 200L);
+
+        PlayerProgress loaded = PlayerProgress.load(progress.save());
+        assertEquals(1, loaded.completionCycles("test:quest"));
+        assertEquals(200L, loaded.nextAvailableAt("test:quest"));
+        assertTrue(loaded.isClaimed("test:reward"));
+
+        loaded.beginNextCycle("test:quest", List.of("test:task"), List.of("test:reward"), QuestStatus.AVAILABLE);
+        assertEquals(QuestStatus.AVAILABLE, loaded.status("test:quest"));
+        assertEquals(0L, loaded.taskProgress("test:task"));
+        assertFalse(loaded.isClaimed("test:reward"));
+        assertEquals(1, loaded.completionCycles("test:quest"));
     }
 
     @Test void resetClearsOnlyQuestOwnedLedgerEntries() {

@@ -73,7 +73,8 @@ final class QuestDetailRows {
             // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
             hoveredLookup = lookup;
         } else if (titleHintHovered) {
-            hoveredText = task.config().getOrDefault("title", "").isBlank()
+            hoveredText = ClientTaskPresentationRegistry.craftingOnly(taskView)
+                    || task.config().getOrDefault("title", "").isBlank()
                     ? ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView)
                     : ClientTaskPresentationRegistry.defaultItemObjectiveTitle(presentationContext);
         } else if (visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)) {

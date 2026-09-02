@@ -93,7 +93,7 @@ public final class DraftService {
                 reward.id(), reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward())).toList();
         return new QuestDefinition(bookId, quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(), tasks, rewards,
-                quest.legacyId(), quest.appearance(), quest.extensions());
+                quest.legacyId(), quest.appearance(), quest.behavior(), quest.extensions());
     }
 
     private static MinecraftServer authorizedServer(ServerPlayer player) {

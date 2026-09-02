@@ -1,0 +1,287 @@
+package yourscraft.jasdewstarfield.brnquest.client.ui;
+
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
+import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Consumer;
+
+/** Scrollable behavior form composed from the same property rows, fields, buttons and scrollbar as the main editor. */
+public final class EditorQuestBehaviorScreen extends Screen {
+    private static final int ROW_HEIGHT = 24;
+    private static final int ROW_COUNT = 13;
+    private static final List<String> BOOLEAN_KEYS = List.of(
+            "hide_until_dependencies_visible", "hide_until_dependencies_complete", "invisible_until_complete",
+            "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon",
+            "sequential_tasks", "repeatable", "ignore_reward_blocking");
+
+    private final Screen parent;
+    private final Consumer<QuestBehavior> consumer;
+    private final List<Boolean> booleans = new ArrayList<>();
+    private final EditorSmoothScroll scroll = new EditorSmoothScroll();
+    private DependencyRequirement requirement;
+    private EditorTextField visibleAfterTasks;
+    private EditorTextField minimumDependencies;
+    private EditorTextField cooldownSeconds;
+    private int visibleAfterTasksValue;
+    private int minimumDependenciesValue;
+    private int cooldownSecondsValue;
+    private boolean requirementDropdownOpen;
+    private long previousFrameNanos;
+    private double renderedScroll;
+
+    public EditorQuestBehaviorScreen(Screen parent, QuestBehavior value, Consumer<QuestBehavior> consumer) {
+        super(Component.translatable("screen.brnquest.editor.behavior.title"));
+        this.parent = parent;
+        this.consumer = consumer;
+        booleans.addAll(List.of(value.hideUntilDependenciesVisible(), value.hideUntilDependenciesComplete(),
+                value.invisibleUntilComplete(), value.hideDetailsUntilStartable(), value.hideTextUntilComplete(),
+                value.hideLockIcon(), value.sequentialTasks(), value.repeatable(), value.ignoreRewardBlocking()));
+        requirement = value.dependencyRequirement();
+        visibleAfterTasksValue = value.visibleAfterTasks();
+        minimumDependenciesValue = value.minimumRequiredDependencies();
+        cooldownSecondsValue = value.repeatCooldownSeconds();
+    }
+
+    @Override
+    protected void init() {
+        if (visibleAfterTasks != null && parse(visibleAfterTasks) != null) visibleAfterTasksValue = parse(visibleAfterTasks);
+        if (minimumDependencies != null && parse(minimumDependencies) != null) minimumDependenciesValue = parse(minimumDependencies);
+        if (cooldownSeconds != null && parse(cooldownSeconds) != null) cooldownSecondsValue = parse(cooldownSeconds);
+        visibleAfterTasks = numberEditor("visible_after_tasks", visibleAfterTasksValue);
+        minimumDependencies = numberEditor("minimum_required_dependencies", minimumDependenciesValue);
+        cooldownSeconds = numberEditor("repeat_cooldown_seconds", cooldownSecondsValue);
+        // Fields are rendered explicitly inside the foreground scissor and must not be redrawn at base depth.
+        addWidget(visibleAfterTasks);
+        addWidget(minimumDependencies);
+        addWidget(cooldownSeconds);
+    }
+
+    private EditorTextField numberEditor(String key, int value) {
+        EditorTextField editor = new EditorTextField(font,
+                Component.translatable("screen.brnquest.editor.behavior." + key), 10);
+        editor.setValue(Integer.toString(value));
+        editor.setFilter(text -> text.isEmpty() || text.matches("[0-9]{0,10}"));
+        return editor;
+    }
+
+    @Override public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
+    @Override public void tick() { parent.tick(); super.tick(); }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        parent.render(graphics, -1, -1, partialTick);
+        graphics.pose().pushPose();
+        // Match the other modal editor surfaces: authored items use raised render depth, so the modal must be higher.
+        graphics.pose().translate(0, 0, 500);
+        graphics.fill(0, 0, width, height, 0x70151820);
+        UiRect panel = panel();
+        EditorPropertyPanel.renderCentered(graphics, font,
+                new EditorPropertyPanel.Layout(panel, panel.left() + 12, panel.width() - 24,
+                        panel.top() + 9, panel.top() + 30, ROW_HEIGHT),
+                title, 0xFFFFFFFF, List.of(),
+                new EditorPropertyPanel.Footer(cancelBounds(), applyBounds(), Component.translatable("gui.done"),
+                        valid(), EditorButton.Tone.PRIMARY),
+                (target, bounds, text, enabled, tone) -> EditorButton.renderInteractive(target, font, bounds,
+                        EditorButton.Definition.text(text, null), enabled, false, tone, mouseX, mouseY));
+
+        UiRect viewport = viewport();
+        long now = System.nanoTime();
+        double elapsed = previousFrameNanos == 0 ? 1.0 / 60.0
+                : Math.min(0.1, Math.max(0.0, (now - previousFrameNanos) / 1_000_000_000.0));
+        previousFrameNanos = now;
+        renderedScroll = scroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
+                contentHeight(), viewport.height(), elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
+
+        hideNumberFields();
+        graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+        for (int row = 0; row < ROW_COUNT; row++) {
+            UiRect bounds = rowBounds(row);
+            if (bounds.bottom() <= viewport.top() || bounds.top() >= viewport.bottom()) continue;
+            int booleanIndex = booleanIndexAtRow(row);
+            if (booleanIndex >= 0) renderBoolean(graphics, booleanIndex, bounds, mouseX, mouseY);
+            else if (row == 3) renderNumber(graphics, visibleAfterTasks, "visible_after_tasks", bounds, mouseX, mouseY, partialTick);
+            else if (row == 7) renderRequirement(graphics, bounds, mouseX, mouseY);
+            else if (row == 8) renderNumber(graphics, minimumDependencies, "minimum_required_dependencies", bounds, mouseX, mouseY, partialTick);
+            else if (row == 11) renderNumber(graphics, cooldownSeconds, "repeat_cooldown_seconds", bounds, mouseX, mouseY, partialTick);
+        }
+        graphics.disableScissor();
+        if (requirementDropdownOpen) renderRequirementDropdown(graphics, mouseX, mouseY);
+        graphics.pose().popPose();
+    }
+
+    private void renderBoolean(GuiGraphics graphics, int index, UiRect bounds, int mouseX, int mouseY) {
+        EditorPropertyFormLayout.Row layout = propertyRow(bounds);
+        EditorPropertyRow.label(graphics, font,
+                Component.translatable("screen.brnquest.editor.behavior." + BOOLEAN_KEYS.get(index)),
+                layout.label(), null);
+        EditorButton.renderInteractive(graphics, font, layout.field(), EditorButton.Definition.text(
+                        Component.translatable(booleans.get(index) ? "options.on" : "options.off"), null),
+                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    private void renderNumber(GuiGraphics graphics, EditorTextField editor, String key, UiRect bounds,
+                              int mouseX, int mouseY, float partialTick) {
+        EditorPropertyRow.text(graphics, font, propertyRow(bounds),
+                Component.translatable("screen.brnquest.editor.behavior." + key), null, editor, true);
+        editor.render(graphics, mouseX, mouseY, partialTick);
+    }
+
+    private void renderRequirement(GuiGraphics graphics, UiRect bounds, int mouseX, int mouseY) {
+        EditorPropertyFormLayout.Row layout = propertyRow(bounds);
+        EditorPropertyRow.label(graphics, font,
+                Component.translatable("screen.brnquest.editor.behavior.dependency_requirement"),
+                layout.label(), null);
+        EditorButton.renderInteractive(graphics, font, layout.field(), EditorButton.Definition.text(
+                        Component.literal(requirement.serializedName() + " ▾"), null),
+                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    private void renderRequirementDropdown(GuiGraphics graphics, int mouseX, int mouseY) {
+        UiRect menu = dropdownBounds();
+        DependencyRequirement[] values = DependencyRequirement.values();
+        for (int index = 0; index < values.length; index++) {
+            UiRect option = new UiRect(menu.left(), menu.top() + index * 20,
+                    menu.right(), menu.top() + (index + 1) * 20);
+            EditorButton.renderInteractive(graphics, font, option,
+                    EditorButton.Definition.text(Component.literal(values[index].serializedName()), null),
+                    true, values[index] == requirement, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        }
+    }
+
+    private void hideNumberFields() {
+        visibleAfterTasks.hide();
+        minimumDependencies.hide();
+        cooldownSeconds.hide();
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && requirementDropdownOpen) {
+            int option = dropdownOptionAt(mouseX, mouseY);
+            if (option >= 0) {
+                requirement = DependencyRequirement.values()[option];
+                requirementDropdownOpen = false;
+                return true;
+            }
+            requirementDropdownOpen = false;
+        }
+        if (button == 0 && cancelBounds().contains(mouseX, mouseY)) { onClose(); return true; }
+        if (button == 0 && applyBounds().contains(mouseX, mouseY) && valid()) { apply(); return true; }
+        UiRect viewport = viewport();
+        if (button == 0 && scroll.handleTrackClick(mouseX, mouseY, viewport.right() + 2,
+                viewport.top(), viewport.bottom(), contentHeight(), viewport.height())) return true;
+        if (button == 0 && viewport.contains(mouseX, mouseY)) {
+            int row = scroll.rowAt(mouseY, viewport.top(), viewport.bottom(), ROW_HEIGHT, ROW_COUNT);
+            if (row >= 0) {
+                int booleanIndex = booleanIndexAtRow(row);
+                if (booleanIndex >= 0 && propertyRow(rowBounds(row)).field().contains(mouseX, mouseY)) {
+                    booleans.set(booleanIndex, !booleans.get(booleanIndex));
+                    return true;
+                }
+                if (row == 7 && propertyRow(rowBounds(row)).field().contains(mouseX, mouseY)) {
+                    requirementDropdownOpen = true;
+                    return true;
+                }
+            }
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        UiRect viewport = viewport();
+        if (viewport.contains(mouseX, mouseY)) {
+            scroll.scrollWheel(scrollY, BrnQuestClientConfig.VALUES.scrollStep.get(),
+                    contentHeight(), viewport.height());
+            requirementDropdownOpen = false;
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    private boolean valid() {
+        return parse(visibleAfterTasks) != null && parse(minimumDependencies) != null
+                && parse(cooldownSeconds) != null;
+    }
+
+    private void apply() {
+        consumer.accept(new QuestBehavior(booleans.get(0), booleans.get(1), booleans.get(2), parse(visibleAfterTasks),
+                booleans.get(3), booleans.get(4), booleans.get(5), requirement, parse(minimumDependencies),
+                booleans.get(6), booleans.get(7), parse(cooldownSeconds), booleans.get(8)));
+        onClose();
+    }
+
+    private Integer parse(EditorTextField editor) {
+        try { return Integer.parseInt(editor.getValue()); }
+        catch (NumberFormatException exception) { return null; }
+    }
+
+    private int dropdownOptionAt(double mouseX, double mouseY) {
+        UiRect menu = dropdownBounds();
+        if (!menu.contains(mouseX, mouseY)) return -1;
+        int option = (int) ((mouseY - menu.top()) / 20);
+        return option >= 0 && option < DependencyRequirement.values().length ? option : -1;
+    }
+
+    private UiRect dropdownBounds() {
+        UiRect anchor = propertyRow(rowBounds(7)).field();
+        int height = DependencyRequirement.values().length * 20;
+        int below = anchor.bottom() + 1;
+        int top = below + height <= viewport().bottom() ? below : anchor.top() - height - 1;
+        top = Math.max(viewport().top(), Math.min(top, viewport().bottom() - height));
+        return new UiRect(anchor.left(), top, anchor.right(), top + height);
+    }
+
+    private int booleanIndexAtRow(int row) {
+        return switch (row) {
+            case 0, 1, 2 -> row;
+            case 4, 5, 6 -> row - 1;
+            case 9, 10 -> row - 3;
+            case 12 -> 8;
+            default -> -1;
+        };
+    }
+
+    @Override public void onClose() { if (minecraft != null) minecraft.setScreen(parent); }
+
+    private UiRect panel() {
+        int panelWidth = Math.min(680, Math.max(280, width - 24));
+        int panelHeight = Math.min(500, Math.max(220, height - 24));
+        int left = (width - panelWidth) / 2;
+        int top = (height - panelHeight) / 2;
+        return new UiRect(left, top, left + panelWidth, top + panelHeight);
+    }
+
+    private UiRect viewport() {
+        UiRect panel = panel();
+        return new UiRect(panel.left() + 12, panel.top() + 30, panel.right() - 17, panel.bottom() - 46);
+    }
+
+    private UiRect rowBounds(int row) {
+        UiRect viewport = viewport();
+        int top = viewport.top() + row * ROW_HEIGHT - (int) Math.round(renderedScroll);
+        return new UiRect(viewport.left(), top, viewport.right(), top + EditorPropertyFormLayout.FIELD_HEIGHT);
+    }
+
+    private EditorPropertyFormLayout.Row propertyRow(UiRect bounds) {
+        int labelWidth = Math.max(120, bounds.width() - 210);
+        return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), labelWidth);
+    }
+
+    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT; }
+    private UiRect cancelBounds() { UiRect p=panel(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
+    private UiRect applyBounds() { UiRect p=panel(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
+}

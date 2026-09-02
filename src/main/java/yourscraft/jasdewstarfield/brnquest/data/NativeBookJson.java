@@ -92,6 +92,23 @@ public final class NativeBookJson {
         appearance.addProperty("icon_scale", quest.appearance().iconScale());
         appearance.addProperty("min_width", quest.appearance().minWidth());
         value.add("appearance", appearance);
+        if (!quest.behavior().equals(QuestBehavior.DEFAULT)) {
+            JsonObject behavior = new JsonObject();
+            behavior.addProperty("hide_until_dependencies_visible", quest.behavior().hideUntilDependenciesVisible());
+            behavior.addProperty("hide_until_dependencies_complete", quest.behavior().hideUntilDependenciesComplete());
+            behavior.addProperty("invisible_until_complete", quest.behavior().invisibleUntilComplete());
+            behavior.addProperty("visible_after_tasks", quest.behavior().visibleAfterTasks());
+            behavior.addProperty("hide_details_until_startable", quest.behavior().hideDetailsUntilStartable());
+            behavior.addProperty("hide_text_until_complete", quest.behavior().hideTextUntilComplete());
+            behavior.addProperty("hide_lock_icon", quest.behavior().hideLockIcon());
+            behavior.addProperty("dependency_requirement", quest.behavior().dependencyRequirement().serializedName());
+            behavior.addProperty("minimum_required_dependencies", quest.behavior().minimumRequiredDependencies());
+            behavior.addProperty("sequential_tasks", quest.behavior().sequentialTasks());
+            behavior.addProperty("repeatable", quest.behavior().repeatable());
+            behavior.addProperty("repeat_cooldown_seconds", quest.behavior().repeatCooldownSeconds());
+            behavior.addProperty("ignore_reward_blocking", quest.behavior().ignoreRewardBlocking());
+            value.add("behavior", behavior);
+        }
         value.add("extensions", encodeStringMap(quest.extensions()));
         JsonArray dependencies = new JsonArray();
         quest.dependencies().stream().sorted(Comparator.comparing(ResourceLocation::toString)).forEach(id -> dependencies.add(id.toString()));
@@ -150,11 +167,20 @@ public final class NativeBookJson {
             rewards.add(new RewardDefinition(bookId, id(reward.get("id").getAsString()), id(reward.get("type").getAsString()), config(reward), text(reward, "claim_policy"), bool(reward, "team_reward")));
         }
         JsonObject appearance = value.has("appearance") ? value.getAsJsonObject("appearance") : new JsonObject();
+        JsonObject behavior = value.has("behavior") ? value.getAsJsonObject("behavior") : new JsonObject();
         return new QuestDefinition(bookId, id(value.get("id").getAsString()), chapterId,
                 text(value, "title"), text(value, "subtitle"), text(value, "description"), text(value, "icon"),
                 decimal(value, "x", 0.0), decimal(value, "y", 0.0), dependencies, tasks, rewards, text(value, "legacy_id"),
                 new QuestAppearance(text(appearance, "shape", "chamfer"), decimal(appearance, "size", 1.0),
                         decimal(appearance, "icon_scale", 1.0), decimal(appearance, "min_width", 0.0)),
+                new QuestBehavior(bool(behavior, "hide_until_dependencies_visible"),
+                        bool(behavior, "hide_until_dependencies_complete"), bool(behavior, "invisible_until_complete"),
+                        integer(behavior, "visible_after_tasks"), bool(behavior, "hide_details_until_startable"),
+                        bool(behavior, "hide_text_until_complete"), bool(behavior, "hide_lock_icon"),
+                        DependencyRequirement.parse(text(behavior, "dependency_requirement", "all_completed")),
+                        integer(behavior, "minimum_required_dependencies"), bool(behavior, "sequential_tasks"),
+                        bool(behavior, "repeatable"), integer(behavior, "repeat_cooldown_seconds"),
+                        bool(behavior, "ignore_reward_blocking")),
                 stringMap(value, "extensions"));
     }
 

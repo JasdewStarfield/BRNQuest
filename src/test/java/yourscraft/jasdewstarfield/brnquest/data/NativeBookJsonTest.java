@@ -55,7 +55,10 @@ class NativeBookJsonTest {
                 ResourceLocation.parse("brnquest:custom"), Map.of(), "auto_hidden", false);
         QuestDefinition quest = new QuestDefinition(bookId, ResourceLocation.parse("test:quest"), chapterId,
                 "Fallback", "", "line one\nline two", "", 0, 0, List.of(), List.of(), List.of(reward), "ABC",
-                new QuestAppearance("circle", 1.5, 0.75, 2.0), Map.of("ftb.hide", "true"));
+                new QuestAppearance("circle", 1.5, 0.75, 2.0),
+                new QuestBehavior(true, false, true, 2, true, true, false,
+                        DependencyRequirement.ONE_COMPLETED, 1, true, true, 30, false),
+                Map.of("ftb.hide", "true"));
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Book", List.of(),
                 List.of(new ChapterDefinition(bookId, chapterId, ResourceLocation.parse("test:group"), "Chapter", "",
                         0, List.of(quest), Map.of("ftb.filename", "\"legacy\""))), Map.of(),
@@ -68,6 +71,9 @@ class NativeBookJsonTest {
         assertEquals("中文标题", decoded.localization().resolve("zh_cn", "quest.ABC.title", "Fallback"));
         assertEquals("line one\nline two", decodedQuest.description());
         assertEquals(new QuestAppearance("circle", 1.5, 0.75, 2.0), decodedQuest.appearance());
+        assertEquals(DependencyRequirement.ONE_COMPLETED, decodedQuest.behavior().dependencyRequirement());
+        assertTrue(decodedQuest.behavior().repeatable());
+        assertEquals(30, decodedQuest.behavior().repeatCooldownSeconds());
         assertEquals("true", decodedQuest.extensions().get("ftb.hide"));
         assertEquals(RewardClaimPolicy.AUTO_HIDDEN, decodedQuest.rewards().getFirst().policy());
         assertFalse(decodedQuest.rewards().getFirst().policy().visible());

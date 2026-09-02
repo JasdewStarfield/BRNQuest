@@ -118,7 +118,11 @@ public final class BrnQuestNetwork {
     public static void register(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(BrnQuestConstants.NETWORK_PROTOCOL);
         registrar.playToServer(RequestBookPayload.TYPE, RequestBookPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) syncAll(player, payload.knownRevision().equals(currentRevision()));
+            if (context.player() instanceof ServerPlayer player) {
+                // Definition requests also serve as bounded recovery synchronization for an open client.
+                ProgressEngine.get().reconcile(player);
+                syncAll(player, payload.knownRevision().equals(currentRevision()));
+            }
         });
         registrar.playToServer(RequestOpenPayload.TYPE, RequestOpenPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) {
@@ -198,7 +202,9 @@ public final class BrnQuestNetwork {
 
     public static void syncProgress(ServerPlayer player, boolean changed) {
         PlayerProgress progress = ProgressEngine.get().progress(player);
-        String json = GSON.toJson(new ProgressWire(progress.questsView(), progress.taskProgressView(), progress.claimedRewardsView(), progress.revision()));
+        String json = GSON.toJson(new ProgressWire(progress.questsView(), progress.taskProgressView(),
+                progress.claimedRewardsView(), ProgressEngine.get().visibleQuestIds(player),
+                progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision()));
         if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
         if (changed) {
             send(player, new ProgressDeltaPayload(json));
@@ -245,7 +251,10 @@ public final class BrnQuestNetwork {
     private static <T extends CustomPacketPayload> void registerClient(PayloadRegistrar registrar, CustomPacketPayload.Type<T> type, StreamCodec<? super ByteBuf, T> codec, net.neoforged.neoforge.network.handling.IPayloadHandler<T> handler) {
         if (FMLEnvironment.dist == Dist.CLIENT) registrar.playToClient(type, codec, handler); else registrar.playToClient(type, codec, (p, c) -> {});
     }
-    public record ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests, java.util.Map<String, Long> tasks, java.util.Set<String> claimed, String revision) {}
+    public record ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
+                               java.util.Map<String, Long> tasks, java.util.Set<String> claimed,
+                               java.util.Set<String> visible, java.util.Map<String, Integer> cycles,
+                               java.util.Map<String, Long> nextAvailable, String revision) {}
     private static final class ClientDelegate {
         static void hello(HelloPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.hello(p); }
         static void manifest(BookManifestPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.manifest(p); }

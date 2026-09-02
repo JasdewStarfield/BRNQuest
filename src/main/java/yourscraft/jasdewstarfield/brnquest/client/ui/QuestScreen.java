@@ -4575,11 +4575,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private String questTitle(QuestDefinition quest) {
         String localized = localizedQuestText(quest, "title", quest.title());
-        if (!localized.equals(quest.title()) || quest.tasks().isEmpty()) return localized;
+        return QuestPresentation.questTitle(localized, () -> objectiveTitleFallback(quest));
+    }
+
+    /** Keeps legacy untitled quests readable without replacing an authored quest title with its first objective. */
+    private String objectiveTitleFallback(QuestDefinition quest) {
+        if (quest.tasks().isEmpty()) return "";
         TaskDefinition task = quest.tasks().getFirst();
-        boolean generated = quest.title().isBlank() || quest.title().equals(quest.legacyId())
-                || quest.title().equals(quest.id().getPath()) || ResourceLocation.tryParse(quest.title()) != null;
-        if (!generated) return quest.title();
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
@@ -4588,7 +4590,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
         long stored = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
         String fallback = presentation.title(new TaskPresentationContext(minecraft, view, status(quest), stored, stack)).getString();
-        return fallback.equals(task.typeId().toString()) ? quest.title() : fallback;
+        return fallback.equals(task.typeId().toString()) ? quest.id().getPath() : fallback;
     }
 
     /** Locale resolution is presentation-only; the synchronized book retains every source translation. */

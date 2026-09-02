@@ -20,7 +20,8 @@ public final class QuestHud {
         ClientQuestState.get().trackedQuest().flatMap(id -> ClientQuestState.get().book().map(s -> s.quests().get(id))).ifPresent(quest -> {
             if (quest == null || !ClientQuestState.get().visible(quest.id())) return;
             int taskLines = Math.min(3, quest.tasks().size());
-            String questTitle = displayTitle(minecraft, quest.title(), quest.legacyId(), quest.tasks().isEmpty() ? null : quest.tasks().getFirst());
+            String questTitle = QuestPresentation.questTitle(quest.title(), () -> quest.tasks().isEmpty()
+                    ? quest.id().getPath() : taskTitle(minecraft, quest.tasks().getFirst()));
             int width = Math.max(120, minecraft.font.width(questTitle) + 20);
             int left = graphics.guiWidth() - width - 8;
             int bottom = 30 + taskLines * 11;
@@ -30,17 +31,15 @@ public final class QuestHud {
             for (int index = 0; index < taskLines; index++) {
                 TaskDefinition task = quest.tasks().get(index);
                 boolean done = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
-                String title = displayTitle(minecraft, task.config().getOrDefault("title", ""), "", task);
+                String title = taskTitle(minecraft, task);
                 graphics.drawString(minecraft.font, (done ? "✓ " : "• ") + title, left + 8, 28 + index * 11,
                         done ? 0xFF72D88D : 0xFFD8DEE8, false);
             }
         });
     }
 
-    /** Resolves old ID-only imports into the same localized item labels shown by the detail screen. */
-    private static String displayTitle(Minecraft minecraft, String current, String legacy, TaskDefinition task) {
-        boolean generated = current.isBlank() || current.equals(legacy) || ResourceLocation.tryParse(current) != null;
-        if (!generated || task == null) return current;
+    /** Resolves an untitled objective into the same localized item label shown by the detail screen. */
+    private static String taskTitle(Minecraft minecraft, TaskDefinition task) {
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());

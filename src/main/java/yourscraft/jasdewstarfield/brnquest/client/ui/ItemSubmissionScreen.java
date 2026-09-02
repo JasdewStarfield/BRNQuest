@@ -179,8 +179,16 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
         int slot = layout.inventoryIndexAt(mouseX, mouseY);
         if (slot < 0 || minecraft == null || minecraft.player == null) return Optional.empty();
         ItemStack stack = minecraft.player.getInventory().getItem(slot);
-        RecipeLookupTarget target = new RecipeLookupTarget(stack, itemBounds(layout.inventorySlot(slot)));
-        return !stack.isEmpty() && target.contains(mouseX, mouseY) ? Optional.of(target) : Optional.empty();
+        return recipeLookupTargetAt(stack, itemBounds(layout.inventorySlot(slot)), mouseX, mouseY);
+    }
+
+    /** JEI queries every clicked slot before the Screen handles it, including empty inventory slots. */
+    static Optional<RecipeLookupTarget> recipeLookupTargetAt(ItemStack stack, UiRect bounds,
+                                                              double mouseX, double mouseY) {
+        if (stack == null || stack.isEmpty() || bounds == null || !bounds.contains(mouseX, mouseY)) {
+            return Optional.empty();
+        }
+        return Optional.of(new RecipeLookupTarget(stack, bounds));
     }
 
     private EditorItemSelectorLayout layout() {

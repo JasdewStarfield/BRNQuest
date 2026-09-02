@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /** Pure presentation rules shared by rendering and deterministic UI tests. */
 final class QuestPresentation {
@@ -67,6 +68,11 @@ final class QuestPresentation {
 
     static int requiredCount(TaskDefinition task) {
         return ClientTaskPresentationRegistry.requiredCount(ApiViews.task(task));
+    }
+
+    /** An authored quest title stays authoritative even when it resembles an ID; only a blank title may fall back. */
+    static String questTitle(String authoredTitle, Supplier<String> blankFallback) {
+        return authoredTitle == null || authoredTitle.isBlank() ? blankFallback.get() : authoredTitle;
     }
 
     /** A completion badge is meaningful only while at least one real reward remains unclaimed. */

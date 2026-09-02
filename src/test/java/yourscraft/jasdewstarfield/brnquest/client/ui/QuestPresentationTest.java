@@ -20,6 +20,15 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class QuestPresentationTest {
+    @Test void authoredQuestTitleIsNotReplacedByItsNamedObjective() {
+        assertEquals("brnquest:authored_quest", QuestPresentation.questTitle(
+                "brnquest:authored_quest", () -> "Named objective"));
+    }
+
+    @Test void blankQuestTitleMayUseItsObjectiveAsAFallback() {
+        assertEquals("Named objective", QuestPresentation.questTitle("", () -> "Named objective"));
+    }
+
     @Test void navigationUsesGroupAndChapterOrderInsteadOfIds() {
         ResourceLocation bookId = id("book");
         var laterGroup = new ChapterGroupDefinition(bookId, id("a_group"), "Later", 1);

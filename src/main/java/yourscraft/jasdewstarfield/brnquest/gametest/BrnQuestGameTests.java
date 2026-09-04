@@ -37,6 +37,7 @@ import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
+import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestPlugins;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerLifecycle;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders;
@@ -125,9 +126,9 @@ public final class BrnQuestGameTests {
                 "common and reserved script registration must close before server reload");
         helper.assertTrue(!state.clientFrozen(),
                 "dedicated server must not execute the client registration lifecycle");
-        helper.assertTrue(TaskTypeRegistry.isFrozen() && RewardTypeRegistry.isFrozen()
+        helper.assertTrue(BrnQuestPlugins.isFrozen() && TaskTypeRegistry.isFrozen() && RewardTypeRegistry.isFrozen()
                         && ProgressOwnerProviderRegistry.isFrozen(),
-                "all common extension registries must share the lifecycle freeze");
+                "the plugin facade and all common extension registries must share the lifecycle freeze");
         helper.succeed();
     }
 

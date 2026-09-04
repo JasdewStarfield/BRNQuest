@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.runtime;
 
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
+import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestPlugins;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviderRegistry;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
@@ -19,11 +20,13 @@ public final class ExtensionRegistrationLifecycle {
     @ApiStatus(ApiStability.INTERNAL)
     public static synchronized void freezeCommonAndScript() {
         if (commonFrozen && scriptFrozen) return;
+        // Close the atomic plugin facade before its target registries so no late
+        // companion callback can race the first task-book decode.
+        BrnQuestPlugins.freeze();
         TaskTypeRegistry.freeze();
         RewardTypeRegistry.freeze();
         ProgressOwnerProviderRegistry.freeze();
-        // The script registry arrives in stage 6; reserving and closing its window now
-        // prevents scripts from mutating type identity midway through a book reload.
+        // Script types use their own candidate window and stay closed outside script evaluation.
         scriptFrozen = true;
         commonFrozen = true;
     }
@@ -35,7 +38,8 @@ public final class ExtensionRegistrationLifecycle {
     }
 
     public static RegistrationState state() {
-        return new RegistrationState(commonFrozen, clientFrozen, scriptFrozen);
+        return new RegistrationState(commonFrozen, clientFrozen,
+                !ScriptExtensionRegistry.snapshot().registrationOpen());
     }
 
     /** Immutable lifecycle projection safe for diagnostics and compatibility tests. */

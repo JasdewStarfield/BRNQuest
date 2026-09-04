@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "kubejs_reload_smoke:book",
+  "title": "KubeJS reload smoke",
+  "chapter_groups": [
+    { "id": "kubejs_reload_smoke:group", "title": "Smoke", "order": 0 }
+  ],
+  "chapters": [
+    {
+      "id": "kubejs_reload_smoke:chapter",
+      "group_id": "kubejs_reload_smoke:group",
+      "title": "Smoke",
+      "icon": "minecraft:book",
+      "order": 0,
+      "quests": [
+        {
+          "id": "kubejs_reload_smoke:quest",
+          "title": "Atomic reload",
+          "subtitle": "",
+          "description": "",
+          "icon": "minecraft:book",
+          "x": 0.0,
+          "y": 0.0,
+          "legacy_id": "",
+          "dependencies": [],
+          "tasks": [
+            {
+              "id": "kubejs_reload_smoke:task",
+              "type": "kubejs_reload_smoke:type_a",
+              "config": { "required_progress": "1" },
+              "optional": false
+            }
+          ],
+          "rewards": []
+        }
+      ]
+    }
+  ],
+  "legacy_ids": {}
+}

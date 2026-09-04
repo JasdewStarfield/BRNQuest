@@ -8,10 +8,11 @@
 - 提交任务 `brnquest_example:signal`：通过公共提交入口推进；
 - 幂等奖励 `brnquest_example:experience`：奖励账本保证重复领取不重复执行；
 - 两种 task 和一种 reward 的客户端 presentation；
+- 通过 `BrnQuestPlugin` 与暂存 registrar 原子注册 common 类型；
 - task/reward 的编辑器字段描述；
 - `QuestCompletedEvent` 只读订阅及监听器可观察副作用。
 
-示例只导入 `api`、`task`、`reward`、`event`、`editor` 和 `client.ui` 公共面，不读取进度存档、内部 definition、网络实现或 reload 管理器，也不使用反射。`ExampleAddonBoundaryTest` 会对源码做独立边界检查；公共 API 签名门禁和 GameTest 则验证编译及运行契约。
+示例只导入 `api`、`extension`、`task`、`reward`、`event`、`editor` 和 `client.ui` 公共面，不读取进度存档、内部 definition、网络实现或 reload 管理器，也不使用反射。插件回调内先声明全部 common 类型，BRNQuest 预检成功后才一起提交；`ExampleAddonBoundaryTest` 会对源码做独立边界检查，公共 API 签名门禁和 GameTest 则验证编译及运行契约。
 
 ## 构建与验证
 

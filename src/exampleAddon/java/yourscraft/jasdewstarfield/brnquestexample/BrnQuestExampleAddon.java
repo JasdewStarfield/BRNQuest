@@ -14,14 +14,15 @@ import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
+import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestExtensionRegistrar;
+import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestPlugin;
+import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestPlugins;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardResult;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskContext;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionResult;
 import yourscraft.jasdewstarfield.brnquest.task.TaskType;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.List;
 
@@ -35,14 +36,23 @@ public final class BrnQuestExampleAddon {
     public static final ResourceLocation MARKER_TASK = id("marker");
     public static final ResourceLocation SIGNAL_TASK = id("signal");
     public static final ResourceLocation EXPERIENCE_REWARD = id("experience");
+    public static final ResourceLocation PLUGIN_ID = id("core");
     public static final String OBSERVED_TAG = "brnquest_example_observed";
 
     public BrnQuestExampleAddon() {
-        TaskTypeRegistry.register(MARKER_TASK, new MarkerTask());
-        TaskTypeRegistry.register(SIGNAL_TASK, new SignalTask());
-        RewardTypeRegistry.register(EXPERIENCE_REWARD, new ExperienceReward());
+        BrnQuestPlugins.register(new ExamplePlugin());
         BrnQuestEvents.subscribe(QuestCompletedEvent.class, BrnQuestExampleAddon::observeCompletion);
         if (FMLEnvironment.dist == Dist.CLIENT) ExampleClientHooks.register();
+    }
+
+    /** Demonstrates the same optional companion-owned registration used by BRNTalk. */
+    private static final class ExamplePlugin implements BrnQuestPlugin {
+        public ResourceLocation id() { return PLUGIN_ID; }
+        public void register(BrnQuestExtensionRegistrar registrar) {
+            registrar.task(MARKER_TASK, new MarkerTask())
+                    .task(SIGNAL_TASK, new SignalTask());
+            registrar.reward(EXPERIENCE_REWARD, new ExperienceReward());
+        }
     }
 
     private static void observeCompletion(QuestCompletedEvent event) {

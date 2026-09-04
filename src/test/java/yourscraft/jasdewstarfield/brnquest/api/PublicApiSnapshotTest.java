@@ -46,7 +46,8 @@ class PublicApiSnapshotTest {
                         .replace('\\', '.').replace('/', '.').replaceAll("\\.class$", "");
                 if (!className.startsWith(ROOT_PACKAGE)) continue;
                 // Optional integration entry points deliberately have foreign supertypes and are not core API.
-                if (className.startsWith(ROOT_PACKAGE + "compat.jei.")) continue;
+                if (className.startsWith(ROOT_PACKAGE + "compat.jei.")
+                        || className.startsWith(ROOT_PACKAGE + "compat.kubejs.")) continue;
                 Class<?> type = Class.forName(className, false, PublicApiSnapshotTest.class.getClassLoader());
                 ApiStatus status = type.getAnnotation(ApiStatus.class);
                 // The annotation and its enum define the classification vocabulary and

@@ -37,7 +37,7 @@ class ExampleAddonBoundaryTest {
             try { return Files.readString(path, StandardCharsets.UTF_8); }
             catch (IOException exception) { throw new java.io.UncheckedIOException(exception); }
         }).reduce("", String::concat);
-        for (String required : List.of("TaskTypeRegistry.register", "RewardTypeRegistry.register",
+        for (String required : List.of("BrnQuestPlugins.register", "registrar.task", "registrar.reward",
                 "ClientTaskPresentationRegistry.register", "ClientRewardPresentationRegistry.register",
                 "configFields", "BrnQuestEvents.subscribe")) {
             assertTrue(combined.contains(required), "example add-on must demonstrate " + required);

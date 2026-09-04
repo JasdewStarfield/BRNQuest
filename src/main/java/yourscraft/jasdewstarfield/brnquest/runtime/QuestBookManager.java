@@ -43,6 +43,13 @@ public final class QuestBookManager {
     /** Remember the actual resource key: a book ID is not required to match its source filename. */
     public synchronized boolean install(QuestBookDefinition book, DiagnosticReport report,
                                         net.minecraft.resources.ResourceLocation resource) {
+        return installTransactional(book, report, resource, () -> {}, () -> {});
+    }
+
+    /** Internal reload path which commits companion state immediately before the book pointer. */
+    synchronized boolean installTransactional(QuestBookDefinition book, DiagnosticReport report,
+                                              net.minecraft.resources.ResourceLocation resource,
+                                              Runnable beforeCommit, Runnable onRejected) {
         DiagnosticReport working = report == null ? new DiagnosticReport() : report;
         if (book == null) {
             working.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-004", "", "", "",
@@ -57,14 +64,24 @@ public final class QuestBookManager {
             }
         }
         lastReport = working.copy();
-        if (working.hasFatal()) return false;
+        if (working.hasFatal()) {
+            onRejected.run();
+            return false;
+        }
         QuestBookSnapshot previous = active.get();
         QuestBookSnapshot current = QuestBookSnapshot.of(book);
-        // One atomic pointer write is the only moment the new revision becomes visible.
+        // Companion registries become current on the same server-thread boundary immediately
+        // before the single task-book pointer write and before observers are notified.
+        beforeCommit.run();
         active.set(current);
         activeResource = resource;
         BrnQuestEvents.post(new QuestBookReloadedEvent(previous == null ? null : ApiViews.book(previous),
                 ApiViews.book(current)));
         return true;
+    }
+
+    /** Records diagnostics without modifying the last valid active snapshot or source key. */
+    synchronized void retainAfterReloadFailure(DiagnosticReport report) {
+        lastReport = (report == null ? new DiagnosticReport() : report).copy();
     }
 }

@@ -24,6 +24,8 @@
 | `api.OperationResult` / `OperationStatus` | `EXPERIMENTAL` | 结构化区分成功、幂等无变化、拒绝、非法请求、未就绪、无权限和 revision 过期。 |
 | `task.TaskType` / `TaskTypeRegistry` | `EXPERIMENTAL` | 服务端任务类型及构造期注册。 |
 | `reward.RewardType` / `RewardTypeRegistry` | `EXPERIMENTAL` | 服务端幂等奖励类型及构造期注册。 |
+| `extension.BrnQuestPlugin` / `BrnQuestPlugins` | `EXPERIMENTAL` | 由附属模组拥有的原子 common 扩展注册入口。 |
+| KubeJS `BRNQuest` / `BRNQuestEvents` | `EXPERIMENTAL` | 仅在 server scripts 中提供不可变投影、权威写操作、观察事件和受控脚本类型。 |
 | `client.ui.ClientTaskPresentation*` | `EXPERIMENTAL` | 可选客户端 task 展示。 |
 | `client.ui.ClientRewardPresentation*` | `EXPERIMENTAL` | 可选客户端 reward 展示。 |
 | `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
@@ -109,9 +111,9 @@
 - 每次上下文写操作记录 actor、source、action、target、object、status、code 和 changed；审计日志不记录任务说明、物品 NBT 或其他非必要玩家数据。
 - 返回的视图不能跨 reload 代表“当前状态”；集成应按 ID 重新查询新 revision，不能缓存内部定义对象。
 
-注册与 reload 顺序固定为：模组构造/common setup 注册 common 与预留 script 扩展 → 首次服务端资源监听器建立前统一冻结 → 解码候选任务书 → 完成 type Codec 与整本校验 → 单次原子指针替换 → 发布 reload 事件 → 对账在线玩家并同步。客户端 presentation 在 client setup 冻结，专服不会执行或加载客户端生命周期。
+注册与 reload 顺序固定为：附属模组在构造/common setup 通过 `BrnQuestPlugins.register` 暂存并原子提交 common 扩展 → 首次服务端资源监听器建立前冻结 Java 插件/common 窗口 → KubeJS server scripts 构建一次性类型候选批次 → 仅在验证线程中用候选类型解码任务书并完成 Codec/整本校验 → 服务端线程紧邻切换脚本类型和单次任务书指针 → 发布 reload 事件 → 对账在线玩家并同步。客户端 presentation 使用独立注册链并在 client setup 冻结，专服不会执行或加载客户端生命周期。
 
-冻结后所有注册表明确拒绝新条目；`/reload` 不会重新开放注册窗口。候选解析、扩展校验或 fatal 校验失败时，当前有效 revision 和快照保持不变。`lastReport()` 返回防御性副本，调用方不能在提交后修改已记录的诊断。
+Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS server scripts 评估期间短暂开放。候选解析、扩展校验、脚本错误或 fatal 校验失败时，当前有效 revision、活动资源键、任务书快照和脚本类型表保持不变。`lastReport()` 返回防御性副本，调用方不能在提交后修改已记录的诊断。
 
 ## 后续冻结门槛
 

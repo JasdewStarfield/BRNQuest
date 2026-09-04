@@ -9,6 +9,7 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
+import yourscraft.jasdewstarfield.brnquest.runtime.ScriptExtensionRegistry;
 
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,14 @@ public final class TaskTypeRegistry {
         }
     }
 
-    public static TaskType<?> get(ResourceLocation id) { return TYPES.get(id); }
+    public static TaskType<?> get(ResourceLocation id) {
+        TaskType<?> common = TYPES.get(id);
+        return common != null ? common : ScriptExtensionRegistry.task(id);
+    }
+
+    /** Script batches may replace their own IDs but can never shadow construction-time Java types. */
+    @ApiStatus(ApiStability.INTERNAL)
+    public static boolean isCommonRegistered(ResourceLocation id) { return TYPES.containsKey(id); }
 
     /** Closes the public registration window before task books are decoded. */
     public static synchronized void freeze() { frozen = true; }

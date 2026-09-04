@@ -16,16 +16,46 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent()
+// KubeJS is opt-in for runtime tests because its client-sync hook cannot target GameTest mock players.
+def kubeJsSmokeRequested = gradle.startParameter.taskNames.any {
+    it.tokenize(':').last() in ['runKubeJsSmokeServer', 'runKubeJsReloadSmokeServer']
+}
+def includeKubeJs = providers.gradleProperty('includeKubeJs').isPresent() || kubeJsSmokeRequested
+def includeJei = !providers.gradleProperty('excludeJei').isPresent() && !kubeJsSmokeRequested
 
 // Keep automated server state separate from the client/server directory used for manual acceptance.
 def gameTestRunDirectory = layout.projectDirectory.dir('run/gametest')
+def kubeJsSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-smoke')
+def kubeJsReloadSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-reload-smoke')
 def resetGameTestBrnQuestState = tasks.register('resetGameTestBrnQuestState', Delete) {
-    delete gameTestRunDirectory.dir('config/brnquest'), gameTestRunDirectory.dir('world')
+    delete gameTestRunDirectory.dir('config/brnquest'), gameTestRunDirectory.dir('world'),
+            gameTestRunDirectory.dir('kubejs')
 }
 def prepareGameTestFixture = tasks.register('prepareGameTestFixture', Sync) {
     dependsOn resetGameTestBrnQuestState
     from layout.projectDirectory.dir('src/test/resources/fixtures/ftb_v13/eow')
     into gameTestRunDirectory.dir('config/brnquest/imports/eow')
+}
+def resetKubeJsSmokeState = tasks.register('resetKubeJsSmokeState', Delete) {
+    delete kubeJsSmokeRunDirectory.dir('config/brnquest'), kubeJsSmokeRunDirectory.dir('world'),
+            kubeJsSmokeRunDirectory.dir('kubejs')
+}
+def prepareKubeJsSmokeFixture = tasks.register('prepareKubeJsSmokeFixture', Copy) {
+    dependsOn resetKubeJsSmokeState
+    from layout.projectDirectory.dir('src/test/resources/kubejs_smoke')
+    into kubeJsSmokeRunDirectory.dir('kubejs')
+}
+def resetKubeJsReloadSmokeState = tasks.register('resetKubeJsReloadSmokeState', Delete) {
+    delete kubeJsReloadSmokeRunDirectory.dir('config/brnquest'), kubeJsReloadSmokeRunDirectory.dir('world'),
+            kubeJsReloadSmokeRunDirectory.dir('kubejs'), kubeJsReloadSmokeRunDirectory.file('server.properties')
+}
+def prepareKubeJsReloadSmokeFixture = tasks.register('prepareKubeJsReloadSmokeFixture', Copy) {
+    dependsOn resetKubeJsReloadSmokeState
+    def fixture = layout.projectDirectory.dir('src/test/resources/kubejs_reload_smoke')
+    into kubeJsReloadSmokeRunDirectory
+    from fixture.file('server.properties')
+    into('kubejs/server_scripts') { from fixture.dir('server_scripts') }
+    into('kubejs/data') { from fixture.dir('data') }
 }
 
 sourceSets {
@@ -39,6 +69,11 @@ sourceSets {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'Latvian Mods'
+        url = 'https://maven.latvian.dev/releases'
+        content { includeGroup 'dev.latvian.mods' }
+    }
     maven {
         name = 'Jared Maven'
         url = 'https://maven.blamejared.com'
@@ -69,6 +104,22 @@ neoForge {
             taskBefore prepareGameTestFixture
             systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
                     ? "${project.mod_id},brnquest_example" : project.mod_id
+        }
+
+        kubeJsSmokeServer {
+            server()
+            gameDirectory = kubeJsSmokeRunDirectory
+            programArgument '--nogui'
+            // A real server lifecycle avoids KubeJS sending client payloads to mock GameTest players.
+            taskBefore prepareKubeJsSmokeFixture
+        }
+
+        kubeJsReloadSmokeServer {
+            server()
+            gameDirectory = kubeJsReloadSmokeRunDirectory
+            programArgument '--nogui'
+            // This isolated server performs a deliberate bad second script load and then stops via mcfunction.
+            taskBefore prepareKubeJsReloadSmokeFixture
         }
 
         data {
@@ -132,7 +183,8 @@ def generateModMetadata = tasks.register('generateModMetadata', ProcessResources
             mod_license            : mod_license,
             mod_version            : mod_version,
             mod_authors            : mod_authors,
-            mod_description        : mod_description
+            mod_description        : mod_description,
+            kubejs_version         : kubejs_version
     ]
     inputs.properties replaceProperties
     expand replaceProperties
@@ -159,10 +211,18 @@ configurations {
 }
 
 dependencies {
+    // The KubeJS entry point lives behind plugin discovery; these types never enter core initialization.
+    compileOnly("dev.latvian.mods:kubejs-neoforge:${kubejs_version}") { transitive = false }
+    compileOnly("dev.latvian.mods:rhino:${rhino_version}") { transitive = false }
+    if (includeKubeJs) {
+        // The explicit integration run exercises the binding while normal GameTests stay vanilla-only.
+        localRuntime("dev.latvian.mods:kubejs-neoforge:${kubejs_version}") { transitive = false }
+        localRuntime("dev.latvian.mods:rhino:${rhino_version}") { transitive = false }
+    }
     // Compile the isolated JEI plugin against its API without making JEI a published hard dependency.
     compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
     compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
-    if (!providers.gradleProperty('excludeJei').isPresent()) {
+    if (includeJei) {
         // Local runs include JEI by default; -PexcludeJei proves the dependency-absent path.
         localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
     }
@@ -183,4 +243,26 @@ tasks.named('check').configure { dependsOn tasks.named('compileExampleAddonJava'
 idea.module {
     downloadSources = true
     downloadJavadoc = true
+}
+
+tasks.named('runKubeJsSmokeServer').configure {
+    doLast {
+        def log = kubeJsSmokeRunDirectory.file('logs/latest.log').asFile
+        if (!log.isFile() || !log.getText('UTF-8').contains('[BRNQuest/KUBEJS_SMOKE] events-and-extensions-ready')) {
+            throw new GradleException('KubeJS server-script smoke marker was not observed')
+        }
+    }
+}
+
+tasks.named('runKubeJsReloadSmokeServer').configure {
+    doLast {
+        def log = kubeJsReloadSmokeRunDirectory.file('logs/latest.log').asFile
+        def text = log.isFile() ? log.getText('UTF-8') : ''
+        if (!text.contains('[BRNQuest/KUBEJS_RELOAD_SMOKE] initial-pair-ready')
+                || !text.contains('[BRNQuest/KUBEJS_RELOAD_SMOKE] intentional reload failure')
+                || !text.contains('[BRNQuest/KUBEJS] Rejected script/task-book reload; retained revision')
+                || !text.contains('task types [kubejs_reload_smoke:type_a]')) {
+            throw new GradleException('KubeJS failed-reload rollback markers were not all observed')
+        }
+    }
 }

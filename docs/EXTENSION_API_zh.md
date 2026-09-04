@@ -6,12 +6,18 @@
 
 schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和布尔字段应先用 `Codec.STRING` 安全解析，而不能直接假定收到 JSON number/boolean。示例附属模组的经验奖励展示了带错误结果的字符串整数 Codec。
 
+若只需要从整合包脚本查询、推进或观察任务，或声明简单的外部进度 task / 事件奖励，不必编写 Java 插件；请使用 [KubeJS 服务端脚本 API](KUBEJS_API_zh.md)。Java SPI 仍适合需要自定义 Codec、服务端判定或客户端 presentation 的复杂类型。
+
 ## 注册时间
 
-- 服务端任务和奖励类型应在模组构造或 common setup 期间调用 `TaskTypeRegistry.register`、`RewardTypeRegistry.register`。
-- 两个服务端注册表会在首次服务端资源 reload 监听器建立前冻结；冻结后注册会明确失败。
+- 附属模组应在自己的构造或 common setup 期间调用 `BrnQuestPlugins.register(BrnQuestPlugin)`。插件通过暂存的 `BrnQuestExtensionRegistrar` 一次声明 task、reward 和 owner provider；只有回调正常结束且全部声明通过预检后才写入实际注册表。
+- 插件 ID 应使用附属模组自己的命名空间；BRNQuest 强制 task、reward 和 owner provider 与该插件 ID 使用相同命名空间。重复插件 ID、重复类型或跨插件命名空间声明会明确失败，不留下半注册结果。
+- `TaskTypeRegistry.register`、`RewardTypeRegistry.register` 和 `ProgressOwnerProviderRegistry.register` 作为低层实验性入口继续兼容，但新附属模组应使用插件门面，以获得成组预检和清楚的所有权边界。
+- 插件门面和三个服务端注册表会在首次服务端资源 reload 监听器建立前一起冻结；冻结后注册会明确失败。
 - 客户端展示应在客户端构造期间调用 `ClientTaskPresentationRegistry.register`、`ClientRewardPresentationRegistry.register`，并在 client setup 时冻结。
 - 类型必须使用完整 `ResourceLocation`；`example:item` 不会继承 `brnquest:item` 的行为或展示。
+
+可选集成的插件实现应放在附属模组自己的隔离包中，并且只在确认 BRNQuest 已加载后触碰该类。BRNQuest 核心不反向引用附属模组类型。例如 BRNTalk 将使用 `brntalk.compat.brnquest` 注册 `brntalk:*` 扩展；没有安装 BRNQuest 时，这个兼容包不会被加载。客户端 presentation 继续放在独立客户端类中，不能通过 common 插件接口把客户端类型带入专服。
 
 ## 任务类型职责
 
@@ -67,6 +73,6 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 ## 注册与 reload 顺序
 
-common task/reward/owner provider 和预留脚本窗口在首次服务端资源 reload 前一起冻结；客户端 presentation 在 client setup 冻结。注册只能发生在对应构造/setup 窗口，`/reload` 不重新执行或开放注册。冻结后的重复或迟到注册都会明确抛出错误。
+common 插件门面与 Java task/reward/owner provider 在首次服务端资源 reload 前冻结；客户端 presentation 在 client setup 冻结。Java 注册只能发生在对应构造/setup 窗口，冻结后的重复或迟到注册都会明确抛出错误。KubeJS 脚本类型使用独立候选窗口：只在 server scripts 评估时开放，脚本无错误后先封存候选，再用候选解码并校验任务书；只有二者都成功时，才紧邻提交类型表与任务书指针。任一环节失败均保留上一组已成功的类型和任务书快照。
 
 任务书 reload 先在候选对象上完成解码、所有已冻结类型的 Codec 校验和整本校验，只有没有 fatal 诊断时才原子替换当前快照。候选失败会更新诊断报告但保留上一 revision；成功替换后才发布只读事件并对账在线玩家。扩展不得把 reload 中获得的内部配置对象跨 revision 缓存。

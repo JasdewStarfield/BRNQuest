@@ -7,7 +7,7 @@ This worktree contains the active BRNQuest implementation for:
 - Java 21
 - branch `mc/1.21.1-neoforge`
 
-BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI integration is optional at runtime; KubeJS, BRNTalk, and shared-progress providers remain future optional integrations rather than required dependencies.
+BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI and KubeJS integration are optional at runtime; BRNTalk and shared-progress providers remain future optional integrations rather than required dependencies.
 
 ## Build
 
@@ -17,7 +17,7 @@ Before running Gradle, check for stale Gradle, Java, or Minecraft development pr
 .\gradlew.bat build --no-configuration-cache --no-daemon --console=plain
 ```
 
-The development run configurations are `runClient`, `runServer`, `runGameTestServer`, and `runData`.
+The development run configurations are `runClient`, `runServer`, `runGameTestServer`, `runKubeJsSmokeServer`, `runKubeJsReloadSmokeServer`, and `runData`. The two KubeJS smoke servers opt into their optional runtime automatically and validate both a clean script load and a deliberately failed reload rollback.
 
 ## Documentation
 
@@ -25,6 +25,7 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 - Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
 - 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)
+- KubeJS 服务端脚本全局 API：[`docs/KUBEJS_API_zh.md`](docs/KUBEJS_API_zh.md)
 - API 版本及兼容策略：[`docs/API_VERSIONING_zh.md`](docs/API_VERSIONING_zh.md)
 - 独立示例附属模组：[`docs/EXAMPLE_ADDON_zh.md`](docs/EXAMPLE_ADDON_zh.md)
 

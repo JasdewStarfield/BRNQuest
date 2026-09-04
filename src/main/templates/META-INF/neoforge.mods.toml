@@ -32,3 +32,11 @@ type = "optional"
 versionRange = "[19.25.1.334,20)"
 ordering = "AFTER"
 side = "CLIENT"
+
+# KubeJS discovers the isolated binding plugin only when present.
+[[dependencies."${mod_id}"]]
+modId = "kubejs"
+type = "optional"
+versionRange = "[${kubejs_version},2102)"
+ordering = "AFTER"
+side = "BOTH"

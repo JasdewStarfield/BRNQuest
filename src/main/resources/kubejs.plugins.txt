@@ -1,0 +1,1 @@
+yourscraft.jasdewstarfield.brnquest.compat.kubejs.BrnQuestKubeJSPlugin kubejs

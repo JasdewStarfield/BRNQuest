@@ -1,6 +1,6 @@
 # BRNQuest for Minecraft 1.21.1 (NeoForge)
 
-This worktree contains the active BRNQuest implementation for:
+This repository contains the active BRNQuest implementation for:
 
 - Minecraft 1.21.1
 - NeoForge 21.1
@@ -21,6 +21,8 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 
 ## Documentation
 
+Project design, implementation plans, provenance records, and acceptance evidence are maintained in the separate [BRNQuest-Docs repository](https://github.com/JasdewStarfield/BRNQuest-Docs). User-facing and extension-author documentation for this version remains alongside the source:
+
 - 整合包作者的任务工作区、草稿、部署、更新与恢复流程：[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)
 - Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
@@ -33,4 +35,4 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 
 Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Stable API, data/import, progress, task, reward, owner, network, client, integration, command, and diagnostics concerns remain separated by package.
 
-Internal implementation plans, validation fixtures, and historical acceptance reports are maintained outside this version worktree and are not part of the user documentation set.
+Internal implementation plans, validation procedures, and historical acceptance reports are maintained in BRNQuest-Docs and are not part of the user documentation set shipped with the mod.

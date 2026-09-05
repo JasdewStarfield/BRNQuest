@@ -13,6 +13,17 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class OptionalIntegrationBoundaryTest {
+    @Test void coreSourcesNeverResolveOpacTypesWhenTheOptionalModIsAbsent() throws IOException {
+        Path root = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java");
+        Path integration = root.resolve(Path.of("yourscraft", "jasdewstarfield", "brnquest", "compat", "opac"));
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.filter(value -> value.toString().endsWith(".java") && !value.startsWith(integration)).toList()) {
+                assertFalse(Files.readString(path, StandardCharsets.UTF_8).contains("xaero.pac."),
+                        () -> "Optional OPAC type leaked into " + path);
+            }
+        }
+    }
+
     @Test void coreSourcesNeverResolveJeiTypesWhenTheOptionalModIsAbsent() throws IOException {
         Path root = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java");
         Path integration = root.resolve(Path.of("yourscraft", "jasdewstarfield", "brnquest", "compat", "jei"));

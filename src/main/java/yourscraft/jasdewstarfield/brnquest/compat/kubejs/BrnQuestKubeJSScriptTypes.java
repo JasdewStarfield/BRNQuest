@@ -96,6 +96,11 @@ final class BrnQuestKubeJSScriptTypes {
             // This key is derived only from persisted owner, reward, and completion-cycle data.
             String key = progress.owner().providerId() + "|" + progress.owner().ownerId() + "|"
                     + context.reward().id() + "|" + progress.completedAtEpochMillis();
+            // Ordinary shared rewards need a recipient dimension; retain legacy personal/team keys.
+            if (!context.reward().teamReward() && !progress.owner().providerId().equals(
+                    yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders.PERSONAL)) {
+                key += "|" + context.player().getUUID();
+            }
             BrnQuestKubeJSEvents.CUSTOM_REWARD.post(ScriptType.SERVER, typeId,
                     new ScriptRewardKubeEvent(context.player(), context, key));
             return RewardResult.success("KubeJS custom reward dispatched");

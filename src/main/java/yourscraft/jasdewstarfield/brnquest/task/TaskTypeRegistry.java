@@ -14,6 +14,7 @@ import yourscraft.jasdewstarfield.brnquest.runtime.ScriptExtensionRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Extensible task registry with a construction-time registration window. */
@@ -47,6 +48,15 @@ public final class TaskTypeRegistry {
     public static TaskType<?> get(ResourceLocation id) {
         TaskType<?> common = TYPES.get(id);
         return common != null ? common : ScriptExtensionRegistry.task(id);
+    }
+
+    /** Returns an immutable snapshot for authoring UIs without exposing the live registry map. */
+    @ApiStatus(ApiStability.INTERNAL)
+    public static Set<ResourceLocation> registeredIds() {
+        Set<ResourceLocation> ids = new java.util.HashSet<>(TYPES.keySet());
+        ScriptExtensionRegistry.snapshot().taskTypeIds().stream()
+                .map(ResourceLocation::parse).forEach(ids::add);
+        return Set.copyOf(ids);
     }
 
     /** Script batches may replace their own IDs but can never shadow construction-time Java types. */

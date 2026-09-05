@@ -63,9 +63,9 @@
 - `ProgressOwnerId` 由完整 provider `ResourceLocation` 和稳定 UUID 组成；不得使用显示名、可变队名或猜测的队长 UUID 代替稳定身份。
 - `ProgressOwnerProvider` 负责在线玩家解析、成员快照、`ACTIVE` / `ARCHIVED` / `UNAVAILABLE` 生命周期和归档证据查询。
 - provider 在模组构造或 common setup 注册，并在首次任务书 reload 前与服务端 task/reward 注册表一起冻结；完整命名空间同路径不继承内置语义。
-- 当前唯一激活的 provider 是 `brnquest:personal`：owner UUID 等于玩家 UUID，成员仅包含本人，始终为 `ACTIVE`，不会生成伪归档。
-- 其他 provider 目前可以编译、注册和接受契约测试，但不会被选择为生效 owner。启用共享 provider 必须先明确迁移、退出、换队、解散、奖励和 orphan 语义。
-- schema 1 继续在 NBT 的 `players` 字段按个人 owner UUID 读写，不修改现有世界存档格式；所有事务锁和存储访问已先经过 owner 解析。
+- 默认 provider 为 `brnquest:personal`；安装受支持的 OPAC 0.30.3 且已组队时选择 `brnquest:openpac`，以 party UUID 作为 owner。缺失、未组队、版本不支持或 API 失败时恢复个人历史。
+- 其他 provider 可以注册，但不会自动被选择。具体成员、奖励、归档和追踪规则见 [OPAC 联动](OPAC_INTEGRATION_zh.md)。
+- 进度 schema 2 按 provider ID 与 UUID 隔离账本；旧 `players` 只迁移到个人命名空间。`ProgressView` 的领奖标记和追踪状态是玩家视角；共享目标进度属于 owner。
 
 ## 写操作结果
 
@@ -136,4 +136,4 @@ Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS s
 
 事件不可取消，只在对应状态提交后发布，并携带稳定 ID 和不可变 view。监听器按注册顺序独立调用；单个监听器抛出的运行时异常或链接错误会被记录，但不会阻止后续监听器，也不会回滚合法任务事务。关闭 `EventSubscription` 后不再接收事件。
 
-当前只启用个人进度 owner，因此尚无自然的 owner 切换，也不会为了制造事件而伪造切换。`ProgressOwnerChangedEvent` 使用前后两个稳定 `ProgressOwnerId`；未来只有在 provider 启用、迁移与归档事务安全提交后才发布。
+`ProgressOwnerChangedEvent` 在服务端对账确认在线玩家 owner 变化后发布，携带前后稳定 `ProgressOwnerId`。首次登录只建立快照；成员变化而 party UUID 不变时不伪造 owner 切换事件。写入前查询可以先于下一次通知生效，监听器不能将事件缓存当作授权依据。

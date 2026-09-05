@@ -15,6 +15,8 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
+def opacSmokeRequested = gradle.startParameter.taskNames.any { it.tokenize(':').last() in ['runOpacSmokeServer', 'runOpacRestartServer', 'runOpacFallbackServer'] }
+def includeOpac = providers.gradleProperty('includeOpac').isPresent() || opacSmokeRequested
 def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent()
 // KubeJS is opt-in for runtime tests because its client-sync hook cannot target GameTest mock players.
 def kubeJsSmokeRequested = gradle.startParameter.taskNames.any {
@@ -59,6 +61,11 @@ def prepareKubeJsReloadSmokeFixture = tasks.register('prepareKubeJsReloadSmokeFi
 }
 
 sourceSets {
+    opacTest {
+        // The lifecycle fixture is an external development mod and is never shipped in BRNQuest.
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
     exampleAddon {
         // Compile the example exactly like an external consumer: main output is a dependency,
         // while its sources are not merged into the add-on source set.
@@ -69,6 +76,11 @@ sourceSets {
 
 repositories {
     mavenCentral()
+    maven {
+        name = 'Modrinth OPAC'
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
     maven {
         name = 'Latvian Mods'
         url = 'https://maven.latvian.dev/releases'
@@ -122,6 +134,25 @@ neoForge {
             taskBefore prepareKubeJsReloadSmokeFixture
         }
 
+        opacSmokeServer {
+            server()
+            gameDirectory = layout.projectDirectory.dir('run/opac-smoke')
+            programArgument '--nogui'
+            systemProperty 'brnquest.opac.smoke', 'initial'
+        }
+        opacRestartServer {
+            server()
+            gameDirectory = layout.projectDirectory.dir('run/opac-smoke')
+            programArgument '--nogui'
+            systemProperty 'brnquest.opac.smoke', 'restart'
+        }
+        opacFallbackServer {
+            server()
+            gameDirectory = layout.projectDirectory.dir('run/opac-fallback')
+            programArgument '--nogui'
+            systemProperty 'brnquest.opac.smoke', 'initial'
+            systemProperty 'brnquest.opac.disableHooks', 'true'
+        }
         data {
             data()
             programArguments.addAll '--mod', project.mod_id,
@@ -140,6 +171,9 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
+        }
+        if (opacSmokeRequested) {
+            brnquest_opac_test { sourceSet(sourceSets.opacTest) }
         }
         if (includeExampleAddon) {
             brnquest_example {
@@ -211,6 +245,11 @@ configurations {
 }
 
 dependencies {
+    // Exact audited optional API baseline; never bundle OPAC or load it in ordinary core tests.
+    compileOnly("maven.modrinth:open-parties-and-claims:AzM8UF04") { transitive = false }
+    if (includeOpac) {
+        localRuntime("maven.modrinth:open-parties-and-claims:AzM8UF04") { transitive = false }
+    }
     // The KubeJS entry point lives behind plugin discovery; these types never enter core initialization.
     compileOnly("dev.latvian.mods:kubejs-neoforge:${kubejs_version}") { transitive = false }
     compileOnly("dev.latvian.mods:rhino:${rhino_version}") { transitive = false }
@@ -263,6 +302,25 @@ tasks.named('runKubeJsReloadSmokeServer').configure {
                 || !text.contains('[BRNQuest/KUBEJS] Rejected script/task-book reload; retained revision')
                 || !text.contains('task types [kubejs_reload_smoke:type_a]')) {
             throw new GradleException('KubeJS failed-reload rollback markers were not all observed')
+        }
+    }
+}
+
+// Fixtures use their own world, ephemeral port and reproducible server options; restart retains that world.
+['OpacSmoke', 'OpacRestart', 'OpacFallback'].each { label ->
+    tasks.named("run${label}Server").configure {
+        doFirst {
+            def runRoot = layout.projectDirectory.dir(label == 'OpacFallback' ? 'run/opac-fallback' : 'run/opac-smoke').asFile
+            runRoot.mkdirs()
+            new File(runRoot, 'server.properties').setText('server-port=0\nonline-mode=false\nlevel-type=minecraft:flat\ngenerator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\ngenerate-structures=false\nspawn-protection=0\nview-distance=2\nsimulation-distance=2\n', 'UTF-8')
+        }
+        doLast {
+            def runRoot = layout.projectDirectory.dir(label == 'OpacFallback' ? 'run/opac-fallback' : 'run/opac-smoke').asFile
+            def log = new File(runRoot, 'logs/latest.log')
+            def phase = label == 'OpacRestart' ? 'restart' : 'initial'
+            if (!log.isFile() || !log.getText('UTF-8').contains("[BRNQuest/OPAC_SMOKE] ${phase} PASS")) {
+                throw new GradleException('OPAC lifecycle fixture did not pass')
+            }
         }
     }
 }

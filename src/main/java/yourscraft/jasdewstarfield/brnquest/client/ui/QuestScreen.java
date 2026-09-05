@@ -203,6 +203,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean typedPropertyOpen;
     private ResourceLocation typedPropertyOriginalId;
     private ResourceLocation typedPropertyTypeId;
+    private boolean typedPropertyCreating;
     private ConfigEditorSchema typedPropertySchema;
     private Map<String, String> typedPropertyOriginalConfig = Map.of();
     private Map<String, String> typedPropertyRawConfig = Map.of();
@@ -1033,6 +1034,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             Component statusText = Component.translatable(
                     QuestPresentation.statusTranslationKey(selected, status, ClientQuestState.get().claimed()));
             int statusY = detailStatusY(selected);
+            if (canSubmit(selected, status)) {
+                Component readyText = Component.translatable("screen.brnquest.ready");
+                int readyX = left + 10 + font.width(statusText) + 6;
+                if (mouseX >= readyX && mouseX <= readyX + font.width(readyText)
+                        && mouseY >= statusY && mouseY <= statusY + font.lineHeight) {
+                    BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(), selected.id().toString());
+                    return true;
+                }
+            }
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
             int trackX = detailTrackX(pin);
             if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
@@ -1043,6 +1053,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             for (TaskHitbox hitbox : taskHitboxes) {
                 if (hitbox.contains(mouseX, mouseY)) {
                     String taskId = hitbox.task().id().toString();
+                    ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(hitbox.task().typeId());
+                    if (!presentation.interactive(ApiViews.task(hitbox.task()))
+                            && taskSatisfied(hitbox.task(), status) && canSubmit(hitbox.quest(), status)) {
+                        // A completed passive objective is the natural confirmation target for event-driven types.
+                        BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(),
+                                hitbox.quest().id().toString());
+                        return true;
+                    }
                     ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(hitbox.task().config())
                             .result().orElse(null);
                     if (itemSpec != null && needsManualItemSelection(hitbox.task(), itemSpec)) {
@@ -2714,6 +2732,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         TypedEntry entry = typedEditorKind.entry(quest, typedId);
         if (entry == null || ClientEditorState.get().busy()) return;
         typedPropertyOpen = true;
+        typedPropertyCreating = false;
         typedPropertyOriginalId = entry.id();
         typedPropertyTypeId = entry.typeId();
         typedPropertyOptional = entry.optional();
@@ -2736,6 +2755,36 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             String value = index < typedPropertySchema.fields().size()
                     ? typedPropertySchema.rawConfig().getOrDefault(typedPropertySchema.fields().get(index).key(),
                     typedPropertySchema.fields().get(index).defaultValue().orElse("")) : "";
+            configFields.field(index).setValue(value);
+        }
+        setFocused(typedFields.field("id"));
+    }
+
+    /** Starts a configured extension entry locally so required fields can be filled before server validation. */
+    private void openNewTypedPropertyEditor(QuestBookSnapshot snapshot, ResourceLocation typeId) {
+        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
+        typedPropertyOpen = true;
+        typedPropertyCreating = true;
+        typedPropertyOriginalId = id;
+        typedPropertyTypeId = typeId;
+        typedPropertyOptional = false;
+        typedPropertyTeamReward = false;
+        typedPropertyRenameArmed = false;
+        typedPropertyMessage = null;
+        typedPropertySubmissionPending = false;
+        typedPropertyServerIssues.clear();
+        typedFields.field("id").setValue(id.toString());
+        typedFields.field("claim").setValue("manual");
+        typedPropertySchema = typedEditorKind == TypedKind.TASK
+                ? ConfigEditorSchemas.forTask(new yourscraft.jasdewstarfield.brnquest.api.TaskView(
+                        snapshot.book().id(), id, typeId, Map.of(), false))
+                : ConfigEditorSchemas.forReward(new yourscraft.jasdewstarfield.brnquest.api.RewardView(
+                        snapshot.book().id(), id, typeId, Map.of(), "manual", false));
+        typedPropertyOriginalConfig = typedPropertySchema.rawConfig();
+        typedPropertyRawConfig = typedPropertySchema.rawConfig();
+        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
+            String value = index < typedPropertySchema.fields().size()
+                    ? typedPropertySchema.fields().get(index).defaultValue().orElse("") : "";
             configFields.field(index).setValue(value);
         }
         setFocused(typedFields.field("id"));
@@ -2878,6 +2927,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case "count" -> "screen.brnquest.editor.config.count";
             case "consume_items" -> "screen.brnquest.editor.config.consume_items";
             case "title" -> "screen.brnquest.editor.config.title";
+            case "script_id" -> "screen.brnquest.editor.config.script_id";
+            case "message_id" -> "screen.brnquest.editor.config.message_id";
             default -> key;
         };
     }
@@ -3104,7 +3155,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             focusTypedConfigField(fieldKey);
             return;
         }
-        if (!replacementId.equals(typedPropertyOriginalId) && !typedPropertyRenameArmed) {
+        if (!typedPropertyCreating && !replacementId.equals(typedPropertyOriginalId) && !typedPropertyRenameArmed) {
             typedPropertyRenameArmed = true;
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
             return;
@@ -3116,8 +3167,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return;
         }
         typedPropertyServerIssues.clear();
-        if (!sendMutation("UPDATE_" + typedEditorKind.actionPrefix(), replacementId, typedEditorQuestId,
-                typedPropertyOriginalId, typedEditorKind == TypedKind.REWARD
+        String action = (typedPropertyCreating ? "ADD_" : "UPDATE_") + typedEditorKind.actionPrefix();
+        ResourceLocation source = typedPropertyCreating ? typedPropertyTypeId : typedPropertyOriginalId;
+        if (!sendMutation(action, replacementId, typedEditorQuestId,
+                source, typedEditorKind == TypedKind.REWARD
                         ? typedFields.field("claim").getValue().strip() : "",
                 typedEditorKind == TypedKind.TASK ? (typedPropertyOptional ? 1 : 0)
                         : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config)) return;
@@ -3131,6 +3184,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyOpen = false;
         typedPropertyOriginalId = null;
         typedPropertyTypeId = null;
+        typedPropertyCreating = false;
         typedPropertySchema = null;
         typedPropertyOriginalConfig = Map.of();
         typedPropertyRawConfig = Map.of();
@@ -3293,15 +3347,29 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedTypePicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
                 candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
         typedTypePicker.render(graphics, font, Component.translatable("screen.brnquest.editor.typed.type_heading"),
-                false, type -> new EditorPickerList.Entry(Component.literal(type.toString()),
+                false, type -> new EditorPickerList.Entry(typedTypeDisplayName(type),
                         Component.translatable(typedEditorKind.addable(type)
-                                ? typedEditorKind.choiceBacked(type) ? "screen.brnquest.editor.typed.click_to_select_candidates"
+                                ? !typedEditorKind.builtIns().contains(type) ? "screen.brnquest.editor.typed.click_to_configure"
+                                : typedEditorKind.choiceBacked(type) ? "screen.brnquest.editor.typed.click_to_select_candidates"
                                 : typedEditorKind.itemBacked(type) ? "screen.brnquest.editor.typed.click_to_select_item"
                                 : "screen.brnquest.editor.typed.click_to_add" : "screen.brnquest.editor.typed.requires_config"),
                         typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING),
                 null, mouseX, mouseY);
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
                 Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);
+    }
+
+    /** Uses the client presentation contract while keeping stable IDs confined to storage and diagnostics. */
+    private Component typedTypeDisplayName(ResourceLocation typeId) {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        ResourceLocation bookId = snapshot == null ? typeId : snapshot.book().id();
+        ResourceLocation entryId = typedEditorQuestId == null ? typeId : typedEditorQuestId;
+        return typedEditorKind == TypedKind.TASK
+                ? ClientTaskPresentationRegistry.get(typeId).typeName(
+                        new yourscraft.jasdewstarfield.brnquest.api.TaskView(bookId, entryId, typeId, Map.of(), false))
+                : ClientRewardPresentationRegistry.get(typeId).typeName(
+                        new yourscraft.jasdewstarfield.brnquest.api.RewardView(
+                                bookId, entryId, typeId, Map.of(), "manual", false));
     }
 
     private boolean handleTypedTypePickerClick(double mouseX, double mouseY, int button) {
@@ -3331,6 +3399,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (typedEditorKind.itemBacked(typeId)) {
             closeActiveEditorOverlay();
             openItemSelector(typeId);
+            return true;
+        }
+        if (!typedEditorKind.builtIns().contains(typeId)) {
+            closeActiveEditorOverlay();
+            openNewTypedPropertyEditor(snapshot, typeId);
             return true;
         }
         ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
@@ -3377,12 +3450,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<ResourceLocation> typedTypeCandidates() {
         java.util.SortedSet<ResourceLocation> ids = new java.util.TreeSet<>(
                 java.util.Comparator.comparing(ResourceLocation::toString));
-        ids.addAll(typedEditorKind.builtIns());
+        // Registered extension types must be discoverable even before a task book uses them.
+        ids.addAll(typedEditorKind.registeredTypes());
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot != null) snapshot.book().quests().forEach(quest -> {
             if (typedEditorKind == TypedKind.TASK) quest.tasks().forEach(task -> ids.add(task.typeId()));
             else quest.rewards().forEach(reward -> ids.add(reward.typeId()));
         });
+        if (typedEditorKind == TypedKind.TASK) {
+            // item_choice is a read-compatible legacy alias; new objectives use the unified item type.
+            ids.remove(TaskTypes.ITEM_CHOICE);
+        }
         return List.copyOf(ids);
     }
 
@@ -5250,15 +5328,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM, RewardTypes.XP, RewardTypes.XP_LEVELS);
         }
 
-        boolean known(ResourceLocation typeId) { return builtIns().contains(typeId); }
+        java.util.Set<ResourceLocation> registeredTypes() {
+            return this == TASK ? TaskTypeRegistry.registeredIds() : RewardTypeRegistry.registeredIds();
+        }
+
+        boolean known(ResourceLocation typeId) { return registeredTypes().contains(typeId); }
 
         boolean addable(ResourceLocation typeId) {
-            return this == TASK
-                    ? typeId.equals(TaskTypes.CHECKMARK) || typeId.equals(TaskTypes.CUSTOM)
-                            || typeId.equals(TaskTypes.ITEM)
-                            || typeId.equals(TaskTypes.XP)
-                    : typeId.equals(RewardTypes.CUSTOM) || typeId.equals(RewardTypes.ITEM)
-                            || typeId.equals(RewardTypes.XP) || typeId.equals(RewardTypes.XP_LEVELS);
+            return this == TASK ? TaskTypeRegistry.get(typeId) != null : RewardTypeRegistry.get(typeId) != null;
         }
 
         boolean itemBacked(ResourceLocation typeId) {

@@ -68,7 +68,7 @@ BRNQuestEvents.customReward('eow:play_dialogue', event => {
 })
 ```
 
-`customReward` 还提供 `player`、`bookId`、`questId`、`rewardId`、`typeId` 和只读 `config`。`idempotencyKey` 由稳定 owner、reward ID 与已持久化的本次完成时刻派生；脚本必须把它当作奖励副作的去重键，不要只按玩家或 reward ID 去重，否则可重复任务的后续周期会被误判为旧奖励。未注册对应 `customReward` 监听器时，奖励执行会明确失败并记录原因。
+`customReward` 还提供 `player`、`bookId`、`questId`、`rewardId`、`typeId` 和只读 `config`。`idempotencyKey` 由稳定 owner、reward ID 与已持久化的本次完成时刻派生；普通共享奖励额外包含领取者 UUID；脚本必须把它当作奖励副作的去重键，不要只按玩家或 reward ID 去重，否则可重复任务的后续周期会被误判为旧奖励。未注册对应 `customReward` 监听器时，奖励执行会明确失败并记录原因。
 
 ## `/reload` 顺序与失败恢复
 
@@ -107,7 +107,7 @@ KubeJS 会在每次脚本 reload 时卸载它自己的 JavaScript 监听器。BR
 | `addTaskProgress(player, taskId, amount)` | 为扩展目标增加正数进度 |
 | `claimReward(player, rewardId)` | 幂等领取单个奖励 |
 | `claimAllRewards(player, questId)` | 逐项经过既有领取事务 |
-| `toggleTracked(player, questId)` | 切换当前 owner 的追踪状态 |
+| `toggleTracked(player, questId)` | 切换当前玩家的追踪状态 |
 | `openQuest(player[, questId])` | 先同步权威快照，再请求客户端打开任务界面 |
 
 所有写操作固定使用集成来源 `brnquest:kubejs`，脚本不能自造管理员或系统权限，也不能调用重置接口。玩家为空、离线、当前不在服务端主线程、任务书未就绪或 ID 非法时不会造成脚本侧崩溃，而是返回结构化结果：

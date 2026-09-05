@@ -19,9 +19,9 @@ class ProgressAuditLogTest {
         var intent = new AdminProgressService.Intent("target-uuid", "test:book", "revision", "test:quest",
                 "test:task", AdminProgressAction.RESET_TASK);
         var before = new AdminProgressService.State(QuestStatus.REWARD_CLAIMED,
-                Map.of("test:task", 1L), Set.of("test:reward"), 42, Map.of());
+                Map.of("test:task", 1L), Set.of("test:reward"), 42, Map.of(), Map.of());
         var after = new AdminProgressService.State(QuestStatus.AVAILABLE,
-                Map.of("test:task", 0L), Set.of("test:reward"), 0, Map.of());
+                Map.of("test:task", 0L), Set.of("test:reward"), 0, Map.of(), Map.of());
         var entry = new ProgressAuditLog.Entry(1, "2026-08-30T00:00:00Z", "actor-uuid", "管理员\n另一行",
                 intent, "目标玩家", "personal/target-uuid", before, after, "SUCCESS", "OK", "奖励账本保留");
         Path file = directory.resolve("reports/progress-audit.jsonl");
@@ -37,16 +37,23 @@ class ProgressAuditLogTest {
         assertEquals(0, json.getAsJsonObject("after").getAsJsonObject("tasks").get("test:task").getAsLong());
     }
 
+    @Test void teammateReceiptInvalidatesAnOtherwiseUnchangedAdminConfirmation() {
+        var before = new AdminProgressService.State(QuestStatus.COMPLETED, Map.of(), Set.of(), 42, Map.of(), Map.of());
+        var after = new AdminProgressService.State(QuestStatus.COMPLETED, Map.of(), Set.of(), 42, Map.of(),
+                Map.of(java.util.UUID.randomUUID(), Set.of("test:reward")));
+        assertNotEquals(before, after);
+    }
+
     @Test void confirmationStateTracksDependenciesAndClaimLedgerNotOnlyQuestStatus() {
         var original = new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of("task", 0L),
-                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED));
+                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED), Map.of());
         assertEquals(original, new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of("task", 0L),
-                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED)));
+                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED), Map.of()));
         assertNotEquals(original, new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of("task", 1L),
-                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED)));
+                Set.of(), 0, Map.of("parent", QuestStatus.COMPLETED), Map.of()));
         assertNotEquals(original, new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of("task", 0L),
-                Set.of("reward"), 0, Map.of("parent", QuestStatus.COMPLETED)));
+                Set.of("reward"), 0, Map.of("parent", QuestStatus.COMPLETED), Map.of()));
         assertNotEquals(original, new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of("task", 0L),
-                Set.of(), 0, Map.of("parent", QuestStatus.LOCKED)));
+                Set.of(), 0, Map.of("parent", QuestStatus.LOCKED), Map.of()));
     }
 }

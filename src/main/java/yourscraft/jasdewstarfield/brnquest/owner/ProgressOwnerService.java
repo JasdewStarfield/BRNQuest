@@ -15,11 +15,28 @@ public final class ProgressOwnerService {
 
     /**
      * Returns the current immutable owner view on the server thread.
-     * Stage 3 intentionally activates only personal ownership.
+     * Supported optional providers are queried afresh; failures preserve personal history.
      */
     public static Optional<ProgressOwnerView> resolve(ServerPlayer player) {
         if (player == null || player.getServer() == null || !player.getServer().isSameThread()) {
             return Optional.empty();
+        }
+        ProgressOwnerProvider optional = ProgressOwnerProviderRegistry.get(
+                net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("brnquest", "openpac"));
+        if (optional != null) {
+            try {
+                var id = optional.resolve(player);
+                if (id != null && id.isPresent() && id.get().providerId().equals(optional.id())) {
+                    Set<java.util.UUID> members = Set.copyOf(optional.members(player.getServer(), id.get()));
+                    var lifecycle = optional.lifecycle(player.getServer(), id.get());
+                    if (members.contains(player.getUUID()) && lifecycle == ProgressOwnerLifecycle.ACTIVE) {
+                        return Optional.of(new ProgressOwnerView(id.get(), members, lifecycle));
+                    }
+                }
+            } catch (RuntimeException | LinkageError exception) {
+                // Log once per outage; never turn an API failure into a deletion or a hot polling loop.
+                OwnerRuntime.queryFailed(player.getServer(), exception);
+            }
         }
         ProgressOwnerProvider provider = ProgressOwnerProviderRegistry.get(PersonalProgressOwnerProvider.ID);
         if (provider == null) return Optional.empty();

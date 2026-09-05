@@ -274,10 +274,10 @@ public final class BrnQuestApi {
         Map<ResourceLocation, Long> taskProgress = definition.tasks().stream().collect(Collectors.toUnmodifiableMap(
                 task -> task.id(), task -> progress.taskProgress(task.id().toString())));
         Set<ResourceLocation> claimedRewards = definition.rewards().stream()
-                .filter(reward -> progress.isClaimed(reward.id().toString()))
+                .filter(reward -> ProgressEngine.get().rewardClaimed(player, reward))
                 .map(reward -> reward.id()).collect(Collectors.toUnmodifiableSet());
         return Optional.of(new ProgressView(owner.orElseThrow().id(), definition.bookId(), definition.id(),
-                progress.status(definition.id().toString()), taskProgress, claimedRewards,
+                ProgressEngine.get().visibleStatuses(player).getOrDefault(definition.id().toString(), QuestStatus.LOCKED), taskProgress, claimedRewards,
                 progress.completedAt(definition.id().toString()), progress.revision()));
     }
 

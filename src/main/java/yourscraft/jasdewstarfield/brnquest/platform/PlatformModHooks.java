@@ -29,6 +29,9 @@ public final class PlatformModHooks {
     private PlatformModHooks() {}
 
     public static void register(IEventBus modEventBus, ModContainer container) {
+        yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.register();
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
+                yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.tick(event.getServer()));
         container.registerConfig(ModConfig.Type.CLIENT, BrnQuestClientConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onReloadListeners);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onCommands);
@@ -49,6 +52,7 @@ public final class PlatformModHooks {
         event.addListener(new QuestBookReloadListener());
     }
     private static void onServerStarted(ServerStartedEvent event) {
+        yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.started(event.getServer());
         // The initial resource load has already completed at this lifecycle point.
         // A newly copied workspace is therefore followed by one explicit reload.
         new WorkspaceDeploymentService().autoDeployAndReload(event.getServer());
@@ -56,6 +60,7 @@ public final class PlatformModHooks {
     private static void onCommands(RegisterCommandsEvent event) { BrnQuestCommands.register(event.getDispatcher()); }
     private static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.login(player);
             ProgressEngine.get().reconcile(player);
             ItemTaskMonitor.mark(player);
             // The hello lets the client request a definition only when its cached
@@ -65,11 +70,13 @@ public final class PlatformModHooks {
     }
     private static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player && player.getServer() != null) {
+            yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.logout(player);
             // A remote administrator must not keep a server-side write lease after disconnecting.
             EditSessionService.get().releasePlayer(player.getServer(), player.getUUID());
         }
     }
     private static void onServerStopped(ServerStoppedEvent event) {
+        yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.stopped(event.getServer());
         EditSessionService.get().clearServer(event.getServer());
     }
 

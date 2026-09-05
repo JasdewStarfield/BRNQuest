@@ -15,6 +15,7 @@ import yourscraft.jasdewstarfield.brnquest.runtime.ScriptExtensionRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Built-in and third-party rewards share one decoded execution path. */
@@ -48,6 +49,15 @@ public final class RewardTypeRegistry {
     public static RewardType<?> get(ResourceLocation id) {
         RewardType<?> common = TYPES.get(id);
         return common != null ? common : ScriptExtensionRegistry.reward(id);
+    }
+
+    /** Returns an immutable snapshot for authoring UIs without exposing the live registry map. */
+    @ApiStatus(ApiStability.INTERNAL)
+    public static Set<ResourceLocation> registeredIds() {
+        Set<ResourceLocation> ids = new java.util.HashSet<>(TYPES.keySet());
+        ScriptExtensionRegistry.snapshot().rewardTypeIds().stream()
+                .map(ResourceLocation::parse).forEach(ids::add);
+        return Set.copyOf(ids);
     }
 
     /** Script batches may replace their own IDs but can never shadow construction-time Java types. */

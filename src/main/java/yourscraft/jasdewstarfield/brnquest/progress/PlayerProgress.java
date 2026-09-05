@@ -16,6 +16,9 @@ public final class PlayerProgress {
     private final Map<String, Integer> completionCycles = new HashMap<>();
     private final Map<String, Long> nextAvailableTimes = new HashMap<>();
     private final Set<String> orphanedQuestIds = new HashSet<>();
+    // Frozen completion cohorts prevent join/leave cycling from minting old-cycle rewards.
+    private final Map<String, Set<UUID>> completionMembers = new HashMap<>();
+    private final Map<UUID, Set<String>> memberClaims = new HashMap<>();
     private String revision = "";
 
     public QuestStatus status(String id) { return quests.getOrDefault(id, QuestStatus.LOCKED); }
@@ -24,6 +27,32 @@ public final class PlayerProgress {
     public long addTaskProgress(String id, long amount) { return taskProgress.merge(id, amount, Long::sum); }
     public boolean claim(String id) { return claimedRewards.add(id); }
     public boolean isClaimed(String id) { return claimedRewards.contains(id); }
+    public void completionMembers(String quest, Set<UUID> members) {
+        completionMembers.put(quest, Set.copyOf(members));
+    }
+    public Set<UUID> completionMembers(String quest) { return completionMembers.getOrDefault(quest, Set.of()); }
+    public boolean memberClaimed(UUID player, String reward) {
+        return memberClaims.getOrDefault(player, Set.of()).contains(reward);
+    }
+    public boolean claimMember(UUID player, String reward) {
+        return memberClaims.computeIfAbsent(player, ignored -> new HashSet<>()).add(reward);
+    }
+    /** Immutable per-member receipts are included in administrator concurrency checks. */
+    public Map<UUID, Set<String>> memberClaimsFor(Collection<String> rewards) {
+        Map<UUID, Set<String>> result = new HashMap<>();
+        memberClaims.forEach((player, claims) -> {
+            Set<String> selected = new HashSet<>(claims);
+            selected.retainAll(rewards);
+            if (!selected.isEmpty()) result.put(player, Set.copyOf(selected));
+        });
+        return Map.copyOf(result);
+    }
+    /** A viewer sees shared one-shot receipts plus only their own ordinary reward receipts. */
+    public Set<String> claimsFor(UUID player) {
+        Set<String> result = new HashSet<>(claimedRewards);
+        result.addAll(memberClaims.getOrDefault(player, Set.of()));
+        return Set.copyOf(result);
+    }
     public void completedAt(String id, long time) { completionTimes.put(id, time); }
     public long completedAt(String id) { return completionTimes.getOrDefault(id, 0L); }
     public int completionCycles(String id) { return completionCycles.getOrDefault(id, 0); }
@@ -55,6 +84,8 @@ public final class PlayerProgress {
             QuestStatus current = quests.get(newId);
             quests.put(newId, current == null || statusRank(oldStatus) > statusRank(current) ? oldStatus : current);
         }
+        Set<UUID> oldMembers = completionMembers.remove(oldId);
+        if (oldMembers != null) completionMembers.putIfAbsent(newId, oldMembers);
         if (oldCompletion != null) {
             completionTimes.merge(newId, oldCompletion, (current, migrated) ->
                     current == 0L ? migrated : migrated == 0L ? current : Math.min(current, migrated));
@@ -73,15 +104,22 @@ public final class PlayerProgress {
     }
     /** Preserves idempotent reward claims across an explicit stable reward-ID rename. */
     public boolean migrateRewardId(String oldId, String newId) {
-        if (oldId == null || newId == null || oldId.equals(newId) || !claimedRewards.remove(oldId)) return false;
-        claimedRewards.add(newId);
-        return true;
+        if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        boolean changed = claimedRewards.remove(oldId);
+        if (changed) claimedRewards.add(newId);
+        for (Set<String> claims : memberClaims.values()) if (claims.remove(oldId)) {
+            claims.add(newId);
+            changed = true;
+        }
+        return changed;
     }
     public void resetQuest(String questId, Collection<String> taskIds, Collection<String> rewardIds) {
         quests.remove(questId);
         completionTimes.remove(questId);
         taskIds.forEach(taskProgress::remove);
         claimedRewards.removeAll(rewardIds);
+        memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
+        completionMembers.remove(questId);
         completionCycles.remove(questId);
         nextAvailableTimes.remove(questId);
     }
@@ -91,6 +129,8 @@ public final class PlayerProgress {
                                QuestStatus availableStatus) {
         taskIds.forEach(taskProgress::remove);
         claimedRewards.removeAll(rewardIds);
+        memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
+        completionMembers.remove(questId);
         completionTimes.remove(questId);
         nextAvailableTimes.remove(questId);
         quests.put(questId, availableStatus);
@@ -136,6 +176,13 @@ public final class PlayerProgress {
         nextAvailableTimes.forEach(nextTimes::putLong);
         tag.put("next_available_times", nextTimes);
         tag.put("claimed_rewards", stringList(claimedRewards));
+        CompoundTag cohorts = new CompoundTag();
+        completionMembers.forEach((quest, members) -> cohorts.put(quest,
+                stringList(members.stream().map(UUID::toString).toList())));
+        tag.put("completion_members", cohorts);
+        CompoundTag receipts = new CompoundTag();
+        memberClaims.forEach((player, claims) -> receipts.put(player.toString(), stringList(claims)));
+        tag.put("member_claims", receipts);
         tag.put("orphaned_quests", stringList(orphanedQuestIds));
         return tag;
     }
@@ -157,6 +204,22 @@ public final class PlayerProgress {
         CompoundTag nextTimes = tag.getCompound("next_available_times");
         nextTimes.getAllKeys().forEach(key -> result.nextAvailableTimes.put(key, nextTimes.getLong(key)));
         readStrings(tag.getList("claimed_rewards", Tag.TAG_STRING), result.claimedRewards);
+        CompoundTag cohorts = tag.getCompound("completion_members");
+        for (String quest : cohorts.getAllKeys()) {
+            Set<String> ids = new HashSet<>();
+            readStrings(cohorts.getList(quest, Tag.TAG_STRING), ids);
+            Set<UUID> members = new HashSet<>();
+            for (String id : ids) try { members.add(UUID.fromString(id)); } catch (IllegalArgumentException ignored) { }
+            result.completionMembers.put(quest, Set.copyOf(members));
+        }
+        CompoundTag receipts = tag.getCompound("member_claims");
+        for (String player : receipts.getAllKeys()) {
+            try {
+                Set<String> claims = new HashSet<>();
+                readStrings(receipts.getList(player, Tag.TAG_STRING), claims);
+                result.memberClaims.put(UUID.fromString(player), claims);
+            } catch (IllegalArgumentException ignored) { }
+        }
         readStrings(tag.getList("orphaned_quests", Tag.TAG_STRING), result.orphanedQuestIds);
         return result;
     }

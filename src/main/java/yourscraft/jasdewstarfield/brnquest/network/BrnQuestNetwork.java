@@ -201,9 +201,20 @@ public final class BrnQuestNetwork {
     }
 
     public static void syncProgress(ServerPlayer player, boolean changed) {
+        syncOneProgress(player, changed);
+        var owner = yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService.resolve(player).orElseThrow();
+        // Re-query every recipient after the write; a polling snapshot never grants access to a ledger.
+        for (var candidate : java.util.List.copyOf(player.getServer().getPlayerList().getPlayers())) {
+            if (candidate == player || !owner.members().contains(candidate.getUUID())) continue;
+            var current = yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService.resolve(candidate);
+            if (current.isPresent() && current.get().id().equals(owner.id())) syncOneProgress(candidate, changed);
+        }
+    }
+
+    private static void syncOneProgress(ServerPlayer player, boolean changed) {
         PlayerProgress progress = ProgressEngine.get().progress(player);
-        String json = GSON.toJson(new ProgressWire(progress.questsView(), progress.taskProgressView(),
-                progress.claimedRewardsView(), ProgressEngine.get().visibleQuestIds(player),
+        String json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), progress.taskProgressView(),
+                ProgressEngine.get().visibleClaims(player), ProgressEngine.get().visibleQuestIds(player),
                 progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision()));
         if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
         if (changed) {

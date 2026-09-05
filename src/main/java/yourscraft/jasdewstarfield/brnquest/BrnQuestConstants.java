@@ -3,7 +3,7 @@ package yourscraft.jasdewstarfield.brnquest;
 /** Frozen compatibility constants shared by persistence, import, and networking. */
 public final class BrnQuestConstants {
     public static final int DATA_SCHEMA = 1;
-    public static final int PROGRESS_SCHEMA = 1;
+    public static final int PROGRESS_SCHEMA = 2;
     public static final int REPORT_SCHEMA = 1;
     public static final String NETWORK_PROTOCOL = "8";
     public static final int MAX_BOOK_CHUNK_BYTES = 256 * 1024;

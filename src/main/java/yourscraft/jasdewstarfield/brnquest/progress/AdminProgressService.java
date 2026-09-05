@@ -33,7 +33,8 @@ public final class AdminProgressService {
     }
     /** Equality is the confirmation concurrency guard; it never trusts a client-supplied snapshot. */
     public record State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed,
-                        long completedAt, Map<String, QuestStatus> dependencies) {}
+                        long completedAt, Map<String, QuestStatus> dependencies,
+                        Map<UUID, Set<String>> memberClaims) {}
     private record Resolved(ServerPlayer player, QuestDefinition quest, String owner) {}
     private record Pending(String actor, Intent intent, String owner, State state, long expires) {}
     private record Completed(String actor, Intent intent, Reply reply, long expires) {}
@@ -207,11 +208,12 @@ public final class AdminProgressService {
         Map<String, Long> tasks = new TreeMap<>();
         quest.tasks().forEach(task -> tasks.put(task.id().toString(), progress.taskProgress(task.id().toString())));
         Set<String> claimed = new TreeSet<>();
-        quest.rewards().forEach(reward -> { if (progress.isClaimed(reward.id().toString())) claimed.add(reward.id().toString()); });
+        quest.rewards().forEach(reward -> { if (ProgressEngine.get().rewardClaimed(player, reward)) claimed.add(reward.id().toString()); });
         Map<String, QuestStatus> dependencies = new TreeMap<>();
         quest.dependencies().forEach(id -> dependencies.put(id.toString(), progress.status(id.toString())));
         return new State(progress.status(quest.id().toString()), Map.copyOf(tasks), Set.copyOf(claimed),
-                progress.completedAt(quest.id().toString()), Map.copyOf(dependencies));
+                progress.completedAt(quest.id().toString()), Map.copyOf(dependencies),
+                progress.memberClaimsFor(quest.rewards().stream().map(reward -> reward.id().toString()).toList()));
     }
 
     private static View view(Resolved resolved, Intent intent, State state) {

@@ -59,7 +59,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 `ProgressOwnerProviderRegistry.register` 接受服务端 provider，并在首次任务书 reload 前冻结。provider 必须返回自身命名空间下的稳定 `ProgressOwnerId`，并提供不可变成员快照、生命周期和归档证据；解析结果不包含当前玩家、provider ID 不匹配或调用线程错误时，BRNQuest 不会猜测后备队伍身份。
 
-当前版本仅激活 `brnquest:personal`。第三方 provider 的注册用于验证公共签名和加载隔离，不代表共享进度已经启用；在队伍 API、迁移和归档语义完成验证前，不会提供选择外部 provider 的配置入口。
+当前版本在未组队或 OPAC 不可用时激活 `brnquest:personal`，在受支持的 OPAC 0.30.3 party 中激活 `brnquest:openpac`。其他第三方 provider 注册不会自动生效。共享奖励扩展必须区分逐玩家和全队一次投递，详见 [OPAC 联动](OPAC_INTEGRATION_zh.md)。
 
 ## 编辑器字段描述
 

@@ -7,7 +7,7 @@ This repository contains the active BRNQuest implementation for:
 - Java 21
 - branch `mc/1.21.1-neoforge`
 
-BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI and KubeJS integration are optional at runtime; BRNTalk and shared-progress providers remain future optional integrations rather than required dependencies.
+BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI, KubeJS, and Open Parties and Claims 0.30.3 integration are optional at runtime. OPAC parties share quest progress with individual reward receipts and HUD focus; BRNTalk owns its optional BRNQuest adapter.
 
 ## Build
 
@@ -28,6 +28,7 @@ Project design, implementation plans, provenance records, and acceptance evidenc
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
 - 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)
 - KubeJS 服务端脚本全局 API：[`docs/KUBEJS_API_zh.md`](docs/KUBEJS_API_zh.md)
+- OPAC 队伍进度、奖励资格、存档升级与降级行为：[`docs/OPAC_INTEGRATION_zh.md`](docs/OPAC_INTEGRATION_zh.md)
 - API 版本及兼容策略：[`docs/API_VERSIONING_zh.md`](docs/API_VERSIONING_zh.md)
 - 独立示例附属模组：[`docs/EXAMPLE_ADDON_zh.md`](docs/EXAMPLE_ADDON_zh.md)
 

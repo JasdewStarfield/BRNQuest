@@ -47,6 +47,57 @@ public final class ProgressEngine {
         return QuestProgressData.get(player.getServer()).get(ProgressOwnerService.require(player));
     }
 
+    private boolean shared(ServerPlayer player) {
+        return !ProgressOwnerService.require(player).providerId().equals(
+                yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders.PERSONAL);
+    }
+    public boolean rewardClaimed(ServerPlayer player, RewardDefinition reward) {
+        PlayerProgress progress = progress(player);
+        return !shared(player) || reward.teamReward() ? progress.isClaimed(reward.id().toString())
+                : progress.memberClaimed(player.getUUID(), reward.id().toString());
+    }
+    public Set<String> visibleClaims(ServerPlayer player) {
+        PlayerProgress progress = progress(player);
+        return shared(player) ? progress.claimsFor(player.getUUID()) : progress.claimedRewardsView();
+    }
+    public Map<String, QuestStatus> visibleStatuses(ServerPlayer player) {
+        PlayerProgress progress = progress(player);
+        if (!shared(player)) return progress.questsView();
+        Map<String, QuestStatus> result = new HashMap<>(progress.questsView());
+        String tracked = QuestProgressData.get(player.getServer()).tracked(player.getUUID());
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot != null) for (QuestDefinition quest : snapshot.book().quests()) {
+            String id = quest.id().toString();
+            QuestStatus status = progress.status(id);
+            if (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) {
+                result.put(id, id.equals(tracked) ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE);
+            } else if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
+                result.put(id, !quest.rewards().isEmpty() && quest.rewards().stream()
+                        .allMatch(reward -> rewardClaimed(player, reward)) ? QuestStatus.REWARD_CLAIMED : QuestStatus.COMPLETED);
+            }
+        }
+        return Map.copyOf(result);
+    }
+    /** Repeat blocking uses the frozen cohort, including offline members, rather than the first claimant. */
+    private boolean rewardsResolved(QuestDefinition quest, PlayerProgress progress) {
+        Set<UUID> cohort = progress.completionMembers(quest.id().toString());
+        return quest.rewards().stream().allMatch(reward -> cohort.isEmpty() || reward.teamReward()
+                ? progress.isClaimed(reward.id().toString())
+                : cohort.stream().allMatch(player -> progress.memberClaimed(player, reward.id().toString())));
+    }
+    /** Automatic delivery is retried idempotently for eligible online members; offline members wait for login. */
+    private void deliverAutomatic(ServerPlayer player) {
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot == null) return;
+        for (QuestDefinition quest : snapshot.book().quests()) {
+            QuestStatus status = progress(player).status(quest.id().toString());
+            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
+                for (RewardDefinition reward : quest.rewards()) if (reward.policy().automatic()
+                        && !rewardClaimed(player, reward)) claim(player, reward.id(), reward.policy().notifyPlayer());
+            }
+        }
+    }
+
     public void reconcile(ServerPlayer player) {
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
@@ -74,6 +125,7 @@ public final class ProgressEngine {
         if (player.getServer().getTickCount() % 20 != 0) return;
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
+        if (shared(player)) deliverAutomatic(player);
         PlayerProgress progress = progress(player);
         boolean changed = false;
         long now = System.currentTimeMillis();
@@ -320,18 +372,22 @@ public final class ProgressEngine {
             if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown reward");
             PlayerProgress progress = progress(player);
             if (progress.status(owner.id().toString()).ordinal() < QuestStatus.COMPLETED.ordinal()) return OperationResult.failure("LOCKED", "Quest is incomplete");
-            if (progress.isClaimed(rewardId.toString())) return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
             RewardDefinition reward = owner.rewards().stream().filter(r -> r.id().equals(rewardId)).findFirst().orElseThrow();
+            if (rewardClaimed(player, reward)) return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
+            if (shared(player) && !progress.completionMembers(owner.id().toString()).contains(player.getUUID())) {
+                return OperationResult.failure("NOT_ELIGIBLE", "Player was not a member when this cycle completed");
+            }
             RewardType<?> type = RewardTypeRegistry.get(reward.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown reward type");
             // The ledger is persisted before the non-repeatable side effect to prevent crash duplication.
-            progress.claim(rewardId.toString());
+            if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
+            else progress.claim(rewardId.toString());
             QuestProgressData data = QuestProgressData.get(player.getServer());
             data.setDirty();
             var result = RewardTypeExecutor.execute(type, new RewardContext(player, owner.bookId(), owner.id(),
                     ApiViews.reward(reward)));
             if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
-            if (owner.rewards().stream().allMatch(r -> progress.isClaimed(r.id().toString()))) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
+            if (rewardsResolved(owner, progress)) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
             BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
                     snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
                     BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
@@ -398,6 +454,12 @@ public final class ProgressEngine {
         PlayerProgress progress = progress(player);
         QuestStatus status = progress.status(questId.toString());
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return OperationResult.failure("NOT_TRACKABLE", "Quest is not available");
+        if (shared(player)) {
+            QuestProgressData data = QuestProgressData.get(player.getServer());
+            data.tracked(player.getUUID(), questId.toString().equals(data.tracked(player.getUUID())) ? "" : questId.toString());
+            BrnQuestNetwork.syncProgress(player, false);
+            return OperationResult.success("Tracking updated");
+        }
         if (status == QuestStatus.AVAILABLE) {
             // The HUD represents one focused objective, so activating a new quest replaces the old focus.
             progress.questsView().entrySet().stream().filter(entry -> entry.getValue() == QuestStatus.ACTIVE)
@@ -426,6 +488,8 @@ public final class ProgressEngine {
 
     private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
+        if (shared(player)) progress.completionMembers(quest.id().toString(),
+                ProgressOwnerService.resolve(player).orElseThrow().members());
         long completedAt = System.currentTimeMillis();
         progress.completedCycle(quest.id().toString(), completedAt,
                 completedAt + quest.behavior().repeatCooldownSeconds() * 1000L);
@@ -437,8 +501,7 @@ public final class ProgressEngine {
         quest.rewards().stream().filter(reward -> reward.policy().automatic())
                 .forEach(reward -> claim(player, reward.id(), reward.policy().notifyPlayer()));
         // A task-only reset preserves claims; completing it again must not reopen already claimed rewards.
-        if (!quest.rewards().isEmpty() && quest.rewards().stream()
-                .allMatch(reward -> progress.isClaimed(reward.id().toString()))) {
+        if (!quest.rewards().isEmpty() && rewardsResolved(quest, progress)) {
             progress.status(quest.id().toString(), QuestStatus.REWARD_CLAIMED);
         }
         reconcile(player);
@@ -451,7 +514,7 @@ public final class ProgressEngine {
         QuestStatus status = progress.status(quest.id().toString());
         if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED) return false;
         boolean rewardsResolved = quest.behavior().ignoreRewardBlocking() || quest.rewards().isEmpty()
-                || quest.rewards().stream().allMatch(reward -> progress.isClaimed(reward.id().toString()));
+                || rewardsResolved(quest, progress);
         if (!rewardsResolved || now < progress.nextAvailableAt(quest.id().toString())) return false;
         progress.beginNextCycle(quest.id().toString(), quest.tasks().stream().map(task -> task.id().toString()).toList(),
                 quest.rewards().stream().map(reward -> reward.id().toString()).toList(),
@@ -550,7 +613,9 @@ public final class ProgressEngine {
     }
 
     <T> T synchronizedOwner(ServerPlayer player, java.util.function.Supplier<T> operation) {
-        ProgressOwnerId owner = ProgressOwnerService.require(player);
+        var view = ProgressOwnerService.resolve(player).orElseThrow();
+        ProgressOwnerId owner = view.id();
+        QuestProgressData.get(player.getServer()).observe(owner, view.members(), view.lifecycle());
         Object lock;
         // Shared providers will serialize all members through the same stable owner key.
         synchronized (locks) { lock = locks.computeIfAbsent(owner, ignored -> new Object()); }

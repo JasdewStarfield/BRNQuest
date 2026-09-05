@@ -1,0 +1,8 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "yourscraft.jasdewstarfield.brnquest.compat.opac.mixin",
+  "plugin": "yourscraft.jasdewstarfield.brnquest.compat.opac.mixin.OpenPacMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["PartyManagerMixin"]
+}

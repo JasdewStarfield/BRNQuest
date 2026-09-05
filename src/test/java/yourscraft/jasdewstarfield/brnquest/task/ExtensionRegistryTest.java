@@ -45,6 +45,14 @@ class ExtensionRegistryTest {
     }
 
     @Test
+    void registeredForeignTypesAreDiscoverableByAuthoringClients() {
+        assertTrue(TaskTypeRegistry.registeredIds().contains(COUNTER));
+        assertTrue(RewardTypeRegistry.registeredIds().contains(COUNTER_REWARD));
+        assertThrows(UnsupportedOperationException.class,
+                () -> TaskTypeRegistry.registeredIds().remove(COUNTER));
+    }
+
+    @Test
     void registeredCodecErrorsReachBookDiagnostics() {
         TaskDefinition invalid = task(Map.of());
         QuestBookDefinition book = book(invalid);

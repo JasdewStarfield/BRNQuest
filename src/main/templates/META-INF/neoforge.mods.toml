@@ -40,3 +40,14 @@ type = "optional"
 versionRange = "[${kubejs_version},2102)"
 ordering = "AFTER"
 side = "BOTH"
+
+[[mixins]]
+config = "brnquest.opac.mixins.json"
+
+# Unsupported versions remain loadable but the provider stays personal-only.
+[[dependencies."${mod_id}"]]
+modId = "openpartiesandclaims"
+type = "optional"
+versionRange = "[0,)"
+ordering = "AFTER"
+side = "BOTH"

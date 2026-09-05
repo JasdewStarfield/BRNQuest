@@ -7,7 +7,7 @@ This repository contains the active BRNQuest implementation for:
 - Java 21
 - branch `mc/1.21.1-neoforge`
 
-BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI, KubeJS, and Open Parties and Claims 0.30.3 integration are optional at runtime. OPAC parties share quest progress with individual reward receipts and HUD focus; BRNTalk owns its optional BRNQuest adapter.
+BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI, KubeJS, and Open Parties and Claims integration are optional at runtime. OPAC 0.30.3 is the validated compatibility baseline; compatible nearby versions are detected at runtime. OPAC parties share quest progress with individual reward receipts and HUD focus; BRNTalk owns its optional BRNQuest adapter.
 
 ## Build
 

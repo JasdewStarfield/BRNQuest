@@ -20,16 +20,14 @@ public final class OwnerRuntime {
     public static void register() {
         var mod = ModList.get().getModContainerById("openpartiesandclaims");
         if (mod.isEmpty()) return;
-        if (!mod.get().getModInfo().getVersion().toString().equals("0.30.3")) {
-            BRNQuest.LOGGER.warn("[BRNQuest/OPAC] Unsupported version {}; using personal owners", mod.get().getModInfo().getVersion());
-            return;
-        }
         try {
-            // Only this guarded reflective boundary can initialize classes referencing the optional API.
+            // Runtime compatibility is established by loading the guarded adapter, not a brittle version whitelist.
             var provider = (ProgressOwnerProvider) Class.forName(
                     "yourscraft.jasdewstarfield.brnquest.compat.opac.OpenPacProgressOwnerProvider")
                     .getConstructor().newInstance();
             ProgressOwnerProviderRegistry.register(provider);
+            BRNQuest.LOGGER.info("[BRNQuest/OPAC] Adapter enabled for OPAC {}",
+                    mod.get().getModInfo().getVersion());
         } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
             BRNQuest.LOGGER.error("[BRNQuest/OPAC] Adapter unavailable; using personal owners", exception);
         }

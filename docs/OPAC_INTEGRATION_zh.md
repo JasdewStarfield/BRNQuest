@@ -1,13 +1,13 @@
 # Open Parties and Claims 联动
 
-BRNQuest 在 Minecraft 1.21.1 NeoForge 上支持可选的 Open Parties and Claims（OPAC）**0.30.3**。安装这一版本后自动使用其 party UUID 作为共享进度身份。BRNQuest 只读取身份和成员；建队、邀请、退出、领地和常加载仍由 OPAC 管理。
+BRNQuest 在 Minecraft 1.21.1 NeoForge 上支持可选的 Open Parties and Claims（OPAC）。**0.30.3 是已验证兼容基线，不是运行时版本白名单**；其他版本只要适配器 API 和 Mixin 目标仍兼容，也会自动使用 party UUID 作为共享进度身份。BRNQuest 只读取身份和成员；建队、邀请、退出、领地和常加载仍由 OPAC 管理。
 
 ## 进度归属
 
 | 状态或操作 | BRNQuest 行为 |
 | --- | --- |
-| 未安装 OPAC、版本不支持、未组队或 API 暂不可用 | 使用 `brnquest:personal/<玩家 UUID>` |
-| 加入受支持的 OPAC party | 使用 `brnquest:openpac/<party UUID>` |
+| 未安装 OPAC、适配器不兼容、未组队或 API 暂不可用 | 使用 `brnquest:personal/<玩家 UUID>` |
+| 加入可兼容的 OPAC party | 使用 `brnquest:openpac/<party UUID>` |
 | 新建队伍 | 新账本从空进度开始，不复制队长的个人进度 |
 | 入队、换队 | 切换到账本已有进度，不复制或合并其他账本 |
 | 退出、被踢 | 恢复自己的个人历史；原队伍数据保留 |
@@ -34,7 +34,7 @@ BRNQuest 在 Minecraft 1.21.1 NeoForge 上支持可选的 Open Parties and Claim
 
 所有身份查询发生在服务器主线程。登录、进度写入前均重新查询公开 API；每 100 server tick 对在线玩家及已保存的 OPAC owner 对账。成员变化后，在线队友获得各自的权威进度快照。
 
-精确版本条件 Mixin 仅缩短刷新等待：它发送失效通知，下一服务器 tick 再查询公开 API，不直接搬运进度。启动日志的 `BRNQuest/OPAC` 会报告注入健康状况；注入不可用时登录、写入前查询和 100 tick 轮询继续工作。其他 OPAC 版本保留加载能力，但关闭共享 provider 并给出日志，不视为已支持组合。
+条件 Mixin 只在检测到 OPAC 时尝试应用，用于缩短刷新等待：它发送失效通知，下一服务器 tick 再查询公开 API，不直接搬运进度。启动日志的 `BRNQuest/OPAC` 会报告实际适配器版本和注入健康状况；注入点缺失时登录、写入前查询和 100 tick 轮询仍继续工作。若 OPAC 的公开 API 或类结构发生不兼容变化，适配器加载或查询会失败并安全回退个人进度，既有共享账本仍会保留。
 
 ## 存档与扩展作者
 

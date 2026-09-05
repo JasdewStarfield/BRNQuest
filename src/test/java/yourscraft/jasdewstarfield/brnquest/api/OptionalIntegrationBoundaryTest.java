@@ -24,6 +24,20 @@ class OptionalIntegrationBoundaryTest {
         }
     }
 
+    @Test void opacCompatibilityUsesRuntimeProbesInsteadOfAnExactVersionGate() throws IOException {
+        Path project = Path.of(System.getProperty("brnquest.projectDir"));
+        String runtime = Files.readString(project.resolve(Path.of("src", "main", "java", "yourscraft",
+                "jasdewstarfield", "brnquest", "owner", "OwnerRuntime.java")), StandardCharsets.UTF_8);
+        String mixinPlugin = Files.readString(project.resolve(Path.of("src", "main", "java", "yourscraft",
+                "jasdewstarfield", "brnquest", "compat", "opac", "mixin", "OpenPacMixinPlugin.java")),
+                StandardCharsets.UTF_8);
+
+        assertTrue(runtime.contains("Class.forName("), "the optional adapter must retain its guarded load boundary");
+        assertTrue(mixinPlugin.contains("mod.getModId().equals(\"openpartiesandclaims\")"));
+        assertFalse(runtime.contains("equals(\"0.30.3\")"));
+        assertFalse(mixinPlugin.contains("equals(\"0.30.3\")"));
+    }
+
     @Test void coreSourcesNeverResolveJeiTypesWhenTheOptionalModIsAbsent() throws IOException {
         Path root = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java");
         Path integration = root.resolve(Path.of("yourscraft", "jasdewstarfield", "brnquest", "compat", "jei"));

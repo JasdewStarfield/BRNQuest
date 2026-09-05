@@ -8,7 +8,7 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import java.util.List;
 import java.util.Set;
 
-/** Selects string targets only for the audited binary; absent mods never resolve target classes. */
+/** Selects string targets whenever OPAC is present; absent mods never resolve target classes. */
 public final class OpenPacMixinPlugin implements IMixinConfigPlugin {
     public void onLoad(String mixinPackage) {}
     public String getRefMapperConfig() { return null; }
@@ -16,7 +16,7 @@ public final class OpenPacMixinPlugin implements IMixinConfigPlugin {
         if (Boolean.getBoolean("brnquest.opac.disableHooks")) return false;
         var mods = LoadingModList.get();
         return mods != null && mods.getMods().stream().anyMatch(mod ->
-                mod.getModId().equals("openpartiesandclaims") && mod.getVersion().toString().equals("0.30.3"));
+                mod.getModId().equals("openpartiesandclaims"));
     }
     public void acceptTargets(Set<String> mine, Set<String> others) {}
     public List<String> getMixins() { return null; }

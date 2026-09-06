@@ -60,7 +60,6 @@ import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldIssue;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
@@ -175,9 +174,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorFormFields<String> structureFields = new EditorFormFields<String>()
             .define("id", "screen.brnquest.editor.structure.id", 256)
             .define("title", "screen.brnquest.editor.structure.title", 256);
-    private final EditorFormFields<String> typedFields = new EditorFormFields<String>()
-            .define("id", "screen.brnquest.editor.typed.property.id", 256)
-            .define("claim", "screen.brnquest.editor.typed.property.claim_policy", 64);
     private EditorTextField quickTextField;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
@@ -200,20 +196,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorPickerList<ResourceLocation> typedTypePicker = new EditorPickerList<>();
     private QuestTypePickerModel.Frame typedTypePickerFrame;
     private Component typedEditorMessage;
+    private final QuestTypedPropertyFormModel typedPropertyForm =
+            new QuestTypedPropertyFormModel(MAX_TYPED_CONFIG_FIELDS);
     private boolean typedPropertyOpen;
     private ResourceLocation typedPropertyOriginalId;
     private ResourceLocation typedPropertyTypeId;
     private boolean typedPropertyCreating;
-    private ConfigEditorSchema typedPropertySchema;
-    private Map<String, String> typedPropertyOriginalConfig = Map.of();
-    private Map<String, String> typedPropertyRawConfig = Map.of();
-    private final EditorFormFields<Integer> configFields = createConfigFields();
     private boolean typedPropertyOptional;
     private boolean typedPropertyTeamReward;
     private boolean typedPropertyRenameArmed;
     private Component typedPropertyMessage;
     private boolean typedPropertySubmissionPending;
-    private final Map<String, String> typedPropertyServerIssues = new LinkedHashMap<>();
     private UiRect typedClaimDropdownBounds;
     private final Map<Integer, UiRect> typedEnumDropdownBounds = new HashMap<>();
     private UiRect enumDropdownAnchor;
@@ -288,10 +281,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
         questFields.bind(font, this::addRenderableWidget);
         structureFields.bind(font, this::addRenderableWidget);
-        typedFields.bind(font, this::addRenderableWidget);
+        typedPropertyForm.bind(font, this::addRenderableWidget);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 32_768);
-        configFields.bind(font, this::addRenderableWidget);
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
             catalogRequested = true;
@@ -2721,24 +2713,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyRenameArmed = false;
         typedPropertyMessage = null;
         typedPropertySubmissionPending = false;
-        typedPropertyServerIssues.clear();
-        typedFields.field("id").setValue(entry.id().toString());
-        typedFields.field("claim").setValue(entry.claimPolicy());
-        typedPropertySchema = typedEditorKind == QuestTypedEntryKind.TASK
+        ConfigEditorSchema schema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
                 : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
         // Item tasks project both historical config shapes into one canonical editor model.
         // The original map for this form must be that projection so hidden legacy keys do
         // not silently survive a successful canonical save.
-        typedPropertyOriginalConfig = typedPropertySchema.rawConfig();
-        typedPropertyRawConfig = typedPropertySchema.rawConfig();
-        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
-            String value = index < typedPropertySchema.fields().size()
-                    ? typedPropertySchema.rawConfig().getOrDefault(typedPropertySchema.fields().get(index).key(),
-                    typedPropertySchema.fields().get(index).defaultValue().orElse("")) : "";
-            configFields.field(index).setValue(value);
-        }
-        setFocused(typedFields.field("id"));
+        typedPropertyForm.openExisting(schema, entry.id().toString(), entry.claimPolicy());
+        setFocused(typedPropertyForm.identityField("id"));
     }
 
     /** Starts a configured extension entry locally so required fields can be filled before server validation. */
@@ -2753,22 +2735,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyRenameArmed = false;
         typedPropertyMessage = null;
         typedPropertySubmissionPending = false;
-        typedPropertyServerIssues.clear();
-        typedFields.field("id").setValue(id.toString());
-        typedFields.field("claim").setValue("manual");
-        typedPropertySchema = typedEditorKind == QuestTypedEntryKind.TASK
+        ConfigEditorSchema schema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(new yourscraft.jasdewstarfield.brnquest.api.TaskView(
                         snapshot.book().id(), id, typeId, Map.of(), false))
                 : ConfigEditorSchemas.forReward(new yourscraft.jasdewstarfield.brnquest.api.RewardView(
                         snapshot.book().id(), id, typeId, Map.of(), "manual", false));
-        typedPropertyOriginalConfig = typedPropertySchema.rawConfig();
-        typedPropertyRawConfig = typedPropertySchema.rawConfig();
-        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
-            String value = index < typedPropertySchema.fields().size()
-                    ? typedPropertySchema.fields().get(index).defaultValue().orElse("") : "";
-            configFields.field(index).setValue(value);
-        }
-        setFocused(typedFields.field("id"));
+        typedPropertyForm.openNew(schema, id.toString(), "manual");
+        setFocused(typedPropertyForm.identityField("id"));
     }
 
     private void renderTypedPropertyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
@@ -2783,18 +2756,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedClaimDropdownBounds = null;
         rows.add(EditorPropertyPanel.readOnly(font, "screen.brnquest.editor.typed.property.type",
                 typedTypeName(quest, typedPropertyOriginalId), 68));
-        rows.add(EditorPropertyPanel.text(font, typedFields.field("id"),
-                "screen.brnquest.editor.typed.property.id", 68, typedPropertyServerIssues.get("id"), enabled));
-        configFields.hide();
-        typedFields.field("claim").hide();
-        List<ConfigFieldDescriptor> descriptors = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        rows.add(EditorPropertyPanel.text(font, typedPropertyForm.identityField("id"),
+                "screen.brnquest.editor.typed.property.id", 68, typedPropertyForm.serverIssues().get("id"), enabled));
+        typedPropertyForm.hide();
+        List<ConfigFieldDescriptor> descriptors = typedPropertyForm.schema() == null
+                ? List.of() : typedPropertyForm.schema().fields();
         for (int index = 0; index < Math.min(descriptors.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             ConfigFieldDescriptor descriptor = descriptors.get(index);
             int fieldIndex = index;
             rows.add((g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w,
-                    issues.getOrDefault(descriptor.key(), typedPropertyServerIssues.get(descriptor.key())), mouseX, mouseY));
+                    issues.getOrDefault(descriptor.key(), typedPropertyForm.serverIssues().get(descriptor.key())),
+                    mouseX, mouseY));
         }
-        if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
+        if (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback()) {
             rows.add((g, x, y, w) -> {
                 if (typedPropertyRawEditable()) renderTypedRawConfigRow(g, x, y, w, typedPropertyRawIssue(), mouseX, mouseY);
                 else g.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
@@ -2809,15 +2783,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(x, y, w, 68);
                 typedClaimDropdownBounds = row.field();
                 drawTypedLabel(g, "screen.brnquest.editor.typed.property.claim_policy", row.label(),
-                        typedPropertyServerIssues.get("claim_policy"));
-                renderEditorTextButton(g, row.field(), Component.literal(typedFields.field("claim").getValue() + " ▾"),
+                        typedPropertyForm.serverIssues().get("claim_policy"));
+                renderEditorTextButton(g, row.field(), Component.literal(typedPropertyForm.claim() + " ▾"),
                         null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             });
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.team_reward",
                     typedPropertyTeamReward, x, y, w, mouseX, mouseY));
         }
         renderPropertyPanel(graphics, heading, typedPropertyMessage == null && issues.isEmpty()
-                        && typedPropertyServerIssues.isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, rows,
+                        && typedPropertyForm.serverIssues().isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, rows,
                 Component.translatable(typedPropertyRenameArmed
                         ? "screen.brnquest.editor.typed.property.confirm_rename" : "gui.done"),
                 typedPropertyRenameArmed ? EditorButton.Tone.WARNING : EditorButton.Tone.PRIMARY, mouseX, mouseY);
@@ -2835,7 +2809,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, typedConfigLabel(descriptor.key()), row.label(), issue);
-        EditorTextField field = configFields.field(index);
+        EditorTextField field = typedPropertyForm.configField(index);
         if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
@@ -2886,7 +2860,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, "screen.brnquest.editor.typed.property.raw_config", row.label(), issue);
         Component edit = Component.translatable(
-                "screen.brnquest.editor.typed.property.edit_raw", typedPropertyRawConfig.size());
+                "screen.brnquest.editor.typed.property.edit_raw", typedPropertyForm.rawConfig().size());
         renderEditorActionButton(graphics, row.field(), EditorButton.Definition.iconAndText(
                         edit, edit, EditorIcon.glyph(Component.literal("{}"))),
                 !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -2926,15 +2900,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (typedEditorKind == QuestTypedEntryKind.REWARD && typedClaimDropdownBounds != null
                 && typedClaimDropdownBounds.contains(mouseX, mouseY)) {
             openEnumDropdown(typedClaimDropdownBounds, REWARD_CLAIM_POLICIES,
-                    typedFields.field("claim")::setValue);
+                    typedPropertyForm.identityField("claim")::setValue);
             return true;
         }
-        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        List<ConfigFieldDescriptor> fields = typedPropertyForm.schema() == null
+                ? List.of() : typedPropertyForm.schema().fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             ConfigFieldDescriptor descriptor = fields.get(index);
             UiRect bounds = typedEnumDropdownBounds.getOrDefault(index, typedPropertyConfigBounds(index));
             if (!bounds.contains(mouseX, mouseY)) continue;
-            EditorTextField field = configFields.field(index);
+            EditorTextField field = typedPropertyForm.configField(index);
             if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
                 field.setValue(Boolean.toString(!booleanValue(field.getValue())));
                 return true;
@@ -2953,7 +2928,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
         }
         int semanticsTop = typedPropertySemanticsTop();
-        if (typedPropertySchema != null && typedPropertySchema.rawFallback() && typedPropertyRawEditable()
+        if (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback() && typedPropertyRawEditable()
                 && typedPropertySemanticBounds(semanticsTop - 22).contains(mouseX, mouseY)) {
             openTypedPropertyRawEditor();
             return true;
@@ -2976,7 +2951,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (minecraft == null) return;
         openEditorItemSelector(stack -> {
             if (minecraft.level == null || fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-            configFields.field(fieldIndex).setValue(
+            typedPropertyForm.setConfigValue(fieldIndex,
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
             itemCache.remove(typedPropertyOriginalId);
         });
@@ -2985,11 +2960,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openTypedPropertyMatcherEditor(int fieldIndex) {
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
         ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
-                configFields.field(fieldIndex).getValue()).result().orElse(null);
+                typedPropertyForm.configValue(fieldIndex)).result().orElse(null);
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (initial != null && requiredIndex >= 0) {
             try {
-                int required = Integer.parseInt(configFields.field(requiredIndex).getValue());
+                int required = Integer.parseInt(typedPropertyForm.configValue(requiredIndex));
                 initial = initial.withRequiredEntries(required);
             } catch (IllegalArgumentException ignored) {
                 // The target-level field keeps its own inline validation; child editing still opens.
@@ -3004,21 +2979,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-        configFields.field(fieldIndex).setValue(spec.encode());
+        typedPropertyForm.setConfigValue(fieldIndex, spec.encode());
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (requiredIndex >= 0) {
-            configFields.field(requiredIndex).setValue(Integer.toString(spec.requiredEntries()));
+            typedPropertyForm.setConfigValue(requiredIndex, Integer.toString(spec.requiredEntries()));
         }
         itemCache.remove(typedPropertyOriginalId);
         typedPropertyMessage = null;
     }
 
     private int typedConfigFieldIndex(String key) {
-        if (typedPropertySchema == null) return -1;
-        for (int index = 0; index < typedPropertySchema.fields().size(); index++) {
-            if (typedPropertySchema.fields().get(index).key().equals(key)) return index;
-        }
-        return -1;
+        return typedPropertyForm.fieldIndex(key);
     }
 
     private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
@@ -3123,17 +3094,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openTypedPropertyRawEditor() {
         if (minecraft == null || !typedPropertyRawEditable()) return;
         childLifecycle.prepareChild();
-        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertyRawConfig, config -> {
-            typedPropertyRawConfig = Map.copyOf(config);
+        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertyForm.rawConfig(), config -> {
+            typedPropertyForm.replaceRawConfig(config);
             // A corrected local value supersedes old field diagnostics; the server will return
             // fresh Codec diagnostics when the containing property form is submitted.
-            typedPropertyServerIssues.keySet().removeIf(key -> !"id".equals(key) && !"claim_policy".equals(key));
+            typedPropertyForm.clearNonIdentityServerIssues();
             typedPropertyMessage = null;
         }));
     }
 
     private void prepareTypedPropertyEdit() {
-        ResourceLocation replacementId = ResourceLocation.tryParse(typedFields.field("id").getValue().strip());
+        ResourceLocation replacementId = ResourceLocation.tryParse(typedPropertyForm.id().strip());
         if (replacementId == null) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.invalid_id");
             return;
@@ -3151,18 +3122,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
             return;
         }
-        if (typedEditorKind == QuestTypedEntryKind.REWARD && typedFields.field("claim").getValue().isBlank()) {
+        if (typedEditorKind == QuestTypedEntryKind.REWARD && typedPropertyForm.claim().isBlank()) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.claim_required");
-            typedPropertyServerIssues.put("claim_policy", typedPropertyMessage.getString());
-            setFocused(typedFields.field("claim"));
+            typedPropertyForm.serverIssues().put("claim_policy", typedPropertyMessage.getString());
+            setFocused(typedPropertyForm.identityField("claim"));
             return;
         }
-        typedPropertyServerIssues.clear();
+        typedPropertyForm.serverIssues().clear();
         String action = (typedPropertyCreating ? "ADD_" : "UPDATE_") + typedEditorKind.actionPrefix();
         ResourceLocation source = typedPropertyCreating ? typedPropertyTypeId : typedPropertyOriginalId;
         if (!sendMutation(action, replacementId, typedEditorQuestId,
                 source, typedEditorKind == QuestTypedEntryKind.REWARD
-                        ? typedFields.field("claim").getValue().strip() : "",
+                        ? typedPropertyForm.claim().strip() : "",
                 typedEditorKind == QuestTypedEntryKind.TASK ? (typedPropertyOptional ? 1 : 0)
                         : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config)) return;
         typedPropertySubmissionPending = true;
@@ -3176,24 +3147,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyOriginalId = null;
         typedPropertyTypeId = null;
         typedPropertyCreating = false;
-        typedPropertySchema = null;
-        typedPropertyOriginalConfig = Map.of();
-        typedPropertyRawConfig = Map.of();
         typedPropertyMessage = null;
         typedPropertyRenameArmed = false;
         typedPropertySubmissionPending = false;
-        typedPropertyServerIssues.clear();
+        typedPropertyForm.close();
         setFocused(null);
-        if (typedFields.field("id") != null) typedFields.field("id").hide();
-        if (typedFields.field("claim") != null) typedFields.field("claim").hide();
-        configFields.hide();
     }
 
     private int typedPropertySemanticsTop() {
-        int fields = typedPropertySchema == null ? 0
-                : Math.min(typedPropertySchema.fields().size(), MAX_TYPED_CONFIG_FIELDS);
+        int fields = typedPropertyForm.schema() == null ? 0
+                : Math.min(typedPropertyForm.schema().fields().size(), MAX_TYPED_CONFIG_FIELDS);
         return topToolbarHeight() + 20 + 44 + fields * 22
-                + (typedPropertySchema != null && typedPropertySchema.rawFallback() ? 22 : 0);
+                + (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback() ? 22 : 0);
     }
 
     private UiRect typedPropertyConfigBounds(int index) {
@@ -3214,22 +3179,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Map<String, String> currentTypedPropertyConfig() {
-        if (typedPropertySchema != null && typedPropertySchema.rawFallback()) {
-            return Map.copyOf(typedPropertyRawConfig);
-        }
-        Map<String, String> config = new LinkedHashMap<>(typedPropertyOriginalConfig);
-        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
-        for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
-            String key = fields.get(index).key();
-            String value = configFields.field(index).getValue().strip();
-            if (value.isEmpty()) config.remove(key); else config.put(key, value);
-        }
-        return config;
+        return typedPropertyForm.currentConfig();
     }
 
     /** Missing registrations stay read-only because there is no corresponding Codec to approve an edit. */
     private boolean typedPropertyRawEditable() {
-        if (typedPropertySchema == null || !typedPropertySchema.rawFallback() || typedPropertyTypeId == null) {
+        if (typedPropertyForm.schema() == null || !typedPropertyForm.schema().rawFallback()
+                || typedPropertyTypeId == null) {
             return false;
         }
         return typedEditorKind == QuestTypedEntryKind.TASK
@@ -3238,21 +3194,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private String typedPropertyRawIssue() {
-        return typedPropertyServerIssues.entrySet().stream()
+        return typedPropertyForm.serverIssues().entrySet().stream()
                 .filter(entry -> !"id".equals(entry.getKey()) && !"claim_policy".equals(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst().orElse(null);
     }
 
     /** Combines descriptor validation with the client registry check needed for an ItemStack field. */
     private Map<String, String> typedPropertyLocalIssues() {
-        if (typedPropertySchema == null) return Map.of();
-        Map<String, String> issues = new LinkedHashMap<>();
+        if (typedPropertyForm.schema() == null) return Map.of();
+        Map<String, String> issues = new LinkedHashMap<>(typedPropertyForm.localIssues());
         Map<String, String> config = currentTypedPropertyConfig();
-        for (ConfigFieldIssue issue : ConfigEditorSchemas.validate(typedPropertySchema.fields(), config)) {
-            issues.putIfAbsent(issue.fieldKey(), issue.message());
-        }
         if (minecraft != null && minecraft.level != null) {
-            for (ConfigFieldDescriptor field : typedPropertySchema.fields()) {
+            for (ConfigFieldDescriptor field : typedPropertyForm.schema().fields()) {
                 String value = config.getOrDefault(field.key(), "");
                 if (field.valueType() != ConfigValueType.ITEM_STACK || value.isBlank()) continue;
                 try {
@@ -3267,18 +3220,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Component firstTypedIssue(Map<String, String> localIssues) {
-        Map.Entry<String, String> issue = !typedPropertyServerIssues.isEmpty()
-                ? typedPropertyServerIssues.entrySet().iterator().next()
+        Map.Entry<String, String> issue = !typedPropertyForm.serverIssues().isEmpty()
+                ? typedPropertyForm.serverIssues().entrySet().iterator().next()
                 : localIssues.isEmpty() ? null : localIssues.entrySet().iterator().next();
         return issue == null ? null : Component.literal("! " + issue.getKey() + ": " + issue.getValue());
     }
 
     private void focusTypedConfigField(String fieldKey) {
-        List<ConfigFieldDescriptor> fields = typedPropertySchema == null ? List.of() : typedPropertySchema.fields();
+        List<ConfigFieldDescriptor> fields = typedPropertyForm.schema() == null
+                ? List.of() : typedPropertyForm.schema().fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             if (fields.get(index).key().equals(fieldKey)) {
                 if (fields.get(index).valueType() != ConfigValueType.ITEM_STACK) {
-                    setFocused(configFields.field(index));
+                    setFocused(typedPropertyForm.configField(index));
                 }
                 return;
             }
@@ -3297,17 +3251,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (editor.mode() != ClientEditorState.Mode.ERROR) return;
         typedPropertySubmissionPending = false;
         typedPropertyMessage = EditorMessageText.operationError(editor.statusCode());
-        typedPropertyServerIssues.clear();
+        typedPropertyForm.serverIssues().clear();
         for (AuthoringNetwork.EditorDiagnosticWire diagnostic : editor.diagnostics()) {
             String path = diagnostic.path() == null ? "" : diagnostic.path();
             String fieldKey = path.startsWith("config.") ? path.substring("config.".length()) : path;
-            if (!fieldKey.isBlank()) typedPropertyServerIssues.putIfAbsent(fieldKey,
+            if (!fieldKey.isBlank()) typedPropertyForm.serverIssues().putIfAbsent(fieldKey,
                     EditorMessageText.diagnostic(diagnostic).getString());
         }
-        if (!typedPropertyServerIssues.isEmpty()) {
-            String fieldKey = typedPropertyServerIssues.keySet().iterator().next();
-            if ("id".equals(fieldKey)) setFocused(typedFields.field("id"));
-            else if ("claim_policy".equals(fieldKey)) setFocused(typedFields.field("claim"));
+        if (!typedPropertyForm.serverIssues().isEmpty()) {
+            String fieldKey = typedPropertyForm.serverIssues().keySet().iterator().next();
+            if ("id".equals(fieldKey)) setFocused(typedPropertyForm.identityField("id"));
+            else if ("claim_policy".equals(fieldKey)) setFocused(typedPropertyForm.identityField("claim"));
             else focusTypedConfigField(fieldKey);
         }
     }
@@ -3706,14 +3660,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return questDependencyButtonBounds();
     }
 
-    private static EditorFormFields<Integer> createConfigFields() {
-        EditorFormFields<Integer> fields = new EditorFormFields<>();
-        for (int index = 0; index < MAX_TYPED_CONFIG_FIELDS; index++) {
-            fields.define(index, "screen.brnquest.editor.typed.property.config", 65_536);
-        }
-        return fields;
-    }
-
     /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
     private EditorTextField reinitializeOverlayEditorField(EditorTextField field, String translationKey,
                                                             int maximumLength) {
@@ -4050,14 +3996,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void offsetDetailsDrawerFieldsForMotion() {
         if (!detailsOpen && !detailsDrawerVisible()) {
             questFields.hide();
-            typedFields.hide();
-            configFields.hide();
+            typedPropertyForm.hide();
             return;
         }
         int offset = detailsDrawerOffsetX();
         questFields.offsetForDrawerAnimation(offset);
-        typedFields.offsetForDrawerAnimation(offset);
-        configFields.offsetForDrawerAnimation(offset);
+        typedPropertyForm.offsetForDrawerAnimation(offset);
     }
 
     private static String iconItemId(String iconSnbt) {

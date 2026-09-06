@@ -54,4 +54,10 @@ public class ArchitectureBoundaryTest {
             )
             .should().dependOnClassesThat().resideInAnyPackage(CLIENT_PACKAGE, MINECRAFT_CLIENT_PACKAGE)
             .because("authoritative gameplay and persistence code must not resolve client-only classes");
+
+    @ArchTest
+    static final ArchRule composedClientSectionsMustNotDispatchNetworkRequests = noClasses()
+            .that().haveSimpleNameEndingWith("Section")
+            .should().dependOnClassesThat().resideInAPackage("yourscraft.jasdewstarfield.brnquest.network..")
+            .because("screen sections return semantic intents to the parent instead of owning protocol calls");
 }

@@ -134,7 +134,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuestScreenLayout cachedLayout;
     // Scoped to one render call; this is not a second revision cache.
     private RenderFrame renderFrame;
-    private record RenderFrame(QuestBookSnapshot snapshot, QuestScreenLayout layout) {}
+    private record RenderFrame(QuestBookSnapshot snapshot, QuestScreenLayout layout,
+                               QuestScreenFrameIdentity identity) {}
     private ResourceLocation rememberedChapterId;
     private boolean rememberedChapterResolved;
     private double dragX;
@@ -466,7 +467,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         ensureViewportBook(snapshot.book().id());
-        renderFrame = new RenderFrame(snapshot, layout());
+        renderFrame = new RenderFrame(snapshot, layout(),
+                QuestScreenFrameIdentity.of(snapshot, ClientEditorState.get().editing(), width, height));
         try {
             double motionFrameSeconds = motionFrameSeconds();
             currentMotionFrameSeconds = motionFrameSeconds;
@@ -5036,6 +5038,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuestBookSnapshot displaySnapshot() {
         if (renderFrame != null) return renderFrame.snapshot();
         return ClientEditorState.get().draft().orElseGet(() -> ClientQuestState.get().book().orElse(null));
+    }
+
+    private QuestScreenFrameIdentity currentFrameIdentity() {
+        if (renderFrame != null) return renderFrame.identity();
+        QuestBookSnapshot snapshot = displaySnapshot();
+        return snapshot == null ? null
+                : QuestScreenFrameIdentity.of(snapshot, ClientEditorState.get().editing(), width, height);
     }
 
     private List<ClientEditorState.CatalogEntry> editorCatalogEntries() {

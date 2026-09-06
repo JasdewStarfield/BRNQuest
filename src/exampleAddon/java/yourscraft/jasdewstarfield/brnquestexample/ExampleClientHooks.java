@@ -24,6 +24,9 @@ final class ExampleClientHooks {
     private static final class MarkerPresentation implements ClientTaskPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
         public String symbol(TaskView task) { return "M"; }
+        public Component typeName(TaskView task) {
+            return Component.translatable("screen.brnquest_example.task.marker");
+        }
         public Component title(TaskPresentationContext context) {
             return Component.literal("Receive marker "
                     + context.task().config().getOrDefault("tag", "brnquest_example_ready"));
@@ -33,6 +36,9 @@ final class ExampleClientHooks {
     private static final class SignalPresentation implements ClientTaskPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
         public String symbol(TaskView task) { return "S"; }
+        public Component typeName(TaskView task) {
+            return Component.translatable("screen.brnquest_example.task.signal");
+        }
         public boolean interactive(TaskView task) { return true; }
         public Component title(TaskPresentationContext context) {
             return Component.literal(context.task().config().getOrDefault("title", "Send signal"));
@@ -41,8 +47,12 @@ final class ExampleClientHooks {
 
     private static final class ExperiencePresentation implements ClientRewardPresentation {
         public String symbol(RewardView reward) { return "✦"; }
+        public Component typeName(RewardView reward) {
+            return Component.translatable("screen.brnquest_example.reward.experience");
+        }
         public Component title(RewardPresentationContext context) {
-            return Component.literal(context.reward().config().getOrDefault("amount", "3") + " experience");
+            return Component.translatable("screen.brnquest_example.reward.experience.title",
+                    context.reward().config().getOrDefault("amount", "3"));
         }
     }
 }

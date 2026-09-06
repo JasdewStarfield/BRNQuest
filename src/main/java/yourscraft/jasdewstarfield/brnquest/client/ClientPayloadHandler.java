@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
@@ -17,6 +18,20 @@ public final class ClientPayloadHandler {
     }
     public static void manifest(BrnQuestNetwork.BookManifestPayload payload) { Minecraft.getInstance().execute(() -> ClientQuestState.get().begin(payload.revision(), payload.chunks(), payload.decodedBytes())); }
     public static void chunk(BrnQuestNetwork.BookChunkPayload payload) { Minecraft.getInstance().execute(() -> ClientQuestState.get().acceptChunk(payload.revision(), payload.index(), payload.data())); }
+    public static void bookFailure(BrnQuestNetwork.BookSyncFailurePayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            ClientQuestState.get().bookSyncFailed(payload.code());
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.player != null) {
+                String key = switch (payload.code()) {
+                    case "TOO_MANY_QUESTS" -> "message.brnquest.book_sync.too_many_quests";
+                    case "BOOK_TOO_LARGE" -> "message.brnquest.book_sync.too_large";
+                    default -> "message.brnquest.book_sync.failed";
+                };
+                minecraft.player.displayClientMessage(Component.translatable(key, payload.actual(), payload.maximum()), false);
+            }
+        });
+    }
     public static void progress(BrnQuestNetwork.ProgressSnapshotPayload payload) {
         Minecraft.getInstance().execute(() -> {
             ClientQuestState.get().progress(payload.json());

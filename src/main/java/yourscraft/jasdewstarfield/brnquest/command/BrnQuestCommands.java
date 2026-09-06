@@ -47,7 +47,7 @@ public final class BrnQuestCommands {
                                                         .then(Commands.literal("--dry-run").executes(ctx -> importFtb(ctx, StringArgumentType.getString(ctx, "book_id"), true))))))))
                 .then(Commands.literal("reload").requires(s -> s.hasPermission(2)).executes(ctx -> {
                     new WorkspaceDeploymentService().reloadSelected(ctx.getSource().getServer());
-                    ctx.getSource().sendSuccess(() -> Component.literal("BRNQuest reload requested"), true);
+                    ctx.getSource().sendSuccess(() -> Component.translatable("command.brnquest.reload.requested"), true);
                     return 1;
                 }))
                 .then(Commands.literal("import_ftb").requires(s -> s.hasPermission(2))
@@ -62,12 +62,17 @@ public final class BrnQuestCommands {
 
     private static int open(CommandContext<CommandSourceStack> context, String quest) {
         try { return BrnQuestApi.openQuestScreen(context.getSource().getPlayerOrException(), quest) ? 1 : 0; }
-        catch (Exception exception) { context.getSource().sendFailure(Component.literal(exception.getMessage())); return 0; }
+        catch (Exception exception) {
+            context.getSource().sendFailure(Component.translatable("command.brnquest.open.failed"));
+            return 0;
+        }
     }
 
     private static int validate(CommandContext<CommandSourceStack> context) {
         var snapshot = QuestBookManager.get().active();
-        context.getSource().sendSuccess(() -> Component.literal(snapshot.map(s -> "BRNQuest valid: " + s.book().quests().size() + " quests, revision " + s.revision()).orElse("No active book")), false);
+        context.getSource().sendSuccess(() -> snapshot.<Component>map(s -> Component.translatable(
+                "command.brnquest.validate.active", s.book().quests().size(), s.revision()))
+                .orElseGet(() -> Component.translatable("command.brnquest.validate.no_active")), false);
         return snapshot.isPresent() ? 1 : 0;
     }
 
@@ -75,7 +80,9 @@ public final class BrnQuestCommands {
         var player = EntityArgument.getPlayer(context, "player");
         String quest = StringArgumentType.getString(context, "quest");
         var view = BrnQuestApi.getProgress(player, quest);
-        context.getSource().sendSuccess(() -> Component.literal(view.map(Object::toString).orElse("Quest not found")), false);
+        context.getSource().sendSuccess(() -> view.<Component>map(value -> Component.translatable(
+                "command.brnquest.progress.found", value.toString()))
+                .orElseGet(() -> Component.translatable("command.brnquest.progress.not_found")), false);
         return view.isPresent() ? 1 : 0;
     }
 
@@ -85,7 +92,8 @@ public final class BrnQuestCommands {
         var result = yourscraft.jasdewstarfield.brnquest.progress.AdminProgressService.get().command(
                 context.getSource(), player, quest,
                 yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_QUEST);
-        if (!result.success()) context.getSource().sendFailure(Component.literal(result.message()));
+        if (!result.success()) context.getSource().sendFailure(Component.translatable(
+                "command.brnquest.progress.failed", result.code()));
         return result.success() ? 1 : 0;
     }
 
@@ -95,7 +103,8 @@ public final class BrnQuestCommands {
         var result = yourscraft.jasdewstarfield.brnquest.progress.AdminProgressService.get().command(
                 context.getSource(), player, quest,
                 yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_QUEST);
-        if (!result.success()) context.getSource().sendFailure(Component.literal(result.message()));
+        if (!result.success()) context.getSource().sendFailure(Component.translatable(
+                "command.brnquest.progress.failed", result.code()));
         return result.success() ? 1 : 0;
     }
 
@@ -122,22 +131,24 @@ public final class BrnQuestCommands {
             var service = new WorkspaceDeploymentService();
             var result = service.deploy(context.getSource().getServer(), replace);
             if (result.status() == WorkspaceDeploymentService.Status.ALREADY_DEPLOYED) {
-                context.getSource().sendFailure(Component.literal("Workspace is already deployed; use --replace for an explicit backed-up replacement"));
+                context.getSource().sendFailure(Component.translatable("command.brnquest.workspace.already_deployed"));
                 return 0;
             }
-            String backup = result.backup() == null ? "" : ", backup " + result.backup();
-            context.getSource().sendSuccess(() -> Component.literal("BRNQuest workspace " + result.status().name().toLowerCase() + ": " + result.files() + " files" + backup), true);
+            Component backup = result.backup() == null ? Component.empty()
+                    : Component.translatable("command.brnquest.workspace.backup", result.backup().toString());
+            context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.workspace.deployed",
+                    result.files(), backup), true);
             audit(context, "workspace_deploy", context.getSource().getTextName(), WorkspacePaths.workspace(context.getSource().getServer()).toString(), result.status().name());
             return 1;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Component.literal("Workspace deployment failed: " + exception.getMessage()));
+            context.getSource().sendFailure(Component.translatable("command.brnquest.workspace.failed"));
             return 0;
         }
     }
 
     private static int reloadWorkspace(CommandContext<CommandSourceStack> context) {
         new WorkspaceDeploymentService().reloadIncludingWorkspace(context.getSource().getServer());
-        context.getSource().sendSuccess(() -> Component.literal("BRNQuest deployed workspace reload requested"), true);
+        context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.workspace.reload_requested"), true);
         return 1;
     }
 
@@ -150,11 +161,13 @@ public final class BrnQuestCommands {
             long errors = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity().ordinal() >= yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR.ordinal()).count();
             long warnings = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN).count();
             if (!dryRun && execution.draftResult() != null && !execution.draftResult().success()) {
-                context.getSource().sendFailure(Component.literal("[" + execution.draftResult().code() + "] "
-                        + execution.draftResult().message()));
+                context.getSource().sendFailure(Component.translatable("command.brnquest.import.failed_code",
+                        execution.draftResult().code()));
                 return 0;
             }
-            context.getSource().sendSuccess(() -> Component.literal("BRNQuest draft import " + (dryRun ? "dry-run" : "completed") + ": " + result.chapterCount() + " chapters, " + result.questCount() + " quests, " + errors + " errors, " + warnings + " warnings")
+            context.getSource().sendSuccess(() -> Component.translatable(dryRun
+                            ? "command.brnquest.import.summary_dry_run" : "command.brnquest.import.summary",
+                            result.chapterCount(), result.questCount(), errors, warnings)
                     .withStyle(errors == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
             yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
                     context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), errors, warnings);
@@ -162,7 +175,7 @@ public final class BrnQuestCommands {
         } catch (Exception exception) {
             yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.warn("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} result=failure message={}",
                     context.getSource().getTextName(), source, namespace, bookId, dryRun, exception.getMessage());
-            context.getSource().sendFailure(Component.literal("BRNQuest import failed: " + exception.getMessage()));
+            context.getSource().sendFailure(Component.translatable("command.brnquest.import.failed"));
             return 0;
         }
     }

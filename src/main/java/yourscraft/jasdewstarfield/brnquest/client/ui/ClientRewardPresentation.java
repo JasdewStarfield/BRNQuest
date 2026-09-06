@@ -15,14 +15,14 @@ public interface ClientRewardPresentation {
     default ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {
         return parsedItem == null ? ItemStack.EMPTY : parsedItem.copy();
     }
-    /** Localized type label used by authoring lists; unknown extensions retain their full ID. */
-    default Component typeName(RewardView reward) { return Component.literal(reward.typeId().toString()); }
+    /** Player-facing fallback stays localizable; authoring technical details retain the full type ID separately. */
+    default Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.unknown"); }
 
     default Component title(RewardPresentationContext context) {
         String configured = context.reward().config().getOrDefault("title", "");
         if (!configured.isBlank()) return Component.literal(configured);
         return context.displayedItem().isEmpty()
-                ? Component.literal(context.reward().typeId().toString())
+                ? Component.translatable("screen.brnquest.reward.unknown")
                 : context.displayedItem().getHoverName();
     }
 

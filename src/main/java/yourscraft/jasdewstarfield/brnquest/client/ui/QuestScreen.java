@@ -1025,7 +1025,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             for (TaskCandidateHitbox hitbox : taskCandidateHitboxes) {
                 if (hitbox.bounds().contains(mouseX, mouseY)) {
                     ItemChoiceMatcher.parseConfig(hitbox.task().config()).result()
-                            .ifPresent(spec -> openGameplayItemChoiceScreen(selected, hitbox.task(), spec));
+                            .ifPresent(spec -> openGameplayItemChoiceScreen(selected, hitbox.task(), spec, true));
                     return true;
                 }
             }
@@ -1064,7 +1064,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(hitbox.task().config())
                             .result().orElse(null);
                     if (itemSpec != null && needsManualItemSelection(hitbox.task(), itemSpec)) {
-                        openGameplayItemChoiceScreen(hitbox.quest(), hitbox.task(), itemSpec);
+                        openGameplayItemChoiceScreen(hitbox.quest(), hitbox.task(), itemSpec, false);
                         return true;
                     }
                     // Disable the row until the authoritative response arrives, preventing a
@@ -1496,8 +1496,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     editor.mode() == ClientEditorState.Mode.ERROR ? 0xFFFF8B8B : 0xFFB7C5D8, false);
             if (editor.mode() == ClientEditorState.Mode.ERROR
                     && new UiRect(left, top, left + statusWidth, top + EDITOR_CHROME_HEIGHT).contains(mouseX, mouseY)) {
-                hoveredComponentTooltip = List.of(Component.literal(editor.statusCode()),
-                        Component.literal(editor.statusMessage()));
+                hoveredComponentTooltip = EditorMessageText.errorTooltip(
+                        editor.statusCode(), editor.statusMessage());
             }
         }
 
@@ -2573,8 +2573,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         : "screen.brnquest.editor.status.saved", time);
             }
             case CLOSING -> Component.translatable("screen.brnquest.editor.session.closing");
-            case ERROR -> editor.allowed() ? Component.translatable("screen.brnquest.editor.status.error_detail",
-                    editor.statusCode(), editor.statusMessage()) : null;
+            case ERROR -> editor.allowed() ? EditorMessageText.operationError(editor.statusCode()) : null;
             case VIEW -> null;
         };
     }
@@ -3101,12 +3100,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void openGameplayItemChoiceScreen(QuestDefinition quest, TaskDefinition task,
-                                              ItemChoiceMatcher.Spec spec) {
+                                               ItemChoiceMatcher.Spec spec, boolean candidatesOnly) {
         if (minecraft == null) return;
         childLifecycle.prepareChild();
-        boolean selectable = gameplayAllowed() && needsManualItemSelection(task, spec)
-                && ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) < 1;
-        if (!selectable) {
+        boolean selectionRequired = !candidatesOnly && needsManualItemSelection(task, spec);
+        boolean alreadySubmitted = ClientQuestState.get().taskProgress()
+                .getOrDefault(task.id().toString(), 0L) >= 1;
+        ItemChoiceOpenMode mode = itemChoiceOpenMode(candidatesOnly, gameplayAllowed(),
+                selectionRequired, alreadySubmitted);
+        if (mode == ItemChoiceOpenMode.VIEW_CANDIDATES) {
             minecraft.setScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
             return;
         }
@@ -3117,6 +3119,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         taskId, selectedSlots);
             }
         }));
+    }
+
+    /** Keeps the candidate-list affordance read-only regardless of quest or inventory state. */
+    static ItemChoiceOpenMode itemChoiceOpenMode(boolean candidatesOnly, boolean gameplayAllowed,
+                                                 boolean selectionRequired, boolean alreadySubmitted) {
+        return !candidatesOnly && gameplayAllowed && selectionRequired && !alreadySubmitted
+                ? ItemChoiceOpenMode.SELECT_INVENTORY : ItemChoiceOpenMode.VIEW_CANDIDATES;
     }
 
     private boolean needsManualItemSelection(TaskDefinition task, ItemChoiceMatcher.Spec spec) {
@@ -3305,13 +3314,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (editor.mode() != ClientEditorState.Mode.ERROR) return;
         typedPropertySubmissionPending = false;
-        typedPropertyMessage = Component.literal(editor.statusMessage().isBlank()
-                ? editor.statusCode() : editor.statusMessage());
+        typedPropertyMessage = EditorMessageText.operationError(editor.statusCode());
         typedPropertyServerIssues.clear();
         for (AuthoringNetwork.EditorDiagnosticWire diagnostic : editor.diagnostics()) {
             String path = diagnostic.path() == null ? "" : diagnostic.path();
             String fieldKey = path.startsWith("config.") ? path.substring("config.".length()) : path;
-            if (!fieldKey.isBlank()) typedPropertyServerIssues.putIfAbsent(fieldKey, diagnostic.message());
+            if (!fieldKey.isBlank()) typedPropertyServerIssues.putIfAbsent(fieldKey,
+                    EditorMessageText.diagnostic(diagnostic).getString());
         }
         if (!typedPropertyServerIssues.isEmpty()) {
             String fieldKey = typedPropertyServerIssues.keySet().iterator().next();
@@ -3346,15 +3355,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         UiRect bounds = typedTypePickerBounds();
         typedTypePicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
                 candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
-        typedTypePicker.render(graphics, font, Component.translatable("screen.brnquest.editor.typed.type_heading"),
-                false, type -> new EditorPickerList.Entry(typedTypeDisplayName(type),
-                        Component.translatable(typedEditorKind.addable(type)
-                                ? !typedEditorKind.builtIns().contains(type) ? "screen.brnquest.editor.typed.click_to_configure"
+        List<Component> tooltip = typedTypePicker.render(graphics, font,
+                Component.translatable("screen.brnquest.editor.typed.type_heading"), false,
+                type -> new EditorPickerList.Entry(typedTypeDisplayName(type),
+                        Component.translatable(!typedEditorKind.builtIns().contains(type)
+                                ? "screen.brnquest.editor.typed.click_to_configure"
                                 : typedEditorKind.choiceBacked(type) ? "screen.brnquest.editor.typed.click_to_select_candidates"
                                 : typedEditorKind.itemBacked(type) ? "screen.brnquest.editor.typed.click_to_select_item"
-                                : "screen.brnquest.editor.typed.click_to_add" : "screen.brnquest.editor.typed.requires_config"),
-                        typedEditorKind.addable(type) ? EditorPickerList.Tone.NORMAL : EditorPickerList.Tone.WARNING),
+                                : "screen.brnquest.editor.typed.click_to_add"),
+                        EditorPickerList.Tone.NORMAL, false, List.of(Component.translatable(
+                                "screen.brnquest.editor.typed.type_id", type.toString()))),
                 null, mouseX, mouseY);
+        if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
                 Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);
     }
@@ -3384,11 +3396,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (typedTypePicker.mouseClicked(mouseX, mouseY, button)) return true;
         ResourceLocation typeId = typedTypePicker.entryAt(mouseX, mouseY).orElse(null);
         if (typeId == null || !typedTypeCandidates().contains(typeId) || ClientEditorState.get().busy()) return true;
-        if (!typedEditorKind.addable(typeId)) {
-            typedEditorMessage = Component.translatable("screen.brnquest.editor.typed.requires_config");
-            closeActiveEditorOverlay();
-            return true;
-        }
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null || typedEditorQuestId == null) return true;
         if (typedEditorKind.choiceBacked(typeId)) {
@@ -3448,19 +3455,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private List<ResourceLocation> typedTypeCandidates() {
+        ResourceLocation hiddenLegacyAlias = typedEditorKind == TypedKind.TASK ? TaskTypes.ITEM_CHOICE : null;
+        return creatableTypeCandidates(typedEditorKind.registeredTypes(), typedEditorKind::addable,
+                hiddenLegacyAlias);
+    }
+
+    /** Existing unknown data stays preserved, but an add picker only advertises types it can create now. */
+    static List<ResourceLocation> creatableTypeCandidates(java.util.Collection<ResourceLocation> registeredTypes,
+                                                          java.util.function.Predicate<ResourceLocation> addable,
+                                                          ResourceLocation hiddenLegacyAlias) {
         java.util.SortedSet<ResourceLocation> ids = new java.util.TreeSet<>(
                 java.util.Comparator.comparing(ResourceLocation::toString));
-        // Registered extension types must be discoverable even before a task book uses them.
-        ids.addAll(typedEditorKind.registeredTypes());
-        QuestBookSnapshot snapshot = displaySnapshot();
-        if (snapshot != null) snapshot.book().quests().forEach(quest -> {
-            if (typedEditorKind == TypedKind.TASK) quest.tasks().forEach(task -> ids.add(task.typeId()));
-            else quest.rewards().forEach(reward -> ids.add(reward.typeId()));
-        });
-        if (typedEditorKind == TypedKind.TASK) {
-            // item_choice is a read-compatible legacy alias; new objectives use the unified item type.
-            ids.remove(TaskTypes.ITEM_CHOICE);
-        }
+        ids.addAll(registeredTypes);
+        ids.removeIf(type -> !addable.test(type) || type.equals(hiddenLegacyAlias));
         return List.copyOf(ids);
     }
 
@@ -4264,10 +4271,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         List<Component> tooltip;
         if (rowIndex < publishReview.diagnostics().size()) {
             AuthoringNetwork.EditorDiagnosticWire diagnostic = publishReview.diagnostics().get(rowIndex);
-            heading = diagnostic.severity() + " · " + diagnostic.code();
+            heading = EditorMessageText.severity(diagnostic.severity()).getString() + " · "
+                    + EditorMessageText.diagnostic(diagnostic).getString();
             detail = diagnostic.objectId() + (diagnostic.path().isBlank() ? "" : " · " + diagnostic.path());
-            tooltip = List.of(Component.literal(heading), Component.literal(detail),
-                    Component.literal(diagnostic.message()));
+            tooltip = EditorMessageText.diagnosticTooltip(diagnostic);
         } else if (publishReview.changes().isEmpty()) {
             heading = Component.translatable("screen.brnquest.editor.publish.review.no_changes").getString();
             detail = Component.translatable("screen.brnquest.editor.publish.review.no_changes.detail").getString();
@@ -4538,13 +4545,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         for (ResourceLocation dependencyId : quest.dependencies()) {
             QuestDefinition dependency = snapshot.quests().get(dependencyId);
             if (dependency == null) {
-                lines.add(Component.literal("• " + dependencyId).withStyle(net.minecraft.ChatFormatting.RED));
+                lines.add(Component.translatable("screen.brnquest.dependency.missing")
+                        .withStyle(net.minecraft.ChatFormatting.RED));
                 continue;
             }
             ChapterDefinition chapter = snapshot.book().chapters().stream()
                     .filter(candidate -> candidate.id().equals(dependency.chapterId())).findFirst().orElse(null);
-            String chapterTitle = chapter == null ? dependency.chapterId().toString() : chapter.title();
-            lines.add(Component.translatable("screen.brnquest.dependency.entry", chapterTitle, dependency.title()));
+            String chapterTitle = chapter == null || chapter.title().isBlank()
+                    ? Component.translatable("screen.brnquest.chapter.untitled").getString() : chapter.title();
+            String dependencyTitle = dependency.title().isBlank()
+                    ? Component.translatable("screen.brnquest.quest.untitled").getString() : dependency.title();
+            lines.add(Component.translatable("screen.brnquest.dependency.entry", chapterTitle, dependencyTitle));
         }
         if (quest.dependencies().isEmpty()) lines.add(Component.translatable("screen.brnquest.dependencies.none"));
         return lines;
@@ -4658,7 +4669,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Keeps legacy untitled quests readable without replacing an authored quest title with its first objective. */
     private String objectiveTitleFallback(QuestDefinition quest) {
-        if (quest.tasks().isEmpty()) return "";
+        if (quest.tasks().isEmpty()) return Component.translatable("screen.brnquest.quest.untitled").getString();
         TaskDefinition task = quest.tasks().getFirst();
         String custom = task.config().getOrDefault("title", "");
         if (!custom.isBlank()) return custom;
@@ -4667,8 +4678,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         String itemSnbt = presentation.itemSnbt(view);
         ItemStack stack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
         long stored = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
-        String fallback = presentation.title(new TaskPresentationContext(minecraft, view, status(quest), stored, stack)).getString();
-        return fallback.equals(task.typeId().toString()) ? quest.id().getPath() : fallback;
+        return presentation.title(new TaskPresentationContext(minecraft, view, status(quest), stored, stack)).getString();
     }
 
     /** Locale resolution is presentation-only; the synchronized book retains every source translation. */
@@ -5227,6 +5237,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private record TaskCandidateHitbox(UiRect bounds, TaskDefinition task) {}
+
+    enum ItemChoiceOpenMode {
+        VIEW_CANDIDATES,
+        SELECT_INVENTORY
+    }
 
 
     private record TypedActionKey(ResourceLocation entryId, String action) {}

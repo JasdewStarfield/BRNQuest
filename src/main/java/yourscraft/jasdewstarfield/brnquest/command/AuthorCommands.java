@@ -33,7 +33,7 @@ import java.util.UUID;
 /** Permission-level-2 command facade over the same author services used by the future editor UI. */
 final class AuthorCommands {
     private static final SimpleCommandExceptionType INVALID_CONFIG = new SimpleCommandExceptionType(
-            Component.literal("[INVALID_CONFIG_JSON] Expected a JSON object containing primitive string values"));
+            Component.translatable("command.brnquest.author.invalid_config_json"));
 
     private AuthorCommands() {}
 
@@ -183,8 +183,8 @@ final class AuthorCommands {
         var result = EditSessionService.get().open(player(context), loaded.value());
         if (result.success()) {
             var handle = result.value();
-            context.getSource().sendSuccess(() -> Component.literal("session=" + handle.sessionId()
-                    + " revision=" + handle.session().draftRevision() + " saved=" + handle.session().savedRevision()), false);
+            context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.session",
+                    handle.sessionId().toString(), handle.session().draftRevision(), handle.session().savedRevision()), false);
         }
         return report(context, "session_open", book.toString(), result);
     }
@@ -194,9 +194,8 @@ final class AuthorCommands {
         var result = EditSessionService.get().inspect(player(context), book);
         if (result.success()) {
             var view = result.value();
-            context.getSource().sendSuccess(() -> Component.literal("editor=" + view.editorName()
-                    + " revision=" + view.draftRevision() + " saved=" + view.savedRevision()
-                    + " dirty=" + view.dirty() + " expires_at_tick=" + view.expiresAtTick()), false);
+            context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.status",
+                    view.editorName(), view.draftRevision(), view.savedRevision(), view.dirty(), view.expiresAtTick()), false);
         }
         return report(context, "session_status", book.toString(), result);
     }
@@ -221,8 +220,8 @@ final class AuthorCommands {
     private static int validate(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         ResourceLocation book = book(context);
         var result = new DraftEditService().validate(player(context), session(context), book, revision(context));
-        if (result.value() != null) context.getSource().sendSuccess(() -> Component.literal(
-                "diagnostics=" + result.value().diagnostics().size()), false);
+        if (result.value() != null) context.getSource().sendSuccess(() -> Component.translatable(
+                "command.brnquest.author.diagnostics", result.value().diagnostics().size()), false);
         return report(context, "draft_validate", book.toString(), result);
     }
 
@@ -230,8 +229,8 @@ final class AuthorCommands {
         ResourceLocation book = book(context);
         var result = new DraftEditService().setBookTitle(player(context), session(context), book,
                 revision(context), StringArgumentType.getString(context, "title"));
-        if (result.success()) context.getSource().sendSuccess(() -> Component.literal(
-                "revision=" + result.value().snapshot().draftRevision()), false);
+        if (result.success()) context.getSource().sendSuccess(() -> Component.translatable(
+                "command.brnquest.author.revision", result.value().snapshot().draftRevision()), false);
         return report(context, "draft_set_title", book.toString(), result);
     }
 
@@ -294,8 +293,8 @@ final class AuthorCommands {
 
     private static int reportEdit(CommandContext<CommandSourceStack> context, String action, ResourceLocation object,
                                   AuthorOperationResult<DraftEditResult> result) {
-        if (result.success() && result.value() != null) context.getSource().sendSuccess(() -> Component.literal(
-                "revision=" + result.value().snapshot().draftRevision()), false);
+        if (result.success() && result.value() != null) context.getSource().sendSuccess(() -> Component.translatable(
+                "command.brnquest.author.revision", result.value().snapshot().draftRevision()), false);
         return report(context, action, object.toString(), result);
     }
 
@@ -305,11 +304,13 @@ final class AuthorCommands {
                 StringArgumentType.getString(context, "baseline").toUpperCase(Locale.ROOT));
         var result = new DraftDiffService().preview(player(context), session(context), book, revision(context), baseline);
         if (result.success()) {
-            context.getSource().sendSuccess(() -> Component.literal("changes=" + result.value().entries().size()), false);
+            context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.changes",
+                    result.value().entries().size()), false);
             // Keep command feedback bounded while retaining the complete structured result in the service API.
             result.value().entries().stream().limit(100).forEach(entry -> context.getSource().sendSuccess(
-                    () -> Component.literal(entry.kind() + " " + entry.objectKind() + " " + entry.objectId()
-                            + " " + entry.path() + " [" + entry.before() + " -> " + entry.after() + "]"), false));
+                    () -> Component.translatable("command.brnquest.author.diff_entry", entry.kind().name(),
+                            entry.objectKind().name(), String.valueOf(entry.objectId()), entry.path(),
+                            entry.before(), entry.after()), false));
         }
         return report(context, "draft_diff_" + baseline.name().toLowerCase(Locale.ROOT), book.toString(), result);
     }
@@ -330,16 +331,16 @@ final class AuthorCommands {
         try {
             var result = new WorkspaceDeploymentService().deploy(context.getSource().getServer(), replace);
             if (result.status() == WorkspaceDeploymentService.Status.ALREADY_DEPLOYED) {
-                context.getSource().sendFailure(Component.literal("[WORLD_PACK_EXISTS] Use --replace for a backed-up replacement"));
+                context.getSource().sendFailure(Component.translatable("command.brnquest.author.world_pack_exists"));
                 audit(context, "workspace_deploy", "", "CONFLICT", "WORLD_PACK_EXISTS");
                 return 0;
             }
-            context.getSource().sendSuccess(() -> Component.literal("deployed=" + result.files()
-                    + " backup=" + (result.backup() == null ? "" : result.backup())), true);
+            context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.deployed",
+                    result.files(), result.backup() == null ? "" : result.backup().toString()), true);
             audit(context, "workspace_deploy", "", "SUCCESS", result.status().name());
             return 1;
         } catch (Exception exception) {
-            context.getSource().sendFailure(Component.literal("[WORKSPACE_DEPLOY_FAILED] " + exception.getMessage()));
+            context.getSource().sendFailure(Component.translatable("command.brnquest.author.workspace_deploy_failed"));
             audit(context, "workspace_deploy", "", "IO_FAILURE", "WORKSPACE_DEPLOY_FAILED");
             return 0;
         }
@@ -350,16 +351,14 @@ final class AuthorCommands {
         new WorkspaceDeploymentService().reloadIncludingWorkspace(source.getServer()).whenComplete((ignored, error) -> {
             if (error == null && !yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get()
                     .lastReport().hasFatal()) {
-                source.sendSuccess(() -> Component.literal("[RELOAD_COMPLETE] Active task-book snapshot reconciled"), true);
+                source.sendSuccess(() -> Component.translatable("command.brnquest.author.reload_complete"), true);
                 audit(context, "workspace_reload", "", "SUCCESS", "RELOAD_COMPLETE");
             } else {
-                String message = error == null ? "Task-book validation retained the previous active snapshot"
-                        : error.getMessage();
-                source.sendFailure(Component.literal("[RELOAD_FAILED] " + message));
+                source.sendFailure(Component.translatable("command.brnquest.author.reload_failed"));
                 audit(context, "workspace_reload", "", "IO_FAILURE", "RELOAD_FAILED");
             }
         });
-        source.sendSuccess(() -> Component.literal("[RELOAD_REQUESTED] Server resource reload started"), false);
+        source.sendSuccess(() -> Component.translatable("command.brnquest.author.reload_requested"), false);
         return 1;
     }
 
@@ -368,8 +367,8 @@ final class AuthorCommands {
         if (kind == null) return 0;
         var result = new AuthorBackupService().list(player(context), kind);
         if (result.success()) result.value().forEach(backup -> context.getSource().sendSuccess(
-                () -> Component.literal(backup.id() + " revision=" + backup.revision()
-                        + " files=" + backup.fileCount()), false));
+                () -> Component.translatable("command.brnquest.author.backup_entry", backup.id(),
+                        backup.revision(), backup.fileCount()), false));
         return report(context, "backup_list_" + kind.name().toLowerCase(Locale.ROOT), "", result);
     }
 
@@ -378,10 +377,9 @@ final class AuthorCommands {
         if (kind == null) return 0;
         String backup = StringArgumentType.getString(context, "backup");
         var result = new AuthorBackupService().preview(player(context), kind, backup);
-        if (result.success()) context.getSource().sendSuccess(() -> Component.literal(
-                "current_revision=" + printableRevision(result.value().currentRevision())
-                        + " backup_revision=" + result.value().backup().revision()
-                        + " replace=" + result.value().willReplace()), false);
+        if (result.success()) context.getSource().sendSuccess(() -> Component.translatable(
+                "command.brnquest.author.backup_preview", printableRevision(result.value().currentRevision()),
+                result.value().backup().revision(), result.value().willReplace()), false);
         return report(context, "backup_preview_" + kind.name().toLowerCase(Locale.ROOT), backup, result);
     }
 
@@ -397,7 +395,8 @@ final class AuthorCommands {
 
     private static int report(CommandContext<CommandSourceStack> context, String action, String object,
                               AuthorOperationResult<?> result) {
-        Component message = Component.literal("[" + result.code() + "] " + result.message());
+        Component message = Component.translatable(result.success()
+                ? "command.brnquest.author.result.success" : "command.brnquest.author.result.failure", result.code());
         if (result.success()) context.getSource().sendSuccess(() -> message, false);
         else context.getSource().sendFailure(message);
         audit(context, action, object, result.status().name(), result.code());
@@ -451,8 +450,7 @@ final class AuthorCommands {
         try {
             return BackupKind.valueOf(value.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException exception) {
-            context.getSource().sendFailure(Component.literal(
-                    "[INVALID_BACKUP_KIND] Expected draft, workspace, or deployed"));
+            context.getSource().sendFailure(Component.translatable("command.brnquest.author.invalid_backup_kind"));
             return null;
         }
     }

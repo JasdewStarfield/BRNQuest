@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.data;
 
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
+import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
@@ -19,6 +20,11 @@ public final class QuestBookValidator {
     private QuestBookValidator() {}
 
     public static void validate(QuestBookDefinition book, DiagnosticReport report) {
+        if (book.quests().size() > BrnQuestConstants.MAX_QUESTS) {
+            add(report, Diagnostic.Severity.FATAL, "BQV-124", book.id(),
+                    "Quest count " + book.quests().size() + " exceeds runtime limit "
+                            + BrnQuestConstants.MAX_QUESTS);
+        }
         Set<ResourceLocation> groups = new HashSet<>();
         book.chapterGroups().forEach(group -> {
             if (!group.bookId().equals(book.id())) add(report, Diagnostic.Severity.FATAL, "BQV-110", group.id(), "Chapter group has a different bookId");

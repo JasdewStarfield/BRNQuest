@@ -1,0 +1,6 @@
+{
+  "screen.brnquest_example.reward.experience": "经验奖励",
+  "screen.brnquest_example.reward.experience.title": "%s 点经验值",
+  "screen.brnquest_example.task.marker": "服务端标记条件",
+  "screen.brnquest_example.task.signal": "信号条件"
+}

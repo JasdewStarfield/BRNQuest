@@ -52,6 +52,16 @@ public final class BrnQuestNetwork {
         public static final StreamCodec<ByteBuf, BookChunkPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, BookChunkPayload::revision, ByteBufCodecs.VAR_INT, BookChunkPayload::index, ByteBufCodecs.STRING_UTF8, BookChunkPayload::data, BookChunkPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
+    /** Explicitly tells a compatible client why the active book cannot be transferred. */
+    public record BookSyncFailurePayload(String code, int actual, int maximum) implements CustomPacketPayload {
+        public static final Type<BookSyncFailurePayload> TYPE = payloadType("book_sync_failure");
+        public static final StreamCodec<ByteBuf, BookSyncFailurePayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(64), BookSyncFailurePayload::code,
+                ByteBufCodecs.VAR_INT, BookSyncFailurePayload::actual,
+                ByteBufCodecs.VAR_INT, BookSyncFailurePayload::maximum,
+                BookSyncFailurePayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
     public record ProgressSnapshotPayload(String json, boolean toast) implements CustomPacketPayload {
         public static final Type<ProgressSnapshotPayload> TYPE = payloadType("progress_snapshot");
         public static final StreamCodec<ByteBuf, ProgressSnapshotPayload> CODEC = StreamCodec.composite(ByteBufCodecs.stringUtf8(BrnQuestConstants.MAX_PROGRESS_BYTES), ProgressSnapshotPayload::json, ByteBufCodecs.BOOL, ProgressSnapshotPayload::toast, ProgressSnapshotPayload::new);
@@ -171,6 +181,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, HelloPayload.TYPE, HelloPayload.CODEC, ClientDelegate::hello);
         registerClient(registrar, BookManifestPayload.TYPE, BookManifestPayload.CODEC, ClientDelegate::manifest);
         registerClient(registrar, BookChunkPayload.TYPE, BookChunkPayload.CODEC, ClientDelegate::chunk);
+        registerClient(registrar, BookSyncFailurePayload.TYPE, BookSyncFailurePayload.CODEC, ClientDelegate::bookFailure);
         registerClient(registrar, ProgressSnapshotPayload.TYPE, ProgressSnapshotPayload.CODEC, ClientDelegate::progress);
         registerClient(registrar, ProgressDeltaPayload.TYPE, ProgressDeltaPayload.CODEC, ClientDelegate::delta);
         registerClient(registrar, QuestToastPayload.TYPE, QuestToastPayload.CODEC, ClientDelegate::toast);
@@ -191,13 +202,28 @@ public final class BrnQuestNetwork {
         var snapshot = QuestBookManager.get().active().orElseThrow();
         String json = NativeBookJson.encode(snapshot.book());
         byte[] bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        if (bytes.length > BrnQuestConstants.MAX_BOOK_BYTES || snapshot.book().quests().size() > BrnQuestConstants.MAX_QUESTS) return;
+        if (snapshot.book().quests().size() > BrnQuestConstants.MAX_QUESTS) {
+            rejectBookSync(player, "TOO_MANY_QUESTS", snapshot.book().quests().size(),
+                    BrnQuestConstants.MAX_QUESTS, snapshot.revision());
+            return;
+        }
+        if (bytes.length > BrnQuestConstants.MAX_BOOK_BYTES) {
+            rejectBookSync(player, "BOOK_TOO_LARGE", bytes.length,
+                    BrnQuestConstants.MAX_BOOK_BYTES, snapshot.revision());
+            return;
+        }
         // Minecraft's generic UTF-8 string codec caps a single String at 32,767
         // characters, independently of BRNQuest's 256 KiB logical chunk limit.
         // Staying below both limits also leaves room for the revision and index.
         List<String> chunks = split(json, BOOK_CHUNK_CHARACTERS);
         send(player, new BookManifestPayload(snapshot.book().id().toString(), snapshot.revision(), chunks.size(), bytes.length));
         for (int i = 0; i < chunks.size(); i++) send(player, new BookChunkPayload(snapshot.revision(), i, chunks.get(i)));
+    }
+
+    private static void rejectBookSync(ServerPlayer player, String code, int actual, int maximum, String revision) {
+        BRNQuest.LOGGER.error("[BRNQuest/NETWORK] Refusing active book sync to {}: code={} actual={} maximum={} revision={}",
+                player.getGameProfile().getName(), code, actual, maximum, revision);
+        send(player, new BookSyncFailurePayload(code, actual, maximum));
     }
 
     public static void syncProgress(ServerPlayer player, boolean changed) {
@@ -270,6 +296,7 @@ public final class BrnQuestNetwork {
         static void hello(HelloPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.hello(p); }
         static void manifest(BookManifestPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.manifest(p); }
         static void chunk(BookChunkPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.chunk(p); }
+        static void bookFailure(BookSyncFailurePayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.bookFailure(p); }
         static void progress(ProgressSnapshotPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.progress(p); }
         static void delta(ProgressDeltaPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.delta(p); }
         static void toast(QuestToastPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.toast(p); }

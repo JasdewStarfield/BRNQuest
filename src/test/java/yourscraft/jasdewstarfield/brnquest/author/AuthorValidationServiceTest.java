@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.author;
 
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
@@ -10,6 +11,7 @@ import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -70,6 +72,34 @@ class AuthorValidationServiceTest {
 
         assertTrue(diagnostics.stream().anyMatch(value -> value.code().equals("BQA-106")));
         assertTrue(AuthorValidationService.blocksCommit(diagnostics));
+    }
+
+    @Test
+    void authoringRejectsTheFirstQuestBeyondTheSharedTransferLimit() {
+        ResourceLocation bookId = ResourceLocation.parse("test:book");
+        ResourceLocation groupId = ResourceLocation.parse("test:group");
+        ResourceLocation chapterId = ResourceLocation.parse("test:chapter");
+        List<QuestDefinition> quests = new ArrayList<>(BrnQuestConstants.MAX_QUESTS + 1);
+        for (int index = 0; index <= BrnQuestConstants.MAX_QUESTS; index++) {
+            quests.add(new QuestDefinition(bookId, ResourceLocation.fromNamespaceAndPath("test", "quest_" + index),
+                    chapterId, "Quest " + index, "", "", "", index, 0,
+                    List.of(), List.of(), List.of(), ""));
+        }
+        ChapterDefinition chapter = new ChapterDefinition(bookId, chapterId, groupId,
+                "Chapter", "", 0, quests);
+        QuestBookDefinition oversized = new QuestBookDefinition(bookId, 1, "Book",
+                List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of());
+
+        var diagnostics = AuthorValidationService.full(oversized);
+        var diagnostic = diagnostics.stream()
+                .filter(value -> value.code().equals("BQA-201") && value.path().equals("quests"))
+                .findFirst().orElseThrow();
+        assertTrue(diagnostics.stream()
+                .anyMatch(value -> value.code().equals("BQV-124")
+                        && value.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.FATAL));
+
+        assertTrue(diagnostic.message().contains(Integer.toString(BrnQuestConstants.MAX_QUESTS)));
+        assertTrue(AuthorValidationService.blocksCommit(List.of(diagnostic)));
     }
 
     private static QuestBookDefinition book(String questTitle) {

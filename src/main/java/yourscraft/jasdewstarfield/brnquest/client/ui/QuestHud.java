@@ -21,7 +21,8 @@ public final class QuestHud {
             if (quest == null || !ClientQuestState.get().visible(quest.id())) return;
             int taskLines = Math.min(3, quest.tasks().size());
             String questTitle = QuestPresentation.questTitle(quest.title(), () -> quest.tasks().isEmpty()
-                    ? quest.id().getPath() : taskTitle(minecraft, quest.tasks().getFirst()));
+                    ? net.minecraft.network.chat.Component.translatable("screen.brnquest.quest.untitled").getString()
+                    : taskTitle(minecraft, quest.tasks().getFirst()));
             int width = Math.max(120, minecraft.font.width(questTitle) + 20);
             int left = graphics.guiWidth() - width - 8;
             int bottom = 30 + taskLines * 11;

@@ -1,0 +1,6 @@
+{
+  "screen.brnquest_example.reward.experience": "Experience reward",
+  "screen.brnquest_example.reward.experience.title": "%s experience points",
+  "screen.brnquest_example.task.marker": "Server marker objective",
+  "screen.brnquest_example.task.signal": "Signal objective"
+}

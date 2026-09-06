@@ -30,6 +30,7 @@ public final class ClientQuestState {
     private Map<String, Long> nextAvailable = Map.of();
     private final Set<String> pendingTaskSubmissions = new HashSet<>();
     private ResourceLocation selected;
+    private String bookSyncFailure = "";
 
     private ClientQuestState() {}
     public static ClientQuestState get() { return INSTANCE; }
@@ -49,26 +50,78 @@ public final class ClientQuestState {
 
     public boolean isTaskSubmissionPending(String taskId) { return pendingTaskSubmissions.contains(taskId); }
 
-    public void begin(String revision, int chunkCount, int decodedBytes) {
-        if (chunkCount < 1 || decodedBytes < 0 || decodedBytes > BrnQuestConstants.MAX_BOOK_BYTES) throw new IllegalArgumentException("Unsafe book manifest");
+    public String bookSyncFailure() { return bookSyncFailure; }
+
+    public boolean begin(String revision, int chunkCount, int decodedBytes) {
+        if (revision == null || revision.isBlank() || chunkCount < 1
+                || chunkCount > BrnQuestConstants.MAX_BOOK_CHUNKS || decodedBytes < 0
+                || decodedBytes > BrnQuestConstants.MAX_BOOK_BYTES) {
+            abortBookTransfer("INVALID_MANIFEST");
+            return false;
+        }
         expectedRevision = revision;
         expectedChunks = chunkCount;
         expectedBytes = decodedBytes;
         chunks.clear();
+        bookSyncFailure = "";
+        return true;
     }
 
     public boolean acceptChunk(String revision, int index, String data) {
-        if (!expectedRevision.equals(revision) || index < 0 || index >= expectedChunks || data.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_BOOK_CHUNK_BYTES) return false;
-        chunks.putIfAbsent(index, data);
+        // A late chunk from a superseded transfer must not cancel the current manifest.
+        if (expectedRevision.isBlank() || !expectedRevision.equals(revision)) return false;
+        if (data == null || index < 0 || index >= expectedChunks
+                || data.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_BOOK_CHUNK_BYTES) {
+            abortBookTransfer("INVALID_CHUNK");
+            return false;
+        }
+        String previous = chunks.putIfAbsent(index, data);
+        if (previous != null && !previous.equals(data)) {
+            abortBookTransfer("CONFLICTING_CHUNK");
+            return false;
+        }
         if (chunks.size() != expectedChunks) return false;
-        StringBuilder json = new StringBuilder();
-        for (int i = 0; i < expectedChunks; i++) json.append(chunks.get(i));
-        if (json.toString().getBytes(StandardCharsets.UTF_8).length != expectedBytes) return false;
-        QuestBookSnapshot candidate = QuestBookSnapshot.of(NativeBookJson.decode(JsonParser.parseString(json.toString()).getAsJsonObject()));
-        if (!candidate.revision().equals(expectedRevision) || candidate.book().quests().size() > BrnQuestConstants.MAX_QUESTS) return false;
-        book = candidate;
+        try {
+            StringBuilder json = new StringBuilder();
+            for (int i = 0; i < expectedChunks; i++) {
+                String chunk = chunks.get(i);
+                if (chunk == null) throw new IllegalArgumentException("Missing book chunk");
+                json.append(chunk);
+            }
+            if (json.toString().getBytes(StandardCharsets.UTF_8).length != expectedBytes) {
+                throw new IllegalArgumentException("Book byte count does not match its manifest");
+            }
+            QuestBookSnapshot candidate = QuestBookSnapshot.of(
+                    NativeBookJson.decode(JsonParser.parseString(json.toString()).getAsJsonObject()));
+            if (!candidate.revision().equals(expectedRevision)
+                    || candidate.book().quests().size() > BrnQuestConstants.MAX_QUESTS) {
+                throw new IllegalArgumentException("Book identity or capacity does not match its manifest");
+            }
+            // The previous snapshot remains authoritative until the complete candidate passes every check.
+            book = candidate;
+            clearBookTransfer();
+            bookSyncFailure = "";
+            return true;
+        } catch (RuntimeException exception) {
+            abortBookTransfer("INVALID_BOOK");
+            return false;
+        }
+    }
+
+    public void bookSyncFailed(String code) {
+        abortBookTransfer(code == null || code.isBlank() ? "UNKNOWN" : code);
+    }
+
+    private void abortBookTransfer(String code) {
+        clearBookTransfer();
+        bookSyncFailure = code;
+    }
+
+    private void clearBookTransfer() {
+        expectedRevision = "";
+        expectedChunks = 0;
+        expectedBytes = 0;
         chunks.clear();
-        return true;
     }
 
     public void progress(String json) {
@@ -88,5 +141,20 @@ public final class ClientQuestState {
 
     public Optional<ResourceLocation> trackedQuest() {
         return statuses.entrySet().stream().filter(e -> e.getValue() == QuestStatus.ACTIVE).map(e -> ResourceLocation.tryParse(e.getKey())).filter(Objects::nonNull).findFirst();
+    }
+
+    synchronized void resetForTest() {
+        book = null;
+        statuses = Map.of();
+        taskProgress = Map.of();
+        claimed = Set.of();
+        visible = Set.of();
+        visibilityAuthoritative = false;
+        completionCycles = Map.of();
+        nextAvailable = Map.of();
+        pendingTaskSubmissions.clear();
+        selected = null;
+        bookSyncFailure = "";
+        clearBookTransfer();
     }
 }

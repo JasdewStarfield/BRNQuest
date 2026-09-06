@@ -237,13 +237,13 @@ public final class AdminProgressScreen extends Screen {
             body.add(text("confirm_hint"));
         }
         if (page == Page.TECHNICAL) {
-            body.add(Component.literal("Player: " + (selected == null ? "" : selected.id())));
-            body.add(Component.literal("Quest: " + questId));
-            if (!taskId.isEmpty()) body.add(Component.literal("Task: " + taskId));
-            body.add(Component.literal("Book: " + bookId));
-            body.add(Component.literal("Active revision: " + revision));
-            if (view != null) body.add(Component.literal("Owner: " + view.owner()));
-            body.add(Component.literal("Result: " + code));
+            body.add(text("technical.player", selected == null ? "" : selected.id()));
+            body.add(text("technical.quest", questId));
+            if (!taskId.isEmpty()) body.add(text("technical.task", taskId));
+            body.add(text("technical.book", bookId));
+            body.add(text("technical.revision", revision));
+            if (view != null) body.add(text("technical.owner", view.owner()));
+            body.add(text("technical.result", code));
         }
         return body.stream().flatMap(line -> MixedTextLayout.split(font, line, availableWidth).stream()).toList();
     }

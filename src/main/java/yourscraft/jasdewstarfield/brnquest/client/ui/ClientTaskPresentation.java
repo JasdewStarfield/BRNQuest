@@ -17,8 +17,8 @@ public interface ClientTaskPresentation {
     default NodeStyle nodeStyle(TaskView task) { return NodeStyle.PLACEHOLDER; }
     default String itemSnbt(TaskView task) { return ""; }
     default String symbol(TaskView task) { return "?"; }
-    /** Localized type label used by authoring lists; unknown extensions retain their full ID. */
-    default Component typeName(TaskView task) { return Component.literal(task.typeId().toString()); }
+    /** Player-facing fallback stays localizable; authoring technical details retain the full type ID separately. */
+    default Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.unknown"); }
     default boolean interactive(TaskView task) { return false; }
     default boolean acceptsQuestCompletionIntent(TaskView task) { return false; }
 
@@ -34,7 +34,8 @@ public interface ClientTaskPresentation {
 
     default Component title(TaskPresentationContext context) {
         String configured = context.task().config().getOrDefault("title", "");
-        return Component.literal(configured.isBlank() ? context.task().typeId().toString() : configured);
+        return configured.isBlank() ? Component.translatable("screen.brnquest.task.unknown")
+                : Component.literal(configured);
     }
 
     /** Detail-row title; built-in item tasks add their consume/observe semantics here. */

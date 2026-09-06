@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.author;
 
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
+import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
@@ -21,7 +22,6 @@ public final class AuthorValidationService {
     private static final int MAX_DESCRIPTION = 32_768;
     private static final int MAX_GROUPS = 256;
     private static final int MAX_CHAPTERS = 2_048;
-    private static final int MAX_QUESTS = 65_536;
 
     private AuthorValidationService() {}
 
@@ -49,7 +49,7 @@ public final class AuthorValidationService {
     private static void validateLimits(QuestBookDefinition book, DiagnosticReport report) {
         limit(report, book.id(), "chapter_groups", book.chapterGroups().size(), MAX_GROUPS);
         limit(report, book.id(), "chapters", book.chapters().size(), MAX_CHAPTERS);
-        limit(report, book.id(), "quests", book.quests().size(), MAX_QUESTS);
+        limit(report, book.id(), "quests", book.quests().size(), BrnQuestConstants.MAX_QUESTS);
     }
 
     private static void limit(DiagnosticReport report, ResourceLocation bookId, String path,

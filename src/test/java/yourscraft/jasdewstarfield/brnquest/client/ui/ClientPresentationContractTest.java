@@ -37,6 +37,8 @@ class ClientPresentationContractTest {
                 ClientTaskPresentationRegistry.get(foreignSamePath.typeId()).nodeStyle(foreignSamePath));
         assertEquals("?", ClientTaskPresentationRegistry.get(foreignSamePath.typeId()).symbol(foreignSamePath));
         assertFalse(ClientTaskPresentationRegistry.get(foreignSamePath.typeId()).interactive(foreignSamePath));
+        assertEquals(Component.translatable("screen.brnquest.type.task.unknown"),
+                ClientTaskPresentationRegistry.get(foreignSamePath.typeId()).typeName(foreignSamePath));
     }
 
     @Test void builtInAndUnknownRewardTypesKeepDistinctPresentation() {
@@ -49,6 +51,8 @@ class ClientPresentationContractTest {
                 ClientRewardPresentationRegistry.get(item.typeId()).typeName(item));
         assertEquals("?", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).symbol(foreignSamePath));
         assertEquals("", ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).itemSnbt(foreignSamePath));
+        assertEquals(Component.translatable("screen.brnquest.type.reward.unknown"),
+                ClientRewardPresentationRegistry.get(foreignSamePath.typeId()).typeName(foreignSamePath));
     }
 
     @Test void itemChoicePresentationAdvertisesItsSecondaryCandidateMenu() {

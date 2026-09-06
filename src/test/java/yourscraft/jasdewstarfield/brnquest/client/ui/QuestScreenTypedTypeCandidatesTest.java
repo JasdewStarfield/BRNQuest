@@ -15,7 +15,7 @@ class QuestScreenTypedTypeCandidatesTest {
         ResourceLocation unavailable = ResourceLocation.parse("missing:historical");
         ResourceLocation legacyAlias = ResourceLocation.parse("brnquest:item_choice");
 
-        List<ResourceLocation> candidates = QuestScreen.creatableTypeCandidates(
+        List<ResourceLocation> candidates = QuestTypePickerModel.creatableTypeCandidates(
                 Set.of(unavailable, legacyAlias, extension, builtIn),
                 type -> !type.equals(unavailable), legacyAlias);
 

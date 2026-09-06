@@ -194,12 +194,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorPickerList<QuestDependencyEditorModel.Candidate> dependencyPicker = new EditorPickerList<>();
     private Component dependencyEditorMessage;
     private boolean typedEditorOpen;
-    private TypedKind typedEditorKind = TypedKind.TASK;
+    private QuestTypedEntryKind typedEditorKind = QuestTypedEntryKind.TASK;
     private ResourceLocation typedEditorQuestId;
-    private final EditorEntryListPanel<ResourceLocation, TypedActionKey> typedEntries = new EditorEntryListPanel<>();
-    // The rendered frame is usable only while the same authoritative display snapshot is installed.
-    private QuestBookSnapshot typedListSnapshot;
+    private final QuestTypedEntryListSection typedEntryList = new QuestTypedEntryListSection();
     private final EditorPickerList<ResourceLocation> typedTypePicker = new EditorPickerList<>();
+    private QuestTypePickerModel.Frame typedTypePickerFrame;
     private Component typedEditorMessage;
     private boolean typedPropertyOpen;
     private ResourceLocation typedPropertyOriginalId;
@@ -275,8 +274,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         navigationPanel.invalidate();
         configureOverlayRoutes();
         // Resize/return from a child invalidates old hit geometry, not the remembered scroll position.
-        typedListSnapshot = null;
-        typedEntries.actions().clear();
+        typedEntryList.invalidate();
+        typedTypePickerFrame = null;
         dependencyList.invalidate();
         dependencyListSnapshot = null;
         dependencyActions.clear();
@@ -1011,11 +1010,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 return true;
             }
             if (ClientEditorState.get().editing() && questTaskButtonBounds().contains(mouseX, mouseY)) {
-                openTypedEditor(selected, TypedKind.TASK);
+                openTypedEditor(selected, QuestTypedEntryKind.TASK);
                 return true;
             }
             if (ClientEditorState.get().editing() && questRewardButtonBounds().contains(mouseX, mouseY)) {
-                openTypedEditor(selected, TypedKind.REWARD);
+                openTypedEditor(selected, QuestTypedEntryKind.REWARD);
                 return true;
             }
             if (ClientEditorState.get().editing() && questPropertyButtonBounds().contains(mouseX, mouseY)) {
@@ -1211,7 +1210,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         if (typedEditorOpen && detailsPanelAcceptsPointer(x)) {
-            if (typedListInputReady()) typedEntries.list().mouseScrolled(x, y, vertical, scrollStep());
+            typedEntryList.mouseScrolled(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
+                    typedListInputReady(),
+                    x, y, vertical, scrollStep());
             return true;
         }
         if (navigationPanelVisibleAt(x) && isContentY(y)) {
@@ -1256,11 +1257,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         // The composed list follows its visible action order, including footer controls.
         if (typedListInputReady() && keyCode == 258) {
-            typedEntries.actions().focusNext(hasShiftDown());
-            return true;
+            return typedEntryList.focusNext(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
+                    true, hasShiftDown());
         }
         if (typedListInputReady() && (keyCode == 257 || keyCode == 335 || keyCode == 32)) {
-            return typedEntries.actions().activateFocused();
+            return typedEntryList.activateFocused(currentFrameIdentity(), typedEditorQuestId, typedEditorKind, true)
+                    .map(intent -> {
+                        handleTypedListIntent(intent);
+                        return true;
+                    }).orElse(false);
         }
         if (editorKeyboardSurfaceReady() && keyCode == 258) {
             // Follow visible left-to-right controls; live mode has no hidden save/publish tab stops.
@@ -1329,9 +1334,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientEditorState editor = ClientEditorState.get();
         Component status = editorStatus();
         if (!editor.hasLease()) return super.getNarrationMessage();
-        if (typedListInputReady() && typedEntries.actions().narration().isPresent()) {
+        Optional<Component> typedNarration = typedEntryList.narration(currentFrameIdentity(), typedEditorQuestId,
+                typedEditorKind, typedListInputReady());
+        if (typedNarration.isPresent()) {
             return Component.translatable("screen.brnquest.editor.narration", getTitle(),
-                    status == null ? "" : status, typedEntries.actions().narration().orElseThrow());
+                    status == null ? "" : status, typedNarration.orElseThrow());
         }
         Component action = editorKeyboardFocus < 0 ? Component.translatable("screen.brnquest.editor.keyboard.help")
                 : Component.translatable("screen.brnquest.editor.keyboard.focus",
@@ -1374,8 +1381,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         openDetailsPanel();
         switch (panel) {
             case 0 -> openQuestEditor(quest);
-            case 1 -> openTypedEditor(quest, TypedKind.TASK);
-            case 2 -> openTypedEditor(quest, TypedKind.REWARD);
+            case 1 -> openTypedEditor(quest, QuestTypedEntryKind.TASK);
+            case 2 -> openTypedEditor(quest, QuestTypedEntryKind.REWARD);
             case 3 -> openDependencyEditor(quest);
             default -> { }
         }
@@ -1758,7 +1765,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     .action("DELETE_TYPED", Component.translatable(
                             "screen.brnquest.editor.context.delete"), true)).stream()
                     .filter(entry -> !(entry.action().equals("ADMIN_TASK") || entry.action().startsWith("SELF_"))
-                            || typedEditorKind == TypedKind.TASK && hasAdminProgressPermission()).toList();
+                            || typedEditorKind == QuestTypedEntryKind.TASK && hasAdminProgressPermission()).toList();
             case DEPENDENCY_ENTRY -> EditorPopupMenu.menu(menu -> menu
                     .submenu(Component.translatable("screen.brnquest.editor.context.technical"), technical -> technical
                             .action("COPY_DEPENDENCY_ID", Component.translatable(
@@ -1841,7 +1848,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case "COPY_TYPED_ID" -> copyTechnicalId(typedId.toString());
             case "COPY_TYPED_TYPE" -> {
-                TypedEntry entry = typedEditorKind.entry(quest, typedId);
+                QuestTypedEntryKind.Entry entry = typedEditorKind.entry(quest, typedId);
                 if (entry != null) copyTechnicalId(entry.typeId().toString());
             }
             case "DELETE_TYPED" ->
@@ -1955,6 +1962,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case TYPED_TYPE_PICKER -> {
                 // Esc, outside clicks and the visible close button share this path.
                 typedTypePicker.reset();
+                typedTypePickerFrame = null;
                 editorOverlays.close();
             }
             case QUICK_TEXT -> closeQuickTextEditor();
@@ -2582,120 +2590,92 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderTypedEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
         if (typedPropertyOpen) {
-            typedEntries.actions().clear();
-            typedListSnapshot = null;
+            typedEntryList.invalidate();
             renderTypedPropertyEditor(graphics, quest, mouseX, mouseY);
             return;
         }
         int offset = detailsDrawerOffsetX();
-        // The parent draws the drawer with a translated pose. Composable elements use screen-space
-        // rectangles instead: undo that pose once, translate their bounds once, and share with input.
-        graphics.pose().pushPose();
-        graphics.pose().translate(-offset, 0, 0);
-        try {
-            int left = detailLeft() + 10 + offset;
-            int right = width - 10 + offset;
-            graphics.fill(detailLeft() + 4 + offset, topToolbarHeight() + 4, width - 4 + offset,
-                    height - bottomToolbarHeight() - 4, 0xFF202632);
-            graphics.drawString(font, Component.translatable(typedEditorKind.headingKey()),
-                    left, topToolbarHeight() + 12, 0xFFFFFFFF, false);
-            EditorListViewport vertical = typedEditorViewport();
-            UiRect bounds = new UiRect(left, vertical.top(), right, vertical.bottom());
-            UiRect screenClip = new UiRect(canvasRight(), topToolbarHeight(), width, height - bottomToolbarHeight());
-            typedListSnapshot = displaySnapshot();
-            List<EditorActionGroup.Placed<TypedActionKey>> actions = new ArrayList<>();
-            boolean enabled = !ClientEditorState.get().busy();
-            if (typedEditorMessage != null) {
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                                typedEditorMessage.getString(), detailsWidth() - 24)),
-                        left, typedEditorAddBounds().top() - 12, 0xFFFFA070, false);
-            }
-            Component add = Component.translatable("screen.brnquest.editor.typed.add");
-            actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
-                    new TypedActionKey(null, "add"), EditorButton.Definition.iconAndText(add, add,
-                    EditorIcon.glyph(Component.literal("+"))), enabled, EditorButton.Tone.PRIMARY,
-                    (x, y) -> {
-                        if (!typedListInputReady() || ClientEditorState.get().busy()) return;
-                        typedTypePicker.reset();
-                        typedEditorMessage = null;
-                        editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
-                    }), typedEditorAddBounds().translated(offset, 0), screenClip));
-            actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
-                    new TypedActionKey(null, "done"), EditorButton.Definition.text(Component.translatable("gui.done"), null),
-                    true, EditorButton.Tone.NEUTRAL, (x, y) -> closeTypedEditor()),
-                    typedEditorDoneBounds().translated(offset, 0), screenClip));
-            var hover = typedEntries.render(graphics, font, bounds, screenClip, width - 8 + offset,
-                    TYPED_ROW_HEIGHT, typedEditorKind.size(quest), index -> typedEditorKind.value(quest, index).id(),
-                    currentMotionFrameSeconds, scrollSmoothSpeed(), row -> {
-                        TypedValue value = typedEditorKind.value(quest, row.index());
-                        TypedRowPresentation presentation = typedRowPresentation(quest, row.index());
-                        boolean known = typedEditorKind.known(value.typeId());
-                        EditorIcon icon = presentation.stack().isEmpty()
-                                ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack());
-                        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, presentation.typeName(),
-                                typedRowSummary(quest, row.index(), known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.stack());
-                    }, id -> List.of(typedEntryAction(id, "edit", "✎", enabled),
-                            typedEntryAction(id, "more", "⋯", enabled)), actions,
-                    Component.translatable("screen.brnquest.editor.typed.empty"), mouseX, mouseY);
-            if (hover.item() != null) {
-                hoveredRecipeLookupTarget = hover.item();
-                hoveredDetailStack = hover.item().stack();
-            }
-            if (!hover.tooltip().isEmpty()) hoveredComponentTooltip = hover.tooltip();
-        } finally {
-            graphics.pose().popPose();
+        int left = detailLeft() + 10 + offset;
+        int right = width - 10 + offset;
+        EditorListViewport vertical = typedEditorViewport();
+        UiRect screenClip = new UiRect(canvasRight(), topToolbarHeight(), width, height - bottomToolbarHeight());
+        QuestTypedEntryListSection.Model model = new QuestTypedEntryListSection.Model(
+                currentFrameIdentity(), quest.id(), typedEditorKind,
+                Component.translatable(typedEditorKind.headingKey()),
+                typedEditorMessage, !ClientEditorState.get().busy(), typedEditorKind.size(quest),
+                index -> typedEditorKind.value(quest, index).id(), row -> typedRowContent(quest, row.index()));
+        QuestTypedEntryListSection.Layout sectionLayout = new QuestTypedEntryListSection.Layout(offset,
+                new UiRect(detailLeft() + 4 + offset, topToolbarHeight() + 4,
+                        width - 4 + offset, height - bottomToolbarHeight() - 4),
+                new UiRect(left, vertical.top(), right, vertical.bottom()), screenClip, width - 8 + offset,
+                typedEditorAddBounds().translated(offset, 0), typedEditorDoneBounds().translated(offset, 0),
+                detailsWidth() - 24);
+        var result = typedEntryList.render(graphics, font, model, sectionLayout, TYPED_ROW_HEIGHT,
+                currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
+        var hover = result.hover();
+        if (hover.item() != null) {
+            hoveredRecipeLookupTarget = hover.item();
+            hoveredDetailStack = hover.item().stack();
         }
-    }
-
-    private EditorActionGroup.Action<TypedActionKey> typedEntryAction(ResourceLocation id, String action,
-                                                                     String glyph, boolean enabled) {
-        Component label = Component.translatable("screen.brnquest.editor.action." + action);
-        return new EditorActionGroup.Action<>(new TypedActionKey(id, action),
-                EditorButton.Definition.iconOnly(label, label, EditorIcon.glyph(Component.literal(glyph))),
-                enabled, EditorButton.Tone.PRIMARY, (x, y) -> {
-                    if (!typedListInputReady() || ClientEditorState.get().busy()) return;
-                    QuestDefinition quest = selectedQuest();
-                    if (quest == null || typedEditorKind.entry(quest, id) == null) return;
-                    if ("edit".equals(action)) openTypedPropertyEditor(quest, id);
-                    else openTypedEntryContext(id, x.intValue(), y.intValue());
-                });
+        if (!hover.tooltip().isEmpty()) hoveredComponentTooltip = hover.tooltip();
     }
 
     private boolean handleTypedEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
         if (typedPropertyOpen) return handleTypedPropertyEditorClick(mouseX, mouseY);
-        if (!typedListInputReady()) return true;
-        if (typedEntries.list().mouseClicked(mouseX, mouseY, button)) return true;
-        if (typedEntries.actions().mouseClicked(mouseX, mouseY, button)) return true;
-        if (ClientEditorState.get().busy()) return true;
-        typedEntries.list().rowAt(mouseX, mouseY).ifPresent(row -> {
-            QuestDefinition quest = selectedQuest();
-            if (quest == null || typedEditorKind.entry(quest, row.key()) == null) return;
-            if (button == 1) openTypedEntryContext(row.key(), (int) mouseX, (int) mouseY);
-            else openTypedPropertyEditor(quest, row.key());
-        });
+        typedEntryList.mouseClicked(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
+                        typedListInputReady(),
+                        ClientEditorState.get().busy(), mouseX, mouseY, button)
+                .ifPresent(this::handleTypedListIntent);
         return true;
     }
 
-    /** Do not dispatch old row callbacks after a network update, mode switch or overlay transition. */
+    private void handleTypedListIntent(QuestTypedEntryListSection.Intent intent) {
+        if (intent.action() == QuestTypedEntryListSection.Action.ADD) {
+            typedTypePicker.reset();
+            typedTypePickerFrame = null;
+            typedEditorMessage = null;
+            editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
+            return;
+        }
+        if (intent.action() == QuestTypedEntryListSection.Action.DONE) {
+            closeTypedEditor();
+            return;
+        }
+        QuestDefinition quest = selectedQuest();
+        if (quest == null || intent.entryId() == null || typedEditorKind.entry(quest, intent.entryId()) == null) return;
+        if (intent.action() == QuestTypedEntryListSection.Action.EDIT) {
+            openTypedPropertyEditor(quest, intent.entryId());
+        } else {
+            openTypedEntryContext(intent.entryId(), intent.x(), intent.y());
+        }
+    }
+
+    /** Old list geometry is rejected after a data, mode, overlay or drawer transition. */
     private boolean typedListInputReady() {
-        return typedEditorOpen && !typedPropertyOpen && typedListSnapshot != null
-                && ClientEditorState.get().editing()
-                && typedListSnapshot == displaySnapshot()
+        return typedEditorOpen && !typedPropertyOpen && ClientEditorState.get().editing()
                 && selectedQuest() != null && selectedQuest().id().equals(typedEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && detailsOpen && detailsDrawerMotion.current() >= 1.0;
     }
 
     private void resetTypedList() {
-        typedEntries.list().reset();
-        typedEntries.actions().clear();
-        typedListSnapshot = null;
+        typedEntryList.reset();
+    }
+
+    private EditorEntryListPanel.Content typedRowContent(QuestDefinition quest, int index) {
+        QuestTypedEntryKind.Value value = typedEditorKind.value(quest, index);
+        TypedRowPresentation presentation = typedRowPresentation(quest, index);
+        boolean known = typedEditorKind.known(value.typeId());
+        EditorIcon icon = presentation.stack().isEmpty()
+                ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack());
+        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, presentation.typeName(),
+                typedRowSummary(quest, index, known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.stack());
     }
 
     private Component typedRowSummary(QuestDefinition quest, int index, boolean known) {
         if (!known) return Component.translatable("screen.brnquest.editor.typed.summary.unknown");
-        if (typedEditorKind == TypedKind.TASK) {
+        if (typedEditorKind == QuestTypedEntryKind.TASK) {
             TaskDefinition task = quest.tasks().get(index);
             return Component.translatable(task.optional()
                             ? "screen.brnquest.editor.typed.summary.task_optional"
@@ -2710,7 +2690,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private TypedRowPresentation typedRowPresentation(QuestDefinition quest, int index) {
-        if (typedEditorKind == TypedKind.TASK) {
+        if (typedEditorKind == QuestTypedEntryKind.TASK) {
             TaskDefinition task = quest.tasks().get(index);
             var view = ApiViews.task(task);
             var presentation = ClientTaskPresentationRegistry.get(task.typeId());
@@ -2730,7 +2710,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void openTypedPropertyEditor(QuestDefinition quest, ResourceLocation typedId) {
-        TypedEntry entry = typedEditorKind.entry(quest, typedId);
+        QuestTypedEntryKind.Entry entry = typedEditorKind.entry(quest, typedId);
         if (entry == null || ClientEditorState.get().busy()) return;
         typedPropertyOpen = true;
         typedPropertyCreating = false;
@@ -2744,7 +2724,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyServerIssues.clear();
         typedFields.field("id").setValue(entry.id().toString());
         typedFields.field("claim").setValue(entry.claimPolicy());
-        typedPropertySchema = typedEditorKind == TypedKind.TASK
+        typedPropertySchema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
                 : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
         // Item tasks project both historical config shapes into one canonical editor model.
@@ -2776,7 +2756,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyServerIssues.clear();
         typedFields.field("id").setValue(id.toString());
         typedFields.field("claim").setValue("manual");
-        typedPropertySchema = typedEditorKind == TypedKind.TASK
+        typedPropertySchema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(new yourscraft.jasdewstarfield.brnquest.api.TaskView(
                         snapshot.book().id(), id, typeId, Map.of(), false))
                 : ConfigEditorSchemas.forReward(new yourscraft.jasdewstarfield.brnquest.api.RewardView(
@@ -2821,7 +2801,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         x, y + 5, 0xFFFFA070, false);
             });
         }
-        if (typedEditorKind == TypedKind.TASK) {
+        if (typedEditorKind == QuestTypedEntryKind.TASK) {
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.optional",
                     typedPropertyOptional, x, y, w, mouseX, mouseY));
         } else {
@@ -2844,9 +2824,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Component typedTypeName(QuestDefinition quest, ResourceLocation typedId) {
-        TypedEntry entry = typedEditorKind.entry(quest, typedId);
+        QuestTypedEntryKind.Entry entry = typedEditorKind.entry(quest, typedId);
         if (entry == null) return Component.literal(typedPropertyTypeId == null ? "" : typedPropertyTypeId.toString());
-        return typedEditorKind == TypedKind.TASK
+        return typedEditorKind == QuestTypedEntryKind.TASK
                 ? ClientTaskPresentationRegistry.get(entry.typeId()).typeName(ApiViews.task(entry.task()))
                 : ClientRewardPresentationRegistry.get(entry.typeId()).typeName(ApiViews.reward(entry.reward()));
     }
@@ -2943,7 +2923,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             prepareTypedPropertyEdit();
             return true;
         }
-        if (typedEditorKind == TypedKind.REWARD && typedClaimDropdownBounds != null
+        if (typedEditorKind == QuestTypedEntryKind.REWARD && typedClaimDropdownBounds != null
                 && typedClaimDropdownBounds.contains(mouseX, mouseY)) {
             openEnumDropdown(typedClaimDropdownBounds, REWARD_CLAIM_POLICIES,
                     typedFields.field("claim")::setValue);
@@ -2978,12 +2958,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             openTypedPropertyRawEditor();
             return true;
         }
-        if (typedEditorKind == TypedKind.TASK
+        if (typedEditorKind == QuestTypedEntryKind.TASK
                 && typedPropertySemanticBounds(semanticsTop).contains(mouseX, mouseY)) {
             typedPropertyOptional = !typedPropertyOptional;
             return true;
         }
-        if (typedEditorKind == TypedKind.REWARD
+        if (typedEditorKind == QuestTypedEntryKind.REWARD
                 && typedPropertySemanticBounds(semanticsTop + 22).contains(mouseX, mouseY)) {
             typedPropertyTeamReward = !typedPropertyTeamReward;
             return true;
@@ -3171,7 +3151,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
             return;
         }
-        if (typedEditorKind == TypedKind.REWARD && typedFields.field("claim").getValue().isBlank()) {
+        if (typedEditorKind == QuestTypedEntryKind.REWARD && typedFields.field("claim").getValue().isBlank()) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.claim_required");
             typedPropertyServerIssues.put("claim_policy", typedPropertyMessage.getString());
             setFocused(typedFields.field("claim"));
@@ -3181,9 +3161,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         String action = (typedPropertyCreating ? "ADD_" : "UPDATE_") + typedEditorKind.actionPrefix();
         ResourceLocation source = typedPropertyCreating ? typedPropertyTypeId : typedPropertyOriginalId;
         if (!sendMutation(action, replacementId, typedEditorQuestId,
-                source, typedEditorKind == TypedKind.REWARD
+                source, typedEditorKind == QuestTypedEntryKind.REWARD
                         ? typedFields.field("claim").getValue().strip() : "",
-                typedEditorKind == TypedKind.TASK ? (typedPropertyOptional ? 1 : 0)
+                typedEditorKind == QuestTypedEntryKind.TASK ? (typedPropertyOptional ? 1 : 0)
                         : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config)) return;
         typedPropertySubmissionPending = true;
         typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.submitting");
@@ -3252,7 +3232,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (typedPropertySchema == null || !typedPropertySchema.rawFallback() || typedPropertyTypeId == null) {
             return false;
         }
-        return typedEditorKind == TypedKind.TASK
+        return typedEditorKind == QuestTypedEntryKind.TASK
                 ? TaskTypeRegistry.get(typedPropertyTypeId) != null
                 : RewardTypeRegistry.get(typedPropertyTypeId) != null;
     }
@@ -3332,7 +3312,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
     }
 
-    private void openTypedEditor(QuestDefinition quest, TypedKind kind) {
+    private void openTypedEditor(QuestDefinition quest, QuestTypedEntryKind kind) {
         closeQuestEditor();
         closeDependencyEditor();
         closeActiveEditorOverlay();
@@ -3353,18 +3333,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderTypedTypePicker(GuiGraphics graphics, int mouseX, int mouseY) {
-        List<ResourceLocation> candidates = typedTypeCandidates();
+        typedTypePickerFrame = QuestTypePickerModel.frame(currentFrameIdentity(), typedEditorKind);
+        List<ResourceLocation> candidates = typedTypePickerFrame.entries().stream()
+                .map(QuestTypePickerModel.Entry::typeId).toList();
         UiRect bounds = typedTypePickerBounds();
         typedTypePicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
                 candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
         List<Component> tooltip = typedTypePicker.render(graphics, font,
                 Component.translatable("screen.brnquest.editor.typed.type_heading"), false,
                 type -> new EditorPickerList.Entry(typedTypeDisplayName(type),
-                        Component.translatable(!typedEditorKind.builtIns().contains(type)
-                                ? "screen.brnquest.editor.typed.click_to_configure"
-                                : typedEditorKind.choiceBacked(type) ? "screen.brnquest.editor.typed.click_to_select_candidates"
-                                : typedEditorKind.itemBacked(type) ? "screen.brnquest.editor.typed.click_to_select_item"
-                                : "screen.brnquest.editor.typed.click_to_add"),
+                        Component.translatable(typePickerHint(typedTypePickerFrame, type)),
                         EditorPickerList.Tone.NORMAL, false, List.of(Component.translatable(
                                 "screen.brnquest.editor.typed.type_id", type.toString()))),
                 null, mouseX, mouseY);
@@ -3373,12 +3351,24 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);
     }
 
+    private static String typePickerHint(QuestTypePickerModel.Frame frame, ResourceLocation typeId) {
+        QuestTypePickerModel.Route route = frame.entries().stream()
+                .filter(entry -> entry.typeId().equals(typeId)).findFirst()
+                .map(QuestTypePickerModel.Entry::route).orElse(QuestTypePickerModel.Route.DIRECT);
+        return switch (route) {
+            case PROPERTY_FORM -> "screen.brnquest.editor.typed.click_to_configure";
+            case CHOICE_SELECTOR -> "screen.brnquest.editor.typed.click_to_select_candidates";
+            case ITEM_SELECTOR -> "screen.brnquest.editor.typed.click_to_select_item";
+            case DIRECT -> "screen.brnquest.editor.typed.click_to_add";
+        };
+    }
+
     /** Uses the client presentation contract while keeping stable IDs confined to storage and diagnostics. */
     private Component typedTypeDisplayName(ResourceLocation typeId) {
         QuestBookSnapshot snapshot = displaySnapshot();
         ResourceLocation bookId = snapshot == null ? typeId : snapshot.book().id();
         ResourceLocation entryId = typedEditorQuestId == null ? typeId : typedEditorQuestId;
-        return typedEditorKind == TypedKind.TASK
+        return typedEditorKind == QuestTypedEntryKind.TASK
                 ? ClientTaskPresentationRegistry.get(typeId).typeName(
                         new yourscraft.jasdewstarfield.brnquest.api.TaskView(bookId, entryId, typeId, Map.of(), false))
                 : ClientRewardPresentationRegistry.get(typeId).typeName(
@@ -3397,20 +3387,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (typedTypePicker.mouseClicked(mouseX, mouseY, button)) return true;
         ResourceLocation typeId = typedTypePicker.entryAt(mouseX, mouseY).orElse(null);
-        if (typeId == null || !typedTypeCandidates().contains(typeId) || ClientEditorState.get().busy()) return true;
+        QuestTypePickerModel.Entry choice = typeId == null || typedTypePickerFrame == null ? null
+                : typedTypePickerFrame.select(currentFrameIdentity(), typedEditorKind, typeId).orElse(null);
+        if (choice == null || ClientEditorState.get().busy()) return true;
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null || typedEditorQuestId == null) return true;
-        if (typedEditorKind.choiceBacked(typeId)) {
+        if (choice.route() == QuestTypePickerModel.Route.CHOICE_SELECTOR) {
             closeActiveEditorOverlay();
             openNewItemChoiceEditor(spec -> addSelectedChoice(typeId, spec));
             return true;
         }
-        if (typedEditorKind.itemBacked(typeId)) {
+        if (choice.route() == QuestTypePickerModel.Route.ITEM_SELECTOR) {
             closeActiveEditorOverlay();
             openItemSelector(typeId);
             return true;
         }
-        if (!typedEditorKind.builtIns().contains(typeId)) {
+        if (choice.route() == QuestTypePickerModel.Route.PROPERTY_FORM) {
             closeActiveEditorOverlay();
             openNewTypedPropertyEditor(snapshot, typeId);
             return true;
@@ -3454,23 +3446,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         "matcher", spec.encode(),
                         "required_entries", Integer.toString(spec.requiredEntries()),
                         "consume_items", "false"));
-    }
-
-    private List<ResourceLocation> typedTypeCandidates() {
-        ResourceLocation hiddenLegacyAlias = typedEditorKind == TypedKind.TASK ? TaskTypes.ITEM_CHOICE : null;
-        return creatableTypeCandidates(typedEditorKind.registeredTypes(), typedEditorKind::addable,
-                hiddenLegacyAlias);
-    }
-
-    /** Existing unknown data stays preserved, but an add picker only advertises types it can create now. */
-    static List<ResourceLocation> creatableTypeCandidates(java.util.Collection<ResourceLocation> registeredTypes,
-                                                          java.util.function.Predicate<ResourceLocation> addable,
-                                                          ResourceLocation hiddenLegacyAlias) {
-        java.util.SortedSet<ResourceLocation> ids = new java.util.TreeSet<>(
-                java.util.Comparator.comparing(ResourceLocation::toString));
-        ids.addAll(registeredTypes);
-        ids.removeIf(type -> !addable.test(type) || type.equals(hiddenLegacyAlias));
-        return List.copyOf(ids);
     }
 
     private int typedEditorListTop() { return topToolbarHeight() + 34; }
@@ -5253,26 +5228,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
 
-    private record TypedActionKey(ResourceLocation entryId, String action) {}
-
     private record QuickTextHitbox(QuickTextKind kind, UiRect bounds) {}
 
-    private record TypedValue(ResourceLocation id, ResourceLocation typeId) {}
-
     private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack) {}
-
-    private record TypedEntry(ResourceLocation id, ResourceLocation typeId, Map<String, String> config,
-                              boolean optional, String claimPolicy, boolean teamReward,
-                              TaskDefinition task, RewardDefinition reward) {
-        static TypedEntry task(TaskDefinition task) {
-            return new TypedEntry(task.id(), task.typeId(), task.config(), task.optional(), "", false, task, null);
-        }
-
-        static TypedEntry reward(RewardDefinition reward) {
-            return new TypedEntry(reward.id(), reward.typeId(), reward.config(), false,
-                    reward.claimPolicy(), reward.teamReward(), null, reward);
-        }
-    }
 
     private enum IconEditorMode {
         ITEM("screen.brnquest.editor.quest.icon_mode.item"),
@@ -5305,71 +5263,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
-
-    private enum TypedKind {
-        TASK("TASK", "task", "screen.brnquest.editor.typed.tasks_heading"),
-        REWARD("REWARD", "reward", "screen.brnquest.editor.typed.rewards_heading");
-
-        private final String actionPrefix;
-        private final String idStem;
-        private final String headingKey;
-
-        TypedKind(String actionPrefix, String idStem, String headingKey) {
-            this.actionPrefix = actionPrefix;
-            this.idStem = idStem;
-            this.headingKey = headingKey;
-        }
-
-        String actionPrefix() { return actionPrefix; }
-        String idStem() { return idStem; }
-        String headingKey() { return headingKey; }
-
-        int size(QuestDefinition quest) {
-            return this == TASK ? quest.tasks().size() : quest.rewards().size();
-        }
-
-        TypedValue value(QuestDefinition quest, int index) {
-            if (this == TASK) {
-                TaskDefinition task = quest.tasks().get(index);
-                return new TypedValue(task.id(), task.typeId());
-            }
-            RewardDefinition reward = quest.rewards().get(index);
-            return new TypedValue(reward.id(), reward.typeId());
-        }
-
-        TypedEntry entry(QuestDefinition quest, ResourceLocation id) {
-            if (this == TASK) {
-                return quest.tasks().stream().filter(task -> task.id().equals(id))
-                        .findFirst().map(TypedEntry::task).orElse(null);
-            }
-            return quest.rewards().stream().filter(reward -> reward.id().equals(id))
-                    .findFirst().map(TypedEntry::reward).orElse(null);
-        }
-
-        List<ResourceLocation> builtIns() {
-            return this == TASK
-                    ? List.of(TaskTypes.CHECKMARK, TaskTypes.CUSTOM, TaskTypes.ITEM, TaskTypes.XP)
-                    : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM, RewardTypes.XP, RewardTypes.XP_LEVELS);
-        }
-
-        java.util.Set<ResourceLocation> registeredTypes() {
-            return this == TASK ? TaskTypeRegistry.registeredIds() : RewardTypeRegistry.registeredIds();
-        }
-
-        boolean known(ResourceLocation typeId) { return registeredTypes().contains(typeId); }
-
-        boolean addable(ResourceLocation typeId) {
-            return this == TASK ? TaskTypeRegistry.get(typeId) != null : RewardTypeRegistry.get(typeId) != null;
-        }
-
-        boolean itemBacked(ResourceLocation typeId) {
-            return this == REWARD && typeId.equals(RewardTypes.ITEM);
-        }
-
-        boolean choiceBacked(ResourceLocation typeId) {
-            return this == TASK && typeId.equals(TaskTypes.ITEM);
-        }
-    }
 
     private enum StructureFormKind {
         NONE("screen.brnquest.editor.structure.none", "item", false),

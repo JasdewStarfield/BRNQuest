@@ -13,7 +13,9 @@ class UiCompositionBoundaryTest {
         Path ui = Path.of(System.getProperty("brnquest.projectDir"),
                 "src/main/java/yourscraft/jasdewstarfield/brnquest/client/ui");
         for (String name : List.of("QuestNavigationPanel.java", "QuestDetailsPanel.java", "QuestDetailRows.java",
-                "QuestNodeDrag.java", "component/EditorPropertyPanel.java", "component/EditorFormFields.java",
+                "QuestNodeDrag.java", "QuestTypedEntryListSection.java", "QuestTypePickerModel.java",
+                "QuestTypedEntryKind.java", "QuestScreenFrameIdentity.java",
+                "component/EditorPropertyPanel.java", "component/EditorFormFields.java",
                 "component/EditorEntryListPanel.java", "component/EditorSelectionFocus.java")) {
             String source = Files.readString(ui.resolve(name), StandardCharsets.UTF_8);
             assertFalse(source.contains("import yourscraft.jasdewstarfield.brnquest.network."), name);

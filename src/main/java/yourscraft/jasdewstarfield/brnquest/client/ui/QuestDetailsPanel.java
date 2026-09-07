@@ -20,15 +20,14 @@ final class QuestDetailsPanel {
         int task(TaskDefinition task, int x, int y, int width);
         void reward(RewardDefinition reward, int x, int y);
     }
-    record Result(Map<String, UiRect> textAreas, Component hint, boolean lockedStatusHovered) {}
+    record Result(Map<String, UiRect> textAreas, UiRect completeAction, UiRect trackAction,
+                  Component hint, boolean lockedStatusHovered) {}
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
     private int contentHeight;
     private double drawnScroll;
-    private int statusY = Integer.MIN_VALUE;
     EditorSmoothScroll scroll() { return scroll; }
     int contentHeight() { return contentHeight; }
-    int statusY() { return statusY; }
-    void reset() { scroll.snap(0); contentHeight = 0; statusY = Integer.MIN_VALUE; }
+    void reset() { scroll.snap(0); contentHeight = 0; }
 
     Result render(GuiGraphics graphics, Font font, Layout layout, Model model, Rows rows,
                   int mouseX, int mouseY, double seconds, double speed) {
@@ -82,8 +81,20 @@ final class QuestDetailsPanel {
                         ? "screen.brnquest.untrack" : "screen.brnquest.track");
             }
         }
+        UiRect trackAction = null;
+        if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
+            int pinX = contentLeft + contentWidth - font.width(pin) - 18;
+            trackAction = visiblePart(new UiRect(pinX - 2, y, pinX + font.width(pin) + 2,
+                    y + font.lineHeight), layout.content());
+        }
+        UiRect completeAction = null;
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
-            graphics.drawString(font, Component.translatable("screen.brnquest.ready"), contentLeft + font.width(statusText) + 6, y, 0xFF72D88D, false);
+            Component readyText = Component.translatable("screen.brnquest.ready");
+            int readyX = contentLeft + font.width(statusText) + 6;
+            graphics.drawString(font, readyText, readyX, y, 0xFF72D88D, false);
+            completeAction = visiblePart(new UiRect(readyX, y, readyX + font.width(readyText),
+                    y + font.lineHeight), layout.content());
         }
         y += 16;
 
@@ -145,17 +156,21 @@ final class QuestDetailsPanel {
         graphics.disableScissor();
 
 
-        statusY = statusTop;
         boolean locked = model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()
                 && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();
-        return new Result(Map.copyOf(textAreas), hint, locked);
+        return new Result(Map.copyOf(textAreas), completeAction, trackAction, hint, locked);
     }
 
     private static void addTextArea(Map<String, UiRect> areas, UiRect viewport, String key,
                                     int left, int top, int width, int bottom) {
         UiRect visible = new UiRect(left, top, left + width, bottom).intersection(viewport);
         if (visible.height() > 0 && visible.width() > 0) areas.put(key, visible);
+    }
+
+    private static UiRect visiblePart(UiRect bounds, UiRect viewport) {
+        UiRect visible = bounds.intersection(viewport);
+        return visible.width() > 0 && visible.height() > 0 ? visible : null;
     }
 }

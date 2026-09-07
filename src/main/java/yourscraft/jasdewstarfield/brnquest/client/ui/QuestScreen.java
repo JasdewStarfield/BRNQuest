@@ -115,6 +115,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorSmoothValue detailsDrawerMotion = new EditorSmoothValue(0.0, 0.001);
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
+    private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
     private int navigationContentHeight;
     private int chapterIndex;
     private QuestScreenLayout cachedLayout;
@@ -219,10 +220,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorSelectionFocus<ResourceLocation> selectionFocus = new EditorSelectionFocus<>();
     private final QuestNodeDrag nodeDrag = new QuestNodeDrag();
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
-    private final List<RewardHitbox> rewardHitboxes = new ArrayList<>();
-    private final List<TaskHitbox> taskHitboxes = new ArrayList<>();
-    private final List<TaskCandidateHitbox> taskCandidateHitboxes = new ArrayList<>();
-    private final List<QuickTextHitbox> quickTextHitboxes = new ArrayList<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
@@ -699,37 +696,44 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY, double motionFrameSeconds) {
-        rewardHitboxes.clear();
-        taskHitboxes.clear();
-        taskCandidateHitboxes.clear();
-        quickTextHitboxes.clear();
+        detailsInteraction.invalidate();
         int left = detailLeft();
         graphics.fill(left, topToolbarHeight(), width, height - bottomToolbarHeight(), 0xF0202632);
         graphics.drawString(font, Component.literal("×"), width - 14, topToolbarHeight() + 4, 0xFFFFFF, false);
 
         QuestDefinition quest = selectedQuest();
-        if (quest == null) return;
-        QuestStatus status = status(quest);
         boolean editing = ClientEditorState.get().editing();
+        detailsInteraction.begin(currentFrameIdentity(), quest == null ? null : quest.id(), editing, gameplayAllowed(),
+                new UiRect(left, topToolbarHeight(), width, height - bottomToolbarHeight()),
+                new UiRect(width - 18, topToolbarHeight(), width, topToolbarHeight() + 16));
+        if (quest == null) {
+            detailsInteraction.finish();
+            return;
+        }
+        QuestStatus status = status(quest);
         if (!editing && quest.behavior().hideDetailsUntilStartable()
                 && status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE && !isCompleted(status)) {
             graphics.drawString(font, Component.translatable("screen.brnquest.quest_details_hidden"),
                     left + 12, detailContentTop() + 8, 0xFF9AA6B5, false);
+            detailsInteraction.finish();
             return;
         }
         if (editing && questEditorOpen && quest.id().equals(questEditorQuestId)) {
             detailsPanel.reset();
             renderQuestPropertyEditor(graphics, quest, mouseX, mouseY);
+            detailsInteraction.finish();
             return;
         }
         if (editing && dependencyEditorOpen && quest.id().equals(dependencyEditorQuestId)) {
             detailsPanel.reset();
             renderDependencyEditor(graphics, quest, mouseX, mouseY);
+            detailsInteraction.finish();
             return;
         }
         if (editing && typedEditorOpen && quest.id().equals(typedEditorQuestId)) {
             detailsPanel.reset();
             renderTypedEditor(graphics, quest, mouseX, mouseY);
+            detailsInteraction.finish();
             return;
         }
         Component cooldownText = repeatCooldownText(quest, status);
@@ -753,7 +757,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         renderReward(graphics, reward, x, y, status, mouseX, mouseY);
                     }
                 }, mouseX, mouseY, motionFrameSeconds, scrollSmoothSpeed());
-        result.textAreas().forEach((key, bounds) -> quickTextHitboxes.add(new QuickTextHitbox(QuickTextKind.valueOf(key), bounds)));
+        detailsInteraction.statusActions(result.completeAction(), result.trackAction());
+        detailsInteraction.textAreas(result.textAreas());
         if (result.hint() != null) hoveredComponentTooltip = List.of(result.hint());
         if (result.lockedStatusHovered()) hoveredComponentTooltip = dependencyTooltip(quest);
         if (editing) {
@@ -765,8 +770,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     "screen.brnquest.editor.typed.rewards", mouseX, mouseY);
             renderDetailEditorEntry(graphics, questDependencyButtonBounds(), "→",
                     "screen.brnquest.editor.dependency.edit", mouseX, mouseY);
+            detailsInteraction.editorAction(QuestDetailsInteraction.Action.EDIT_PROPERTIES,
+                    questPropertyButtonBounds());
+            detailsInteraction.editorAction(QuestDetailsInteraction.Action.EDIT_TASKS, questTaskButtonBounds());
+            detailsInteraction.editorAction(QuestDetailsInteraction.Action.EDIT_REWARDS, questRewardButtonBounds());
+            detailsInteraction.editorAction(QuestDetailsInteraction.Action.EDIT_DEPENDENCIES,
+                    questDependencyButtonBounds());
         }
-
+        detailsInteraction.finish();
     }
 
     /** Detail entry points keep explanatory text while adding a fast-scanning icon cue. */
@@ -801,11 +812,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         TaskDisplayState state = taskDisplayState(quest, task, status, presentation, presentationContext);
         var row = QuestDetailRows.task(graphics, font, task, presentation, presentationContext, state,
                 x, y, width, detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
-        if (row.action() != null) {
-            UiRect bounds = row.action();
-            taskHitboxes.add(new TaskHitbox(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), quest, task));
+        QuestDetailsInteraction.Action rowAction = QuestDetailsInteraction.Action.SUBMIT_TASK;
+        if (!presentation.interactive(ApiViews.task(task)) && taskSatisfied(task, status) && canSubmit(quest, status)) {
+            rowAction = QuestDetailsInteraction.Action.COMPLETE_QUEST;
+        } else {
+            ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
+            if (itemSpec != null && needsManualItemSelection(task, itemSpec)) {
+                rowAction = QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION;
+            }
         }
-        if (row.candidates() != null) taskCandidateHitboxes.add(new TaskCandidateHitbox(row.candidates(), task));
+        detailsInteraction.task(task.id(), row.action(), row.candidates(), rowAction);
         acceptDetailRowHover(row);
         return row.nextY();
     }
@@ -815,6 +831,77 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             hoveredRecipeLookupTarget = row.lookup();
             hoveredDetailStack = row.lookup().stack();
         } else if (row.hint() != null) hoveredDetailText = row.hint();
+    }
+
+    /** Re-resolves every detail intent against the current snapshot before starting a client request. */
+    private void handleDetailsIntent(QuestDetailsInteraction.Intent intent) {
+        if (intent.action() == QuestDetailsInteraction.Action.CLOSE) {
+            detailsOpen = false;
+            detailsPanel.scroll().snap(0);
+            closeQuestEditingPanels();
+            return;
+        }
+        QuestBookSnapshot snapshot = displaySnapshot();
+        QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(intent.questId());
+        if (quest == null || !quest.id().equals(selectedQuestId())) return;
+        switch (intent.action()) {
+            case CLOSE -> { }
+            case QUICK_EDIT_TEXT -> {
+                if (ClientEditorState.get().editing() && intent.textArea() != null) {
+                    openQuickTextEditor(quest, QuickTextKind.valueOf(intent.textArea()));
+                }
+            }
+            case EDIT_PROPERTIES -> { if (ClientEditorState.get().editing()) openQuestEditor(quest); }
+            case EDIT_TASKS -> { if (ClientEditorState.get().editing()) openTypedEditor(quest, QuestTypedEntryKind.TASK); }
+            case EDIT_REWARDS -> { if (ClientEditorState.get().editing()) openTypedEditor(quest, QuestTypedEntryKind.REWARD); }
+            case EDIT_DEPENDENCIES -> { if (ClientEditorState.get().editing()) openDependencyEditor(quest); }
+            case OPEN_SUBMISSION_CHOICES -> {
+                TaskDefinition task = quest.tasks().stream()
+                        .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
+                if (task != null) ItemChoiceMatcher.parseConfig(task.config()).result()
+                        .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, true));
+            }
+            case COMPLETE_QUEST -> {
+                QuestStatus status = status(quest);
+                if (gameplayAllowed() && canSubmit(quest, status)) {
+                    BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(), quest.id().toString());
+                }
+            }
+            case TOGGLE_TRACKED -> {
+                QuestStatus status = status(quest);
+                if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+                    BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), quest.id().toString());
+                }
+            }
+            case SUBMIT_TASK, OPEN_ITEM_SLOT_SELECTION -> handleDetailsTaskIntent(intent.action(), quest,
+                    intent.targetId());
+            case CLAIM_REWARD -> {
+                RewardDefinition reward = quest.rewards().stream()
+                        .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
+                if (reward != null && gameplayAllowed() && isCompleted(status(quest))
+                        && !ClientQuestState.get().claimed().contains(reward.id().toString())) {
+                    BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), reward.id().toString());
+                }
+            }
+        }
+    }
+
+    private void handleDetailsTaskIntent(QuestDetailsInteraction.Action action, QuestDefinition quest,
+                                         ResourceLocation taskId) {
+        TaskDefinition task = taskId == null ? null : quest.tasks().stream()
+                .filter(candidate -> candidate.id().equals(taskId)).findFirst().orElse(null);
+        QuestStatus status = status(quest);
+        if (task == null || !gameplayAllowed() || !taskDisplayState(quest, task, status).actionable()) return;
+        if (action == QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION) {
+            ItemChoiceMatcher.parseConfig(task.config()).result().filter(spec -> needsManualItemSelection(task, spec))
+                    .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, false));
+            return;
+        }
+        // Pending ownership remains in ClientQuestState so rapid clicks cannot enqueue duplicate consumption.
+        if (ClientQuestState.get().beginTaskSubmission(task.id().toString())) {
+            BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), quest.id().toString(),
+                    task.id().toString());
+        }
     }
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
@@ -828,10 +915,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         var context = new RewardPresentationContext(minecraft, rewardView, claimable, claimed, stack);
         var row = QuestDetailRows.reward(graphics, font, presentation, context, x, y,
                 detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
-        if (row.action() != null) {
-            UiRect bounds = row.action();
-            rewardHitboxes.add(new RewardHitbox(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), reward));
-        }
+        detailsInteraction.reward(reward.id(), row.action());
         acceptDetailRowHover(row);
     }
 
@@ -959,102 +1043,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // must not fall through into quest selection or canvas interaction.
         if (navigationPanelVisibleAt(mouseX)) return true;
 
-        QuestDefinition selected = selectedQuest();
-        int left = detailLeft();
-        if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 18
-                && mouseY >= topToolbarHeight() && mouseY <= topToolbarHeight() + 16) {
-            detailsOpen = false;
-            detailsPanel.scroll().snap(0);
-            closeQuestEditingPanels();
-            return true;
-        }
-        if (detailsPanelAcceptsPointer(mouseX) && selected != null) {
-            if (ClientEditorState.get().editing() && button == 1) {
-                for (QuickTextHitbox hitbox : quickTextHitboxes) {
-                    if (hitbox.bounds().contains(mouseX, mouseY)) {
-                        openQuickTextEditor(selected, hitbox.kind());
-                        return true;
-                    }
-                }
-            }
-            if (ClientEditorState.get().editing() && questDependencyButtonBounds().contains(mouseX, mouseY)) {
-                openDependencyEditor(selected);
-                return true;
-            }
-            if (ClientEditorState.get().editing() && questTaskButtonBounds().contains(mouseX, mouseY)) {
-                openTypedEditor(selected, QuestTypedEntryKind.TASK);
-                return true;
-            }
-            if (ClientEditorState.get().editing() && questRewardButtonBounds().contains(mouseX, mouseY)) {
-                openTypedEditor(selected, QuestTypedEntryKind.REWARD);
-                return true;
-            }
-            if (ClientEditorState.get().editing() && questPropertyButtonBounds().contains(mouseX, mouseY)) {
-                openQuestEditor(selected);
-                return true;
-            }
-            // Right-click is an editor gesture, never an implicit consume/claim action.
-            if (button != 0) return true;
-            for (TaskCandidateHitbox hitbox : taskCandidateHitboxes) {
-                if (hitbox.bounds().contains(mouseX, mouseY)) {
-                    ItemChoiceMatcher.parseConfig(hitbox.task().config()).result()
-                            .ifPresent(spec -> openGameplayItemChoiceScreen(selected, hitbox.task(), spec, true));
-                    return true;
-                }
-            }
-            if (!gameplayAllowed() && mouseX >= left) return true;
-            QuestStatus status = status(selected);
-            Component statusText = Component.translatable(
-                    QuestPresentation.statusTranslationKey(selected, status, ClientQuestState.get().claimed()));
-            int statusY = detailStatusY(selected);
-            if (canSubmit(selected, status)) {
-                Component readyText = Component.translatable("screen.brnquest.ready");
-                int readyX = left + 10 + font.width(statusText) + 6;
-                if (mouseX >= readyX && mouseX <= readyX + font.width(readyText)
-                        && mouseY >= statusY && mouseY <= statusY + font.lineHeight) {
-                    BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(), selected.id().toString());
-                    return true;
-                }
-            }
-            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int trackX = detailTrackX(pin);
-            if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
-                    && mouseX >= trackX && mouseX <= trackX + 14 && mouseY >= statusY && mouseY <= statusY + font.lineHeight) {
-                BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), selected.id().toString());
-                return true;
-            }
-            for (TaskHitbox hitbox : taskHitboxes) {
-                if (hitbox.contains(mouseX, mouseY)) {
-                    String taskId = hitbox.task().id().toString();
-                    ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(hitbox.task().typeId());
-                    if (!presentation.interactive(ApiViews.task(hitbox.task()))
-                            && taskSatisfied(hitbox.task(), status) && canSubmit(hitbox.quest(), status)) {
-                        // A completed passive objective is the natural confirmation target for event-driven types.
-                        BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(),
-                                hitbox.quest().id().toString());
-                        return true;
-                    }
-                    ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(hitbox.task().config())
-                            .result().orElse(null);
-                    if (itemSpec != null && needsManualItemSelection(hitbox.task(), itemSpec)) {
-                        openGameplayItemChoiceScreen(hitbox.quest(), hitbox.task(), itemSpec, false);
-                        return true;
-                    }
-                    // Disable the row until the authoritative response arrives, preventing a
-                    // fast double click from enqueueing the same consumption intent twice.
-                    if (ClientQuestState.get().beginTaskSubmission(taskId)) {
-                        BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), hitbox.quest().id().toString(), taskId);
-                    }
-                    return true;
-                }
-            }
-            for (RewardHitbox hitbox : rewardHitboxes) {
-                if (hitbox.contains(mouseX, mouseY)) {
-                    BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), hitbox.reward().id().toString());
-                    return true;
-                }
-            }
-            if (mouseX >= left) return true;
+        if (detailsPanelAcceptsPointer(mouseX)) {
+            QuestDetailsInteraction.ClickResult result = detailsInteraction.click(
+                    currentFrameIdentity(), mouseX, mouseY, button);
+            if (result.intent() != null) handleDetailsIntent(result.intent());
+            if (result.consumed()) return true;
         }
 
         if (detailsPanelVisibleAt(mouseX) && !detailsPanelAcceptsPointer(mouseX)) return true;
@@ -4373,13 +4366,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 kind + "." + sourceId + ".title", fallback);
     }
 
-    private int detailStatusY(QuestDefinition quest) { return detailsPanel.statusY(); }
-
-    private int detailTrackX(String pin) {
-        // Reserve a clear gap from the close glyph so their hitboxes can never overlap.
-        return detailLeft() + 10 + (detailsWidth() - 24) - font.width(pin) - 18;
-    }
-
     private ItemStack item(ResourceLocation cacheId, String snbt) {
         return itemCache.get(cacheId, snbt, serialized -> {
             if (serialized.isBlank() || minecraft.level == null) return ItemStack.EMPTY;
@@ -4891,27 +4877,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return Math.max(1, detailContentBottom() - detailContentTop());
     }
 
-    private record RewardHitbox(int left, int top, int right, int bottom, RewardDefinition reward) {
-        boolean contains(double x, double y) {
-            return x >= left && x <= right && y >= top && y <= bottom;
-        }
-    }
-
-    private record TaskHitbox(int left, int top, int right, int bottom, QuestDefinition quest, TaskDefinition task) {
-        boolean contains(double x, double y) {
-            return x >= left && x <= right && y >= top && y <= bottom;
-        }
-    }
-
-    private record TaskCandidateHitbox(UiRect bounds, TaskDefinition task) {}
-
     enum ItemChoiceOpenMode {
         VIEW_CANDIDATES,
         SELECT_INVENTORY
     }
 
-
-    private record QuickTextHitbox(QuickTextKind kind, UiRect bounds) {}
 
     private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack) {}
 

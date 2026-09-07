@@ -40,12 +40,6 @@ public final class AuthorApi {
         return new DraftService().createFromActive(actor);
     }
 
-    /** Replaces the selected draft with the active book and preserves the previous draft as a backup version. */
-    public static AuthorOperationResult<DraftSnapshot> replaceFromActive(ServerPlayer actor,
-                                                                          String expectedDraftRevision) {
-        return new DraftService().replaceFromActive(actor, expectedDraftRevision);
-    }
-
     public static AuthorOperationResult<DraftSnapshot> createFromWorkspace(ServerPlayer actor,
                                                                             ResourceLocation bookId) {
         return new DraftService().createFromWorkspace(actor, bookId);
@@ -56,6 +50,7 @@ public final class AuthorApi {
     }
 
     /** Opens only the exact draft version the player selected; blank retains command/API compatibility. */
+    @ApiStatus(ApiStability.INTERNAL)
     public static AuthorOperationResult<EditSessionHandle> open(ServerPlayer actor, ResourceLocation bookId,
                                                                  String expectedDraftRevision) {
         if (actor == null || actor.getServer() == null) {

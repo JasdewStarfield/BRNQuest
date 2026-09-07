@@ -23,6 +23,7 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftCatalogEntry;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
+import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionHandle;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
@@ -489,7 +490,7 @@ public final class AuthoringNetwork {
             return;
         }
         if (payload.replaceDraft()) {
-            AuthorOperationResult<DraftSnapshot> replaced = AuthorApi.replaceFromActive(player,
+            AuthorOperationResult<DraftSnapshot> replaced = new DraftService().replaceFromActive(player,
                     payload.draftRevision());
             if (!replaced.success()) {
                 sendFailure(player, "OPEN", replaced.status(), replaced.code(), replaced.message());

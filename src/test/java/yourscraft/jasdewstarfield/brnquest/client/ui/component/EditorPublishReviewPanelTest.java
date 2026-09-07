@@ -30,4 +30,15 @@ class EditorPublishReviewPanelTest {
                 layout.list().left() + 4, layout.list().top() + 4));
         assertTrue(EditorPublishReviewPanel.maximumScroll(layout, 30) > 0);
     }
+
+    @Test void renderingKeepsBothPartiallyVisibleEdgeRows() {
+        var layout = EditorPublishReviewPanel.layout(new QuestScreenLayout(800, 527, false, false));
+        int offset = -EditorPublishReviewPanel.ROW_HEIGHT / 2;
+        int expected = (layout.list().height() - offset + EditorPublishReviewPanel.ROW_HEIGHT - 1)
+                / EditorPublishReviewPanel.ROW_HEIGHT;
+
+        assertEquals(expected, EditorPublishReviewPanel.renderedRows(layout, offset));
+        assertTrue(EditorPublishReviewPanel.renderedRows(layout, offset)
+                > EditorPublishReviewPanel.visibleRows(layout));
+    }
 }

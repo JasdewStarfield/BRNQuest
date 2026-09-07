@@ -24,6 +24,12 @@ public final class EditorPublishReviewPanel {
         return Math.max(1, layout.list().height() / ROW_HEIGHT);
     }
 
+    /** Counts every intersecting row, including simultaneous partial rows at the top and bottom. */
+    public static int renderedRows(Layout layout, int rowOffset) {
+        int coveredHeight = Math.max(0, layout.list().height() - Math.min(0, rowOffset));
+        return Math.max(1, (coveredHeight + ROW_HEIGHT - 1) / ROW_HEIGHT);
+    }
+
     public static int maximumScroll(Layout layout, int rowCount) {
         return Math.max(0, rowCount - visibleRows(layout));
     }

@@ -4173,10 +4173,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 currentMotionFrameSeconds, scrollSmoothSpeed());
         graphics.enableScissor(reviewLayout.list().left(), reviewLayout.list().top(),
                 reviewLayout.list().right(), reviewLayout.list().bottom());
-        int visibleRows = EditorPublishReviewPanel.visibleRows(reviewLayout);
         int firstIndex = publishReviewScroll.firstIndex(EditorPublishReviewPanel.ROW_HEIGHT);
         int rowOffset = publishReviewScroll.rowOffset(EditorPublishReviewPanel.ROW_HEIGHT);
-        for (int visibleIndex = 0; visibleIndex <= visibleRows; visibleIndex++) {
+        int renderedRows = EditorPublishReviewPanel.renderedRows(reviewLayout, rowOffset);
+        for (int visibleIndex = 0; visibleIndex < renderedRows; visibleIndex++) {
             int rowIndex = firstIndex + visibleIndex;
             if (rowIndex >= rowCount) break;
             renderPublishReviewRow(graphics, reviewLayout, rowIndex,

@@ -8,6 +8,12 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class EditorPublishReviewRowsTest {
+    @Test void filterPriorityPutsBlockingErrorsBeforeWarnings() {
+        assertEquals(List.of(EditorPublishReviewRows.Filter.ALL, EditorPublishReviewRows.Filter.ERRORS,
+                        EditorPublishReviewRows.Filter.WARNINGS, EditorPublishReviewRows.Filter.CHANGES),
+                List.of(EditorPublishReviewRows.Filter.values()));
+    }
+
     @Test void filtersWarningsErrorsAndOrdinaryChangesWithoutLosingSourceIndices() {
         var review = new AuthoringNetwork.PublishReviewWire(false, "WORKSPACE", "old", "new", "BACKUP",
                 3, 1, false, List.of(
@@ -23,7 +29,12 @@ class EditorPublishReviewRowsTest {
                 EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.ERRORS));
         assertEquals(List.of(new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.CHANGE, 0)),
                 EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.CHANGES));
-        assertEquals(4, EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.ALL).size());
+        assertEquals(List.of(
+                        new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.DIAGNOSTIC, 1),
+                        new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.DIAGNOSTIC, 2),
+                        new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.DIAGNOSTIC, 0),
+                        new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.CHANGE, 0)),
+                EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.ALL));
     }
 
     @Test void emptyFilterStillExplainsItsResult() {

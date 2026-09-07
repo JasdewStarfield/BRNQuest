@@ -7,7 +7,8 @@ import java.util.List;
 
 /** Builds the filtered, stable row projection used by publish-review rendering and input. */
 public final class EditorPublishReviewRows {
-    public enum Filter { ALL, WARNINGS, ERRORS, CHANGES }
+    /** Blocking results precede recoverable warnings in both tabs and keyboard reading order. */
+    public enum Filter { ALL, ERRORS, WARNINGS, CHANGES }
     public enum Kind { DIAGNOSTIC, CHANGE, EMPTY }
     public record Row(Kind kind, int sourceIndex) {}
 
@@ -16,12 +17,18 @@ public final class EditorPublishReviewRows {
     public static List<Row> rows(AuthoringNetwork.PublishReviewWire review, Filter filter) {
         if (review == null) return List.of();
         List<Row> result = new ArrayList<>();
-        if (filter != Filter.CHANGES) {
+        if (filter == Filter.ALL) {
+            // The unfiltered review is still actionable: blocking errors lead, then warnings and information.
+            appendDiagnostics(review, result, Filter.ERRORS);
+            appendDiagnostics(review, result, Filter.WARNINGS);
             for (int i = 0; i < review.diagnostics().size(); i++) {
-                if (matches(review.diagnostics().get(i).severity(), filter)) {
+                String severity = review.diagnostics().get(i).severity();
+                if (!matches(severity, Filter.ERRORS) && !matches(severity, Filter.WARNINGS)) {
                     result.add(new Row(Kind.DIAGNOSTIC, i));
                 }
             }
+        } else if (filter != Filter.CHANGES) {
+            appendDiagnostics(review, result, filter);
         }
         if (filter == Filter.ALL || filter == Filter.CHANGES) {
             for (int i = 0; i < review.changes().size(); i++) result.add(new Row(Kind.CHANGE, i));
@@ -33,8 +40,13 @@ public final class EditorPublishReviewRows {
         return List.copyOf(result);
     }
 
+    private static void appendDiagnostics(AuthoringNetwork.PublishReviewWire review, List<Row> rows, Filter filter) {
+        for (int i = 0; i < review.diagnostics().size(); i++) {
+            if (matches(review.diagnostics().get(i).severity(), filter)) rows.add(new Row(Kind.DIAGNOSTIC, i));
+        }
+    }
+
     private static boolean matches(String severity, Filter filter) {
-        if (filter == Filter.ALL) return true;
         if (filter == Filter.WARNINGS) return "WARN".equals(severity);
         return filter == Filter.ERRORS && ("ERROR".equals(severity) || "FATAL".equals(severity));
     }

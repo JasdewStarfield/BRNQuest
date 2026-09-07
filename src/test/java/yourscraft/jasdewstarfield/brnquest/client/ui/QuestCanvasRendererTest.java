@@ -63,6 +63,8 @@ class QuestCanvasRendererTest {
         assertFalse(QuestCanvasRenderer.shapeContains("circle", 10, 10, 11));
         assertTrue(QuestCanvasRenderer.shapeContains("square", 10, 10, 11));
         assertFalse(QuestCanvasRenderer.shapeContains("diamond", 7, 7, 11));
+        assertFalse(QuestCanvasRenderer.shapeContains("chamfer", 10, 10, 11));
+        assertTrue(QuestCanvasRenderer.shapeContains("chamfer", 8, 10, 11));
     }
 
     @Test

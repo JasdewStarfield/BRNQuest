@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor.Position;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +35,8 @@ final class QuestNodeDrag {
     void begin(Map<ResourceLocation, Position> positions, ResourceLocation anchor,
                double graphX, double graphY, double screenX, double screenY, long now) {
         if (positions.isEmpty()) return;
-        origins = Map.copyOf(positions);
+        // Preserve the authored selection order so one release always serializes the same delta list.
+        origins = Collections.unmodifiableMap(new LinkedHashMap<>(positions));
         preview.clear();
         preview.putAll(origins);
         snapped.clear();
@@ -81,7 +83,7 @@ final class QuestNodeDrag {
             cancel();
             return Map.of();
         }
-        Map<ResourceLocation, Position> result = Map.copyOf(snapped);
+        Map<ResourceLocation, Position> result = Collections.unmodifiableMap(new LinkedHashMap<>(snapped));
         cancel();
         // Keep the server-bound position until reconciliation confirms or rejects it.
         preview.putAll(result);

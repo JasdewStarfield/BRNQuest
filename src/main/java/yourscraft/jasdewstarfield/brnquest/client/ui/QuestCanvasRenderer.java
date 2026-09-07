@@ -119,7 +119,7 @@ final class QuestCanvasRenderer {
             NodeFrame frame = new NodeFrame(node, x, y, visualSize,
                     QuestNodeGeometry.hitRadius(NODE_BASE_SIZE, node.appearance()));
             allNodes.put(node.id(), frame);
-            if (QuestViewportMath.intersectsViewport(x, y, visualSize / 2.0,
+            if (QuestViewportMath.intersectsViewport(x, y, visualSize / 2,
                     bounds.left(), bounds.right(), bounds.top(), bounds.bottom())) {
                 visibleNodes.add(frame);
             }
@@ -162,7 +162,12 @@ final class QuestCanvasRenderer {
         return switch (normalized) {
             case "circle" -> dx * dx + dy * dy <= radius * radius;
             case "diamond" -> Math.abs(dx) + Math.abs(dy) <= radius;
-            default -> Math.abs(dx) <= radius && Math.abs(dy) <= radius;
+            case "square" -> Math.abs(dx) <= radius && Math.abs(dy) <= radius;
+            default -> {
+                int cut = Math.max(1, (radius * 2) / 6);
+                yield Math.abs(dx) <= radius && Math.abs(dy) <= radius
+                        && (Math.abs(dx) <= radius - cut || Math.abs(dy) <= radius - cut);
+            }
         };
     }
 
@@ -224,7 +229,8 @@ final class QuestCanvasRenderer {
 
     private static void renderSnapGhost(GuiGraphics graphics, Font font, NodeFrame node, GraphBounds bounds) {
         DraftBookEditor.Position target = node.model().snapPosition();
-        if (!node.model().pickedUp() || target == null) return;
+        // Every selected member has a snapped target; only the anchor receives the enlarged live visual.
+        if (target == null) return;
         int x = graphCoordinate(target.x()), y = graphCoordinate(target.y());
         int radius = NODE_BASE_SIZE / 2 + 3;
         if (!QuestViewportMath.intersectsViewport(x, y, radius,

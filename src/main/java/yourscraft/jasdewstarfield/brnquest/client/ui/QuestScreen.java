@@ -30,7 +30,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSelectionFocus;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
@@ -69,7 +68,6 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -90,24 +88,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private static final List<String> REWARD_CLAIM_POLICIES = java.util.Arrays.stream(RewardClaimPolicy.values())
             .map(RewardClaimPolicy::serializedName).toList();
 
-    private double panX;
-    private double panY;
-    private double zoom;
-    private double renderedPanX;
-    private double renderedPanY;
-    private double renderedZoom;
     private int attentionPingOffsetY;
     private long previousMotionFrameNanos;
     private long lastCooldownRecoveryRequestMillis;
     private double currentMotionFrameSeconds = 1.0 / 60.0;
-    // Zoom needs a much smaller terminal snap than pixel scrolling; 0.01 zoom is visibly abrupt.
-    private final EditorSmoothValue zoomMotion = new EditorSmoothValue(1.0, 0.00001);
     private final EditorSmoothValue navigationDrawerMotion = new EditorSmoothValue(1.0, 0.001);
     private final EditorSmoothValue detailsDrawerMotion = new EditorSmoothValue(0.0, 0.001);
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
     private final QuestCanvasRenderer canvasRenderer = new QuestCanvasRenderer();
+    private final QuestCanvasController canvasController = new QuestCanvasController();
     private QuestCanvasRenderer.Frame canvasFrame;
     private int chapterIndex;
     private QuestScreenLayout cachedLayout;
@@ -117,9 +108,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                QuestScreenFrameIdentity identity) {}
     private ResourceLocation rememberedChapterId;
     private boolean rememberedChapterResolved;
-    private double dragX;
-    private double dragY;
-    private boolean dragging;
     private boolean detailsOpen;
     private boolean navigationCollapsed;
     private String serverContextId = "unknown";
@@ -208,9 +196,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private DeleteKind deleteKind = DeleteKind.NONE;
     private ResourceLocation deleteTarget;
     private String deleteImpact = "";
-    private final Set<ResourceLocation> editorSelection = new LinkedHashSet<>();
-    private final EditorSelectionFocus<ResourceLocation> selectionFocus = new EditorSelectionFocus<>();
-    private final QuestNodeDrag nodeDrag = new QuestNodeDrag();
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
@@ -221,9 +206,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
         QuestScreenSessionState.Snapshot defaults = QuestScreenSessionState.Snapshot.defaults();
-        zoom = defaults.zoom();
-        zoomMotion.snap(zoom);
-        renderedZoom = zoom;
+        canvasController.resetCamera(defaults.centerX(), defaults.centerY(), defaults.zoom());
         navigationCollapsed = defaults.navigationCollapsed();
         navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
         editorSelectionMode = ClientEditorState.get().draft().isPresent();
@@ -368,7 +351,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         if (nextEditorMode) {
             editorSelectedQuest = result.selectedId();
-            editorSelection.clear();
+            canvasController.clearSelection();
             if (result.selectedId() != null) selectOnly(result.selectedId());
         } else {
             ClientQuestState.get().selected(result.selectedId());
@@ -432,7 +415,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         try {
             double motionFrameSeconds = motionFrameSeconds();
             currentMotionFrameSeconds = motionFrameSeconds;
-            advanceZoomMotion(motionFrameSeconds);
             advanceDrawerMotion(motionFrameSeconds);
             // Sample once per frame so every visible notification hops in lockstep.
             attentionPingOffsetY = AttentionPingAnimation.verticalOffset(System.nanoTime());
@@ -444,7 +426,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
                 selectedChapter = chapters.get(chapterIndex);
             }
-            updateSelectedQuestFocus(snapshot, motionFrameSeconds);
+            advanceCanvasMotion(motionFrameSeconds);
             renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
             if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
             else {
@@ -526,21 +508,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         chapterIndex = index;
         rememberedChapterId = chapterId;
         rememberedChapterResolved = true;
-        editorSelection.clear();
-        nodeDrag.clearPreview();
-        zoomMotion.snap(renderedZoom);
-        zoom = renderedZoom;
-        panX = 0;
-        panY = 0;
-        renderedPanX = 0;
-        renderedPanY = 0;
+        canvasController.resetChapter();
         detailsOpen = false;
         detailsPanel.scroll().snap(0);
         closeQuestEditingPanels();
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
-        nodeDrag.update(graphX(mouseX), graphY(mouseY), mouseX, mouseY, System.nanoTime());
+        QuestCanvasRenderer.Camera camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
+        canvasController.advancePointer(camera, mouseX, mouseY, System.nanoTime());
         boolean editing = ClientEditorState.get().editing();
         boolean allowGameplay = gameplayAllowed();
         List<QuestCanvasRenderer.NodeModel> nodes = new ArrayList<>();
@@ -556,13 +532,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
                 String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
                 if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
-                DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
+                DraftBookEditor.Position preview = canvasController.preview(quest.id());
                 nodes.add(new QuestCanvasRenderer.NodeModel(quest.id(), quest.appearance(),
                         preview == null ? new DraftBookEditor.Position(quest.x(), quest.y()) : preview,
-                        nodeDrag.snapPreview(quest.id()), canvasNodeColor(status, allowGameplay),
-                        editing ? editorSelection.contains(quest.id()) : quest.id().equals(selectedQuestId()),
+                        canvasController.snapPreview(quest.id()), canvasNodeColor(status, allowGameplay),
+                        editing ? canvasController.selected(quest.id()) : quest.id().equals(selectedQuestId()),
                         allowGameplay && status == QuestStatus.ACTIVE,
-                        nodeDrag.pickedUp() && quest.id().equals(nodeDrag.anchor()),
+                        canvasController.pickedUp() && quest.id().equals(canvasController.dragAnchor()),
                         allowGameplay && questHasAttentionTask(quest, status),
                         allowGameplay && QuestPresentation.hasPendingReward(
                                 quest, status, ClientQuestState.get().claimed()),
@@ -573,8 +549,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 new QuestCanvasRenderer.Model(currentFrameIdentity(), chapter == null ? null : chapter.id(),
                         new UiRect(canvasLeft(), topToolbarHeight(), canvasRight() - CANVAS_MARGIN,
                                 height - bottomToolbarHeight()),
-                        new QuestCanvasRenderer.Camera(graphOriginX(), graphOriginY(), renderedZoom),
-                        nodes, nodeDrag.active(), attentionPingOffsetY, mouseX, mouseY));
+                        camera, nodes, canvasController.dragActive(), attentionPingOffsetY, mouseX, mouseY));
         canvasFrame = result.frame();
         if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
     }
@@ -900,58 +875,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         int canvasRight = canvasRight() - CANVAS_MARGIN;
         if (mouseX > canvasLeft() && mouseX < canvasRight && isContentY(mouseY)) {
-            // Direct canvas interaction adopts the exact visible camera so dragging never
-            // chases an animation that is still converging underneath the pointer.
-            adoptRenderedCamera();
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
-            double graphMouseX = graphX(mouseX);
-            double graphMouseY = graphY(mouseY);
-            QuestDefinition hit = chapter == null ? null : nodeAt(chapter, mouseX, mouseY);
-            if (hit != null) {
-                if (ClientEditorState.get().editing()) {
-                    if (button == 1) {
-                        if (!editorSelection.contains(hit.id())) selectOnly(hit.id());
-                        openEditContext(ContextKind.NODE, hit.id(), (int) mouseX, (int) mouseY,
-                                hit.x(), hit.y());
-                        return true;
-                    }
-                    if (button == 0) {
-                        nodeDrag.rememberSelection(editorSelection);
-                        if (hasControlDown()) {
-                            if (!editorSelection.add(hit.id())) editorSelection.remove(hit.id());
-                            if (editorSelection.isEmpty()) editorSelection.add(hit.id());
-                        } else if (!editorSelection.contains(hit.id())) {
-                            selectOnly(hit.id());
-                        }
-                        // Defer opening details until release so a long press can pick up the node
-                        // without flashing or replacing the detail panel underneath the gesture.
-                        beginNodeDrag(hit.id(), graphMouseX, graphMouseY, mouseX, mouseY, snapshot.book());
-                        return true;
-                    }
-                } else if (button == 0) {
-                    ClientQuestState.get().selected(hit.id());
-                }
-                if (button == 0) {
-                    closeQuestEditingPanels();
-                    openDetailsPanel();
-                    detailsPanel.scroll().snap(0);
-                    if (!ClientEditorState.get().editing()) {
-                        BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), hit.id().toString());
-                    }
-                    return true;
-                }
-            }
-            if (ClientEditorState.get().editing() && button == 1 && chapter != null) {
-                openEditContext(ContextKind.CANVAS, null, (int) mouseX, (int) mouseY,
-                        graphMouseX / QuestViewportMath.GRID_SCALE, graphMouseY / QuestViewportMath.GRID_SCALE);
-                return true;
-            }
-            if (button != 0) return true;
-            if (ClientEditorState.get().editing() && !hasControlDown()) editorSelection.clear();
-            dragging = true;
-            dragX = mouseX;
-            dragY = mouseY;
+            QuestCanvasController.ClickResult result = canvasController.mouseClicked(canvasFrame,
+                    canvasInputModel(snapshot, chapter), mouseX, mouseY, button, hasControlDown(), System.nanoTime());
+            if (result.intent() != null) handleCanvasIntent(result.intent(), snapshot, chapter);
+            if (result.consumed()) return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -959,57 +888,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public boolean mouseReleased(double x, double y, int button) {
         if (editorOverlays.mouseReleased(x, y, button, super::mouseReleased)) return true;
-        if (nodeDrag.active() && button == 0) {
-            if (nodeDrag.pickedUp()) {
-                commitNodeDrag();
-            } else {
-                ResourceLocation clickedQuestId = nodeDrag.anchor();
-                cancelNodeDrag();
-                openEditorQuestDetails(clickedQuestId);
-            }
-            return true;
-        }
-        dragging = false;
+        QuestCanvasController.GestureResult result = canvasController.mouseReleased(
+                canvasFrame, currentFrameIdentity(), button);
+        if (result.intent() != null) handleCanvasIntent(result.intent(), displaySnapshot(), currentChapter());
+        if (result.consumed()) return true;
         return super.mouseReleased(x, y, button);
     }
 
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
         if (editorOverlays.mouseDragged(x, y, button, dx, dy, super::mouseDragged)) return true;
-        if (nodeDrag.active() && button == 0) {
-            long nowNanos = System.nanoTime();
-            if (!nodeDrag.pickedUp() && nodeDrag.requestsPan(x, y, nowNanos)) {
-                // Motion before the hold threshold is a canvas-pan intent, not an accidental
-                // node move. Apply the displacement already travelled before handing off.
-                double pressX = nodeDrag.pressX();
-                double pressY = nodeDrag.pressY();
-                Set<ResourceLocation> selectionBeforePress = nodeDrag.previousSelection();
-                cancelNodeDrag();
-                // Panning from a node should behave like panning from empty canvas and therefore
-                // must not leave behind the provisional selection made on pointer-down.
-                editorSelection.clear();
-                editorSelection.addAll(selectionBeforePress);
-                dragging = true;
-                panX += x - pressX;
-                panY += y - pressY;
-                renderedPanX = panX;
-                renderedPanY = panY;
-                dragX = x;
-                dragY = y;
-                return true;
-            }
-            nodeDrag.update(graphX(x), graphY(y), x, y, nowNanos);
-            return true;
-        }
-        if (dragging) {
-            panX += x - dragX;
-            panY += y - dragY;
-            renderedPanX = panX;
-            renderedPanY = panY;
-            dragX = x;
-            dragY = y;
-            return true;
-        }
+        QuestCanvasController.GestureResult result = canvasController.mouseDragged(
+                canvasFrame, currentFrameIdentity(), x, y, button, System.nanoTime());
+        if (result.consumed()) return true;
         return super.mouseDragged(x, y, button, dx, dy);
     }
 
@@ -1040,9 +931,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         if (!isContentY(y)) return true;
-        cancelSelectedQuestFocus();
-        double nextZoom = QuestViewportMath.clampZoom(zoomMotion.target() + vertical * 0.10);
-        zoomMotion.target(nextZoom);
+        canvasController.scrollZoom(vertical);
         return true;
     }
 
@@ -2054,7 +1943,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (!action.isEmpty()) {
                 sendMutation(action, target, null, null, "", 0, 0, 0, List.of());
                 if (action.equals("DELETE_QUEST")) {
-                    editorSelection.remove(target);
+                    canvasController.removeSelection(target);
                     if (target.equals(editorSelectedQuest)) {
                         editorSelectedQuest = null;
                         closeQuestEditingPanels();
@@ -4192,35 +4081,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int nodeGraphX(QuestDefinition quest) {
-        DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
+        DraftBookEditor.Position preview = canvasController.preview(quest.id());
         return graphCoordinate(preview == null ? quest.x() : preview.x());
     }
 
     private int nodeGraphY(QuestDefinition quest) {
-        DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
+        DraftBookEditor.Position preview = canvasController.preview(quest.id());
         return graphCoordinate(preview == null ? quest.y() : preview.y());
     }
 
-    private QuestDefinition nodeAt(ChapterDefinition chapter, double screenX, double screenY) {
-        if (canvasFrame == null || !chapter.id().equals(canvasFrame.chapterId())) return null;
-        ResourceLocation id = QuestCanvasRenderer.nodeAt(canvasFrame, currentFrameIdentity(), screenX, screenY);
-        if (id == null) return null;
-        return chapter.quests().stream().filter(quest -> quest.id().equals(id)).findFirst().orElse(null);
-    }
-
     private void selectOnly(ResourceLocation questId) {
-        editorSelection.clear();
-        editorSelection.add(questId);
-    }
-
-    private void beginNodeDrag(ResourceLocation anchorId, double graphMouseX, double graphMouseY,
-                               double screenMouseX, double screenMouseY, QuestBookDefinition book) {
-        Map<ResourceLocation, DraftBookEditor.Position> origins = new LinkedHashMap<>();
-        for (QuestDefinition quest : book.quests()) {
-            if (editorSelection.contains(quest.id())) origins.put(quest.id(), new DraftBookEditor.Position(quest.x(), quest.y()));
-        }
-        nodeDrag.begin(origins, anchorId, graphMouseX, graphMouseY, screenMouseX, screenMouseY, System.nanoTime());
-        if (nodeDrag.active()) dragging = false;
+        canvasController.selectOnly(questId);
     }
 
     /** Resolves click versus long-press independently from render or mouse-event frequency. */
@@ -4234,40 +4105,83 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         detailsPanel.scroll().snap(0);
     }
 
-    private void commitNodeDrag() {
-        var committed = nodeDrag.releaseMove();
-        if (committed.isEmpty()) return;
-        List<AuthoringNetwork.PositionWire> positions = committed.entrySet().stream()
-                .map(entry -> new AuthoringNetwork.PositionWire(entry.getKey().toString(),
-                        entry.getValue().x(), entry.getValue().y())).toList();
-        if (!sendMutation("MOVE_QUESTS", null, null, null, "", 0, 0, 0, positions)) nodeDrag.clearPreview();
-    }
-
-    private void cancelNodeDrag() { nodeDrag.cancel(); }
-
     private void reconcileDragPreview() {
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null) return;
-        nodeDrag.reconcile(id -> {
+        canvasController.reconcile(id -> {
             QuestDefinition quest = snapshot.quests().get(id);
             return quest == null ? null : new DraftBookEditor.Position(quest.x(), quest.y());
         }, ClientEditorState.get().mode() == ClientEditorState.Mode.ERROR);
     }
 
+    private QuestCanvasController.InputModel canvasInputModel(QuestBookSnapshot snapshot, ChapterDefinition chapter) {
+        Map<ResourceLocation, DraftBookEditor.Position> positions = new LinkedHashMap<>();
+        snapshot.book().quests().forEach(quest -> positions.put(quest.id(),
+                new DraftBookEditor.Position(quest.x(), quest.y())));
+        return new QuestCanvasController.InputModel(currentFrameIdentity(), chapter == null ? null : chapter.id(),
+                ClientEditorState.get().editing(), positions);
+    }
+
+    /** Re-resolves stable canvas IDs against the live snapshot before any network mutation. */
+    private void handleCanvasIntent(QuestCanvasController.Intent intent, QuestBookSnapshot snapshot,
+                                    ChapterDefinition chapter) {
+        if (intent == null || snapshot == null) return;
+        switch (intent.action()) {
+            case OPEN_DETAILS -> {
+                QuestDefinition quest = snapshot.quests().get(intent.targetId());
+                if (quest == null || !questVisible(quest)) return;
+                if (ClientEditorState.get().editing()) {
+                    openEditorQuestDetails(quest.id());
+                } else {
+                    ClientQuestState.get().selected(quest.id());
+                    closeQuestEditingPanels();
+                    openDetailsPanel();
+                    detailsPanel.scroll().snap(0);
+                    BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), quest.id().toString());
+                }
+            }
+            case OPEN_NODE_CONTEXT -> {
+                QuestDefinition quest = snapshot.quests().get(intent.targetId());
+                if (ClientEditorState.get().editing() && quest != null) {
+                    openEditContext(ContextKind.NODE, quest.id(), intent.pointerX(), intent.pointerY(),
+                            quest.x(), quest.y());
+                }
+            }
+            case OPEN_CANVAS_CONTEXT -> {
+                if (ClientEditorState.get().editing() && chapter != null) {
+                    openEditContext(ContextKind.CANVAS, null, intent.pointerX(), intent.pointerY(),
+                            intent.questX(), intent.questY());
+                }
+            }
+            case MOVE_QUESTS -> {
+                if (!ClientEditorState.get().editing() || intent.positions().isEmpty()
+                        || intent.positions().keySet().stream().anyMatch(id -> !snapshot.quests().containsKey(id))) {
+                    canvasController.clearPreview();
+                    return;
+                }
+                List<AuthoringNetwork.PositionWire> positions = intent.positions().entrySet().stream()
+                        .map(entry -> new AuthoringNetwork.PositionWire(entry.getKey().toString(),
+                                entry.getValue().x(), entry.getValue().y())).toList();
+                if (!sendMutation("MOVE_QUESTS", null, null, null, "", 0, 0, 0, positions)) {
+                    canvasController.clearPreview();
+                }
+            }
+        }
+    }
+
+    private ChapterDefinition currentChapter() {
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null) return null;
+        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
+        return chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
+    }
+
     private double graphX(double screenX) {
-        return (screenX - graphOriginX()) / renderedZoom;
+        return canvasController.renderedCamera(screenOriginX(), contentCenterY()).graphX(screenX);
     }
 
     private double graphY(double screenY) {
-        return (screenY - graphOriginY()) / renderedZoom;
-    }
-
-    private double graphOriginX() {
-        return screenOriginX() + renderedPanX;
-    }
-
-    private double graphOriginY() {
-        return contentCenterY() + renderedPanY;
+        return canvasController.renderedCamera(screenOriginX(), contentCenterY()).graphY(screenY);
     }
 
     private int contentCenterY() {
@@ -4438,14 +4352,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (viewportBookId != null) saveViewport(rememberedChapterId);
         viewportBookId = bookId;
         QuestScreenSessionState.Snapshot remembered = QuestScreenSessionState.load(serverContextId, bookId);
-        zoom = remembered.zoom();
-        zoomMotion.snap(zoom);
-        renderedZoom = zoom;
-        panX = QuestViewportMath.panForGraphCenter(remembered.centerX(), zoom);
-        panY = QuestViewportMath.panForGraphCenter(remembered.centerY(), zoom);
-        renderedPanX = panX;
-        renderedPanY = panY;
-        selectionFocus.reset(panX, panY);
+        canvasController.resetCamera(remembered.centerX(), remembered.centerY(), remembered.zoom());
         rememberedChapterId = remembered.chapterId();
         navigationCollapsed = remembered.navigationCollapsed();
         navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
@@ -4459,22 +4366,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void saveViewport(ResourceLocation chapterId) {
         finishZoomMotion();
+        QuestCanvasController.StoredViewport viewport = canvasController.storedViewport();
         QuestScreenSessionState.save(serverContextId, viewportBookId, chapterId,
-                QuestViewportMath.graphCenterForPan(panX, zoom),
-                QuestViewportMath.graphCenterForPan(panY, zoom), zoom, navigationCollapsed);
-    }
-
-    /** Advances wheel zoom every rendered frame while preserving the physical-screen-center anchor. */
-    private void advanceZoomMotion(double elapsedSeconds) {
-        double oldZoom = zoom;
-        zoom = zoomMotion.advanceFrame(elapsedSeconds, zoomSmoothSpeed());
-        if (Double.compare(oldZoom, zoom) != 0) {
-            panX = QuestViewportMath.panForStableAnchor(width / 2.0, screenOriginX(), panX, oldZoom, zoom);
-            panY = QuestViewportMath.panForStableAnchor(height / 2.0, height / 2.0, panY, oldZoom, zoom);
-        }
-        renderedZoom = zoom;
-        renderedPanX = panX;
-        renderedPanY = panY;
+                viewport.centerX(), viewport.centerY(), viewport.zoom(), navigationCollapsed);
     }
 
     /** Advances both drawer reveal boundaries from the same frame time used by scrolling and zoom. */
@@ -4485,44 +4379,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         detailsDrawerMotion.advanceFrame(elapsedSeconds, drawerSmoothSpeed());
     }
 
-    /** Starts one focus pass for a newly opened or newly selected quest, then releases manual control. */
-    private void updateSelectedQuestFocus(QuestBookSnapshot snapshot, double elapsedSeconds) {
+    /** Advances zoom and one-shot focus from the same real render-frame duration. */
+    private void advanceCanvasMotion(double elapsedSeconds) {
         QuestDefinition selected = detailsOpen ? selectedQuest() : null;
         ResourceLocation id = selected == null ? null : selected.id();
-        boolean requested = selectionFocus.observe(detailsOpen, id);
-        if (!autoFocusSelectedQuest() || !detailsOpen || selected == null) {
-            cancelSelectedQuestFocus();
-            return;
-        }
-        if (requested) {
-            finishZoomMotion();
-            selectionFocus.start(id, renderedPanX, renderedPanY);
-        }
-        ResourceLocation focusing = selectionFocus.focusing();
-        if (focusing == null) return;
-        QuestDefinition target = snapshot.quests().get(focusing);
-        if (target == null) {
-            cancelSelectedQuestFocus();
-            return;
-        }
-        EditorSelectionFocus.Point point = selectionFocus.advance(dragging || nodeDrag.active(),
-                renderedPanX, renderedPanY, () -> {
-                    QuestScreenLayout finalLayout = layout();
-                    double targetX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
-                            + finalLayout.canvasRight(detailsOpen ? 1.0 : 0.0)) / 2.0;
-                    return new EditorSelectionFocus.Point(
-                            QuestViewportMath.panForGraphPoint(nodeGraphX(target), targetX, screenOriginX(), renderedZoom),
-                            QuestViewportMath.panForGraphPoint(nodeGraphY(target), finalLayout.contentCenterY(),
-                                    finalLayout.contentCenterY(), renderedZoom));
-                }, elapsedSeconds, focusSmoothSpeed());
-        panX = renderedPanX = point.x();
-        panY = renderedPanY = point.y();
-    }
-
-    private void cancelSelectedQuestFocus() {
-        selectionFocus.cancel(renderedPanX, renderedPanY);
-        panX = renderedPanX;
-        panY = renderedPanY;
+        QuestScreenLayout finalLayout = layout();
+        double targetX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
+                + finalLayout.canvasRight(detailsOpen ? 1.0 : 0.0)) / 2.0;
+        canvasController.advanceFrame(elapsedSeconds, zoomSmoothSpeed(), focusSmoothSpeed(),
+                new QuestCanvasController.FocusModel(autoFocusSelectedQuest(), detailsOpen, id,
+                        selected == null ? null : (double) nodeGraphX(selected),
+                        selected == null ? null : (double) nodeGraphY(selected),
+                        targetX, finalLayout.contentCenterY(), screenOriginX(), finalLayout.contentCenterY()));
     }
 
     /** Auto-collapses navigation only for a genuine closed-to-open details transition. */
@@ -4565,27 +4433,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return BrnQuestClientConfig.VALUES.autoFocusSelectedQuest.get();
     }
 
-    /** Cancels residual easing at the currently drawn transform before direct manipulation begins. */
-    private void adoptRenderedCamera() {
-        cancelSelectedQuestFocus();
-        zoom = renderedZoom;
-        zoomMotion.snap(zoom);
-        panX = renderedPanX;
-        panY = renderedPanY;
-    }
-
     /** Persists the player's requested zoom rather than an arbitrary mid-animation frame. */
     private void finishZoomMotion() {
-        double targetZoom = zoomMotion.target();
-        if (Double.compare(zoom, targetZoom) != 0) {
-            panX = QuestViewportMath.panForStableAnchor(width / 2.0, screenOriginX(), panX, zoom, targetZoom);
-            panY = QuestViewportMath.panForStableAnchor(height / 2.0, height / 2.0, panY, zoom, targetZoom);
-            zoom = targetZoom;
-        }
-        zoomMotion.snap(zoom);
-        renderedPanX = panX;
-        renderedPanY = panY;
-        renderedZoom = zoom;
+        canvasController.finishZoomMotion(screenOriginX(), height / 2.0);
     }
 
     private String currentServerContext() {

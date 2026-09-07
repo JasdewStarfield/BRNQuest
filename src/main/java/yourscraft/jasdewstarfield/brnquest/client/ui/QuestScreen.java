@@ -97,6 +97,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
+    private final QuestTaskRowWidget taskRowWidget = new QuestTaskRowWidget();
     private final QuestCanvasRenderer canvasRenderer = new QuestCanvasRenderer();
     private final QuestCanvasController canvasController = new QuestCanvasController();
     private QuestCanvasRenderer.Frame canvasFrame;
@@ -678,20 +679,28 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     storedProgress, stack);
         }
         TaskDisplayState state = taskDisplayState(quest, task, status, presentation, presentationContext);
-        var row = QuestDetailRows.task(graphics, font, task, presentation, presentationContext, state,
-                x, y, width, detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
-        QuestDetailsInteraction.Action rowAction = QuestDetailsInteraction.Action.SUBMIT_TASK;
-        if (!presentation.interactive(ApiViews.task(task)) && taskSatisfied(task, status) && canSubmit(quest, status)) {
-            rowAction = QuestDetailsInteraction.Action.COMPLETE_QUEST;
-        } else {
-            ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
-            if (itemSpec != null && needsManualItemSelection(task, itemSpec)) {
-                rowAction = QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION;
-            }
-        }
+        ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
+        QuestTaskRowWidget.Model model = new QuestTaskRowWidget.Model(task, presentation, presentationContext, state,
+                taskSatisfied(task, status), canSubmit(quest, status),
+                itemSpec != null && needsManualItemSelection(task, itemSpec));
+        QuestTaskRowWidget.Result row = taskRowWidget.render(graphics, font, model,
+                new QuestTaskRowWidget.Layout(x, y, width, detailRecipeLookupViewport(),
+                        mouseX, mouseY, attentionPingOffsetY));
+        QuestDetailsInteraction.Action rowAction = switch (row.rowAction()) {
+            case SUBMIT_TASK -> QuestDetailsInteraction.Action.SUBMIT_TASK;
+            case COMPLETE_QUEST -> QuestDetailsInteraction.Action.COMPLETE_QUEST;
+            case OPEN_ITEM_SLOT_SELECTION -> QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION;
+        };
         detailsInteraction.task(task.id(), row.action(), row.candidates(), rowAction);
-        acceptDetailRowHover(row);
+        acceptTaskRowHover(row);
         return row.nextY();
+    }
+
+    private void acceptTaskRowHover(QuestTaskRowWidget.Result row) {
+        if (row.lookup() != null) {
+            hoveredRecipeLookupTarget = row.lookup();
+            hoveredDetailStack = row.hoveredStack();
+        } else if (row.hint() != null) hoveredDetailText = row.hint();
     }
 
     private void acceptDetailRowHover(QuestDetailRows.Result row) {

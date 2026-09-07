@@ -1,6 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
-/** Identifies which server-side revision a draft was originally copied from. */
+/** Identifies the server-side revision that must remain stable before a draft replaces its target. */
 public enum DraftOrigin {
     ACTIVE,
     WORKSPACE,

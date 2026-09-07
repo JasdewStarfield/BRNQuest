@@ -34,7 +34,7 @@ class DraftRevisionGuardTest {
         assertFalse(check.hasConflicts());
     }
 
-    @Test void activeDraftMayReplaceWorkspaceOnlyWhenWorkspaceStillMatchesItsBase() {
+    @Test void activeContentCapturesAnExistingWorkspaceAsItsPublicationBaseline() {
         DraftSnapshot draft = DraftSnapshot.from(book(), DraftOrigin.ACTIVE, "shared-base");
         RevisionVector matchingVector = new RevisionVector("shared-base", "shared-base",
                 draft.draftRevision(), draft.draftRevision(), "shared-base");
@@ -42,13 +42,19 @@ class DraftRevisionGuardTest {
                 new RevisionCheck(matchingVector, List.of()));
         assertFalse(matching.hasConflicts(), "An unchanged source workspace is safe to replace");
 
-        RevisionVector divergentVector = new RevisionVector("shared-base", "shared-base",
-                draft.draftRevision(), draft.draftRevision(), "other-workspace");
-        RevisionCheck divergent = DraftPublishService.addWorkspaceCreationConflict(draft,
-                new RevisionCheck(divergentVector, List.of()));
-        assertEquals("WORKSPACE_ALREADY_EXISTS", divergent.conflicts().getFirst().code());
-        assertEquals("shared-base", divergent.conflicts().getFirst().expectedRevision());
-        assertEquals("other-workspace", divergent.conflicts().getFirst().actualRevision());
+        DraftSnapshot workspace = DraftSnapshot.from(book(), DraftOrigin.WORKSPACE, "other-workspace");
+        DraftSnapshot prepared = DraftService.activeDraft(book(), "shared-base", workspace);
+        assertEquals(DraftOrigin.WORKSPACE, prepared.origin());
+        assertEquals(workspace.draftRevision(), prepared.baseRevision());
+
+        RevisionCheck unchanged = DraftRevisionGuard.evaluate(prepared, prepared.draftRevision(),
+                prepared.draftRevision(), "changed-active", workspace.draftRevision());
+        assertFalse(unchanged.hasConflicts(), "Pre-existing active/workspace divergence is part of the chosen source");
+
+        RevisionCheck changedAfterCreation = DraftRevisionGuard.evaluate(prepared, prepared.draftRevision(),
+                prepared.draftRevision(), "changed-active", "later-workspace");
+        assertEquals("WORKSPACE_BASE_CHANGED", changedAfterCreation.conflicts().getFirst().code(),
+                "A later workspace write must still be rejected");
     }
 
     private static QuestBookDefinition book() {

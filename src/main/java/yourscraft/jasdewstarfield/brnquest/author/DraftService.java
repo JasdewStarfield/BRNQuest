@@ -35,7 +35,8 @@ public final class DraftService {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.NOT_FOUND, "NO_ACTIVE_BOOK",
                     "No active task book is available");
         }
-        return repository.create(server, DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision()));
+        AuthorOperationResult<DraftSnapshot> prepared = prepareFromActive(server, active.book(), active.revision());
+        return prepared.success() ? repository.create(server, prepared.value()) : prepared;
     }
 
     /** Creates a new current draft version after verifying the exact version selected by the client. */
@@ -55,8 +56,31 @@ public final class DraftService {
         if (occupied.status() != AuthorOperationResult.Status.NOT_FOUND) {
             return AuthorOperationResult.failure(occupied.status(), occupied.code(), occupied.message());
         }
-        DraftSnapshot replacement = DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision());
-        return repository.replace(server, replacement, expectedDraftRevision);
+        AuthorOperationResult<DraftSnapshot> prepared = prepareFromActive(server, active.book(), active.revision());
+        return prepared.success() ? repository.replace(server, prepared.value(), expectedDraftRevision) : prepared;
+    }
+
+    /** Captures the existing workspace as the publish target baseline while copying current active content. */
+    private AuthorOperationResult<DraftSnapshot> prepareFromActive(MinecraftServer server,
+                                                                    QuestBookDefinition activeBook,
+                                                                    String activeRevision) {
+        AuthorOperationResult<DraftSnapshot> workspace = repository.readWorkspace(server, activeBook.id());
+        if (workspace.success()) {
+            return AuthorOperationResult.success("ACTIVE_DRAFT_PREPARED", "Current book copied over workspace baseline",
+                    activeDraft(activeBook, activeRevision, workspace.value()));
+        }
+        if (workspace.status() != AuthorOperationResult.Status.NOT_FOUND) return failureLike(workspace);
+        return AuthorOperationResult.success("ACTIVE_DRAFT_PREPARED", "Current book copied from active baseline",
+                activeDraft(activeBook, activeRevision, null));
+    }
+
+    static DraftSnapshot activeDraft(QuestBookDefinition activeBook, String activeRevision,
+                                     DraftSnapshot workspace) {
+        // Origin identifies the revision that must remain unchanged before publication. When a
+        // workspace already exists, it is the replacement target even though content comes from active.
+        return workspace == null
+                ? DraftSnapshot.from(activeBook, DraftOrigin.ACTIVE, activeRevision)
+                : DraftSnapshot.from(activeBook, DraftOrigin.WORKSPACE, workspace.draftRevision());
     }
 
     public AuthorOperationResult<DraftSnapshot> createFromWorkspace(ServerPlayer player, ResourceLocation bookId) {
@@ -135,5 +159,9 @@ public final class DraftService {
         }
         return AuthorOperationResult.failure(AuthorOperationResult.Status.FORBIDDEN, "EDITOR_PERMISSION_REQUIRED",
                 "Permission level 2 is required for draft creation");
+    }
+
+    private static <T> AuthorOperationResult<T> failureLike(AuthorOperationResult<?> source) {
+        return AuthorOperationResult.failure(source.status(), source.code(), source.message());
     }
 }

@@ -13,7 +13,9 @@ class UiCompositionBoundaryTest {
         Path ui = Path.of(System.getProperty("brnquest.projectDir"),
                 "src/main/java/yourscraft/jasdewstarfield/brnquest/client/ui");
         for (String name : List.of("QuestNavigationPanel.java", "QuestDetailsPanel.java", "QuestDetailRows.java",
-                "QuestNodeDrag.java", "QuestEditorChrome.java", "QuestTypedEntryListSection.java", "QuestTypePickerModel.java",
+                "QuestNodeDrag.java", "QuestEditorChrome.java", "QuestPublishReviewSection.java",
+                "EditorDiagnosticPresentation.java", "EditorTooltipComposer.java",
+                "QuestTypedEntryListSection.java", "QuestTypePickerModel.java",
                 "QuestTypedEntryKind.java", "QuestTypedPropertySection.java",
                 "QuestTypedPropertyFormModel.java", "QuestScreenFrameIdentity.java",
                 "component/EditorPropertyPanel.java", "component/EditorFormFields.java",

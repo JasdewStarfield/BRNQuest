@@ -1,8 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 
 import net.minecraft.network.chat.Component;
-import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
-
 import java.util.List;
 
 /** Localizes stable publish-diff protocol values without changing their server representation. */
@@ -11,11 +9,11 @@ public final class EditorPublishReviewText {
 
     private EditorPublishReviewText() {}
 
-    public static Component heading(AuthoringNetwork.SemanticDiffWire change) {
+    public static Component heading(EditorPublishReviewModel.Change change) {
         return Component.translatable(PREFIX + "heading", objectKind(change.objectKind()), kind(change.kind()));
     }
 
-    public static Component detail(AuthoringNetwork.SemanticDiffWire change) {
+    public static Component detail(EditorPublishReviewModel.Change change) {
         Component path = path(change.path());
         String value = summarizedValue(change);
         if (change.path().isBlank() || value.isBlank()) {
@@ -24,7 +22,7 @@ public final class EditorPublishReviewText {
         return Component.translatable(PREFIX + "detail", change.objectId(), path, value);
     }
 
-    public static List<Component> valueTooltip(AuthoringNetwork.SemanticDiffWire change) {
+    public static List<Component> valueTooltip(EditorPublishReviewModel.Change change) {
         if (change.before().isBlank()) {
             return List.of(Component.translatable(PREFIX + "value.added", change.after()));
         }
@@ -86,7 +84,7 @@ public final class EditorPublishReviewText {
         };
     }
 
-    private static String summarizedValue(AuthoringNetwork.SemanticDiffWire change) {
+    private static String summarizedValue(EditorPublishReviewModel.Change change) {
         if (change.before().isBlank()) return "+ " + change.after();
         if (change.after().isBlank()) return "− " + change.before();
         return change.before() + " → " + change.after();

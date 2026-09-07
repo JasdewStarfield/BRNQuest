@@ -1,8 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 
 import org.junit.jupiter.api.Test;
-import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
-
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,10 +13,9 @@ class EditorPublishReviewRowsTest {
     }
 
     @Test void filtersWarningsErrorsAndOrdinaryChangesWithoutLosingSourceIndices() {
-        var review = new AuthoringNetwork.PublishReviewWire(false, "WORKSPACE", "old", "new", "BACKUP",
-                3, 1, false, List.of(
+        var review = new EditorPublishReviewModel(false, "old", "new", 3, 1, false, List.of(
                 diagnostic("WARN", "warn"), diagnostic("ERROR", "error"), diagnostic("FATAL", "fatal")),
-                List.of(new AuthoringNetwork.SemanticDiffWire(
+                List.of(new EditorPublishReviewModel.Change(
                         "RENAMED", "QUEST", "test:quest", "title", "Before", "After")));
 
         assertEquals(List.of(new EditorPublishReviewRows.Row(EditorPublishReviewRows.Kind.DIAGNOSTIC, 0)),
@@ -38,8 +35,7 @@ class EditorPublishReviewRowsTest {
     }
 
     @Test void emptyFilterStillExplainsItsResult() {
-        var review = new AuthoringNetwork.PublishReviewWire(true, "WORKSPACE", "old", "new", "BACKUP",
-                0, 0, false, List.of(), List.of());
+        var review = new EditorPublishReviewModel(true, "old", "new", 0, 0, false, List.of(), List.of());
 
         assertEquals(EditorPublishReviewRows.Kind.EMPTY,
                 EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.WARNINGS).getFirst().kind());
@@ -47,7 +43,7 @@ class EditorPublishReviewRowsTest {
                 EditorPublishReviewRows.rows(review, EditorPublishReviewRows.Filter.CHANGES).getFirst().kind());
     }
 
-    private static AuthoringNetwork.EditorDiagnosticWire diagnostic(String severity, String id) {
-        return new AuthoringNetwork.EditorDiagnosticWire(severity, "TEST", "test:" + id, "", id);
+    private static EditorPublishReviewModel.Diagnostic diagnostic(String severity, String id) {
+        return new EditorPublishReviewModel.Diagnostic(severity, "TEST", "test:" + id, "", id);
     }
 }

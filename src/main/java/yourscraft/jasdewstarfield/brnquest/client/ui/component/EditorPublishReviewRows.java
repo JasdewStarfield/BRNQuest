@@ -1,7 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 
-import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,7 +12,7 @@ public final class EditorPublishReviewRows {
 
     private EditorPublishReviewRows() {}
 
-    public static List<Row> rows(AuthoringNetwork.PublishReviewWire review, Filter filter) {
+    public static List<Row> rows(EditorPublishReviewModel review, Filter filter) {
         if (review == null) return List.of();
         List<Row> result = new ArrayList<>();
         if (filter == Filter.ALL) {
@@ -40,7 +38,7 @@ public final class EditorPublishReviewRows {
         return List.copyOf(result);
     }
 
-    private static void appendDiagnostics(AuthoringNetwork.PublishReviewWire review, List<Row> rows, Filter filter) {
+    private static void appendDiagnostics(EditorPublishReviewModel review, List<Row> rows, Filter filter) {
         for (int i = 0; i < review.diagnostics().size(); i++) {
             if (matches(review.diagnostics().get(i).severity(), filter)) rows.add(new Row(Kind.DIAGNOSTIC, i));
         }

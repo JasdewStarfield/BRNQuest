@@ -23,15 +23,12 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListViewpor
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPickerList;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewPanel;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewRows;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewText;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewModel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorFormFields;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSelectionFocus;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
@@ -184,6 +181,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ResourceLocation typedEditorQuestId;
     private final QuestTypedEntryListSection typedEntryList = new QuestTypedEntryListSection();
     private final QuestEditorChrome editorChrome = new QuestEditorChrome();
+    private final QuestPublishReviewSection publishReviewSection = new QuestPublishReviewSection();
     private final EditorPickerList<ResourceLocation> typedTypePicker = new EditorPickerList<>();
     private QuestTypePickerModel.Frame typedTypePickerFrame;
     private Component typedEditorMessage;
@@ -229,9 +227,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
     private RecipeLookupTarget hoveredRecipeLookupTarget;
-    private AuthoringNetwork.PublishReviewWire publishReview;
-    private EditorPublishReviewRows.Filter publishReviewFilter = EditorPublishReviewRows.Filter.ALL;
-    private final EditorSmoothScroll publishReviewScroll = new EditorSmoothScroll();
     private ResourceLocation recoveryCopyBookId;
 
     public QuestScreen() {
@@ -331,9 +326,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 AuthoringNetwork.renewSession(request.sessionId(), request.draftRevision()));
         editor.pollPublishReview().ifPresent(review -> {
             closeActiveEditorOverlay();
-            publishReview = review;
-            publishReviewFilter = EditorPublishReviewRows.Filter.ALL;
-            publishReviewScroll.snap(0);
+            publishReviewSection.open(publishReviewModel(review));
             editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
         });
         reconcileDragPreview();
@@ -1407,7 +1400,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         boolean publishSurfaceReady = !editor.busy() && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen
                 && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
         List<Component> errorTooltip = editor.mode() == ClientEditorState.Mode.ERROR
-                ? EditorMessageText.errorTooltip(editor.statusCode(), editor.statusMessage()) : List.of();
+                ? EditorTooltipComposer.operationError(editor.statusCode(), editor.statusMessage()) : List.of();
         QuestEditorChrome.Model chromeModel = new QuestEditorChrome.Model(currentFrameIdentity(), book.title(),
                 book.id(), editor.allowed(), editor.editing(), editor.hasLease(), editor.live(), editor.busy(),
                 editor.dirty(), editor.canUndo(), editor.canRedo(), editor.undoSteps(), editor.redoSteps(),
@@ -1786,7 +1779,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         registerOverlay(EditorOverlayHost.Kind.DELETE_CONFIRMATION, this::renderDeleteConfirmation, this::handleDeleteConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.DISCARD_CONFIRMATION, this::renderDiscardConfirmation, this::handleDiscardConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION, this::renderQuestRenameConfirmation, this::handleQuestRenameConfirmationClick);
-        registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, this::renderPublishConfirmation, this::handlePublishConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, this::renderPublishConfirmation,
+                this::handlePublishConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.CONFLICT_RECOVERY, this::renderConflictRecovery, this::handleConflictRecoveryClick);
         registerOverlay(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE, this::renderDraftSourceChoice,
                 this::handleDraftSourceChoiceClick);
@@ -1845,11 +1839,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case CATALOG -> catalogPicker.mouseScrolled(x, y, amount, scrollStep());
             case DEPENDENCY_PICKER -> dependencyPicker.mouseScrolled(x, y, amount, scrollStep());
             case TYPED_TYPE_PICKER -> typedTypePicker.mouseScrolled(x, y, amount, scrollStep());
-            case PUBLISH_CONFIRMATION -> {
-                if (publishReview != null) publishReviewScroll.scrollWheel(amount, scrollStep(),
-                        publishReviewRows().size() * EditorPublishReviewPanel.ROW_HEIGHT,
-                        EditorPublishReviewPanel.layout(layout()).list().height());
-            }
+            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseScrolled(layout(), amount, scrollStep());
             default -> { }
         }
     }
@@ -1889,9 +1879,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case QUEST_RENAME_CONFIRMATION -> editorOverlays.close();
             case PUBLISH_CONFIRMATION -> {
-                publishReview = null;
-                publishReviewFilter = EditorPublishReviewRows.Filter.ALL;
-                publishReviewScroll.snap(0);
+                publishReviewSection.close();
                 editorOverlays.close();
             }
             case CONFLICT_RECOVERY -> {
@@ -2494,7 +2482,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         : "screen.brnquest.editor.status.saved", time);
             }
             case CLOSING -> Component.translatable("screen.brnquest.editor.session.closing");
-            case ERROR -> editor.allowed() ? EditorMessageText.operationError(editor.statusCode()) : null;
+            case ERROR -> editor.allowed() ? EditorDiagnosticPresentation.operationError(editor.statusCode()) : null;
             case VIEW -> null;
         };
     }
@@ -3133,13 +3121,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (editor.mode() != ClientEditorState.Mode.ERROR) return;
         typedPropertySection.clearSubmissionPending();
-        typedPropertyMessage = EditorMessageText.operationError(editor.statusCode());
+        typedPropertyMessage = EditorDiagnosticPresentation.operationError(editor.statusCode());
         typedPropertySection.form().serverIssues().clear();
         for (AuthoringNetwork.EditorDiagnosticWire diagnostic : editor.diagnostics()) {
             String path = diagnostic.path() == null ? "" : diagnostic.path();
             String fieldKey = path.startsWith("config.") ? path.substring("config.".length()) : path;
             if (!fieldKey.isBlank()) typedPropertySection.form().serverIssues().putIfAbsent(fieldKey,
-                    EditorMessageText.diagnostic(diagnostic).getString());
+                    EditorDiagnosticPresentation.diagnostic(publishDiagnostic(diagnostic)).getString());
         }
         if (!typedPropertySection.form().serverIssues().isEmpty()) {
             String fieldKey = typedPropertySection.form().serverIssues().keySet().iterator().next();
@@ -3978,186 +3966,51 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return QuestEditorChrome.layout(layout(), editor.live(), editor.hasLease(), editor.allowed()).title();
     }
 
+    /** Copies protocol records into an immutable UI model at the screen integration boundary. */
+    private static EditorPublishReviewModel publishReviewModel(AuthoringNetwork.PublishReviewWire review) {
+        return new EditorPublishReviewModel(review.publishAllowed(), review.fromRevision(), review.targetRevision(),
+                review.diagnosticCount(), review.changeCount(), review.truncated(),
+                review.diagnostics().stream().map(QuestScreen::publishDiagnostic).toList(),
+                review.changes().stream().map(change -> new EditorPublishReviewModel.Change(change.kind(),
+                        change.objectKind(), change.objectId(), change.path(), change.before(), change.after())).toList());
+    }
+
+    private static EditorPublishReviewModel.Diagnostic publishDiagnostic(
+            AuthoringNetwork.EditorDiagnosticWire diagnostic) {
+        return new EditorPublishReviewModel.Diagnostic(diagnostic.severity(), diagnostic.code(),
+                diagnostic.objectId(), diagnostic.path(), diagnostic.message());
+    }
+
     private void renderPublishConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (publishReview == null) return;
-        EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
-        UiRect panel = reviewLayout.panel();
-        graphics.fill(0, 0, width, height, 0x88000000);
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xFF202832);
-        graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.publish.review.title"),
-                panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
-        int readinessColor = publishReview.publishAllowed() ? 0xFF83D69A : 0xFFFF8B8B;
-        graphics.drawString(font, Component.translatable(publishReview.publishAllowed()
-                        ? "screen.brnquest.editor.publish.review.ready"
-                        : "screen.brnquest.editor.publish.review.blocked"),
-                panel.left() + 12, panel.top() + 26, readinessColor, false);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.revisions",
-                        shortReviewRevision(publishReview.fromRevision()),
-                        shortReviewRevision(publishReview.targetRevision())),
-                panel.left() + 12, panel.top() + 40, 0xFFB7C5D8, false);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.counts",
-                        publishReview.diagnosticCount(), publishReview.changeCount(), publishReview.truncated()
-                                ? Component.translatable("screen.brnquest.editor.publish.review.truncated").getString()
-                                : ""),
-                panel.left() + 12, panel.top() + 54, 0xFFB7C5D8, false);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.backup"),
-                panel.left() + 12, panel.top() + 68, 0xFFFFC06A, false);
-        renderPublishReviewFilters(graphics, reviewLayout, mouseX, mouseY);
-
-        List<EditorPublishReviewRows.Row> rows = publishReviewRows();
-        int rowCount = rows.size();
-        publishReviewScroll.frameAndRender(graphics, reviewLayout.list().right() + 2,
-                reviewLayout.list().top(), reviewLayout.list().bottom(),
-                rowCount * EditorPublishReviewPanel.ROW_HEIGHT, reviewLayout.list().height(),
-                currentMotionFrameSeconds, scrollSmoothSpeed());
-        graphics.enableScissor(reviewLayout.list().left(), reviewLayout.list().top(),
-                reviewLayout.list().right(), reviewLayout.list().bottom());
-        int firstIndex = publishReviewScroll.firstIndex(EditorPublishReviewPanel.ROW_HEIGHT);
-        int rowOffset = publishReviewScroll.rowOffset(EditorPublishReviewPanel.ROW_HEIGHT);
-        int renderedRows = EditorPublishReviewPanel.renderedRows(reviewLayout, rowOffset);
-        for (int visibleIndex = 0; visibleIndex < renderedRows; visibleIndex++) {
-            int rowIndex = firstIndex + visibleIndex;
-            if (rowIndex >= rowCount) break;
-            renderPublishReviewRow(graphics, reviewLayout, rows.get(rowIndex), rowIndex,
-                    reviewLayout.list().top() + rowOffset
-                            + visibleIndex * EditorPublishReviewPanel.ROW_HEIGHT,
-                    mouseX, mouseY);
-        }
-        graphics.disableScissor();
-        renderEditorTextButton(graphics, reviewLayout.cancel(), Component.translatable("gui.cancel"),
-                null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        renderEditorTextButton(graphics, reviewLayout.confirm(),
-                Component.translatable(publishReview.publishAllowed()
-                        ? "screen.brnquest.editor.publish.confirm"
-                        : "screen.brnquest.editor.publish.blocked"),
-                null, publishReview.publishAllowed(), EditorButton.Tone.DANGER, mouseX, mouseY);
-    }
-
-    /** Renders one filtered diagnostic/change row with the severity colors requested by the author UI. */
-    private void renderPublishReviewRow(GuiGraphics graphics, EditorPublishReviewPanel.Layout layout,
-                                        EditorPublishReviewRows.Row reviewRow, int rowIndex,
-                                        int y, int mouseX, int mouseY) {
-        UiRect row = new UiRect(layout.list().left(), y, layout.list().right(),
-                y + EditorPublishReviewPanel.ROW_HEIGHT - 2);
-        boolean hovered = row.contains(mouseX, mouseY);
-        graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
-                hovered ? 0xFF354352 : (rowIndex % 2 == 0 ? 0xFF28313C : 0xFF242C36));
-        String heading;
-        String detail;
-        List<Component> tooltip;
-        int headingColor;
-        if (reviewRow.kind() == EditorPublishReviewRows.Kind.DIAGNOSTIC) {
-            AuthoringNetwork.EditorDiagnosticWire diagnostic = publishReview.diagnostics().get(reviewRow.sourceIndex());
-            heading = EditorMessageText.severity(diagnostic.severity()).getString() + " · "
-                    + EditorMessageText.diagnostic(diagnostic).getString();
-            detail = diagnostic.objectId() + (diagnostic.path().isBlank() ? "" : " · " + diagnostic.path());
-            tooltip = EditorMessageText.diagnosticTooltip(diagnostic);
-            // Conventional severity colors keep recoverable warnings yellow and blocking errors red.
-            headingColor = "WARN".equals(diagnostic.severity()) ? 0xFFFFD35A
-                    : "ERROR".equals(diagnostic.severity()) || "FATAL".equals(diagnostic.severity())
-                    ? 0xFFFF6B6B : 0xFF8FC7FF;
-        } else if (reviewRow.kind() == EditorPublishReviewRows.Kind.EMPTY) {
-            boolean changes = publishReviewFilter == EditorPublishReviewRows.Filter.CHANGES
-                    || publishReviewFilter == EditorPublishReviewRows.Filter.ALL;
-            heading = Component.translatable(changes
-                    ? "screen.brnquest.editor.publish.review.no_changes"
-                    : "screen.brnquest.editor.publish.review.no_matching").getString();
-            detail = Component.translatable(changes
-                    ? "screen.brnquest.editor.publish.review.no_changes.detail"
-                    : "screen.brnquest.editor.publish.review.no_matching.detail").getString();
-            tooltip = List.of(Component.literal(heading), Component.literal(detail));
-            headingColor = 0xFF9FB0C2;
-        } else {
-            AuthoringNetwork.SemanticDiffWire change = publishReview.changes().get(reviewRow.sourceIndex());
-            heading = EditorPublishReviewText.heading(change).getString();
-            detail = EditorPublishReviewText.detail(change).getString();
-            List<Component> changeTooltip = new ArrayList<>();
-            changeTooltip.add(Component.literal(heading));
-            changeTooltip.add(Component.literal(detail));
-            changeTooltip.addAll(EditorPublishReviewText.valueTooltip(change));
-            tooltip = List.copyOf(changeTooltip);
-            headingColor = 0xFF83D69A;
-        }
-        graphics.fill(row.left(), row.top(), row.left() + 3, row.bottom(), headingColor);
-        int textWidth = Math.max(20, row.width() - 12);
-        graphics.drawString(font, font.plainSubstrByWidth(heading, textWidth), row.left() + 7,
-                row.top() + 3, headingColor, false);
-        graphics.drawString(font, font.plainSubstrByWidth(detail, textWidth), row.left() + 5,
-                row.top() + 15, 0xFF9FB0C2, false);
-        if (hovered) hoveredComponentTooltip = tooltip;
-    }
-
-    private void renderPublishReviewFilters(GuiGraphics graphics, EditorPublishReviewPanel.Layout layout,
-                                            int mouseX, int mouseY) {
-        EditorPublishReviewRows.Filter[] filters = EditorPublishReviewRows.Filter.values();
-        for (int i = 0; i < filters.length; i++) {
-            EditorPublishReviewRows.Filter filter = filters[i];
-            UiRect bounds = EditorPublishReviewPanel.filterBounds(layout, i, filters.length);
-            boolean selected = filter == publishReviewFilter;
-            boolean hovered = bounds.containsExclusive(mouseX, mouseY);
-            int textColor = switch (filter) {
-                case WARNINGS -> 0xFFFFD35A;
-                case ERRORS -> 0xFFFF6B6B;
-                case CHANGES -> 0xFF83D69A;
-                case ALL -> 0xFFFFFFFF;
-            };
-            graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(),
-                    selected ? 0xFF405064 : hovered ? 0xFF354352 : 0xFF28313C);
-            Component label = Component.translatable("screen.brnquest.editor.publish.review.filter."
-                    + filter.name().toLowerCase(Locale.ROOT));
-            graphics.drawCenteredString(font, label, bounds.centerX(), bounds.top() + 5, textColor);
-        }
+        QuestPublishReviewSection.RenderResult result = publishReviewSection.render(
+                graphics, font, layout(), currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
+        if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
     }
 
     private boolean handlePublishConfirmationClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        if (publishReview == null) return true;
-        EditorPublishReviewPanel.Layout reviewLayout = EditorPublishReviewPanel.layout(layout());
-        if (publishReviewScroll.handleTrackClick(mouseX, mouseY, reviewLayout.list().right() + 2,
-                reviewLayout.list().top(), reviewLayout.list().bottom(),
-                publishReviewRows().size() * EditorPublishReviewPanel.ROW_HEIGHT,
-                reviewLayout.list().height())) return true;
-        if (reviewLayout.cancel().contains(mouseX, mouseY)) {
-            closeActiveEditorOverlay();
-            return true;
-        }
-        EditorPublishReviewRows.Filter[] filters = EditorPublishReviewRows.Filter.values();
-        int filterIndex = EditorPublishReviewPanel.filterAt(reviewLayout, filters.length, mouseX, mouseY);
-        if (filterIndex >= 0) {
-            publishReviewFilter = filters[filterIndex];
-            publishReviewScroll.snap(0);
-            return true;
-        }
-        if (publishReview.publishAllowed() && reviewLayout.confirm().contains(mouseX, mouseY)) {
-            String reviewedRevision = publishReview.targetRevision();
-            closeActiveEditorOverlay();
-            ClientEditorState editor = ClientEditorState.get();
-            // The preview is revision-bound; never confirm a different draft with stale review data.
-            if (reviewedRevision.equals(editor.draftRevision())) {
-                editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
-                        request.sessionId(), editor.bookId(), request.draftRevision()));
+        QuestPublishReviewSection.ClickResult result = publishReviewSection.click(layout(), mouseX, mouseY, button);
+        if (result.intent() != null) handlePublishReviewIntent(result.intent());
+        return result.consumed();
+    }
+
+    /** Dispatches review intents while the extracted overlay remains protocol-agnostic. */
+    private void handlePublishReviewIntent(QuestPublishReviewSection.Intent intent) {
+        switch (intent.action()) {
+            case CANCEL -> closeActiveEditorOverlay();
+            case JUMP_TO_OBJECT -> {
+                if (intent.objectId() != null && jumpToEditorObject(intent.objectId())) closeActiveEditorOverlay();
             }
-            return true;
+            case CONFIRM -> {
+                String reviewedRevision = intent.reviewedRevision();
+                closeActiveEditorOverlay();
+                ClientEditorState editor = ClientEditorState.get();
+                // The preview is revision-bound; never confirm a different draft with stale review data.
+                if (reviewedRevision.equals(editor.draftRevision())) {
+                    editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
+                            request.sessionId(), editor.bookId(), request.draftRevision()));
+                }
+            }
         }
-        List<EditorPublishReviewRows.Row> rows = publishReviewRows();
-        int row = EditorPublishReviewPanel.rowAt(reviewLayout, publishReviewScroll, rows.size(), mouseX, mouseY);
-        if (row >= 0) {
-            ResourceLocation objectId = publishReviewObjectId(rows.get(row));
-            if (objectId != null && jumpToEditorObject(objectId)) closeActiveEditorOverlay();
-        }
-        return true;
-    }
-
-    private List<EditorPublishReviewRows.Row> publishReviewRows() {
-        return EditorPublishReviewRows.rows(publishReview, publishReviewFilter);
-    }
-
-    private ResourceLocation publishReviewObjectId(EditorPublishReviewRows.Row row) {
-        if (row.kind() == EditorPublishReviewRows.Kind.EMPTY) return null;
-        String raw = row.kind() == EditorPublishReviewRows.Kind.DIAGNOSTIC
-                ? publishReview.diagnostics().get(row.sourceIndex()).objectId()
-                : publishReview.changes().get(row.sourceIndex()).objectId();
-        return ResourceLocation.tryParse(raw);
     }
 
     /** Selects the closest surviving chapter or quest represented by a diagnostic/diff object ID. */
@@ -4193,11 +4046,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             navigationPanel.scroll().snap(0);
         }
         return true;
-    }
-
-    private static String shortReviewRevision(String revision) {
-        if (revision == null || revision.isBlank()) return "<none>";
-        return revision.length() <= 12 ? revision : revision.substring(0, 12);
     }
 
     private void requestDiscardConfirmation(ResourceLocation switchTarget, boolean closeScreen) {

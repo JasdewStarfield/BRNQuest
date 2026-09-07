@@ -3,7 +3,6 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.TranslatableContents;
 import org.junit.jupiter.api.Test;
-import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -21,7 +20,7 @@ class EditorPublishReviewTextTest {
     }
 
     @Test void changedValuesUseSeparateTooltipLines() {
-        var change = new AuthoringNetwork.SemanticDiffWire("PROPERTY_CHANGED", "QUEST", "test:quest",
+        var change = new EditorPublishReviewModel.Change("PROPERTY_CHANGED", "QUEST", "test:quest",
                 "title", "Before", "After");
 
         assertEquals(2, EditorPublishReviewText.valueTooltip(change).size());

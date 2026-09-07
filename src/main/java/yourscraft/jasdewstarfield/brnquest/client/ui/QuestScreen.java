@@ -116,7 +116,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
-    private int navigationContentHeight;
     private int chapterIndex;
     private QuestScreenLayout cachedLayout;
     // Scoped to one render call; this is not a second revision cache.
@@ -480,16 +479,68 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter,
                                   int mouseX, int mouseY, double motionFrameSeconds) {
-        navigationContentHeight = navigationPanel.contentHeight(book);
-        navigationPanel.render(graphics, font, book, selectedChapter,
+        QuestNavigationPanel.RenderResult result = navigationPanel.render(graphics, font,
+                new QuestNavigationPanel.Model(currentFrameIdentity(), book, selectedChapter,
+                        ClientEditorState.get().editing(), defaultGroupId(book) != null),
                 new QuestNavigationPanel.Layout(navigationWidth(), navigationTop(), height - navigationBottomMargin(),
                         navigationListBottom(), navigationHandleLeft(), navigationDrawerOffsetX(),
                         navigationHandleWidth(), contentCenterY(), navigationCollapsed),
-                motionFrameSeconds, scrollSmoothSpeed(), () -> {
-                    if (ClientEditorState.get().editing()) renderNavigationEditorButtons(graphics,
-                            navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE,
-                            navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE);
-                });
+                motionFrameSeconds, scrollSmoothSpeed(),
+                navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE,
+                navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE);
+        if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
+    }
+
+    /** Applies navigation intents after resolving their stable IDs against the current book snapshot. */
+    private void handleNavigationIntent(QuestNavigationPanel.Intent intent, QuestBookDefinition book) {
+        switch (intent.action()) {
+            case TOGGLE_DRAWER -> navigationCollapsed = !navigationCollapsed;
+            case ADD_GROUP -> {
+                if (ClientEditorState.get().editing()) {
+                    openStructureForm(StructureFormKind.ADD_GROUP, null, null, 0, 0);
+                }
+            }
+            case ADD_CHAPTER -> {
+                ResourceLocation groupId = defaultGroupId(book);
+                if (ClientEditorState.get().editing() && groupId != null) {
+                    openStructureForm(StructureFormKind.ADD_CHAPTER, null, groupId, 0, 0);
+                }
+            }
+            case OPEN_GROUP_CONTEXT, OPEN_CHAPTER_CONTEXT -> {
+                if (ClientEditorState.get().editing() && intent.targetId() != null) {
+                    openEditContext(intent.action() == QuestNavigationPanel.Action.OPEN_GROUP_CONTEXT
+                                    ? ContextKind.GROUP : ContextKind.CHAPTER,
+                            intent.targetId(), intent.pointerX(), intent.pointerY(), 0, 0);
+                }
+            }
+            case SELECT_CHAPTER -> selectNavigationChapter(book, intent.targetId());
+        }
+    }
+
+    private void selectNavigationChapter(QuestBookDefinition book, ResourceLocation chapterId) {
+        List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(book);
+        int index = -1;
+        for (int candidate = 0; candidate < chapters.size(); candidate++) {
+            if (chapters.get(candidate).id().equals(chapterId)) {
+                index = candidate;
+                break;
+            }
+        }
+        if (index < 0) return;
+        chapterIndex = index;
+        rememberedChapterId = chapterId;
+        rememberedChapterResolved = true;
+        editorSelection.clear();
+        nodeDrag.clearPreview();
+        zoomMotion.snap(renderedZoom);
+        zoom = renderedZoom;
+        panX = 0;
+        panY = 0;
+        renderedPanX = 0;
+        renderedPanY = 0;
+        detailsOpen = false;
+        detailsPanel.scroll().snap(0);
+        closeQuestEditingPanels();
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
@@ -980,19 +1031,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
 
-        int navigationHandleLeft = navigationHandleLeft();
-        if (mouseX >= navigationHandleLeft && mouseX <= navigationHandleLeft + navigationHandleWidth()
-                && isContentY(mouseY)) {
-            navigationCollapsed = !navigationCollapsed;
-            return true;
-        }
-
-        if (navigationPanelAcceptsPointer(mouseX) && mouseX >= navigationWidth()
-                && navigationContentHeight > navigationViewportHeight()) {
-            navigationPanel.scroll().snapFromTrack(mouseY, navigationTop(), navigationListBottom(),
-                    navigationContentHeight, navigationViewportHeight());
-            return true;
-        }
+        QuestNavigationPanel.ClickResult navigationClick = navigationPanel.click(
+                currentFrameIdentity(), mouseX, mouseY, button);
+        if (navigationClick.intent() != null) handleNavigationIntent(navigationClick.intent(), snapshot.book());
+        if (navigationClick.consumed()) return true;
         if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 12
                 && detailsPanel.contentHeight() > detailViewportHeight()
                 && mouseY >= detailContentTop() && mouseY <= detailContentBottom()) {
@@ -1001,44 +1043,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
 
-        if (ClientEditorState.get().editing() && navigationPanelAcceptsPointer(mouseX)) {
-            if (navigationAddGroupBounds().contains(mouseX, mouseY)) {
-                openStructureForm(StructureFormKind.ADD_GROUP, null, null, 0, 0);
-                return true;
-            }
-            if (navigationAddChapterBounds().contains(mouseX, mouseY)) {
-                ResourceLocation groupId = defaultGroupId(snapshot.book());
-                if (groupId != null) openStructureForm(StructureFormKind.ADD_CHAPTER, null, groupId, 0, 0);
-                return true;
-            }
-            QuestPresentation.NavigationEntry navigationEntry = navigationEntry(snapshot.book(), mouseX, mouseY);
-            if (button == 1 && navigationEntry != null) {
-                openEditContext(navigationEntry.group() != null ? ContextKind.GROUP : ContextKind.CHAPTER,
-                        navigationEntry.group() != null ? navigationEntry.group().id() : navigationEntry.chapter().id(),
-                        (int) mouseX, (int) mouseY, 0, 0);
-                return true;
-            }
-        }
-
-        ChapterDefinition navigationChoice = navigationChoice(snapshot.book(), mouseX, mouseY);
-        if (navigationChoice != null) {
-            List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
-            chapterIndex = chapters.indexOf(navigationChoice);
-            rememberedChapterId = navigationChoice.id();
-            rememberedChapterResolved = true;
-            editorSelection.clear();
-            nodeDrag.clearPreview();
-            zoomMotion.snap(renderedZoom);
-            zoom = renderedZoom;
-            panX = 0;
-            panY = 0;
-            renderedPanX = 0;
-            renderedPanY = 0;
-            detailsOpen = false;
-            detailsPanel.scroll().snap(0);
-            closeQuestEditingPanels();
-            return true;
-        }
         // Group headings and empty navigation space belong to the left panel and
         // must not fall through into quest selection or canvas interaction.
         if (navigationPanelVisibleAt(mouseX)) return true;
@@ -1182,8 +1186,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (navigationPanelVisibleAt(x) && isContentY(y)) {
             if (navigationPanelAcceptsPointer(x)) {
-                navigationPanel.scroll().scrollWheel(vertical, scrollStep(),
-                        navigationContentHeight, navigationViewportHeight());
+                navigationPanel.mouseScrolled(vertical, scrollStep());
             }
             return true;
         }
@@ -1373,15 +1376,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return editorOverlays.charTyped(codePoint, modifiers) || super.charTyped(codePoint, modifiers);
     }
 
-    private ChapterDefinition navigationChoice(QuestBookDefinition book, double mouseX, double mouseY) {
-        var entry = navigationEntry(book, mouseX, mouseY);
-        return entry == null ? null : entry.chapter();
-    }
-
-    private QuestPresentation.NavigationEntry navigationEntry(QuestBookDefinition book, double mouseX, double mouseY) {
-        return navigationPanelAcceptsPointer(mouseX) ? navigationPanel.entryAt(book, mouseX, mouseY) : null;
-    }
-
     /** Adds editor controls as overlays so switching modes never resizes the established three regions. */
     private void renderEditorChrome(GuiGraphics graphics, QuestBookDefinition book, int mouseX, int mouseY) {
         graphics.pose().pushPose();
@@ -1449,20 +1443,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 accessibleLabel, accessibleLabel, EditorIcon.glyph(glyph));
         renderEditorActionButton(graphics, bounds, definition, enabled,
                 dangerous ? EditorButton.Tone.DANGER : EditorButton.Tone.PRIMARY, mouseX, mouseY);
-    }
-
-    private void renderNavigationEditorButtons(GuiGraphics graphics, int mouseX, int mouseY) {
-        UiRect group = navigationAddGroupBounds();
-        UiRect chapter = navigationAddChapterBounds();
-        Component addGroup = Component.translatable("screen.brnquest.editor.group.add");
-        Component addChapter = Component.translatable("screen.brnquest.editor.chapter.add");
-        renderEditorActionButton(graphics, group, EditorButton.Definition.iconAndText(
-                        addGroup, addGroup, EditorIcon.glyph(Component.literal("+"))),
-                true, EditorButton.Tone.PRIMARY, mouseX, mouseY);
-        renderEditorActionButton(graphics, chapter, EditorButton.Definition.iconAndText(
-                        addChapter, addChapter, EditorIcon.glyph(Component.literal("+"))),
-                defaultGroupId(displaySnapshot().book()) != null,
-                EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
     private void renderEditContextMenu(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -2327,16 +2307,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         return book.chapterGroups().stream().sorted(java.util.Comparator.comparingInt(ChapterGroupDefinition::order))
                 .map(ChapterGroupDefinition::id).findFirst().orElse(null);
-    }
-
-    private UiRect navigationAddGroupBounds() {
-        int top = height - bottomToolbarHeight() - 18;
-        return new UiRect(2, top, navigationWidth() / 2, top + 16);
-    }
-
-    private UiRect navigationAddChapterBounds() {
-        int top = height - bottomToolbarHeight() - 18;
-        return new UiRect(navigationWidth() / 2 + 2, top, navigationWidth() - 2, top + 16);
     }
 
     private void renderEditorCatalog(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -4036,7 +4006,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             chapterIndex = index;
             rememberedChapterId = chapter.id();
             rememberedChapterResolved = true;
-            navigationPanel.scroll().snap(0);
+            navigationPanel.resetScroll();
         }
         return true;
     }
@@ -4719,7 +4689,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         navigationCollapsed = remembered.navigationCollapsed();
         navigationDrawerMotion.snap(navigationCollapsed ? 0.0 : 1.0);
         rememberedChapterResolved = false;
-        navigationPanel.scroll().snap(0);
+        navigationPanel.resetScroll();
         detailsPanel.scroll().snap(0);
         detailsOpen = false;
         detailsDrawerMotion.snap(0.0);
@@ -4863,10 +4833,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (remote != null) return "remote:" + remote.ip;
         var integrated = minecraft.getSingleplayerServer();
         return integrated == null ? "unknown" : "integrated:" + integrated.getWorldData().getLevelName();
-    }
-
-    private int navigationViewportHeight() {
-        return Math.max(1, navigationListBottom() - navigationTop());
     }
 
     private int navigationListBottom() {

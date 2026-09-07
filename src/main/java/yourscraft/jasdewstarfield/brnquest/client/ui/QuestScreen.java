@@ -35,7 +35,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestIconEditorRow;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestNodeGeometry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
@@ -71,9 +70,7 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -84,20 +81,14 @@ import java.util.function.Consumer;
 public final class QuestScreen extends Screen implements RecipeLookupSource, TransientChildScreenParent {
     private static final int NAV_LEFT = 0;
     private static final int CANVAS_MARGIN = 0;
-    private static final int NODE_BASE_SIZE = 18;
     private static final int EDITOR_CATALOG_ROW_HEIGHT = 30;
     private static final int EDITOR_CATALOG_SEARCH_HEIGHT = 18;
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
     private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
-    private static final int ATTENTION_PING_SIZE = 10;
     private static final List<String> QUEST_SHAPES = List.of("chamfer", "square", "circle", "diamond");
     private static final List<String> REWARD_CLAIM_POLICIES = java.util.Arrays.stream(RewardClaimPolicy.values())
             .map(RewardClaimPolicy::serializedName).toList();
-    private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
-            BRNQuest.MOD_ID, "textures/gui/reward_ping.png");
-    private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
-            BRNQuest.MOD_ID, "textures/gui/submitable_ping.png");
 
     private double panX;
     private double panY;
@@ -116,6 +107,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
+    private final QuestCanvasRenderer canvasRenderer = new QuestCanvasRenderer();
+    private QuestCanvasRenderer.Frame canvasFrame;
     private int chapterIndex;
     private QuestScreenLayout cachedLayout;
     // Scoped to one render call; this is not a second revision cache.
@@ -454,8 +447,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             updateSelectedQuestFocus(snapshot, motionFrameSeconds);
             renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
             if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
-            else graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
-                    height - bottomToolbarHeight(), 0xD0151820);
+            else {
+                canvasFrame = null;
+                graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
+                        height - bottomToolbarHeight(), 0xD0151820);
+            }
             if (detailsDrawerVisible() && !structureFormOpen()) {
                 int visibleLeft = canvasRight();
                 graphics.enableScissor(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight());
@@ -544,206 +540,52 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
-        int right = canvasRight() - CANVAS_MARGIN;
-        int top = topToolbarHeight();
-        int bottom = height - bottomToolbarHeight();
-        graphics.enableScissor(canvasLeft(), top, right, bottom);
-        // Keep the graph in one fixed-resolution coordinate system. A single pose
-        // transform scales nodes, icons, lines and grid pixels together, avoiding the
-        // independent integer rounding that previously made elements wobble while zooming.
-        double graphLeft = graphX(canvasLeft());
-        double graphRight = graphX(right);
-        double graphTop = graphY(top);
-        double graphBottom = graphY(bottom);
-        double graphMouseX = graphX(mouseX);
-        double graphMouseY = graphY(mouseY);
-        nodeDrag.update(graphMouseX, graphMouseY, mouseX, mouseY, System.nanoTime());
-        graphics.pose().pushPose();
-        graphics.pose().translate((float) graphOriginX(), (float) graphOriginY(), 0.0F);
-        graphics.pose().scale((float) renderedZoom, (float) renderedZoom, 1.0F);
-        renderGrid(graphics, graphLeft, graphRight, graphTop, graphBottom);
-
-        if (chapter != null) {
-            Map<ResourceLocation, QuestDefinition> chapterQuests = new HashMap<>();
-            chapter.quests().stream().filter(this::questVisible).forEach(quest -> chapterQuests.put(quest.id(), quest));
-            for (QuestDefinition quest : chapter.quests()) {
-                if (!questVisible(quest)) continue;
-                for (ResourceLocation dependency : quest.dependencies()) {
-                    QuestDefinition parent = chapterQuests.get(dependency);
-                    // Large chapters commonly contain off-screen subgraphs. Skip a
-                    // dependency only when both endpoints are outside the same side;
-                    // crossing lines remain visible while distant work is culled.
-                    if (parent != null && dependencyMayBeVisible(parent, quest,
-                            graphLeft, graphRight, graphTop, graphBottom)) {
-                        renderDependency(graphics, parent, quest);
-                    }
-                }
-            }
-            for (QuestDefinition quest : chapter.quests()) {
-                if (!questVisible(quest)) continue;
-                renderNodeSnapGhost(graphics, quest, graphLeft, graphRight, graphTop, graphBottom);
-            }
-            for (QuestDefinition quest : chapter.quests()) {
-                if (!questVisible(quest)) continue;
-                renderNode(graphics, quest, graphLeft, graphRight, graphTop, graphBottom, graphMouseX, graphMouseY);
-            }
-        }
-        graphics.pose().popPose();
-        graphics.disableScissor();
-    }
-
-    static boolean dependencyMayBeVisible(QuestDefinition first, QuestDefinition second,
-                                          double left, double right, double top, double bottom) {
-        double margin = NODE_BASE_SIZE;
-        double firstX = first.x() * QuestViewportMath.GRID_SCALE;
-        double firstY = first.y() * QuestViewportMath.GRID_SCALE;
-        double secondX = second.x() * QuestViewportMath.GRID_SCALE;
-        double secondY = second.y() * QuestViewportMath.GRID_SCALE;
-        return !(firstX < left - margin && secondX < left - margin)
-                && !(firstX > right + margin && secondX > right + margin)
-                && !(firstY < top - margin && secondY < top - margin)
-                && !(firstY > bottom + margin && secondY > bottom + margin);
-    }
-
-    private void renderGrid(GuiGraphics graphics, double left, double right, double top, double bottom) {
-        int firstX = (int) Math.floor(left / QuestViewportMath.GRID_SCALE) * (int) QuestViewportMath.GRID_SCALE;
-        int firstY = (int) Math.floor(top / QuestViewportMath.GRID_SCALE) * (int) QuestViewportMath.GRID_SCALE;
-        int drawLeft = (int) Math.floor(left) - 1;
-        int drawRight = (int) Math.ceil(right) + 1;
-        int drawTop = (int) Math.floor(top) - 1;
-        int drawBottom = (int) Math.ceil(bottom) + 1;
-        for (int x = firstX; x <= drawRight; x += (int) QuestViewportMath.GRID_SCALE) {
-            graphics.fill(x, drawTop, x + 1, drawBottom, 0x243C4655);
-        }
-        for (int y = firstY; y <= drawBottom; y += (int) QuestViewportMath.GRID_SCALE) {
-            graphics.fill(drawLeft, y, drawRight, y + 1, 0x243C4655);
-        }
-    }
-
-    /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
-    private void renderDependency(GuiGraphics graphics, QuestDefinition parent, QuestDefinition child) {
-        int x1 = nodeGraphX(parent);
-        int y1 = nodeGraphY(parent);
-        int x2 = nodeGraphX(child);
-        int y2 = nodeGraphY(child);
-        int radius = NODE_BASE_SIZE / 2;
-        int thickness = 1;
-        int color = 0xC0798799;
-
-        if (Math.abs(x2 - x1) < radius * 2) {
-            int direction = y2 >= y1 ? 1 : -1;
-            int startY = y1 + direction * radius;
-            int endY = y2 - direction * radius;
-            vertical(graphics, x1, startY, endY, thickness, color);
-            arrowVertical(graphics, x1, endY, direction, thickness, color);
-            return;
-        }
-
-        int direction = x2 >= x1 ? 1 : -1;
-        int startX = x1 + direction * radius;
-        int endX = x2 - direction * radius;
-        int middleX = (startX + endX) / 2;
-        horizontal(graphics, startX, middleX, y1, thickness, color);
-        vertical(graphics, middleX, y1, y2, thickness, color);
-        horizontal(graphics, middleX, endX, y2, thickness, color);
-        arrowHorizontal(graphics, endX, y2, direction, thickness, color);
-    }
-
-    private void renderNode(GuiGraphics graphics, QuestDefinition quest, double left, double right,
-                            double top, double bottom, double mouseX, double mouseY) {
-        int x = nodeGraphX(quest);
-        int y = nodeGraphY(quest);
-        boolean pickedUp = nodeDrag.pickedUp() && quest.id().equals(nodeDrag.anchor());
-        int size = nodeSize(quest) + (pickedUp ? 4 : 0);
-        int radius = size / 2;
-        // Keep partially visible nodes; cull only after their entire bounds leave the canvas.
-        if (!QuestViewportMath.intersectsViewport(x, y, radius, left, right, top, bottom)) return;
-
+        nodeDrag.update(graphX(mouseX), graphY(mouseY), mouseX, mouseY, System.nanoTime());
         boolean editing = ClientEditorState.get().editing();
-        QuestStatus status = status(quest);
-        int color = !gameplayAllowed() ? 0xFF4A6A88 : switch (status) {
+        boolean allowGameplay = gameplayAllowed();
+        List<QuestCanvasRenderer.NodeModel> nodes = new ArrayList<>();
+        if (chapter != null) {
+            for (QuestDefinition quest : chapter.quests()) {
+                if (!questVisible(quest)) continue;
+                QuestStatus status = status(quest);
+                QuestPresentation.QuestVisual visual = QuestPresentation.visual(quest);
+                ItemStack stack = visual.kind() == QuestPresentation.VisualKind.ITEM
+                        ? item(quest.id(), visual.itemSnbt()) : ItemStack.EMPTY;
+                boolean hiddenText = !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status);
+                List<Component> tooltip = new ArrayList<>();
+                tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
+                String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
+                if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
+                DraftBookEditor.Position preview = nodeDrag.preview(quest.id());
+                nodes.add(new QuestCanvasRenderer.NodeModel(quest.id(), quest.appearance(),
+                        preview == null ? new DraftBookEditor.Position(quest.x(), quest.y()) : preview,
+                        nodeDrag.snapPreview(quest.id()), canvasNodeColor(status, allowGameplay),
+                        editing ? editorSelection.contains(quest.id()) : quest.id().equals(selectedQuestId()),
+                        allowGameplay && status == QuestStatus.ACTIVE,
+                        nodeDrag.pickedUp() && quest.id().equals(nodeDrag.anchor()),
+                        allowGameplay && questHasAttentionTask(quest, status),
+                        allowGameplay && QuestPresentation.hasPendingReward(
+                                quest, status, ClientQuestState.get().claimed()),
+                        visual, stack, tooltip, quest.dependencies()));
+            }
+        }
+        QuestCanvasRenderer.RenderResult result = canvasRenderer.render(graphics, font,
+                new QuestCanvasRenderer.Model(currentFrameIdentity(), chapter == null ? null : chapter.id(),
+                        new UiRect(canvasLeft(), topToolbarHeight(), canvasRight() - CANVAS_MARGIN,
+                                height - bottomToolbarHeight()),
+                        new QuestCanvasRenderer.Camera(graphOriginX(), graphOriginY(), renderedZoom),
+                        nodes, nodeDrag.active(), attentionPingOffsetY, mouseX, mouseY));
+        canvasFrame = result.frame();
+        if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
+    }
+
+    private static int canvasNodeColor(QuestStatus status, boolean gameplayAllowed) {
+        if (!gameplayAllowed) return 0xFF4A6A88;
+        return switch (status) {
             case COMPLETED, REWARD_CLAIMED -> 0xFF4C9A66;
             case AVAILABLE, ACTIVE -> 0xFFCF9F42;
             default -> 0xFF59606B;
         };
-        boolean selected = editing ? editorSelection.contains(quest.id()) : quest.id().equals(selectedQuestId());
-        boolean tracked = gameplayAllowed() && status == QuestStatus.ACTIVE;
-        if (tracked) fillNodeShape(graphics, quest.appearance().shape(), x, y, size + 7, 0xFF57C7F2);
-        fillNodeShape(graphics, quest.appearance().shape(), x, y, size + (selected ? 4 : 2),
-                selected ? 0xFF91C9F4 : 0xFF222936);
-        fillNodeShape(graphics, quest.appearance().shape(), x, y, size, color);
-        renderQuestVisual(graphics, quest, x, y, size);
-        boolean attentionTask = gameplayAllowed() && questHasAttentionTask(quest, status);
-        boolean pendingReward = gameplayAllowed()
-                && QuestPresentation.hasPendingReward(quest, status, ClientQuestState.get().claimed());
-        // These states are mutually exclusive in normal progression, so both authored badges share
-        // the clearer top-right anchor instead of reserving opposite corners.
-        if (attentionTask) {
-            renderNodeAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x, y, size);
-        }
-        if (pendingReward) {
-            renderNodeAttentionPing(graphics, REWARD_PING_TEXTURE, x, y, size);
-        }
-
-        if (!nodeDrag.active() && mouseX >= left && mouseX < right && mouseY >= top && mouseY < bottom
-                && Math.abs(mouseX - x) <= radius && Math.abs(mouseY - y) <= radius) {
-            List<Component> tooltip = new ArrayList<>();
-            boolean hiddenText = !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status);
-            tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
-            String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
-            if (!subtitle.isBlank()) {
-                tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
-            }
-            hoveredComponentTooltip = List.copyOf(tooltip);
-        }
-    }
-
-    /** Draws the server-bound grid destination below the freely moving picked-up node. */
-    private void renderNodeSnapGhost(GuiGraphics graphics, QuestDefinition quest, double left, double right,
-                                     double top, double bottom) {
-        DraftBookEditor.Position target = nodeDrag.snapPreview(quest.id());
-        if (!nodeDrag.pickedUp() || target == null) return;
-        int x = graphCoordinate(target.x());
-        int y = graphCoordinate(target.y());
-        int radius = NODE_BASE_SIZE / 2 + 3;
-        if (!QuestViewportMath.intersectsViewport(x, y, radius, left, right, top, bottom)) return;
-        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 6, 0x9091C9F4);
-        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 2, 0xB0202632);
-        graphics.drawCenteredString(font, Component.literal("◇"), x, y - 4, 0xD091C9F4);
-    }
-
-    private void renderQuestVisual(GuiGraphics graphics, QuestDefinition quest, int x, int y, int size) {
-        QuestPresentation.QuestVisual visual = QuestPresentation.visual(quest);
-        if (visual.kind() == QuestPresentation.VisualKind.TEXTURE) {
-            int iconSize = Math.max(1, (int) Math.round(size * safeAppearanceScale(quest.appearance().iconScale())));
-            QuestIconValue.textureId(visual.value()).ifPresent(texture ->
-                    graphics.blit(texture, x - iconSize / 2, y - iconSize / 2, 0.0F, 0.0F,
-                            iconSize, iconSize, iconSize, iconSize));
-            return;
-        }
-        if (visual.kind() == QuestPresentation.VisualKind.ITEM) {
-            ItemStack stack = item(quest.id(), visual.itemSnbt());
-            if (!stack.isEmpty()) {
-                float scale = Math.max(0.25F, (float) (size / 18.0F * safeAppearanceScale(quest.appearance().iconScale())));
-                graphics.pose().pushPose();
-                graphics.pose().translate(x - 8.0F * scale, y - 8.0F * scale, 0);
-                graphics.pose().scale(scale, scale, 1.0F);
-                graphics.renderItem(stack, 0, 0);
-                graphics.pose().popPose();
-                return;
-            }
-        }
-        String symbol = switch (visual.kind()) {
-            case CHECKMARK -> "✓";
-            case CUSTOM -> "◆";
-            default -> "?";
-        };
-        float scale = Math.max(0.5F, (float) (size / 18.0F * safeAppearanceScale(quest.appearance().iconScale())));
-        graphics.pose().pushPose();
-        graphics.pose().translate(x, y, 1);
-        graphics.pose().scale(scale, scale, 1.0F);
-        graphics.drawCenteredString(font, symbol, 0, -font.lineHeight / 2, 0xFFFFFFFF);
-        graphics.pose().popPose();
     }
 
     private void renderDetails(GuiGraphics graphics, int mouseX, int mouseY, double motionFrameSeconds) {
@@ -1065,7 +907,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
             double graphMouseX = graphX(mouseX);
             double graphMouseY = graphY(mouseY);
-            QuestDefinition hit = chapter == null ? null : nodeAt(chapter, graphMouseX, graphMouseY);
+            QuestDefinition hit = chapter == null ? null : nodeAt(chapter, mouseX, mouseY);
             if (hit != null) {
                 if (ClientEditorState.get().editing()) {
                     if (button == 1) {
@@ -4188,20 +4030,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED;
     }
 
-    /** Anchors either node notification just outside the visual's top-right corner. */
-    private void renderNodeAttentionPing(GuiGraphics graphics, ResourceLocation texture,
-                                         int nodeX, int nodeY, int nodeSize) {
-        int nodeRadius = nodeSize / 2;
-        renderAttentionPing(graphics, texture,
-                nodeX + nodeRadius - 2,
-                nodeY - nodeRadius - ATTENTION_PING_SIZE + 2);
-    }
-
-    /** Renders a 10px authored badge above ItemRenderer's GUI depth. */
-    private void renderAttentionPing(GuiGraphics graphics, ResourceLocation texture, int x, int y) {
-        QuestDetailRows.renderAttentionPing(graphics, texture, x, y, attentionPingOffsetY);
-    }
-
     /** Keeps the claimed check above the item while leaving its vanilla count corner unobstructed. */
 
 
@@ -4359,69 +4187,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
      */
 
 
-    private void fillChamfer(GuiGraphics graphics, int x, int y, int size, int color) {
-        int radius = size / 2;
-        int cut = Math.max(1, size / 6);
-        graphics.fill(x - radius + cut, y - radius, x + radius - cut + 1, y + radius + 1, color);
-        graphics.fill(x - radius, y - radius + cut, x + radius + 1, y + radius - cut + 1, color);
-    }
-
-    private int nodeSize(QuestDefinition quest) {
-        return QuestNodeGeometry.visualSize(NODE_BASE_SIZE, quest.appearance());
-    }
-
-    private static double safeAppearanceScale(double value) {
-        return Double.isFinite(value) && value > 0.0 ? value : 1.0;
-    }
-
-    /** Renders the portable native shape subset and gives unknown imported shapes a safe chamfer fallback. */
-    private void fillNodeShape(GuiGraphics graphics, String shape, int x, int y, int size, int color) {
-        int radius = size / 2;
-        switch (shape.toLowerCase(Locale.ROOT)) {
-            case "square" -> graphics.fill(x - radius, y - radius, x + radius + 1, y + radius + 1, color);
-            case "circle" -> {
-                for (int dy = -radius; dy <= radius; dy++) {
-                    int half = (int) Math.floor(Math.sqrt(Math.max(0, radius * radius - dy * dy)));
-                    graphics.fill(x - half, y + dy, x + half + 1, y + dy + 1, color);
-                }
-            }
-            case "diamond" -> {
-                for (int dy = -radius; dy <= radius; dy++) {
-                    int half = radius - Math.abs(dy);
-                    graphics.fill(x - half, y + dy, x + half + 1, y + dy + 1, color);
-                }
-            }
-            default -> fillChamfer(graphics, x, y, size, color);
-        }
-    }
-
-    private void horizontal(GuiGraphics graphics, int x1, int x2, int y, int thickness, int color) {
-        graphics.fill(Math.min(x1, x2), y - thickness / 2, Math.max(x1, x2) + 1, y + (thickness + 1) / 2, color);
-    }
-
-    private void vertical(GuiGraphics graphics, int x, int y1, int y2, int thickness, int color) {
-        graphics.fill(x - thickness / 2, Math.min(y1, y2), x + (thickness + 1) / 2, Math.max(y1, y2) + 1, color);
-    }
-
-    private void arrowHorizontal(GuiGraphics graphics, int x, int y, int direction, int thickness, int color) {
-        int length = Math.max(3, 4 * thickness);
-        for (int offset = 0; offset <= length; offset++) {
-            // A single-pixel tip at the child expands toward the trailing base.
-            int half = Math.max(0, offset / 2);
-            int px = x - direction * offset;
-            graphics.fill(px, y - half, px + 1, y + half + 1, color);
-        }
-    }
-
-    private void arrowVertical(GuiGraphics graphics, int x, int y, int direction, int thickness, int color) {
-        int length = Math.max(3, 4 * thickness);
-        for (int offset = 0; offset <= length; offset++) {
-            int half = Math.max(0, offset / 2);
-            int py = y - direction * offset;
-            graphics.fill(x - half, py, x + half + 1, py + 1, color);
-        }
-    }
-
     private int graphCoordinate(double coordinate) {
         return (int) Math.round(coordinate * QuestViewportMath.GRID_SCALE);
     }
@@ -4436,15 +4201,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return graphCoordinate(preview == null ? quest.y() : preview.y());
     }
 
-    private QuestDefinition nodeAt(ChapterDefinition chapter, double graphMouseX, double graphMouseY) {
-        for (int index = chapter.quests().size() - 1; index >= 0; index--) {
-            QuestDefinition quest = chapter.quests().get(index);
-            if (!questVisible(quest)) continue;
-            int radius = QuestNodeGeometry.hitRadius(NODE_BASE_SIZE, quest.appearance());
-            if (Math.abs(graphMouseX - nodeGraphX(quest)) <= radius
-                    && Math.abs(graphMouseY - nodeGraphY(quest)) <= radius) return quest;
-        }
-        return null;
+    private QuestDefinition nodeAt(ChapterDefinition chapter, double screenX, double screenY) {
+        if (canvasFrame == null || !chapter.id().equals(canvasFrame.chapterId())) return null;
+        ResourceLocation id = QuestCanvasRenderer.nodeAt(canvasFrame, currentFrameIdentity(), screenX, screenY);
+        if (id == null) return null;
+        return chapter.quests().stream().filter(quest -> quest.id().equals(id)).findFirst().orElse(null);
     }
 
     private void selectOnly(ResourceLocation questId) {

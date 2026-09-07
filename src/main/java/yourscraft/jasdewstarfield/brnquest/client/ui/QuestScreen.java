@@ -98,6 +98,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
     private final QuestTaskRowWidget taskRowWidget = new QuestTaskRowWidget();
+    private final QuestRewardCellWidget rewardCellWidget = new QuestRewardCellWidget();
     private final QuestCanvasRenderer canvasRenderer = new QuestCanvasRenderer();
     private final QuestCanvasController canvasController = new QuestCanvasController();
     private QuestCanvasRenderer.Frame canvasFrame;
@@ -703,11 +704,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         } else if (row.hint() != null) hoveredDetailText = row.hint();
     }
 
-    private void acceptDetailRowHover(QuestDetailRows.Result row) {
-        if (row.lookup() != null) {
-            hoveredRecipeLookupTarget = row.lookup();
-            hoveredDetailStack = row.lookup().stack();
-        } else if (row.hint() != null) hoveredDetailText = row.hint();
+    private void acceptRewardCellHover(QuestRewardCellWidget.Result cell) {
+        if (cell.lookup() != null) {
+            hoveredRecipeLookupTarget = cell.lookup();
+            hoveredDetailStack = cell.hoveredStack();
+        } else if (cell.hint() != null) hoveredDetailText = cell.hint();
     }
 
     /** Re-resolves every detail intent against the current snapshot before starting a client request. */
@@ -790,10 +791,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ItemStack parsedStack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
         ItemStack stack = presentation.displayedItem(rewardView, parsedStack);
         var context = new RewardPresentationContext(minecraft, rewardView, claimable, claimed, stack);
-        var row = QuestDetailRows.reward(graphics, font, presentation, context, x, y,
-                detailRecipeLookupViewport(), mouseX, mouseY, attentionPingOffsetY);
-        detailsInteraction.reward(reward.id(), row.action());
-        acceptDetailRowHover(row);
+        QuestRewardCellWidget.Result cell = rewardCellWidget.render(graphics, font,
+                new QuestRewardCellWidget.Model(presentation, context),
+                new QuestRewardCellWidget.Layout(x, y, detailRecipeLookupViewport(),
+                        mouseX, mouseY, attentionPingOffsetY));
+        detailsInteraction.reward(reward.id(), cell.action());
+        acceptRewardCellHover(cell);
     }
 
     @Override

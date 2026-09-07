@@ -14,7 +14,7 @@ class UiCompositionBoundaryTest {
                 "src/main/java/yourscraft/jasdewstarfield/brnquest/client/ui");
         for (String name : List.of("QuestNavigationPanel.java", "QuestDetailsPanel.java", "QuestDetailRows.java",
                 "QuestDetailsInteraction.java",
-                "QuestTaskRowWidget.java",
+                "QuestTaskRowWidget.java", "QuestRewardCellWidget.java",
                 "QuestCanvasRenderer.java", "QuestCanvasController.java", "QuestNodeDrag.java",
                 "QuestEditorChrome.java", "QuestPublishReviewSection.java",
                 "EditorDiagnosticPresentation.java", "EditorTooltipComposer.java",

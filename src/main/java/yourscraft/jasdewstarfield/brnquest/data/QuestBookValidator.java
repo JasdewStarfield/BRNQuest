@@ -49,7 +49,8 @@ public final class QuestBookValidator {
                     if (!typedIds.add(task.id())) add(report, Diagnostic.Severity.FATAL, "BQV-116", task.id(), "Duplicate task/reward ID");
                     var type = TaskTypeRegistry.get(task.typeId());
                     if (type == null) {
-                        add(report, Diagnostic.Severity.ERROR, "BQV-117", task.id(), "Unknown task type " + task.typeId());
+                        // Missing extension types remain round-trippable placeholders so a removed mod can return later.
+                        add(report, Diagnostic.Severity.WARN, "BQV-117", task.id(), "Unknown task type " + task.typeId());
                     } else {
                         TaskTypeExecutor.configError(type, ApiViews.task(task)).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
                                 "BQV-119", task.id(), "Invalid task config: " + message));
@@ -59,7 +60,8 @@ public final class QuestBookValidator {
                     if (!typedIds.add(reward.id())) add(report, Diagnostic.Severity.FATAL, "BQV-116", reward.id(), "Duplicate task/reward ID");
                     var type = RewardTypeRegistry.get(reward.typeId());
                     if (type == null) {
-                        add(report, Diagnostic.Severity.ERROR, "BQV-118", reward.id(), "Unknown reward type " + reward.typeId());
+                        // Publishing must not destroy or strand opaque reward data owned by a temporarily absent mod.
+                        add(report, Diagnostic.Severity.WARN, "BQV-118", reward.id(), "Unknown reward type " + reward.typeId());
                     } else {
                         RewardTypeExecutor.configError(type, ApiViews.reward(reward)).ifPresent(message -> add(report, Diagnostic.Severity.ERROR,
                                 "BQV-120", reward.id(), "Invalid reward config: " + message));

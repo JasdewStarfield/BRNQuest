@@ -9,6 +9,8 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -48,6 +50,42 @@ class DraftRepositoryTest {
 
         assertEquals(AuthorOperationResult.Status.CONFLICT, loaded.status());
         assertEquals("DRAFT_REVISION_MISMATCH", loaded.code());
+    }
+
+    @Test void migratesUntouchedLegacyCanonicalDraftAndKeepsRecoverableOriginal() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        QuestBookDefinition book = book("test:legacy_encoder", "Legacy encoder");
+        String legacyJson = NativeBookJson.encode(book)
+                .replace("  \"localization\": {\n    \"fallback_locale\": \"en_us\",\n    \"translations\": {}\n  },\n", "")
+                .replace("  \"extensions\": {},\n", "");
+        String legacyRevision = HexFormat.of().withUpperCase().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(legacyJson.getBytes(StandardCharsets.UTF_8)));
+        Path drafts = tempDirectory.resolve("drafts");
+        Path directory = drafts.resolve("test/legacy_encoder");
+        Files.createDirectories(directory);
+        Files.writeString(directory.resolve("book.json"), legacyJson, StandardCharsets.UTF_8);
+        Files.writeString(directory.resolve("draft.json"), """
+                {
+                  "format_version": 2,
+                  "book_id": "test:legacy_encoder",
+                  "origin": "ACTIVE",
+                  "base_revision": "active-base",
+                  "draft_revision": "%s"
+                }
+                """.formatted(legacyRevision), StandardCharsets.UTF_8);
+
+        AuthorOperationResult<DraftSnapshot> loaded = repository.loadForEditing(drafts,
+                tempDirectory.resolve("workspace"), tempDirectory.resolve("backups"), book.id());
+
+        assertTrue(loaded.success());
+        assertEquals(book, loaded.value().book());
+        assertEquals(NativeBookJson.encode(book), Files.readString(directory.resolve("book.json"),
+                StandardCharsets.UTF_8));
+        try (var paths = Files.walk(tempDirectory.resolve("backups/drafts/test/legacy_encoder"))) {
+            Path backup = paths.filter(path -> Files.isRegularFile(path.resolve("book.json"))).findFirst().orElseThrow();
+            assertEquals(legacyJson, Files.readString(backup.resolve("book.json"), StandardCharsets.UTF_8));
+            assertTrue(DraftRepository.readDirectoryAllowCanonicalDrift(backup, book.id()).success());
+        }
     }
 
     @Test void importsWorkspaceBookAsAnImmutableDraftSource() throws Exception {

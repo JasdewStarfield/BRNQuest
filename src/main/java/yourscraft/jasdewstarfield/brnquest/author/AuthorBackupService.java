@@ -169,7 +169,9 @@ public final class AuthorBackupService {
             String manifest = Files.readString(path.resolve("draft.json"), StandardCharsets.UTF_8);
             var value = DraftManifest.decode(com.google.gson.JsonParser.parseString(manifest).getAsJsonObject());
             ResourceLocation bookId = expectedBook == null ? value.bookId() : expectedBook;
-            var loaded = new DraftRepository().readDirectoryForTest(path, bookId);
+            // Legacy canonical drafts remain valid recovery points; reopening them
+            // later performs the normal migration into the current representation.
+            var loaded = DraftRepository.readDirectoryAllowCanonicalDrift(path, bookId);
             if (!loaded.success()) throw new IOException(loaded.code() + ": " + loaded.message());
             return bookId;
         }

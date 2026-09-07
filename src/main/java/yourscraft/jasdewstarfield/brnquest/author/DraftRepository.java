@@ -13,7 +13,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -56,7 +59,7 @@ public final class DraftRepository {
     }
 
     public AuthorOperationResult<DraftSnapshot> load(MinecraftServer server, ResourceLocation bookId) {
-        return load(WorkspacePaths.drafts(server), bookId);
+        return loadMigrating(WorkspacePaths.drafts(server), WorkspacePaths.backups(server), bookId);
     }
 
     /**
@@ -65,12 +68,18 @@ public final class DraftRepository {
      * equality makes this a metadata repair, never an implicit content merge.
      */
     public AuthorOperationResult<DraftSnapshot> loadForEditing(MinecraftServer server, ResourceLocation bookId) {
-        return loadForEditing(WorkspacePaths.drafts(server), WorkspacePaths.workspace(server), bookId);
+        return loadForEditing(WorkspacePaths.drafts(server), WorkspacePaths.workspace(server),
+                WorkspacePaths.backups(server), bookId);
     }
 
     AuthorOperationResult<DraftSnapshot> loadForEditing(Path draftsRoot, Path workspaceRoot,
                                                          ResourceLocation bookId) {
-        AuthorOperationResult<DraftSnapshot> loaded = load(draftsRoot, bookId);
+        return loadForEditing(draftsRoot, workspaceRoot, draftsRoot.resolveSibling("backups"), bookId);
+    }
+
+    AuthorOperationResult<DraftSnapshot> loadForEditing(Path draftsRoot, Path workspaceRoot, Path backupsRoot,
+                                                         ResourceLocation bookId) {
+        AuthorOperationResult<DraftSnapshot> loaded = loadMigrating(draftsRoot, backupsRoot, bookId);
         if (!loaded.success()) return loaded;
         DraftSnapshot draft = loaded.value();
         AuthorOperationResult<DraftSnapshot> workspace = readWorkspace(workspaceRoot, bookId);
@@ -124,6 +133,52 @@ public final class DraftRepository {
         } catch (Exception exception) {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE, "DRAFT_READ_FAILED",
                     exception.getMessage());
+        }
+    }
+
+    /**
+     * Migrates a draft only when its original UTF-8 bytes still match the stored
+     * revision. This distinguishes encoder evolution from external file edits.
+     */
+    private AuthorOperationResult<DraftSnapshot> loadMigrating(Path draftsRoot, Path backupsRoot,
+                                                                ResourceLocation bookId) {
+        AuthorOperationResult<DraftSnapshot> loaded = load(draftsRoot, bookId);
+        if (loaded.success() || !"DRAFT_REVISION_MISMATCH".equals(loaded.code())) return loaded;
+        Path target = draftDirectory(draftsRoot, bookId);
+        AuthorOperationResult<DraftSnapshot> compatible = readDirectoryAllowCanonicalDrift(target, bookId);
+        if (!compatible.success() || !"DRAFT_CANONICAL_MIGRATION_REQUIRED".equals(compatible.code())) {
+            return loaded;
+        }
+        DraftSnapshot migrated = compatible.value();
+        Path parent = target.getParent();
+        Path staging = parent.resolve("." + target.getFileName() + ".migration-staging-" + UUID.randomUUID());
+        Path backup = backupDirectory(backupsRoot, bookId, storedRevision(target));
+        boolean backupMoved = false;
+        try {
+            Files.createDirectories(parent);
+            writeDirectory(staging, migrated);
+            AuthorOperationResult<DraftSnapshot> staged = readDirectory(staging, bookId);
+            if (!staged.success() || !staged.value().draftRevision().equals(migrated.draftRevision())) {
+                throw new IOException("Migrated draft failed verification");
+            }
+            Files.createDirectories(backup.getParent());
+            move(target, backup);
+            backupMoved = true;
+            move(staging, target);
+            return AuthorOperationResult.success("DRAFT_CANONICAL_FORMAT_MIGRATED",
+                    "Draft serialization was upgraded; the original was backed up", migrated);
+        } catch (Exception exception) {
+            if (backupMoved && Files.exists(backup)) {
+                try {
+                    safeDelete(target, draftsRoot);
+                    move(backup, target);
+                } catch (IOException restoreFailure) {
+                    exception.addSuppressed(restoreFailure);
+                }
+            }
+            safeDelete(staging, draftsRoot);
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE,
+                    "DRAFT_MIGRATION_FAILED", exception.getMessage());
         }
     }
 
@@ -251,6 +306,34 @@ public final class DraftRepository {
         }
     }
 
+    /** Accepts an older canonical encoder only when the stored bytes prove they were not edited afterwards. */
+    static AuthorOperationResult<DraftSnapshot> readDirectoryAllowCanonicalDrift(Path directory,
+                                                                                  ResourceLocation bookId) {
+        try {
+            String bookJson = Files.readString(directory.resolve(BOOK_FILE), StandardCharsets.UTF_8);
+            String manifestJson = Files.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
+            var book = NativeBookJson.decode(JsonParser.parseString(bookJson).getAsJsonObject());
+            var manifest = DraftManifest.decode(JsonParser.parseString(manifestJson).getAsJsonObject());
+            if (!book.id().equals(bookId) || !manifest.bookId().equals(bookId)) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "DRAFT_ID_MISMATCH",
+                        "Draft path and content identify different books");
+            }
+            DraftSnapshot snapshot = DraftSnapshot.from(book, manifest.origin(), manifest.baseRevision());
+            if (snapshot.draftRevision().equals(manifest.draftRevision())) {
+                return AuthorOperationResult.success("DRAFT_LOADED", "Draft loaded", snapshot);
+            }
+            if (!sha256(bookJson).equalsIgnoreCase(manifest.draftRevision())) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                        "DRAFT_REVISION_MISMATCH", "Draft content changed outside the author service");
+            }
+            return AuthorOperationResult.success("DRAFT_CANONICAL_MIGRATION_REQUIRED",
+                    "Draft uses an older canonical serialization", snapshot);
+        } catch (Exception exception) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE, "DRAFT_READ_FAILED",
+                    exception.getMessage());
+        }
+    }
+
     AuthorOperationResult<DraftSnapshot> readDirectoryForTest(Path directory, ResourceLocation bookId) {
         return readDirectory(directory, bookId);
     }
@@ -266,7 +349,9 @@ public final class DraftRepository {
         }
         ResourceLocation bookId = ResourceLocation.tryBuild(namespace, path.toString());
         if (bookId == null) return null;
-        AuthorOperationResult<DraftSnapshot> loaded = load(root, bookId);
+        // Catalog listing stays read-only. A legacy canonical draft is displayed
+        // here and migrated only when an administrator actually opens it.
+        AuthorOperationResult<DraftSnapshot> loaded = readDirectoryAllowCanonicalDrift(directory, bookId);
         if (!loaded.success()) return null;
         DraftSnapshot draft = loaded.value();
         return new DraftCatalogEntry(bookId, draft.book().title(), draft.draftRevision(), draft.origin());
@@ -295,6 +380,24 @@ public final class DraftRepository {
                 .resolve(safeRevision + "-" + UUID.randomUUID()).normalize();
         if (!target.startsWith(root)) throw new IllegalArgumentException("Unsafe draft backup path");
         return target;
+    }
+
+    private static String storedRevision(Path directory) {
+        try {
+            String manifest = Files.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
+            return DraftManifest.decode(JsonParser.parseString(manifest).getAsJsonObject()).draftRevision();
+        } catch (Exception ignored) {
+            return "UNKNOWN";
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            return HexFormat.of().withUpperCase().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is required by Java", impossible);
+        }
     }
 
     private static <T> AuthorOperationResult<T> failureLike(AuthorOperationResult<?> source) {

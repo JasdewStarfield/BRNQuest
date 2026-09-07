@@ -72,10 +72,15 @@ public final class AuthoringNetwork {
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record OpenCurrentSessionPayload(String bookId) implements CustomPacketPayload {
+    public record OpenCurrentSessionPayload(String bookId, String activeRevision, String draftRevision,
+                                            boolean replaceDraft) implements CustomPacketPayload {
         public static final Type<OpenCurrentSessionPayload> TYPE = AuthoringNetwork.type("editor_session_open_current");
         public static final StreamCodec<ByteBuf, OpenCurrentSessionPayload> CODEC = StreamCodec.composite(
-                ByteBufCodecs.STRING_UTF8, OpenCurrentSessionPayload::bookId, OpenCurrentSessionPayload::new);
+                ByteBufCodecs.STRING_UTF8, OpenCurrentSessionPayload::bookId,
+                ByteBufCodecs.STRING_UTF8, OpenCurrentSessionPayload::activeRevision,
+                ByteBufCodecs.STRING_UTF8, OpenCurrentSessionPayload::draftRevision,
+                ByteBufCodecs.BOOL, OpenCurrentSessionPayload::replaceDraft,
+                OpenCurrentSessionPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
@@ -287,7 +292,7 @@ public final class AuthoringNetwork {
             if (context.player() instanceof ServerPlayer player) open(player, payload.bookId());
         });
         registrar.playToServer(OpenCurrentSessionPayload.TYPE, OpenCurrentSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) openCurrent(player, payload.bookId());
+            if (context.player() instanceof ServerPlayer player) openCurrent(player, payload);
         });
         registrar.playToServer(RenewSessionPayload.TYPE, RenewSessionPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) renew(player, payload.sessionId(), payload.draftRevision());
@@ -338,8 +343,10 @@ public final class AuthoringNetwork {
         PacketDistributor.sendToServer(new OpenLivePayload(bookId.toString()));
     }
 
-    public static void openCurrentSession(ResourceLocation bookId) {
-        PacketDistributor.sendToServer(new OpenCurrentSessionPayload(bookId.toString()));
+    public static void openCurrentSession(ResourceLocation bookId, String activeRevision,
+                                          String draftRevision, boolean replaceDraft) {
+        PacketDistributor.sendToServer(new OpenCurrentSessionPayload(bookId.toString(), activeRevision,
+                draftRevision == null ? "" : draftRevision, replaceDraft));
     }
 
     public static void renewSession(UUID sessionId, String draftRevision) {
@@ -442,13 +449,17 @@ public final class AuthoringNetwork {
     }
 
     private static void open(ServerPlayer player, String rawBookId) {
+        open(player, rawBookId, "");
+    }
+
+    private static void open(ServerPlayer player, String rawBookId, String expectedDraftRevision) {
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (bookId == null) {
             sendFailure(player, "OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_BOOK_ID", "Invalid draft book ID");
             return;
         }
-        AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId);
+        AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId, expectedDraftRevision);
         if (!opened.success()) {
             sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
             return;
@@ -464,23 +475,40 @@ public final class AuthoringNetwork {
         sendOpened(player, handle, snapshot.value());
     }
 
-    private static void openCurrent(ServerPlayer player, String rawBookId) {
-        ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
+    private static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
+        ResourceLocation bookId = ResourceLocation.tryParse(payload.bookId());
         var active = QuestBookManager.get().active().orElse(null);
         if (bookId == null || active == null || !bookId.equals(active.book().id())) {
             sendFailure(player, "OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
                     "ACTIVE_BOOK_CHANGED", "The displayed task book is no longer active on this server");
             return;
         }
-        AuthorOperationResult<DraftSnapshot> created = AuthorApi.createFromActive(player);
-        if (!created.success() && created.status() != AuthorOperationResult.Status.CONFLICT) {
-            sendFailure(player, "OPEN", created.status(), created.code(), created.message());
+        if (!active.revision().equals(payload.activeRevision())) {
+            sendFailure(player, "OPEN", AuthorOperationResult.Status.CONFLICT,
+                    "ACTIVE_BOOK_CHANGED", "The active task book changed after the draft choice was shown");
             return;
         }
+        if (payload.replaceDraft()) {
+            AuthorOperationResult<DraftSnapshot> replaced = AuthorApi.replaceFromActive(player,
+                    payload.draftRevision());
+            if (!replaced.success()) {
+                sendFailure(player, "OPEN", replaced.status(), replaced.code(), replaced.message());
+                return;
+            }
+        } else {
+            if (payload.draftRevision().isBlank()) {
+                AuthorOperationResult<DraftSnapshot> created = AuthorApi.createFromActive(player);
+                if (!created.success()) {
+                    sendFailure(player, "OPEN", created.status(), created.code(), created.message());
+                    return;
+                }
+            }
+        }
         sendCatalog(player);
-        // An existing draft is deliberately reused; opening it still passes through
-        // the normal permission, ownership, revision, and lease checks below.
-        open(player, bookId.toString());
+        // Continuing and replacing both pass through the normal permission,
+        // ownership, migration, revision, and lease checks below.
+        open(player, bookId.toString(), payload.replaceDraft() ? "" :
+                payload.draftRevision().isBlank() ? active.revision() : payload.draftRevision());
     }
 
     private static void renew(ServerPlayer player, String rawSessionId, String draftRevision) {

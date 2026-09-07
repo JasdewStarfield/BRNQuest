@@ -73,6 +73,21 @@ class EditorComponentGeometryTest {
                 EditorConfirmDialog.actionAt(screen, 700, 380));
     }
 
+    @Test void draftChoiceOnlyOffersContinueWhenAnExistingDraftWasShown() {
+        QuestScreenLayout screen = new QuestScreenLayout(1280, 720, false, false);
+        EditorDraftChoiceDialog.Layout existing = EditorDraftChoiceDialog.layout(screen, true);
+        EditorDraftChoiceDialog.Layout fresh = EditorDraftChoiceDialog.layout(screen, false);
+
+        assertEquals(EditorDraftChoiceDialog.Action.CONTINUE, EditorDraftChoiceDialog.actionAt(screen, true,
+                existing.continueDraft().centerX(), existing.continueDraft().centerY()));
+        assertEquals(EditorDraftChoiceDialog.Action.NONE, EditorDraftChoiceDialog.actionAt(screen, false,
+                existing.continueDraft().centerX(), existing.continueDraft().centerY()));
+        assertEquals(0, fresh.continueDraft().width());
+        assertEquals(EditorDraftChoiceDialog.Action.CREATE_FROM_ACTIVE,
+                EditorDraftChoiceDialog.actionAt(screen, false, fresh.createFromActive().centerX(),
+                        fresh.createFromActive().centerY()));
+    }
+
     @Test void overlayHostAllowsOnlyOneInputCapturingSurface() {
         EditorOverlayHost host = new EditorOverlayHost();
 

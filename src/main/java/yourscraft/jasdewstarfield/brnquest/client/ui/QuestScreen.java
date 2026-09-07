@@ -204,6 +204,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Consumer<String> enumDropdownConsumer;
     private ResourceLocation discardSwitchTarget;
     private boolean discardClosesScreen;
+    private ResourceLocation draftChoiceBookId;
+    private String draftChoiceActiveRevision = "";
+    private String draftChoiceDraftRevision = "";
+    private String draftChoiceTitle = "";
     private final TransientScreenLifecycle childLifecycle = new TransientScreenLifecycle();
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
     private ContextKind editContextKind = ContextKind.NONE;
@@ -1862,6 +1866,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         registerOverlay(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION, this::renderQuestRenameConfirmation, this::handleQuestRenameConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, this::renderPublishConfirmation, this::handlePublishConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.CONFLICT_RECOVERY, this::renderConflictRecovery, this::handleConflictRecoveryClick);
+        registerOverlay(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE, this::renderDraftSourceChoice,
+                this::handleDraftSourceChoiceClick);
         registerOverlay(EditorOverlayHost.Kind.CONTEXT_MENU, this::renderEditContextMenu, (x, y, button) -> displaySnapshot() != null && handleEditContextClick(x, y, button, displaySnapshot().book()));
         registerOverlay(EditorOverlayHost.Kind.ENUM_DROPDOWN, this::renderEnumDropdown, this::handleEnumDropdownClick);
         registerOverlay(EditorOverlayHost.Kind.DEPENDENCY_PICKER, this::renderDependencyPicker, this::handleDependencyPickerClick);
@@ -1969,6 +1975,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 recoveryCopyBookId = null;
                 editorOverlays.close();
             }
+            case DRAFT_SOURCE_CHOICE -> clearDraftSourceChoice();
             case NONE -> { }
         }
     }
@@ -2503,7 +2510,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         if (!editor.hasLease() && editor.allowed() && editorSaveButtonBounds().contains(mouseX, mouseY)) {
-            if (editor.beginOpenCurrent(displayedBook.id())) AuthoringNetwork.openCurrentSession(displayedBook.id());
+            requestDraftSourceChoice(displaySnapshot());
             return true;
         }
         if (editor.hasLease() && !editor.live() && editorSaveButtonBounds().contains(mouseX, mouseY)) {
@@ -2535,6 +2542,60 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         return false;
+    }
+
+    /** Captures both revisions shown to the player so a later server change cannot silently alter the choice. */
+    private void requestDraftSourceChoice(QuestBookSnapshot activeSnapshot) {
+        if (activeSnapshot == null || ClientEditorState.get().busy()) return;
+        closeActiveEditorOverlay();
+        draftChoiceBookId = activeSnapshot.book().id();
+        draftChoiceActiveRevision = activeSnapshot.revision();
+        ClientEditorState.CatalogEntry existing = ClientEditorState.get().catalog().stream()
+                .filter(entry -> entry.bookId().equals(draftChoiceBookId)).findFirst().orElse(null);
+        draftChoiceDraftRevision = existing == null ? "" : existing.draftRevision();
+        draftChoiceTitle = existing == null ? "" : existing.title();
+        editorOverlays.show(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE);
+    }
+
+    private void renderDraftSourceChoice(GuiGraphics graphics, int mouseX, int mouseY) {
+        boolean existing = !draftChoiceDraftRevision.isBlank();
+        Component title = draftChoiceTitle.isBlank() ? null : Component.literal(draftChoiceTitle);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.render(
+                graphics, font, layout(), existing, title, mouseX, mouseY);
+    }
+
+    private boolean handleDraftSourceChoiceClick(double mouseX, double mouseY, int button) {
+        if (button != 0) return true;
+        boolean existing = !draftChoiceDraftRevision.isBlank();
+        var action = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.actionAt(
+                layout(), existing, mouseX, mouseY);
+        if (action == yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CANCEL) {
+            clearDraftSourceChoice();
+            return true;
+        }
+        boolean replace = action
+                == yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CREATE_FROM_ACTIVE;
+        if (!replace && action
+                != yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CONTINUE) {
+            return true;
+        }
+        ResourceLocation bookId = draftChoiceBookId;
+        String activeRevision = draftChoiceActiveRevision;
+        String draftRevision = draftChoiceDraftRevision;
+        clearDraftSourceChoice();
+        ClientEditorState editor = ClientEditorState.get();
+        if (bookId != null && editor.beginOpenCurrent(bookId)) {
+            AuthoringNetwork.openCurrentSession(bookId, activeRevision, draftRevision, replace);
+        }
+        return true;
+    }
+
+    private void clearDraftSourceChoice() {
+        draftChoiceBookId = null;
+        draftChoiceActiveRevision = "";
+        draftChoiceDraftRevision = "";
+        draftChoiceTitle = "";
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE)) editorOverlays.close();
     }
 
     /** History never discards values that are still only present in an open client-side form. */

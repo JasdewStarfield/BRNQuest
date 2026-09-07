@@ -12,7 +12,7 @@ public final class EditorOverlayHost {
     public enum Kind {
         NONE, CATALOG, CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DEPENDENCY_PICKER, TYPED_TYPE_PICKER,
         QUICK_TEXT, DELETE_CONFIRMATION, DISCARD_CONFIRMATION, QUEST_RENAME_CONFIRMATION, PUBLISH_CONFIRMATION,
-        CONFLICT_RECOVERY
+        CONFLICT_RECOVERY, DRAFT_SOURCE_CHOICE
     }
 
     @FunctionalInterface public interface Draw { void render(GuiGraphics graphics, int x, int y); }

@@ -234,6 +234,27 @@ class DraftRepositoryTest {
                 drafts.resolve("test/saved/book.json"), StandardCharsets.UTF_8));
     }
 
+    @Test void replacingSelectedDraftCreatesVersionAndRejectsStaleSelection() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        Path drafts = tempDirectory.resolve("drafts");
+        Path backups = tempDirectory.resolve("backups");
+        DraftSnapshot original = DraftSnapshot.from(book("test:versioned", "Before"), DraftOrigin.ACTIVE, "base");
+        DraftSnapshot replacement = DraftSnapshot.from(book("test:versioned", "After"), DraftOrigin.ACTIVE, "new");
+        assertTrue(repository.create(drafts, original).success());
+
+        AuthorOperationResult<DraftSnapshot> stale = repository.replace(drafts, backups, replacement, "stale");
+        AuthorOperationResult<DraftSnapshot> replaced = repository.replace(drafts, backups, replacement,
+                original.draftRevision());
+
+        assertEquals("DRAFT_SELECTION_STALE", stale.code());
+        assertEquals("DRAFT_VERSION_CREATED", replaced.code());
+        assertEquals(replacement, repository.load(drafts, replacement.book().id()).value());
+        try (var paths = Files.walk(backups.resolve("drafts/test/versioned"))) {
+            Path version = paths.filter(path -> Files.isRegularFile(path.resolve("book.json"))).findFirst().orElseThrow();
+            assertEquals(original, repository.readDirectoryForTest(version, original.book().id()).value());
+        }
+    }
+
     @Test void injectedFailureRestoresTheOriginalDraft() throws Exception {
         DraftRepository repository = new DraftRepository(stage -> {
             if (stage == DraftRepository.TransactionStage.BACKUP_MOVED) throw new java.io.IOException("injected");

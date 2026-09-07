@@ -40,18 +40,35 @@ public final class AuthorApi {
         return new DraftService().createFromActive(actor);
     }
 
+    /** Replaces the selected draft with the active book and preserves the previous draft as a backup version. */
+    public static AuthorOperationResult<DraftSnapshot> replaceFromActive(ServerPlayer actor,
+                                                                          String expectedDraftRevision) {
+        return new DraftService().replaceFromActive(actor, expectedDraftRevision);
+    }
+
     public static AuthorOperationResult<DraftSnapshot> createFromWorkspace(ServerPlayer actor,
                                                                             ResourceLocation bookId) {
         return new DraftService().createFromWorkspace(actor, bookId);
     }
 
     public static AuthorOperationResult<EditSessionHandle> open(ServerPlayer actor, ResourceLocation bookId) {
+        return open(actor, bookId, "");
+    }
+
+    /** Opens only the exact draft version the player selected; blank retains command/API compatibility. */
+    public static AuthorOperationResult<EditSessionHandle> open(ServerPlayer actor, ResourceLocation bookId,
+                                                                 String expectedDraftRevision) {
         if (actor == null || actor.getServer() == null) {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                     "PLAYER_NOT_CONNECTED", "Editor must be connected to the target server");
         }
         AuthorOperationResult<DraftSnapshot> loaded = new DraftRepository().loadForEditing(actor.getServer(), bookId);
         if (!loaded.success()) return failureLike(loaded);
+        if (expectedDraftRevision != null && !expectedDraftRevision.isBlank()
+                && !expectedDraftRevision.equals(loaded.value().draftRevision())) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "DRAFT_SELECTION_STALE", "The selected draft changed before it was opened");
+        }
         return EditSessionService.get().open(actor, loaded.value());
     }
 

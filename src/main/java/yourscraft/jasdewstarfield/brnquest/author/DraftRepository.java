@@ -187,6 +187,42 @@ public final class DraftRepository {
         return save(WorkspacePaths.drafts(server), WorkspacePaths.backups(server), draft, expectedDiskRevision);
     }
 
+    /** Replaces the selected current draft while retaining its former directory as a restorable version. */
+    public AuthorOperationResult<DraftSnapshot> replace(MinecraftServer server, DraftSnapshot replacement,
+                                                         String expectedDiskRevision) {
+        return replace(WorkspacePaths.drafts(server), WorkspacePaths.backups(server), replacement,
+                expectedDiskRevision);
+    }
+
+    AuthorOperationResult<DraftSnapshot> replace(Path draftsRoot, Path backupsRoot, DraftSnapshot replacement,
+                                                  String expectedDiskRevision) {
+        String expected = expectedDiskRevision == null ? "" : expectedDiskRevision;
+        Path target = draftDirectory(draftsRoot, replacement.book().id());
+        if (!Files.exists(target)) {
+            if (!expected.isBlank()) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                        "DRAFT_SELECTION_STALE", "The selected draft no longer exists");
+            }
+            AuthorOperationResult<DraftSnapshot> created = create(draftsRoot, replacement);
+            return created.success()
+                    ? AuthorOperationResult.success("DRAFT_VERSION_CREATED", "Draft created from current book",
+                    created.value()) : created;
+        }
+        AuthorOperationResult<DraftSnapshot> loaded = loadMigrating(draftsRoot, backupsRoot, replacement.book().id());
+        if (!loaded.success()) return loaded;
+        if (expected.isBlank() || !loaded.value().draftRevision().equals(expected)) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                    "DRAFT_SELECTION_STALE", "The selected draft changed; review it before replacing it");
+        }
+        AuthorOperationResult<DraftSaveResult> saved = save(draftsRoot, backupsRoot, replacement, expected);
+        if (!saved.success()) return failureLike(saved);
+        return saved.status() == AuthorOperationResult.Status.NO_CHANGE
+                ? AuthorOperationResult.noChange("DRAFT_VERSION_ALREADY_CURRENT",
+                "Draft already matches the current book", replacement)
+                : AuthorOperationResult.success("DRAFT_VERSION_CREATED",
+                "Previous draft version backed up; current book is now the draft", replacement);
+    }
+
     AuthorOperationResult<DraftSaveResult> save(Path draftsRoot, Path backupsRoot, DraftSnapshot draft,
                                                  String expectedDiskRevision) {
         AuthorOperationResult<DraftSnapshot> loaded = load(draftsRoot, draft.book().id());

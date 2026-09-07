@@ -42,7 +42,8 @@ class BrnQuestNetworkTest {
 
     @Test
     void editorCurrentBookAndQuestUpdatePayloadsRoundTrip() {
-        var current = new AuthoringNetwork.OpenCurrentSessionPayload("test:current");
+        var current = new AuthoringNetwork.OpenCurrentSessionPayload(
+                "test:current", "active-revision", "draft-revision", true);
         var update = new AuthoringNetwork.UpdateQuestPayload("{\"questId\":\"test:root\"}");
         var save = new AuthoringNetwork.SaveSessionPayload("session", "test:current", "revision");
         var mutation = new AuthoringNetwork.EditorMutationPayload("{\"action\":\"ADD_GROUP\"}");

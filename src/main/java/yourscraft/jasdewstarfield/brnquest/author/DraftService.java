@@ -38,6 +38,27 @@ public final class DraftService {
         return repository.create(server, DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision()));
     }
 
+    /** Creates a new current draft version after verifying the exact version selected by the client. */
+    public AuthorOperationResult<DraftSnapshot> replaceFromActive(ServerPlayer player, String expectedDraftRevision) {
+        MinecraftServer server = authorizedServer(player);
+        if (server == null) return authorizationFailure(player);
+        var active = QuestBookManager.get().active().orElse(null);
+        if (active == null) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.NOT_FOUND, "NO_ACTIVE_BOOK",
+                    "No active task book is available");
+        }
+        AuthorOperationResult<EditSessionView> occupied = EditSessionService.get().inspect(player, active.book().id());
+        if (occupied.success()) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "BOOK_ALREADY_EDITED",
+                    "Close the active edit session before creating another draft version");
+        }
+        if (occupied.status() != AuthorOperationResult.Status.NOT_FOUND) {
+            return AuthorOperationResult.failure(occupied.status(), occupied.code(), occupied.message());
+        }
+        DraftSnapshot replacement = DraftSnapshot.from(active.book(), DraftOrigin.ACTIVE, active.revision());
+        return repository.replace(server, replacement, expectedDraftRevision);
+    }
+
     public AuthorOperationResult<DraftSnapshot> createFromWorkspace(ServerPlayer player, ResourceLocation bookId) {
         MinecraftServer server = authorizedServer(player);
         if (server == null) return authorizationFailure(player);

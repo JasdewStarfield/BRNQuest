@@ -77,8 +77,6 @@ import java.util.function.Consumer;
 
 /** Quest-book UI with grouped navigation, a scalable directed graph, and intent-only details. */
 public final class QuestScreen extends Screen implements RecipeLookupSource, TransientChildScreenParent {
-    private static final int NAV_LEFT = 0;
-    private static final int CANVAS_MARGIN = 0;
     private static final int EDITOR_CATALOG_ROW_HEIGHT = 30;
     private static final int EDITOR_CATALOG_SEARCH_HEIGHT = 18;
     private static final int DEPENDENCY_ROW_HEIGHT = 32;
@@ -462,7 +460,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         QuestNavigationPanel.RenderResult result = navigationPanel.render(graphics, font,
                 new QuestNavigationPanel.Model(currentFrameIdentity(), book, selectedChapter,
                         ClientEditorState.get().editing(), defaultGroupId(book) != null),
-                new QuestNavigationPanel.Layout(navigationWidth(), navigationTop(), height - navigationBottomMargin(),
+                new QuestNavigationPanel.Layout(navigationWidth(), topToolbarHeight(), height - bottomToolbarHeight(),
                         navigationListBottom(), navigationHandleLeft(), navigationDrawerOffsetX(),
                         navigationHandleWidth(), contentCenterY(), navigationCollapsed),
                 motionFrameSeconds, scrollSmoothSpeed(),
@@ -549,7 +547,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         QuestCanvasRenderer.RenderResult result = canvasRenderer.render(graphics, font,
                 new QuestCanvasRenderer.Model(currentFrameIdentity(), chapter == null ? null : chapter.id(),
-                        new UiRect(canvasLeft(), topToolbarHeight(), canvasRight() - CANVAS_MARGIN,
+                        new UiRect(canvasLeft(), topToolbarHeight(), canvasRight(),
                                 height - bottomToolbarHeight()),
                         camera, nodes, canvasController.dragActive(), attentionPingOffsetY, mouseX, mouseY));
         canvasFrame = result.frame();
@@ -885,7 +883,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         if (detailsPanelVisibleAt(mouseX) && !detailsPanelAcceptsPointer(mouseX)) return true;
 
-        int canvasRight = canvasRight() - CANVAS_MARGIN;
+        int canvasRight = canvasRight();
         if (mouseX > canvasLeft() && mouseX < canvasRight && isContentY(mouseY)) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
@@ -995,9 +993,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (keyCode == 78) {
                 ResourceLocation chapterId = currentChapterId();
                 if (chapterId != null) {
+                    QuestCanvasRenderer.Camera camera = canvasController.renderedCamera(
+                            width / 2.0, contentCenterY());
                     openStructureForm(StructureFormKind.ADD_QUEST, null, chapterId,
-                            graphX(width / 2.0) / QuestViewportMath.GRID_SCALE,
-                            graphY(contentCenterY()) / QuestViewportMath.GRID_SCALE);
+                            camera.graphX(width / 2.0) / QuestViewportMath.GRID_SCALE,
+                            camera.graphY(contentCenterY()) / QuestViewportMath.GRID_SCALE);
                 }
                 return true;
             }
@@ -2498,7 +2498,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 && typedPropertySection.form().schema().rawFallback() && typedPropertyRawEditable();
         boolean task = typedEditorKind == QuestTypedEntryKind.TASK;
         typedPropertySection.captureInteractionFrame(new QuestTypedPropertySection.InteractionFrame(
-                currentFrameIdentity(), typedEditorKind, typedPropertyCancelBounds(), typedPropertyDoneBounds(),
+                currentFrameIdentity(), typedEditorKind, questEditorCancelBounds(), questEditorSaveBounds(),
                 task ? null : typedPropertySemanticBounds(semanticsTop), fields,
                 raw ? typedPropertySemanticBounds(semanticsTop - 22) : null,
                 task ? typedPropertySemanticBounds(semanticsTop) : null,
@@ -2547,7 +2547,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
         ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
                 typedPropertySection.form().configValue(fieldIndex)).result().orElse(null);
-        int requiredIndex = typedConfigFieldIndex("required_entries");
+        int requiredIndex = typedPropertySection.form().fieldIndex("required_entries");
         if (initial != null && requiredIndex >= 0) {
             try {
                 int required = Integer.parseInt(typedPropertySection.form().configValue(requiredIndex));
@@ -2566,16 +2566,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
         typedPropertySection.form().setConfigValue(fieldIndex, spec.encode());
-        int requiredIndex = typedConfigFieldIndex("required_entries");
+        int requiredIndex = typedPropertySection.form().fieldIndex("required_entries");
         if (requiredIndex >= 0) {
             typedPropertySection.form().setConfigValue(requiredIndex, Integer.toString(spec.requiredEntries()));
         }
         itemCache.remove(typedPropertySection.originalId());
         typedPropertyMessage = null;
-    }
-
-    private int typedConfigFieldIndex(String key) {
-        return typedPropertySection.form().fieldIndex(key);
     }
 
     private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
@@ -2748,15 +2744,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return EditorPropertyFormLayout.row(detailLeft() + 10, top, detailsWidth() - 24, 68).field();
     }
 
-    private UiRect typedPropertyCancelBounds() { return questEditorCancelBounds(); }
-    private UiRect typedPropertyDoneBounds() { return questEditorSaveBounds(); }
-
     private static boolean booleanValue(String value) {
         return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
-    }
-
-    private Map<String, String> currentTypedPropertyConfig() {
-        return typedPropertySection.form().currentConfig();
     }
 
     /** Missing registrations stay read-only because there is no corresponding Codec to approve an edit. */
@@ -2780,7 +2769,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Map<String, String> typedPropertyLocalIssues() {
         if (typedPropertySection.form().schema() == null) return Map.of();
         Map<String, String> issues = new LinkedHashMap<>(typedPropertySection.form().localIssues());
-        Map<String, String> config = currentTypedPropertyConfig();
+        Map<String, String> config = typedPropertySection.form().currentConfig();
         if (minecraft != null && minecraft.level != null) {
             for (ConfigFieldDescriptor field : typedPropertySection.form().schema().fields()) {
                 String value = config.getOrDefault(field.key(), "");
@@ -3974,12 +3963,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Records only the visible pixels of an item icon; the last rendered layer wins hover priority. */
-    private boolean registerRecipeLookupTarget(ItemStack stack, UiRect bounds, UiRect viewport,
-                                               double mouseX, double mouseY) {
-        Optional<RecipeLookupTarget> target = RecipeLookupTarget.clipped(stack, bounds, viewport)
-                .filter(candidate -> candidate.contains(mouseX, mouseY));
-        target.ifPresent(candidate -> hoveredRecipeLookupTarget = candidate);
-        return target.isPresent();
+    private void registerRecipeLookupTarget(ItemStack stack, UiRect bounds, UiRect viewport,
+                                            double mouseX, double mouseY) {
+        RecipeLookupTarget.clipped(stack, bounds, viewport)
+                .filter(candidate -> candidate.contains(mouseX, mouseY))
+                .ifPresent(candidate -> hoveredRecipeLookupTarget = candidate);
     }
 
     private UiRect detailRecipeLookupViewport() {
@@ -4188,14 +4176,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
     }
 
-    private double graphX(double screenX) {
-        return canvasController.renderedCamera(screenOriginX(), contentCenterY()).graphX(screenX);
-    }
-
-    private double graphY(double screenY) {
-        return canvasController.renderedCamera(screenOriginX(), contentCenterY()).graphY(screenY);
-    }
-
     private int contentCenterY() {
         return layout().contentCenterY();
     }
@@ -4229,7 +4209,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean navigationPanelVisibleAt(double x) {
-        return x >= NAV_LEFT && x < navigationHandleLeft();
+        return x >= 0 && x < navigationHandleLeft();
     }
 
     private boolean navigationPanelAcceptsPointer(double x) {
@@ -4269,25 +4249,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return layout().bottomToolbarHeight();
     }
 
-    private int navigationTop() {
-        return topToolbarHeight();
-    }
-
-    private int navigationBottomMargin() {
-        return bottomToolbarHeight();
-    }
-
     private int detailContentTop() {
         return topToolbarHeight() + 8;
     }
 
-    private int detailContentBottomMargin() {
-        return bottomToolbarHeight() + 8;
-    }
-
     /** The scrolling detail body stops above editor tabs instead of rendering behind them. */
     private int detailContentBottom() {
-        int ordinaryBottom = height - detailContentBottomMargin();
+        int ordinaryBottom = height - bottomToolbarHeight() - 8;
         int controlAwareBottom = ClientEditorState.get().editing()
                 ? Math.min(ordinaryBottom, questPropertyButtonBounds().top() - 4)
                 : ordinaryBottom;
@@ -4459,7 +4427,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int navigationListBottom() {
-        return height - navigationBottomMargin() - (ClientEditorState.get().editing() ? 20 : 0);
+        return height - bottomToolbarHeight() - (ClientEditorState.get().editing() ? 20 : 0);
     }
 
     private int detailViewportHeight() {

@@ -15,6 +15,11 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 public class ArchitectureBoundaryTest {
     private static final String CLIENT_PACKAGE = "yourscraft.jasdewstarfield.brnquest.client..";
     private static final String MINECRAFT_CLIENT_PACKAGE = "net.minecraft.client..";
+    // Match composed screen parts and their reusable primitives while leaving top-level Screen dispatchers out.
+    private static final String COMPOSED_CLIENT_UI_PATTERN = "yourscraft\\.jasdewstarfield\\.brnquest\\.client\\.ui\\..*"
+            + "(Section|Panel|Widget|Renderer|Controller|Interaction|"
+            + "NodeDrag|DiagnosticPresentation|TooltipComposer|TypePickerModel|TypedEntryKind|"
+            + "TypedPropertyFormModel|ScreenFrameIdentity|FormFields|SelectionFocus)";
 
     @ArchTest
     static final ArchRule publicApiMustNotLoadClientClasses = noClasses()
@@ -56,8 +61,15 @@ public class ArchitectureBoundaryTest {
             .because("authoritative gameplay and persistence code must not resolve client-only classes");
 
     @ArchTest
-    static final ArchRule composedClientSectionsMustNotDispatchNetworkRequests = noClasses()
-            .that().haveSimpleNameEndingWith("Section")
+    static final ArchRule composedClientUiMustNotDispatchNetworkRequests = noClasses()
+            .that().haveNameMatching(COMPOSED_CLIENT_UI_PATTERN)
             .should().dependOnClassesThat().resideInAPackage("yourscraft.jasdewstarfield.brnquest.network..")
-            .because("screen sections return semantic intents to the parent instead of owning protocol calls");
+            .because("composed UI parts return semantic intents to a top-level Screen instead of owning protocol calls");
+
+    @ArchTest
+    static final ArchRule composedClientUiMustNotDependOnQuestScreen = noClasses()
+            .that().haveNameMatching(COMPOSED_CLIENT_UI_PATTERN)
+            .should().dependOnClassesThat().haveFullyQualifiedName(
+                    "yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen")
+            .because("composed UI parts receive immutable models and frames instead of a whole-Screen backdoor");
 }

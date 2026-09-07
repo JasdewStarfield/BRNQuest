@@ -41,4 +41,15 @@ class EditorPublishReviewPanelTest {
         assertTrue(EditorPublishReviewPanel.renderedRows(layout, offset)
                 > EditorPublishReviewPanel.visibleRows(layout));
     }
+
+    @Test void filterTabsFillTheHeaderAndUseExclusiveHitEdges() {
+        var layout = EditorPublishReviewPanel.layout(new QuestScreenLayout(800, 600, false, false));
+        UiRect first = EditorPublishReviewPanel.filterBounds(layout, 0, 4);
+        UiRect last = EditorPublishReviewPanel.filterBounds(layout, 3, 4);
+
+        assertEquals(layout.filters().left(), first.left());
+        assertEquals(layout.filters().right(), last.right());
+        assertEquals(0, EditorPublishReviewPanel.filterAt(layout, 4, first.left(), first.centerY()));
+        assertEquals(-1, EditorPublishReviewPanel.filterAt(layout, 4, first.right(), first.centerY()));
+    }
 }

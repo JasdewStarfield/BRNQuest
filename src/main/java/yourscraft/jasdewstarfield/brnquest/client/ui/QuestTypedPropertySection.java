@@ -3,9 +3,14 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.client.gui.Font;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -14,6 +19,28 @@ import java.util.function.Consumer;
  */
 final class QuestTypedPropertySection {
     enum PreparationStatus { INVALID_ID, LOCAL_ISSUE, CONFIRM_RENAME, CLAIM_REQUIRED, READY }
+    enum Action { CANCEL, SUBMIT, CLAIM, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
+
+    record FieldHit(int index, ConfigFieldDescriptor descriptor, UiRect bounds) {}
+
+    record InteractionFrame(QuestScreenFrameIdentity identity, QuestTypedEntryKind kind,
+                            UiRect cancelBounds, UiRect submitBounds, UiRect claimBounds,
+                            List<FieldHit> fields, UiRect rawBounds, UiRect optionalBounds,
+                            UiRect teamRewardBounds) {
+        InteractionFrame {
+            fields = List.copyOf(fields);
+        }
+    }
+
+    record Intent(Action action, int fieldIndex, UiRect anchor, List<String> values) {
+        Intent {
+            values = List.copyOf(values);
+        }
+
+        static Intent simple(Action action, UiRect anchor) {
+            return new Intent(action, -1, anchor, List.of());
+        }
+    }
 
     record Submission(ResourceLocation replacementId, ResourceLocation sourceId, String claimPolicy,
                       int semanticFlag, Map<String, String> config) {
@@ -41,6 +68,7 @@ final class QuestTypedPropertySection {
     private boolean teamReward;
     private boolean renameArmed;
     private boolean submissionPending;
+    private InteractionFrame interactionFrame;
 
     QuestTypedPropertySection(int fieldCapacity) {
         form = new QuestTypedPropertyFormModel(fieldCapacity);
@@ -68,6 +96,7 @@ final class QuestTypedPropertySection {
         teamReward = entry.teamReward();
         renameArmed = false;
         submissionPending = false;
+        interactionFrame = null;
         form.openExisting(schema, entry.id().toString(), entry.claimPolicy());
     }
 
@@ -80,6 +109,7 @@ final class QuestTypedPropertySection {
         teamReward = false;
         renameArmed = false;
         submissionPending = false;
+        interactionFrame = null;
         form.openNew(schema, id.toString(), "manual");
     }
 
@@ -87,6 +117,47 @@ final class QuestTypedPropertySection {
     void toggleTeamReward() { teamReward = !teamReward; }
     void markSubmissionPending() { submissionPending = true; }
     void clearSubmissionPending() { submissionPending = false; }
+
+    void captureInteractionFrame(InteractionFrame frame) { interactionFrame = frame; }
+
+    /** Accept input only against geometry produced by the current book/revision/mode frame. */
+    Optional<Intent> click(QuestScreenFrameIdentity identity, QuestTypedEntryKind kind, double x, double y) {
+        InteractionFrame frame = interactionFrame;
+        if (!open || frame == null || identity == null || !frame.identity().equals(identity)
+                || frame.kind() != kind) return Optional.empty();
+        if (frame.cancelBounds().contains(x, y)) return Optional.of(Intent.simple(Action.CANCEL, frame.cancelBounds()));
+        if (frame.submitBounds().contains(x, y)) return Optional.of(Intent.simple(Action.SUBMIT, frame.submitBounds()));
+        if (kind == QuestTypedEntryKind.REWARD && frame.claimBounds() != null
+                && frame.claimBounds().contains(x, y)) {
+            return Optional.of(Intent.simple(Action.CLAIM, frame.claimBounds()));
+        }
+        for (FieldHit field : frame.fields()) {
+            if (!field.bounds().contains(x, y)) continue;
+            ConfigValueType type = field.descriptor().valueType();
+            Action action = switch (type) {
+                case BOOLEAN -> Action.BOOLEAN;
+                case ENUM -> Action.ENUM;
+                case ITEM_STACK -> Action.ITEM;
+                case ITEM_MATCHER -> Action.MATCHER;
+                default -> null;
+            };
+            if (action == null) return Optional.empty();
+            return Optional.of(new Intent(action, field.index(), field.bounds(),
+                    type == ConfigValueType.ENUM ? field.descriptor().allowedValues() : List.of()));
+        }
+        if (frame.rawBounds() != null && frame.rawBounds().contains(x, y)) {
+            return Optional.of(Intent.simple(Action.RAW, frame.rawBounds()));
+        }
+        if (kind == QuestTypedEntryKind.TASK && frame.optionalBounds() != null
+                && frame.optionalBounds().contains(x, y)) {
+            return Optional.of(Intent.simple(Action.OPTIONAL, frame.optionalBounds()));
+        }
+        if (kind == QuestTypedEntryKind.REWARD && frame.teamRewardBounds() != null
+                && frame.teamRewardBounds().contains(x, y)) {
+            return Optional.of(Intent.simple(Action.TEAM_REWARD, frame.teamRewardBounds()));
+        }
+        return Optional.empty();
+    }
 
     Preparation prepare(QuestTypedEntryKind kind, Map<String, String> localIssues) {
         ResourceLocation replacementId = ResourceLocation.tryParse(form.id().strip());
@@ -119,6 +190,7 @@ final class QuestTypedPropertySection {
         teamReward = false;
         renameArmed = false;
         submissionPending = false;
+        interactionFrame = null;
         form.close();
     }
 }

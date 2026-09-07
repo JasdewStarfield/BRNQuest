@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
@@ -56,6 +57,25 @@ class QuestTypedPropertySectionTest {
         assertEquals(1, submission.semanticFlag());
         assertEquals("manual", submission.claimPolicy());
         assertTrue(section.creating());
+    }
+
+    @Test
+    void interactionIntentRequiresTheExactRenderedFrameAndKind() {
+        QuestTypedPropertySection section = existingTask();
+        QuestScreenFrameIdentity frame = new QuestScreenFrameIdentity(
+                ResourceLocation.fromNamespaceAndPath("test", "book"), "rev-1", true, 800, 600);
+        ConfigFieldDescriptor mode = ConfigFieldDescriptor.enumeration("mode", List.of("safe", "fast"));
+        section.captureInteractionFrame(new QuestTypedPropertySection.InteractionFrame(frame,
+                QuestTypedEntryKind.TASK, new UiRect(0, 0, 9, 9), new UiRect(10, 0, 19, 9), null,
+                List.of(new QuestTypedPropertySection.FieldHit(0, mode, new UiRect(20, 0, 39, 9))),
+                null, new UiRect(40, 0, 59, 9), null));
+
+        QuestTypedPropertySection.Intent intent = section.click(frame, QuestTypedEntryKind.TASK, 25, 5).orElseThrow();
+        assertEquals(QuestTypedPropertySection.Action.ENUM, intent.action());
+        assertEquals(List.of("safe", "fast"), intent.values());
+        assertTrue(section.click(new QuestScreenFrameIdentity(frame.bookId(), "rev-2", true, 800, 600),
+                QuestTypedEntryKind.TASK, 25, 5).isEmpty());
+        assertTrue(section.click(frame, QuestTypedEntryKind.REWARD, 25, 5).isEmpty());
     }
 
     private static QuestTypedPropertySection existingTask() {

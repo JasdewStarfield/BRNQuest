@@ -196,17 +196,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorPickerList<ResourceLocation> typedTypePicker = new EditorPickerList<>();
     private QuestTypePickerModel.Frame typedTypePickerFrame;
     private Component typedEditorMessage;
-    private final QuestTypedPropertyFormModel typedPropertyForm =
-            new QuestTypedPropertyFormModel(MAX_TYPED_CONFIG_FIELDS);
-    private boolean typedPropertyOpen;
-    private ResourceLocation typedPropertyOriginalId;
-    private ResourceLocation typedPropertyTypeId;
-    private boolean typedPropertyCreating;
-    private boolean typedPropertyOptional;
-    private boolean typedPropertyTeamReward;
-    private boolean typedPropertyRenameArmed;
+    private final QuestTypedPropertySection typedPropertySection =
+            new QuestTypedPropertySection(MAX_TYPED_CONFIG_FIELDS);
     private Component typedPropertyMessage;
-    private boolean typedPropertySubmissionPending;
     private UiRect typedClaimDropdownBounds;
     private final Map<Integer, UiRect> typedEnumDropdownBounds = new HashMap<>();
     private UiRect enumDropdownAnchor;
@@ -281,7 +273,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
         questFields.bind(font, this::addRenderableWidget);
         structureFields.bind(font, this::addRenderableWidget);
-        typedPropertyForm.bind(font, this::addRenderableWidget);
+        typedPropertySection.bind(font, this::addRenderableWidget);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 32_768);
         serverContextId = currentServerContext();
@@ -1239,7 +1231,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             closeDependencyEditor();
             return true;
         }
-        if (keyCode == 256 && typedPropertyOpen) {
+        if (keyCode == 256 && typedPropertySection.open()) {
             closeTypedPropertyEditor();
             return true;
         }
@@ -1342,7 +1334,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean editorKeyboardSurfaceReady() {
         return ClientEditorState.get().hasLease() && !ClientEditorState.get().busy()
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
-                && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen && !typedPropertyOpen
+                && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen && !typedPropertySection.open()
                 && !(getFocused() instanceof net.minecraft.client.gui.components.EditBox);
     }
 
@@ -2581,7 +2573,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderTypedEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
-        if (typedPropertyOpen) {
+        if (typedPropertySection.open()) {
             typedEntryList.invalidate();
             renderTypedPropertyEditor(graphics, quest, mouseX, mouseY);
             return;
@@ -2614,7 +2606,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private boolean handleTypedEditorClick(double mouseX, double mouseY, int button) {
         if (button != 0 && button != 1) return true;
-        if (typedPropertyOpen) return handleTypedPropertyEditorClick(mouseX, mouseY);
+        if (typedPropertySection.open()) return handleTypedPropertyEditorClick(mouseX, mouseY);
         typedEntryList.mouseClicked(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
                         typedListInputReady(),
                         ClientEditorState.get().busy(), mouseX, mouseY, button)
@@ -2645,7 +2637,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Old list geometry is rejected after a data, mode, overlay or drawer transition. */
     private boolean typedListInputReady() {
-        return typedEditorOpen && !typedPropertyOpen && ClientEditorState.get().editing()
+        return typedEditorOpen && !typedPropertySection.open() && ClientEditorState.get().editing()
                 && selectedQuest() != null && selectedQuest().id().equals(typedEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && detailsOpen && detailsDrawerMotion.current() >= 1.0;
@@ -2704,49 +2696,33 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openTypedPropertyEditor(QuestDefinition quest, ResourceLocation typedId) {
         QuestTypedEntryKind.Entry entry = typedEditorKind.entry(quest, typedId);
         if (entry == null || ClientEditorState.get().busy()) return;
-        typedPropertyOpen = true;
-        typedPropertyCreating = false;
-        typedPropertyOriginalId = entry.id();
-        typedPropertyTypeId = entry.typeId();
-        typedPropertyOptional = entry.optional();
-        typedPropertyTeamReward = entry.teamReward();
-        typedPropertyRenameArmed = false;
         typedPropertyMessage = null;
-        typedPropertySubmissionPending = false;
         ConfigEditorSchema schema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
                 : ConfigEditorSchemas.forReward(ApiViews.reward(entry.reward()));
         // Item tasks project both historical config shapes into one canonical editor model.
         // The original map for this form must be that projection so hidden legacy keys do
         // not silently survive a successful canonical save.
-        typedPropertyForm.openExisting(schema, entry.id().toString(), entry.claimPolicy());
-        setFocused(typedPropertyForm.identityField("id"));
+        typedPropertySection.openExisting(entry, schema);
+        setFocused(typedPropertySection.form().identityField("id"));
     }
 
     /** Starts a configured extension entry locally so required fields can be filled before server validation. */
     private void openNewTypedPropertyEditor(QuestBookSnapshot snapshot, ResourceLocation typeId) {
         ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
-        typedPropertyOpen = true;
-        typedPropertyCreating = true;
-        typedPropertyOriginalId = id;
-        typedPropertyTypeId = typeId;
-        typedPropertyOptional = false;
-        typedPropertyTeamReward = false;
-        typedPropertyRenameArmed = false;
         typedPropertyMessage = null;
-        typedPropertySubmissionPending = false;
         ConfigEditorSchema schema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(new yourscraft.jasdewstarfield.brnquest.api.TaskView(
                         snapshot.book().id(), id, typeId, Map.of(), false))
                 : ConfigEditorSchemas.forReward(new yourscraft.jasdewstarfield.brnquest.api.RewardView(
                         snapshot.book().id(), id, typeId, Map.of(), "manual", false));
-        typedPropertyForm.openNew(schema, id.toString(), "manual");
-        setFocused(typedPropertyForm.identityField("id"));
+        typedPropertySection.openNew(id, typeId, schema);
+        setFocused(typedPropertySection.form().identityField("id"));
     }
 
     private void renderTypedPropertyEditor(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
         refreshTypedPropertySubmission();
-        if (!typedPropertyOpen) return;
+        if (!typedPropertySection.open()) return;
         boolean enabled = !ClientEditorState.get().busy();
         Map<String, String> issues = typedPropertyLocalIssues();
         Component heading = typedPropertyMessage == null ? firstTypedIssue(issues) : typedPropertyMessage;
@@ -2755,20 +2731,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedEnumDropdownBounds.clear();
         typedClaimDropdownBounds = null;
         rows.add(EditorPropertyPanel.readOnly(font, "screen.brnquest.editor.typed.property.type",
-                typedTypeName(quest, typedPropertyOriginalId), 68));
-        rows.add(EditorPropertyPanel.text(font, typedPropertyForm.identityField("id"),
-                "screen.brnquest.editor.typed.property.id", 68, typedPropertyForm.serverIssues().get("id"), enabled));
-        typedPropertyForm.hide();
-        List<ConfigFieldDescriptor> descriptors = typedPropertyForm.schema() == null
-                ? List.of() : typedPropertyForm.schema().fields();
+                typedTypeName(quest, typedPropertySection.originalId()), 68));
+        rows.add(EditorPropertyPanel.text(font, typedPropertySection.form().identityField("id"),
+                "screen.brnquest.editor.typed.property.id", 68,
+                typedPropertySection.form().serverIssues().get("id"), enabled));
+        typedPropertySection.hide();
+        List<ConfigFieldDescriptor> descriptors = typedPropertySection.form().schema() == null
+                ? List.of() : typedPropertySection.form().schema().fields();
         for (int index = 0; index < Math.min(descriptors.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             ConfigFieldDescriptor descriptor = descriptors.get(index);
             int fieldIndex = index;
             rows.add((g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w,
-                    issues.getOrDefault(descriptor.key(), typedPropertyForm.serverIssues().get(descriptor.key())),
+                    issues.getOrDefault(descriptor.key(),
+                            typedPropertySection.form().serverIssues().get(descriptor.key())),
                     mouseX, mouseY));
         }
-        if (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback()) {
+        if (typedPropertySection.form().schema() != null && typedPropertySection.form().schema().rawFallback()) {
             rows.add((g, x, y, w) -> {
                 if (typedPropertyRawEditable()) renderTypedRawConfigRow(g, x, y, w, typedPropertyRawIssue(), mouseX, mouseY);
                 else g.drawString(font, Component.translatable("screen.brnquest.editor.typed.property.raw_preserved"),
@@ -2777,29 +2755,32 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         if (typedEditorKind == QuestTypedEntryKind.TASK) {
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.optional",
-                    typedPropertyOptional, x, y, w, mouseX, mouseY));
+                    typedPropertySection.optional(), x, y, w, mouseX, mouseY));
         } else {
             rows.add((g, x, y, w) -> {
                 EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(x, y, w, 68);
                 typedClaimDropdownBounds = row.field();
                 drawTypedLabel(g, "screen.brnquest.editor.typed.property.claim_policy", row.label(),
-                        typedPropertyForm.serverIssues().get("claim_policy"));
-                renderEditorTextButton(g, row.field(), Component.literal(typedPropertyForm.claim() + " ▾"),
+                        typedPropertySection.form().serverIssues().get("claim_policy"));
+                renderEditorTextButton(g, row.field(),
+                        Component.literal(typedPropertySection.form().claim() + " ▾"),
                         null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             });
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.team_reward",
-                    typedPropertyTeamReward, x, y, w, mouseX, mouseY));
+                    typedPropertySection.teamReward(), x, y, w, mouseX, mouseY));
         }
         renderPropertyPanel(graphics, heading, typedPropertyMessage == null && issues.isEmpty()
-                        && typedPropertyForm.serverIssues().isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, rows,
-                Component.translatable(typedPropertyRenameArmed
+                        && typedPropertySection.form().serverIssues().isEmpty() ? 0xFFFFFFFF : 0xFFFFA070, rows,
+                Component.translatable(typedPropertySection.renameArmed()
                         ? "screen.brnquest.editor.typed.property.confirm_rename" : "gui.done"),
-                typedPropertyRenameArmed ? EditorButton.Tone.WARNING : EditorButton.Tone.PRIMARY, mouseX, mouseY);
+                typedPropertySection.renameArmed()
+                        ? EditorButton.Tone.WARNING : EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
     private Component typedTypeName(QuestDefinition quest, ResourceLocation typedId) {
         QuestTypedEntryKind.Entry entry = typedEditorKind.entry(quest, typedId);
-        if (entry == null) return Component.literal(typedPropertyTypeId == null ? "" : typedPropertyTypeId.toString());
+        if (entry == null) return Component.literal(typedPropertySection.typeId() == null
+                ? "" : typedPropertySection.typeId().toString());
         return typedEditorKind == QuestTypedEntryKind.TASK
                 ? ClientTaskPresentationRegistry.get(entry.typeId()).typeName(ApiViews.task(entry.task()))
                 : ClientRewardPresentationRegistry.get(entry.typeId()).typeName(ApiViews.reward(entry.reward()));
@@ -2809,7 +2790,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, typedConfigLabel(descriptor.key()), row.label(), issue);
-        EditorTextField field = typedPropertyForm.configField(index);
+        EditorTextField field = typedPropertySection.form().configField(index);
         if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
@@ -2819,7 +2800,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderEditorTextButton(graphics, row.field(), Component.literal(field.getValue() + " ▾"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
-            ItemStack stack = item(typedPropertyOriginalId, field.getValue());
+            ItemStack stack = item(typedPropertySection.originalId(), field.getValue());
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");
             EditorIcon icon = stack.isEmpty()
                     ? EditorIcon.glyph(Component.literal("+")) : EditorIcon.item(stack);
@@ -2860,7 +2841,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, "screen.brnquest.editor.typed.property.raw_config", row.label(), issue);
         Component edit = Component.translatable(
-                "screen.brnquest.editor.typed.property.edit_raw", typedPropertyForm.rawConfig().size());
+                "screen.brnquest.editor.typed.property.edit_raw", typedPropertySection.form().rawConfig().size());
         renderEditorActionButton(graphics, row.field(), EditorButton.Definition.iconAndText(
                         edit, edit, EditorIcon.glyph(Component.literal("{}"))),
                 !ClientEditorState.get().busy(), -1, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -2900,16 +2881,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (typedEditorKind == QuestTypedEntryKind.REWARD && typedClaimDropdownBounds != null
                 && typedClaimDropdownBounds.contains(mouseX, mouseY)) {
             openEnumDropdown(typedClaimDropdownBounds, REWARD_CLAIM_POLICIES,
-                    typedPropertyForm.identityField("claim")::setValue);
+                    typedPropertySection.form().identityField("claim")::setValue);
             return true;
         }
-        List<ConfigFieldDescriptor> fields = typedPropertyForm.schema() == null
-                ? List.of() : typedPropertyForm.schema().fields();
+        List<ConfigFieldDescriptor> fields = typedPropertySection.form().schema() == null
+                ? List.of() : typedPropertySection.form().schema().fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             ConfigFieldDescriptor descriptor = fields.get(index);
             UiRect bounds = typedEnumDropdownBounds.getOrDefault(index, typedPropertyConfigBounds(index));
             if (!bounds.contains(mouseX, mouseY)) continue;
-            EditorTextField field = typedPropertyForm.configField(index);
+            EditorTextField field = typedPropertySection.form().configField(index);
             if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
                 field.setValue(Boolean.toString(!booleanValue(field.getValue())));
                 return true;
@@ -2928,19 +2909,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
         }
         int semanticsTop = typedPropertySemanticsTop();
-        if (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback() && typedPropertyRawEditable()
+        if (typedPropertySection.form().schema() != null && typedPropertySection.form().schema().rawFallback()
+                && typedPropertyRawEditable()
                 && typedPropertySemanticBounds(semanticsTop - 22).contains(mouseX, mouseY)) {
             openTypedPropertyRawEditor();
             return true;
         }
         if (typedEditorKind == QuestTypedEntryKind.TASK
                 && typedPropertySemanticBounds(semanticsTop).contains(mouseX, mouseY)) {
-            typedPropertyOptional = !typedPropertyOptional;
+            typedPropertySection.toggleOptional();
             return true;
         }
         if (typedEditorKind == QuestTypedEntryKind.REWARD
                 && typedPropertySemanticBounds(semanticsTop + 22).contains(mouseX, mouseY)) {
-            typedPropertyTeamReward = !typedPropertyTeamReward;
+            typedPropertySection.toggleTeamReward();
             return true;
         }
         super.mouseClicked(mouseX, mouseY, 0);
@@ -2951,20 +2933,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (minecraft == null) return;
         openEditorItemSelector(stack -> {
             if (minecraft.level == null || fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-            typedPropertyForm.setConfigValue(fieldIndex,
+            typedPropertySection.form().setConfigValue(fieldIndex,
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
-            itemCache.remove(typedPropertyOriginalId);
+            itemCache.remove(typedPropertySection.originalId());
         });
     }
 
     private void openTypedPropertyMatcherEditor(int fieldIndex) {
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
         ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
-                typedPropertyForm.configValue(fieldIndex)).result().orElse(null);
+                typedPropertySection.form().configValue(fieldIndex)).result().orElse(null);
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (initial != null && requiredIndex >= 0) {
             try {
-                int required = Integer.parseInt(typedPropertyForm.configValue(requiredIndex));
+                int required = Integer.parseInt(typedPropertySection.form().configValue(requiredIndex));
                 initial = initial.withRequiredEntries(required);
             } catch (IllegalArgumentException ignored) {
                 // The target-level field keeps its own inline validation; child editing still opens.
@@ -2979,17 +2961,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
         if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-        typedPropertyForm.setConfigValue(fieldIndex, spec.encode());
+        typedPropertySection.form().setConfigValue(fieldIndex, spec.encode());
         int requiredIndex = typedConfigFieldIndex("required_entries");
         if (requiredIndex >= 0) {
-            typedPropertyForm.setConfigValue(requiredIndex, Integer.toString(spec.requiredEntries()));
+            typedPropertySection.form().setConfigValue(requiredIndex, Integer.toString(spec.requiredEntries()));
         }
-        itemCache.remove(typedPropertyOriginalId);
+        itemCache.remove(typedPropertySection.originalId());
         typedPropertyMessage = null;
     }
 
     private int typedConfigFieldIndex(String key) {
-        return typedPropertyForm.fieldIndex(key);
+        return typedPropertySection.form().fieldIndex(key);
     }
 
     private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
@@ -3094,71 +3076,62 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openTypedPropertyRawEditor() {
         if (minecraft == null || !typedPropertyRawEditable()) return;
         childLifecycle.prepareChild();
-        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertyForm.rawConfig(), config -> {
-            typedPropertyForm.replaceRawConfig(config);
+        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertySection.form().rawConfig(), config -> {
+            typedPropertySection.form().replaceRawConfig(config);
             // A corrected local value supersedes old field diagnostics; the server will return
             // fresh Codec diagnostics when the containing property form is submitted.
-            typedPropertyForm.clearNonIdentityServerIssues();
+            typedPropertySection.form().clearNonIdentityServerIssues();
             typedPropertyMessage = null;
         }));
     }
 
     private void prepareTypedPropertyEdit() {
-        ResourceLocation replacementId = ResourceLocation.tryParse(typedPropertyForm.id().strip());
-        if (replacementId == null) {
+        QuestTypedPropertySection.Preparation preparation =
+                typedPropertySection.prepare(typedEditorKind, typedPropertyLocalIssues());
+        if (preparation.status() == QuestTypedPropertySection.PreparationStatus.INVALID_ID) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.invalid_id");
+            setFocused(typedPropertySection.form().identityField("id"));
             return;
         }
-        Map<String, String> config = currentTypedPropertyConfig();
-        Map<String, String> issues = typedPropertyLocalIssues();
-        if (!issues.isEmpty()) {
-            String fieldKey = issues.keySet().iterator().next();
-            typedPropertyMessage = Component.literal(fieldKey + ": " + issues.get(fieldKey));
-            focusTypedConfigField(fieldKey);
+        if (preparation.status() == QuestTypedPropertySection.PreparationStatus.LOCAL_ISSUE) {
+            typedPropertyMessage = Component.literal(preparation.fieldKey() + ": " + preparation.issue());
+            focusTypedConfigField(preparation.fieldKey());
             return;
         }
-        if (!typedPropertyCreating && !replacementId.equals(typedPropertyOriginalId) && !typedPropertyRenameArmed) {
-            typedPropertyRenameArmed = true;
+        if (preparation.status() == QuestTypedPropertySection.PreparationStatus.CONFIRM_RENAME) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.rename_warning");
             return;
         }
-        if (typedEditorKind == QuestTypedEntryKind.REWARD && typedPropertyForm.claim().isBlank()) {
+        if (preparation.status() == QuestTypedPropertySection.PreparationStatus.CLAIM_REQUIRED) {
             typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.claim_required");
-            typedPropertyForm.serverIssues().put("claim_policy", typedPropertyMessage.getString());
-            setFocused(typedPropertyForm.identityField("claim"));
+            typedPropertySection.form().serverIssues().put("claim_policy", typedPropertyMessage.getString());
+            setFocused(typedPropertySection.form().identityField("claim"));
             return;
         }
-        typedPropertyForm.serverIssues().clear();
-        String action = (typedPropertyCreating ? "ADD_" : "UPDATE_") + typedEditorKind.actionPrefix();
-        ResourceLocation source = typedPropertyCreating ? typedPropertyTypeId : typedPropertyOriginalId;
-        if (!sendMutation(action, replacementId, typedEditorQuestId,
-                source, typedEditorKind == QuestTypedEntryKind.REWARD
-                        ? typedPropertyForm.claim().strip() : "",
-                typedEditorKind == QuestTypedEntryKind.TASK ? (typedPropertyOptional ? 1 : 0)
-                        : (typedPropertyTeamReward ? 1 : 0), 0, 0, List.of(), config)) return;
-        typedPropertySubmissionPending = true;
+        QuestTypedPropertySection.Submission submission = preparation.submission();
+        typedPropertySection.form().serverIssues().clear();
+        String action = (typedPropertySection.creating() ? "ADD_" : "UPDATE_") + typedEditorKind.actionPrefix();
+        if (!sendMutation(action, submission.replacementId(), typedEditorQuestId,
+                submission.sourceId(), submission.claimPolicy(), submission.semanticFlag(),
+                0, 0, List.of(), submission.config())) return;
+        typedPropertySection.markSubmissionPending();
         typedPropertyMessage = Component.translatable("screen.brnquest.editor.typed.property.submitting");
-        itemCache.remove(typedPropertyOriginalId);
-        itemCache.remove(replacementId);
+        itemCache.remove(typedPropertySection.originalId());
+        itemCache.remove(submission.replacementId());
     }
 
     private void closeTypedPropertyEditor() {
-        typedPropertyOpen = false;
-        typedPropertyOriginalId = null;
-        typedPropertyTypeId = null;
-        typedPropertyCreating = false;
         typedPropertyMessage = null;
-        typedPropertyRenameArmed = false;
-        typedPropertySubmissionPending = false;
-        typedPropertyForm.close();
+        typedPropertySection.close();
         setFocused(null);
     }
 
     private int typedPropertySemanticsTop() {
-        int fields = typedPropertyForm.schema() == null ? 0
-                : Math.min(typedPropertyForm.schema().fields().size(), MAX_TYPED_CONFIG_FIELDS);
+        int fields = typedPropertySection.form().schema() == null ? 0
+                : Math.min(typedPropertySection.form().schema().fields().size(), MAX_TYPED_CONFIG_FIELDS);
         return topToolbarHeight() + 20 + 44 + fields * 22
-                + (typedPropertyForm.schema() != null && typedPropertyForm.schema().rawFallback() ? 22 : 0);
+                + (typedPropertySection.form().schema() != null
+                && typedPropertySection.form().schema().rawFallback() ? 22 : 0);
     }
 
     private UiRect typedPropertyConfigBounds(int index) {
@@ -3179,33 +3152,33 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Map<String, String> currentTypedPropertyConfig() {
-        return typedPropertyForm.currentConfig();
+        return typedPropertySection.form().currentConfig();
     }
 
     /** Missing registrations stay read-only because there is no corresponding Codec to approve an edit. */
     private boolean typedPropertyRawEditable() {
-        if (typedPropertyForm.schema() == null || !typedPropertyForm.schema().rawFallback()
-                || typedPropertyTypeId == null) {
+        if (typedPropertySection.form().schema() == null || !typedPropertySection.form().schema().rawFallback()
+                || typedPropertySection.typeId() == null) {
             return false;
         }
         return typedEditorKind == QuestTypedEntryKind.TASK
-                ? TaskTypeRegistry.get(typedPropertyTypeId) != null
-                : RewardTypeRegistry.get(typedPropertyTypeId) != null;
+                ? TaskTypeRegistry.get(typedPropertySection.typeId()) != null
+                : RewardTypeRegistry.get(typedPropertySection.typeId()) != null;
     }
 
     private String typedPropertyRawIssue() {
-        return typedPropertyForm.serverIssues().entrySet().stream()
+        return typedPropertySection.form().serverIssues().entrySet().stream()
                 .filter(entry -> !"id".equals(entry.getKey()) && !"claim_policy".equals(entry.getKey()))
                 .map(Map.Entry::getValue).findFirst().orElse(null);
     }
 
     /** Combines descriptor validation with the client registry check needed for an ItemStack field. */
     private Map<String, String> typedPropertyLocalIssues() {
-        if (typedPropertyForm.schema() == null) return Map.of();
-        Map<String, String> issues = new LinkedHashMap<>(typedPropertyForm.localIssues());
+        if (typedPropertySection.form().schema() == null) return Map.of();
+        Map<String, String> issues = new LinkedHashMap<>(typedPropertySection.form().localIssues());
         Map<String, String> config = currentTypedPropertyConfig();
         if (minecraft != null && minecraft.level != null) {
-            for (ConfigFieldDescriptor field : typedPropertyForm.schema().fields()) {
+            for (ConfigFieldDescriptor field : typedPropertySection.form().schema().fields()) {
                 String value = config.getOrDefault(field.key(), "");
                 if (field.valueType() != ConfigValueType.ITEM_STACK || value.isBlank()) continue;
                 try {
@@ -3220,19 +3193,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Component firstTypedIssue(Map<String, String> localIssues) {
-        Map.Entry<String, String> issue = !typedPropertyForm.serverIssues().isEmpty()
-                ? typedPropertyForm.serverIssues().entrySet().iterator().next()
+        Map.Entry<String, String> issue = !typedPropertySection.form().serverIssues().isEmpty()
+                ? typedPropertySection.form().serverIssues().entrySet().iterator().next()
                 : localIssues.isEmpty() ? null : localIssues.entrySet().iterator().next();
         return issue == null ? null : Component.literal("! " + issue.getKey() + ": " + issue.getValue());
     }
 
     private void focusTypedConfigField(String fieldKey) {
-        List<ConfigFieldDescriptor> fields = typedPropertyForm.schema() == null
-                ? List.of() : typedPropertyForm.schema().fields();
+        List<ConfigFieldDescriptor> fields = typedPropertySection.form().schema() == null
+                ? List.of() : typedPropertySection.form().schema().fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             if (fields.get(index).key().equals(fieldKey)) {
                 if (fields.get(index).valueType() != ConfigValueType.ITEM_STACK) {
-                    setFocused(typedPropertyForm.configField(index));
+                    setFocused(typedPropertySection.form().configField(index));
                 }
                 return;
             }
@@ -3241,7 +3214,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Keeps the form open on server rejection and closes it only after the verified replacement draft arrives. */
     private void refreshTypedPropertySubmission() {
-        if (!typedPropertySubmissionPending) return;
+        if (!typedPropertySection.submissionPending()) return;
         ClientEditorState editor = ClientEditorState.get();
         if (editor.busy()) return;
         if (editor.mode() == ClientEditorState.Mode.EDITING) {
@@ -3249,19 +3222,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return;
         }
         if (editor.mode() != ClientEditorState.Mode.ERROR) return;
-        typedPropertySubmissionPending = false;
+        typedPropertySection.clearSubmissionPending();
         typedPropertyMessage = EditorMessageText.operationError(editor.statusCode());
-        typedPropertyForm.serverIssues().clear();
+        typedPropertySection.form().serverIssues().clear();
         for (AuthoringNetwork.EditorDiagnosticWire diagnostic : editor.diagnostics()) {
             String path = diagnostic.path() == null ? "" : diagnostic.path();
             String fieldKey = path.startsWith("config.") ? path.substring("config.".length()) : path;
-            if (!fieldKey.isBlank()) typedPropertyForm.serverIssues().putIfAbsent(fieldKey,
+            if (!fieldKey.isBlank()) typedPropertySection.form().serverIssues().putIfAbsent(fieldKey,
                     EditorMessageText.diagnostic(diagnostic).getString());
         }
-        if (!typedPropertyForm.serverIssues().isEmpty()) {
-            String fieldKey = typedPropertyForm.serverIssues().keySet().iterator().next();
-            if ("id".equals(fieldKey)) setFocused(typedPropertyForm.identityField("id"));
-            else if ("claim_policy".equals(fieldKey)) setFocused(typedPropertyForm.identityField("claim"));
+        if (!typedPropertySection.form().serverIssues().isEmpty()) {
+            String fieldKey = typedPropertySection.form().serverIssues().keySet().iterator().next();
+            if ("id".equals(fieldKey)) setFocused(typedPropertySection.form().identityField("id"));
+            else if ("claim_policy".equals(fieldKey)) {
+                setFocused(typedPropertySection.form().identityField("claim"));
+            }
             else focusTypedConfigField(fieldKey);
         }
     }
@@ -3996,12 +3971,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void offsetDetailsDrawerFieldsForMotion() {
         if (!detailsOpen && !detailsDrawerVisible()) {
             questFields.hide();
-            typedPropertyForm.hide();
+            typedPropertySection.hide();
             return;
         }
         int offset = detailsDrawerOffsetX();
         questFields.offsetForDrawerAnimation(offset);
-        typedPropertyForm.offsetForDrawerAnimation(offset);
+        typedPropertySection.offsetForDrawerAnimation(offset);
     }
 
     private static String iconItemId(String iconSnbt) {

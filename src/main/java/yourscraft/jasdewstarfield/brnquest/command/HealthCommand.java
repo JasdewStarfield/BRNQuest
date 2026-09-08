@@ -17,7 +17,11 @@ final class HealthCommand {
     static LiteralArgumentBuilder<CommandSourceStack> build() {
         return Commands.literal("health").requires(source -> source.hasPermission(2))
                 .executes(context -> report(context.getSource(), false))
-                .then(Commands.literal("details").executes(context -> report(context.getSource(), true)));
+                .then(Commands.literal("details").executes(context -> report(context.getSource(), true)))
+                .then(Commands.literal("player").then(Commands.argument("player", net.minecraft.commands.arguments.EntityArgument.player())
+                        .executes(context -> player(context.getSource(), net.minecraft.commands.arguments.EntityArgument.getPlayer(context, "player"), false))
+                        .then(Commands.literal("details").executes(context -> player(context.getSource(),
+                                net.minecraft.commands.arguments.EntityArgument.getPlayer(context, "player"), true)))));
     }
 
     static int report(CommandSourceStack source, boolean details) {
@@ -63,6 +67,16 @@ final class HealthCommand {
             if (reload.diagnosticCount() > 5) send(source, "truncated", reload.diagnosticCount());
         } else send(source, "details_hint");
         // Successful inspection is independent of whether the inspected book is healthy.
+        return 1;
+    }
+
+    private static int player(CommandSourceStack source, net.minecraft.server.level.ServerPlayer player, boolean details) {
+        var observation = yourscraft.jasdewstarfield.brnquest.network.BookSyncObservations.get().inspect(player.getUUID());
+        send(source, "player." + observation.status().name().toLowerCase(Locale.ROOT), player.getGameProfile().getName(),
+                observation.submittedChunks(), observation.expectedChunks(), observation.encodedBytes());
+        send(source, "player.no_receipt");
+        if (details) source.sendSuccess(() -> Component.literal("revision=" + observation.revision()
+                + " observedAt=" + observation.observedAt() + " code=" + observation.code()), false);
         return 1;
     }
 

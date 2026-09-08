@@ -502,5 +502,18 @@
   "command.brnquest.health.reason.capacity": "拒绝原因：候选任务数量超过上限。",
   "command.brnquest.health.reason.validation": "拒绝原因：任务书读取、脚本或校验失败；技术详情可查看具体原因。",
   "command.brnquest.health.details_hint": "技术详情：/brnquest health details（完整版本、候选信息及最近加载诊断）。",
-  "command.brnquest.health.truncated": "共有 %1$s 条加载诊断，此处仅显示前 5 条。"
+  "command.brnquest.health.truncated": "共有 %1$s 条加载诊断，此处仅显示前 5 条。",
+  "command.brnquest.health.player.unknown": "玩家 %1$s 没有可用发包记录（尚未发送、已断开或记录已淘汰）。",
+  "command.brnquest.health.player.queuing": "玩家 %1$s：正在提交任务书分块 %2$s / %3$s；正文 %4$s 字节。",
+  "command.brnquest.health.player.submitted": "玩家 %1$s：已向网络提交 %2$s / %3$s 个分块；正文 %4$s 字节。",
+  "command.brnquest.health.player.not_submitted": "玩家 %1$s：分块未完整提交（通道不可用或发送异常）；已提交 %2$s / %3$s。",
+  "command.brnquest.health.player.rejected": "玩家 %1$s：任务书在服务端发送前被拒绝，详见技术详情。",
+  "command.brnquest.health.player.no_receipt": "发包记录不是客户端回执；请在对应客户端运行 /brnquest_client health details 核对。",
+  "command.brnquest.client_health.receiving": "本机正在接收任务书；完整校验前继续保留此前有效版本。",
+  "command.brnquest.client_health.empty": "本机尚无已应用的有效任务书。",
+  "command.brnquest.client_health.behind": "本机活动版本与服务端最近公告的版本不同。",
+  "command.brnquest.client_health.applied": "本机已应用完整校验后的任务书。",
+  "command.brnquest.client_health.progress": "当前候选：%1$s / %2$s 个分块，%3$s / %4$s 字节；已忽略 %5$s 个过期或无候选分块。",
+  "command.brnquest.client_health.rejected": "本次连接曾拒收候选；最近原因保留在技术详情中，成功重试不会抹去记录。",
+  "command.brnquest.client_health.details_hint": "本机技术详情：/brnquest_client health details；该查询不会请求重同步。"
 }

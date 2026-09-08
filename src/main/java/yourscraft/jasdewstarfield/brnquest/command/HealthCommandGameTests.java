@@ -39,6 +39,10 @@ public final class HealthCommandGameTests {
             helper.runAfterDelay(5, () -> {
                 try {
                     var beforeHealth = QuestBookManager.get().health();
+                    yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork.syncAll(player, false);
+                    var beforeSend = yourscraft.jasdewstarfield.brnquest.network.BookSyncObservations.get().inspect(player.getUUID());
+                    helper.assertValueEqual(beforeSend.status(), yourscraft.jasdewstarfield.brnquest.network.BookSyncObservations.Status.NOT_SUBMITTED,
+                            "mock connection without a negotiated channel cannot claim submitted chunks");
                     List<Component> messages = new ArrayList<>();
                     CommandSource sink = new CommandSource() {
                         public void sendSystemMessage(Component message) { messages.add(message); }
@@ -52,6 +56,10 @@ public final class HealthCommandGameTests {
                             .canUse(source.withPermission(0)), "ordinary players cannot inspect health");
                     helper.assertValueEqual(dispatcher.execute("brnquest health", source), 1, "summary executes");
                     helper.assertValueEqual(dispatcher.execute("brnquest health details", source), 1, "details executes");
+                    helper.assertValueEqual(dispatcher.execute("brnquest health player " + player.getGameProfile().getName() + " details", source), 1,
+                            "per-player observations execute through the actual command");
+                    helper.assertValueEqual(yourscraft.jasdewstarfield.brnquest.network.BookSyncObservations.get().inspect(player.getUUID()), beforeSend,
+                            "query does not send packets or change observations");
                     helper.assertTrue(!messages.isEmpty(), "command delivers observable output");
                     helper.assertValueEqual(QuestBookManager.get().health(), beforeHealth, "query preserves active pointer and reload observation");
                     helper.assertValueEqual(EditSessionService.get().inspect(player, bookId).value(), beforeLease,

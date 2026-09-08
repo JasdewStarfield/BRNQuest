@@ -502,5 +502,18 @@
   "command.brnquest.health.reason.capacity": "Rejection reason: candidate quest count exceeds the limit.",
   "command.brnquest.health.reason.validation": "Rejection reason: book reading, scripts or validation failed; see details for the specific cause.",
   "command.brnquest.health.details_hint": "Technical details: /brnquest health details (full revision, candidate and last-load diagnostics).",
-  "command.brnquest.health.truncated": "There are %1$s load diagnostics; only the first 5 are shown here."
+  "command.brnquest.health.truncated": "There are %1$s load diagnostics; only the first 5 are shown here.",
+  "command.brnquest.health.player.unknown": "No send record for %1$s (not sent, disconnected or evicted).",
+  "command.brnquest.health.player.queuing": "Player %1$s: submitting book chunks %2$s / %3$s; body %4$s bytes.",
+  "command.brnquest.health.player.submitted": "Player %1$s: submitted %2$s / %3$s chunks to transport; body %4$s bytes.",
+  "command.brnquest.health.player.not_submitted": "Player %1$s: incomplete transport submission (unavailable channel or send error); %2$s / %3$s submitted.",
+  "command.brnquest.health.player.rejected": "Player %1$s: book rejected before server delivery; see technical details.",
+  "command.brnquest.health.player.no_receipt": "Send records are not client receipts; compare with /brnquest_client health details on that client.",
+  "command.brnquest.client_health.receiving": "This client is receiving a book; the prior valid version remains active until verification completes.",
+  "command.brnquest.client_health.empty": "This client has no verified book applied yet.",
+  "command.brnquest.client_health.behind": "The locally active revision differs from the latest server announcement.",
+  "command.brnquest.client_health.applied": "This client has applied a fully verified book.",
+  "command.brnquest.client_health.progress": "Current candidate: %1$s / %2$s chunks, %3$s / %4$s bytes; %5$s stale or unsolicited chunks ignored.",
+  "command.brnquest.client_health.rejected": "A candidate was rejected during this connection; the last reason remains in details even after a successful retry.",
+  "command.brnquest.client_health.details_hint": "Local details: /brnquest_client health details; this query does not request a resync."
 }

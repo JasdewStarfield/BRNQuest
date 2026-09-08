@@ -24,6 +24,7 @@ public final class PlatformClientHooks {
         bus.addListener(PlatformClientHooks::layers);
         NeoForge.EVENT_BUS.addListener(PlatformClientHooks::tick);
         NeoForge.EVENT_BUS.addListener(PlatformClientHooks::logout);
+        NeoForge.EVENT_BUS.addListener(yourscraft.jasdewstarfield.brnquest.client.ClientHealthCommand::register);
     }
     private static void setup(FMLClientSetupEvent event) {
         // Client extensions register during construction; rendering starts only after this freeze.
@@ -36,5 +37,6 @@ public final class PlatformClientHooks {
     private static void tick(ClientTickEvent.Post event) { ClientKeyRegistry.tick(); }
     private static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientEditorState.get().disconnected();
+        yourscraft.jasdewstarfield.brnquest.client.ClientQuestState.get().disconnected();
     }
 }

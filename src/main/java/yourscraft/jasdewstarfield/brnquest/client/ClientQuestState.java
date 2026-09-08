@@ -31,6 +31,27 @@ public final class ClientQuestState {
     private final Set<String> pendingTaskSubmissions = new HashSet<>();
     private ResourceLocation selected;
     private String bookSyncFailure = "";
+    private String advertisedRevision = "";
+    private String lastRejectedRevision = "";
+    private String lastRejectedCode = "";
+    private String lastAppliedRevision = "";
+    private long receivedBytes;
+    private int ignoredChunks;
+
+    /** Immutable observation only; obtaining it never retries, clears a candidate or changes selection. */
+    public record SyncHealth(String activeRevision, String advertisedRevision, String receivingRevision,
+                             int receivedChunks, int expectedChunks, long receivedBytes, int expectedBytes,
+                             String lastAppliedRevision, String lastRejectedRevision, String lastRejectedCode,
+                             int ignoredChunks) {}
+
+    public SyncHealth syncHealth() {
+        return new SyncHealth(revision(), advertisedRevision, expectedRevision, chunks.size(), expectedChunks,
+                receivedBytes, expectedBytes, lastAppliedRevision, lastRejectedRevision, lastRejectedCode, ignoredChunks);
+    }
+
+    /** A hello is an announcement, not proof that this client has applied that revision. */
+    public void advertised(String revision) { advertisedRevision = revision == null ? "" : revision; }
+
 
     private ClientQuestState() {}
     public static ClientQuestState get() { return INSTANCE; }
@@ -57,19 +78,24 @@ public final class ClientQuestState {
                 || chunkCount > BrnQuestConstants.MAX_BOOK_CHUNKS || decodedBytes < 0
                 || decodedBytes > BrnQuestConstants.MAX_BOOK_BYTES) {
             abortBookTransfer("INVALID_MANIFEST");
+            lastRejectedRevision = revision == null ? "" : revision;
             return false;
         }
         expectedRevision = revision;
         expectedChunks = chunkCount;
         expectedBytes = decodedBytes;
         chunks.clear();
+        receivedBytes = 0;
         bookSyncFailure = "";
         return true;
     }
 
     public boolean acceptChunk(String revision, int index, String data) {
         // A late chunk from a superseded transfer must not cancel the current manifest.
-        if (expectedRevision.isBlank() || !expectedRevision.equals(revision)) return false;
+        if (expectedRevision.isBlank() || !expectedRevision.equals(revision)) {
+            if (ignoredChunks < Integer.MAX_VALUE) ignoredChunks++;
+            return false;
+        }
         if (data == null || index < 0 || index >= expectedChunks
                 || data.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_BOOK_CHUNK_BYTES) {
             abortBookTransfer("INVALID_CHUNK");
@@ -80,6 +106,7 @@ public final class ClientQuestState {
             abortBookTransfer("CONFLICTING_CHUNK");
             return false;
         }
+        if (previous == null) receivedBytes += data.getBytes(StandardCharsets.UTF_8).length;
         if (chunks.size() != expectedChunks) return false;
         try {
             StringBuilder json = new StringBuilder();
@@ -89,21 +116,28 @@ public final class ClientQuestState {
                 json.append(chunk);
             }
             if (json.toString().getBytes(StandardCharsets.UTF_8).length != expectedBytes) {
-                throw new IllegalArgumentException("Book byte count does not match its manifest");
+                abortBookTransfer("INVALID_BOOK");
+                lastRejectedCode = "BYTE_COUNT_MISMATCH";
+                return false;
             }
             QuestBookSnapshot candidate = QuestBookSnapshot.of(
                     NativeBookJson.decode(JsonParser.parseString(json.toString()).getAsJsonObject()));
             if (!candidate.revision().equals(expectedRevision)
                     || candidate.book().quests().size() > BrnQuestConstants.MAX_QUESTS) {
-                throw new IllegalArgumentException("Book identity or capacity does not match its manifest");
+                boolean tooMany = candidate.book().quests().size() > BrnQuestConstants.MAX_QUESTS;
+                abortBookTransfer("INVALID_BOOK");
+                lastRejectedCode = tooMany ? "TOO_MANY_QUESTS" : "REVISION_MISMATCH";
+                return false;
             }
             // The previous snapshot remains authoritative until the complete candidate passes every check.
             book = candidate;
+            lastAppliedRevision = candidate.revision();
             clearBookTransfer();
             bookSyncFailure = "";
             return true;
         } catch (RuntimeException exception) {
             abortBookTransfer("INVALID_BOOK");
+            lastRejectedCode = "DECODE_FAILED";
             return false;
         }
     }
@@ -113,6 +147,8 @@ public final class ClientQuestState {
     }
 
     private void abortBookTransfer(String code) {
+        lastRejectedRevision = expectedRevision;
+        lastRejectedCode = code;
         clearBookTransfer();
         bookSyncFailure = code;
     }
@@ -121,6 +157,7 @@ public final class ClientQuestState {
         expectedRevision = "";
         expectedChunks = 0;
         expectedBytes = 0;
+        receivedBytes = 0;
         chunks.clear();
     }
 
@@ -143,7 +180,8 @@ public final class ClientQuestState {
         return statuses.entrySet().stream().filter(e -> e.getValue() == QuestStatus.ACTIVE).map(e -> ResourceLocation.tryParse(e.getKey())).filter(Objects::nonNull).findFirst();
     }
 
-    synchronized void resetForTest() {
+    /** Connection-scoped caches must not expose the previous server's book or diagnostics after reconnecting. */
+    public synchronized void disconnected() {
         book = null;
         statuses = Map.of();
         taskProgress = Map.of();
@@ -154,7 +192,14 @@ public final class ClientQuestState {
         nextAvailable = Map.of();
         pendingTaskSubmissions.clear();
         selected = null;
+        advertisedRevision = "";
+        lastRejectedRevision = "";
+        lastRejectedCode = "";
+        lastAppliedRevision = "";
+        ignoredChunks = 0;
         bookSyncFailure = "";
         clearBookTransfer();
     }
+
+    synchronized void resetForTest() { disconnected(); }
 }

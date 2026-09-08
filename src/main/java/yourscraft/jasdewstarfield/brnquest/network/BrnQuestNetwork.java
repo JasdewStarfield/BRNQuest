@@ -233,6 +233,7 @@ public final class BrnQuestNetwork {
     private static void rejectBookSync(ServerPlayer player, String code, int actual, int maximum, String revision) {
         BRNQuest.LOGGER.error("[BRNQuest/NETWORK] Refusing active book sync to {}: code={} actual={} maximum={} revision={}",
                 player.getGameProfile().getName(), code, actual, maximum, revision);
+        BookSyncObservations.get().rejected(player.getUUID(), revision, code);
         send(player, new BookSyncFailurePayload(code, actual, maximum));
     }
 
@@ -289,8 +290,15 @@ public final class BrnQuestNetwork {
     static void send(ServerPlayer player, CustomPacketPayload payload) {
         // Mock players and clients without the negotiated channel must not make
         // otherwise server-only progress operations fail.
-        if (player.connection != null && NetworkRegistry.hasChannel(player.connection, payload.type().id())) {
-            PacketDistributor.sendToPlayer(player, payload);
+        boolean submitted = false;
+        try {
+            if (player.connection != null && NetworkRegistry.hasChannel(player.connection, payload.type().id())) {
+                PacketDistributor.sendToPlayer(player, payload);
+                submitted = true;
+            }
+        } finally {
+            // Record after the transport call, including skipped channels or a thrown send; never claim receipt.
+            BookSyncObservations.get().observe(player.getUUID(), payload, submitted);
         }
     }
     static List<String> split(String value, int characters) { List<String> result = new ArrayList<>(); for (int i = 0; i < value.length(); i += characters) result.add(value.substring(i, Math.min(value.length(), i + characters))); return result; }

@@ -12,6 +12,7 @@ public final class ClientPayloadHandler {
     private ClientPayloadHandler() {}
     public static void hello(BrnQuestNetwork.HelloPayload payload) {
         Minecraft.getInstance().execute(() -> {
+            ClientQuestState.get().advertised(payload.revision());
             String known = ClientQuestState.get().revision();
             if (!payload.revision().equals(known)) BrnQuestNetwork.requestBook(known);
         });

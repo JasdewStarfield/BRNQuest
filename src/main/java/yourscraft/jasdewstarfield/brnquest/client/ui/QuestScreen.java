@@ -2483,6 +2483,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case "required_entries" -> "screen.brnquest.editor.config.required_entries";
             case "count" -> "screen.brnquest.editor.config.count";
             case "consume_items" -> "screen.brnquest.editor.config.consume_items";
+            // Built-in crafting progress uses a localized label instead of exposing its storage key.
+            case "only_from_crafting" -> "screen.brnquest.editor.config.only_from_crafting";
             case "title" -> "screen.brnquest.editor.config.title";
             case "script_id" -> "screen.brnquest.editor.config.script_id";
             case "message_id" -> "screen.brnquest.editor.config.message_id";

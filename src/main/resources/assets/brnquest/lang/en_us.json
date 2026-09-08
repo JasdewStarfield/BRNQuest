@@ -188,6 +188,7 @@
   "screen.brnquest.editor.config.count": "Count",
   "screen.brnquest.editor.config.required_entries": "Required item entries",
   "screen.brnquest.editor.config.consume_items": "Consume",
+  "screen.brnquest.editor.config.only_from_crafting": "Crafting only",
   "screen.brnquest.editor.config.title": "Display title",
   "screen.brnquest.editor.config.script_id": "Dialogue script ID",
   "screen.brnquest.editor.config.message_id": "Message node ID",

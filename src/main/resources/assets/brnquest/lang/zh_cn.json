@@ -188,6 +188,7 @@
   "screen.brnquest.editor.config.count": "数量",
   "screen.brnquest.editor.config.required_entries": "需要完成的物品项",
   "screen.brnquest.editor.config.consume_items": "消耗物品",
+  "screen.brnquest.editor.config.only_from_crafting": "仅计合成",
   "screen.brnquest.editor.config.title": "显示标题",
   "screen.brnquest.editor.config.script_id": "对话脚本 ID",
   "screen.brnquest.editor.config.message_id": "消息节点 ID",

@@ -17,7 +17,6 @@ import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.api.AuthorApi;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
-import yourscraft.jasdewstarfield.brnquest.author.DraftCatalogEntry;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
@@ -25,8 +24,6 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionHandle;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
-import yourscraft.jasdewstarfield.brnquest.author.SemanticDiffEntry;
-import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
@@ -43,7 +40,6 @@ import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -52,8 +48,6 @@ import java.util.UUID;
 /** Stage-5 authoring channel. Every request is re-authorized against the connected target server. */
 public final class AuthoringNetwork {
     private static final Gson GSON = new Gson();
-    private static final int MAX_REVIEW_ROWS = 128;
-    private static final int MAX_REVIEW_VALUE_CHARACTERS = 240;
 
     private AuthoringNetwork() {}
 
@@ -275,13 +269,13 @@ public final class AuthoringNetwork {
         var bookId = ResourceLocation.tryParse(rawBookId);
         var opened = EditSessionService.get().openLive(player, bookId);
         if (!opened.success()) {
-            sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
+            responses(player).sendFailure("OPEN", opened.status(), opened.code(), opened.message());
             return;
         }
         var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
                 opened.value().session().draftRevision());
         if (!draft.success()) {
-            sendFailure(player, "OPEN", draft.status(), draft.code(), draft.message());
+            responses(player).sendFailure("OPEN", draft.status(), draft.code(), draft.message());
             return;
         }
         sendDraft(player, "OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
@@ -389,26 +383,7 @@ public final class AuthoringNetwork {
     }
 
     static void sendCatalog(ServerPlayer player) {
-        AuthorOperationResult<List<DraftCatalogEntry>> result = AuthorApi.catalog(player);
-        List<CatalogEntryWire> initialEntries = result.success() ? result.value().stream()
-                .limit(BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES)
-                .map(entry -> new CatalogEntryWire(entry.bookId().toString(), boundedTitle(entry.title()),
-                        entry.draftRevision(), entry.origin().name()))
-                .toList() : List.of();
-        List<CatalogEntryWire> entries = new java.util.ArrayList<>(initialEntries);
-        String code = result.success() && result.value().size() > entries.size()
-                ? "DRAFT_CATALOG_TRUNCATED" : result.code();
-        String json;
-        do {
-            CatalogResponseWire response = new CatalogResponseWire(result.status().name(), code,
-                    boundedMessage(result.message()), result.success(), List.copyOf(entries));
-            json = GSON.toJson(response);
-            if (json.getBytes(StandardCharsets.UTF_8).length <= BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) break;
-            if (entries.isEmpty()) return;
-            entries.removeLast();
-            code = "DRAFT_CATALOG_TRUNCATED";
-        } while (true);
-        BrnQuestNetwork.send(player, new CatalogPayload(json));
+        responses(player).sendCatalog(AuthorApi.catalog(player));
     }
 
     static void open(ServerPlayer player, String rawBookId) {
@@ -418,13 +393,13 @@ public final class AuthoringNetwork {
     static void open(ServerPlayer player, String rawBookId, String expectedDraftRevision) {
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (bookId == null) {
-            sendFailure(player, "OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_BOOK_ID", "Invalid draft book ID");
             return;
         }
         AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId, expectedDraftRevision);
         if (!opened.success()) {
-            sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
+            responses(player).sendFailure("OPEN", opened.status(), opened.code(), opened.message());
             return;
         }
         EditSessionHandle handle = opened.value();
@@ -432,7 +407,7 @@ public final class AuthoringNetwork {
                 handle.sessionId(), bookId, handle.session().draftRevision());
         if (!snapshot.success()) {
             AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision());
-            sendFailure(player, "OPEN", snapshot.status(), snapshot.code(), snapshot.message());
+            responses(player).sendFailure("OPEN", snapshot.status(), snapshot.code(), snapshot.message());
             return;
         }
         sendOpened(player, handle, snapshot.value());
@@ -442,12 +417,12 @@ public final class AuthoringNetwork {
         ResourceLocation bookId = ResourceLocation.tryParse(payload.bookId());
         var active = QuestBookManager.get().active().orElse(null);
         if (bookId == null || active == null || !bookId.equals(active.book().id())) {
-            sendFailure(player, "OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
                     "ACTIVE_BOOK_CHANGED", "The displayed task book is no longer active on this server");
             return;
         }
         if (!active.revision().equals(payload.activeRevision())) {
-            sendFailure(player, "OPEN", AuthorOperationResult.Status.CONFLICT,
+            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.CONFLICT,
                     "ACTIVE_BOOK_CHANGED", "The active task book changed after the draft choice was shown");
             return;
         }
@@ -455,14 +430,14 @@ public final class AuthoringNetwork {
             AuthorOperationResult<DraftSnapshot> replaced = new DraftService().replaceFromActive(player,
                     payload.draftRevision());
             if (!replaced.success()) {
-                sendFailure(player, "OPEN", replaced.status(), replaced.code(), replaced.message());
+                responses(player).sendFailure("OPEN", replaced.status(), replaced.code(), replaced.message());
                 return;
             }
         } else {
             if (payload.draftRevision().isBlank()) {
                 AuthorOperationResult<DraftSnapshot> created = AuthorApi.createFromActive(player);
                 if (!created.success()) {
-                    sendFailure(player, "OPEN", created.status(), created.code(), created.message());
+                    responses(player).sendFailure("OPEN", created.status(), created.code(), created.message());
                     return;
                 }
             }
@@ -477,33 +452,33 @@ public final class AuthoringNetwork {
     static void renew(ServerPlayer player, String rawSessionId, String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         if (sessionId == null) {
-            sendFailure(player, "RENEW", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("RENEW", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_SESSION_ID", "Invalid edit-session ID");
             return;
         }
         AuthorOperationResult<EditSessionHandle> result = AuthorApi.renew(player, sessionId, draftRevision);
         if (!result.success()) {
-            sendFailure(player, "RENEW", result.status(), result.code(), result.message());
+            responses(player).sendFailure("RENEW", result.status(), result.code(), result.message());
             return;
         }
-        sendSession(player, "RENEW", result.status(), result.code(), result.message(), result.value(), 0, 0);
+        responses(player).sendSession("RENEW", result.status(), result.code(), result.message(), result.value(), 0, 0);
     }
 
     static void close(ServerPlayer player, String rawSessionId, String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         if (sessionId == null) {
-            sendFailure(player, "CLOSE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("CLOSE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_SESSION_ID", "Invalid edit-session ID");
             return;
         }
         AuthorOperationResult<EditSessionView> result = AuthorApi.close(player, sessionId, draftRevision);
         if (!result.success()) {
-            sendFailure(player, "CLOSE", result.status(), result.code(), result.message());
+            responses(player).sendFailure("CLOSE", result.status(), result.code(), result.message());
             return;
         }
         EditSessionView view = result.value();
         EditSessionHandle handle = new EditSessionHandle(sessionId, view);
-        sendSession(player, "CLOSE", result.status(), result.code(), result.message(), handle, 0, 0);
+        responses(player).sendSession("CLOSE", result.status(), result.code(), result.message(), handle, 0, 0);
     }
 
     static void recover(ServerPlayer player, String json) {
@@ -511,36 +486,36 @@ public final class AuthoringNetwork {
         try {
             wire = GSON.fromJson(json, RecoveryWire.class);
         } catch (RuntimeException exception) {
-            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_RECOVERY_REQUEST", "Invalid conflict recovery request");
             return;
         }
         UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
         ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
         if (sessionId == null || bookId == null) {
-            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_RECOVERY_REQUEST", "Incomplete conflict recovery request");
             return;
         }
         if ("ABANDON".equals(wire.action())) {
             var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
             if (!abandoned.success()) {
-                sendFailure(player, "RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+                responses(player).sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
                 return;
             }
-            sendSession(player, "CLOSE", abandoned.status(), abandoned.code(), abandoned.message(),
+            responses(player).sendSession("CLOSE", abandoned.status(), abandoned.code(), abandoned.message(),
                     new EditSessionHandle(sessionId, abandoned.value()), 0, 0);
             return;
         }
         var recovered = EditSessionService.get().recover(player, sessionId, bookId);
         if (!recovered.success()) {
-            sendFailure(player, "RECOVER", recovered.status(), recovered.code(), recovered.message());
+            responses(player).sendFailure("RECOVER", recovered.status(), recovered.code(), recovered.message());
             return;
         }
         var snapshot = EditSessionService.get().snapshot(player, sessionId, bookId,
                 recovered.value().session().draftRevision());
         if (!snapshot.success()) {
-            sendFailure(player, "RECOVER", snapshot.status(), snapshot.code(), snapshot.message());
+            responses(player).sendFailure("RECOVER", snapshot.status(), snapshot.code(), snapshot.message());
             return;
         }
         if ("REFRESH".equals(wire.action())) {
@@ -550,24 +525,24 @@ public final class AuthoringNetwork {
         }
         ResourceLocation target = ResourceLocation.tryParse(wire.targetBookId());
         if (!"SAVE_AS".equals(wire.action()) || target == null) {
-            sendFailure(player, "RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_RECOVERY_ACTION", "Unknown conflict recovery action");
             return;
         }
         var copied = new yourscraft.jasdewstarfield.brnquest.author.DraftService()
                 .createRecoveryCopy(player, snapshot.value(), target);
         if (!copied.success()) {
-            sendFailure(player, "RECOVER", copied.status(), copied.code(), copied.message());
+            responses(player).sendFailure("RECOVER", copied.status(), copied.code(), copied.message());
             return;
         }
         var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
         if (!abandoned.success()) {
-            sendFailure(player, "RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+            responses(player).sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
             return;
         }
         var opened = EditSessionService.get().open(player, copied.value());
         if (!opened.success()) {
-            sendFailure(player, "RECOVER", opened.status(), opened.code(), opened.message());
+            responses(player).sendFailure("RECOVER", opened.status(), opened.code(), opened.message());
             return;
         }
         sendDraft(player, "RECOVER", "RECOVERY_COPY_OPENED", "Recovery copy created and opened",
@@ -578,7 +553,7 @@ public final class AuthoringNetwork {
         UUID sessionId = parseUuid(rawSessionId);
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
-            sendFailure(player, "SAVE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("SAVE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_SAVE_REQUEST", "Incomplete draft save request");
             return;
         }
@@ -594,15 +569,15 @@ public final class AuthoringNetwork {
                 var first = saved.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.message();
             }
-            sendFailure(player, "SAVE", saved.status(), saved.code(), message);
+            responses(player).sendFailure("SAVE", saved.status(), saved.code(), message);
             return;
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
         if (!renewed.success()) {
-            sendFailure(player, "SAVE", renewed.status(), renewed.code(), renewed.message());
+            responses(player).sendFailure("SAVE", renewed.status(), renewed.code(), renewed.message());
             return;
         }
-        sendSession(player, "SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
+        responses(player).sendSession("SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
     }
 
     /**
@@ -614,7 +589,7 @@ public final class AuthoringNetwork {
         UUID sessionId = parseUuid(rawSessionId);
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
-            sendFailure(player, "PUBLISH", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("PUBLISH", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_PUBLISH_REQUEST", "Incomplete publish request");
             return;
         }
@@ -622,7 +597,7 @@ public final class AuthoringNetwork {
         var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
         debugPublishPhase(player, bookId, draftRevision, "save", saved.status().name(), saved.code());
         if (!saved.success()) {
-            sendFailure(player, "PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
+            responses(player).sendFailure("PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
             return;
         }
         var published = AuthorApi.publish(player, sessionId, bookId, draftRevision);
@@ -638,38 +613,38 @@ public final class AuthoringNetwork {
                 var first = published.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.objectId() + " — " + first.message();
             }
-            sendFailure(player, "PUBLISH", published.status(), published.code(),
+            responses(player).sendFailure("PUBLISH", published.status(), published.code(),
                     message);
             return;
         }
         var deployed = AuthorApi.deploy(player, true);
         debugPublishPhase(player, bookId, draftRevision, "deploy", deployed.status().name(), deployed.code());
         if (!deployed.success()) {
-            sendFailure(player, "PUBLISH", deployed.status(), deployed.code(),
+            responses(player).sendFailure("PUBLISH", deployed.status(), deployed.code(),
                     "Workspace publish completed, but deployment failed: " + deployed.message());
             return;
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
         debugPublishPhase(player, bookId, draftRevision, "renew", renewed.status().name(), renewed.code());
         if (!renewed.success()) {
-            sendFailure(player, "PUBLISH", renewed.status(), renewed.code(),
+            responses(player).sendFailure("PUBLISH", renewed.status(), renewed.code(),
                     "Workspace was deployed, but the edit lease could not be renewed: " + renewed.message());
             return;
         }
         AuthorApi.reload(player).whenComplete((reloaded, error) -> player.getServer().execute(() -> {
             if (error != null) {
                 debugPublishPhase(player, bookId, draftRevision, "reload", "IO_FAILURE", "RELOAD_FAILED");
-                sendFailure(player, "PUBLISH", AuthorOperationResult.Status.IO_FAILURE, "RELOAD_FAILED",
+                responses(player).sendFailure("PUBLISH", AuthorOperationResult.Status.IO_FAILURE, "RELOAD_FAILED",
                         "Workspace was deployed, but reload failed: " + error.getMessage());
             } else if (!reloaded.success()) {
                 debugPublishPhase(player, bookId, draftRevision, "reload",
                         reloaded.status().name(), reloaded.code());
-                sendFailure(player, "PUBLISH", reloaded.status(), reloaded.code(),
+                responses(player).sendFailure("PUBLISH", reloaded.status(), reloaded.code(),
                         "Workspace was deployed, but reload failed: " + reloaded.message());
             } else {
                 debugPublishPhase(player, bookId, draftRevision, "reload",
                         reloaded.status().name(), "PUBLISH_APPLY_COMPLETE");
-                sendSession(player, "PUBLISH", AuthorOperationResult.Status.SUCCESS, "PUBLISH_APPLY_COMPLETE",
+                responses(player).sendSession("PUBLISH", AuthorOperationResult.Status.SUCCESS, "PUBLISH_APPLY_COMPLETE",
                         "Draft published, deployed with backup, and reloaded", renewed.value(), 0, 0);
             }
         }));
@@ -702,7 +677,7 @@ public final class AuthoringNetwork {
         try {
             wire = GSON.fromJson(json, QuestUpdateWire.class);
         } catch (RuntimeException exception) {
-            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_QUEST_UPDATE", "Malformed quest update request");
             return;
         }
@@ -713,7 +688,7 @@ public final class AuthoringNetwork {
         if (sessionId == null || bookId == null || questId == null || replacementQuestId == null
                 || wire.draftRevision() == null || wire.title() == null || wire.subtitle() == null
                 || wire.description() == null || wire.iconKind() == null || wire.iconValue() == null) {
-            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_QUEST_UPDATE", "Incomplete quest update request");
             return;
         }
@@ -722,7 +697,7 @@ public final class AuthoringNetwork {
         QuestDefinition quest = current.success() ? current.value().book().quests().stream()
                 .filter(candidate -> candidate.id().equals(questId)).findFirst().orElse(null) : null;
         if (!current.success() || quest == null) {
-            sendFailure(player, "UPDATE", current.success() ? AuthorOperationResult.Status.NOT_FOUND : current.status(),
+            responses(player).sendFailure("UPDATE", current.success() ? AuthorOperationResult.Status.NOT_FOUND : current.status(),
                     current.success() ? "QUEST_NOT_FOUND" : current.code(),
                     current.success() ? "Selected quest no longer exists" : current.message());
             return;
@@ -730,13 +705,13 @@ public final class AuthoringNetwork {
         boolean hasX = wire.x() != null;
         boolean hasY = wire.y() != null;
         if (hasX != hasY || (hasX && (!Double.isFinite(wire.x()) || !Double.isFinite(wire.y())))) {
-            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_QUEST_POSITION", "Quest coordinates must be finite and supplied together");
             return;
         }
         if (!replacementQuestId.equals(questId) && hasX
                 && (Double.compare(wire.x(), quest.x()) != 0 || Double.compare(wire.y(), quest.y()) != 0)) {
-            sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "POSITION_WITH_RENAME", "Rename the quest before editing its coordinates");
             return;
         }
@@ -745,20 +720,20 @@ public final class AuthoringNetwork {
             ResourceLocation iconId = wire.iconValue().isBlank() ? null : ResourceLocation.tryParse(wire.iconValue());
             if ("ITEM".equals(wire.iconKind())) {
                 if (!wire.iconValue().isBlank() && (iconId == null || !BuiltInRegistries.ITEM.containsKey(iconId))) {
-                    sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                             "INVALID_ICON_ITEM", "Icon item must be a registered item ID");
                     return;
                 }
                 icon = iconId == null ? "" : "{id:\"" + iconId + "\",count:1}";
             } else if ("TEXTURE".equals(wire.iconKind())) {
                 if (!wire.iconValue().isBlank() && iconId == null) {
-                    sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                             "INVALID_ICON_TEXTURE", "Icon texture must be a ResourceLocation");
                     return;
                 }
                 icon = iconId == null ? "" : QuestIconValue.texture(iconId);
             } else {
-                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                         "INVALID_ICON_KIND", "Unknown quest icon kind");
                 return;
             }
@@ -771,7 +746,7 @@ public final class AuthoringNetwork {
                     || wire.shape().isBlank() || !Double.isFinite(wire.size()) || wire.size() <= 0
                     || !Double.isFinite(wire.iconScale()) || wire.iconScale() <= 0
                     || !Double.isFinite(wire.minWidth()) || wire.minWidth() < 0) {
-                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                         "INVALID_QUEST_APPEARANCE", "Quest appearance values must be finite and positive");
                 return;
             }
@@ -790,7 +765,7 @@ public final class AuthoringNetwork {
                         bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"),
                         bool(values, "ignore_reward_blocking"));
             } catch (RuntimeException exception) {
-                sendFailure(player, "UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
                         "INVALID_QUEST_BEHAVIOR", "Quest behavior contains an invalid number or enum");
                 return;
             }
@@ -810,13 +785,13 @@ public final class AuthoringNetwork {
                 var first = updated.value().diagnostics().getFirst();
                 message += ": " + first.code() + " " + first.message();
             }
-            sendFailure(player, "UPDATE", updated.status(), updated.code(), message);
+            responses(player).sendFailure("UPDATE", updated.status(), updated.code(), message);
             return;
         }
         DraftSnapshot draft = updated.value().snapshot();
         var renewed = AuthorApi.renew(player, sessionId, draft.draftRevision());
         if (!renewed.success()) {
-            sendFailure(player, "UPDATE", renewed.status(), renewed.code(), renewed.message());
+            responses(player).sendFailure("UPDATE", renewed.status(), renewed.code(), renewed.message());
             return;
         }
         // Property completion updates the authoritative session; the visible Save
@@ -830,20 +805,20 @@ public final class AuthoringNetwork {
         try {
             wire = GSON.fromJson(json, EditorMutationWire.class);
         } catch (RuntimeException exception) {
-            sendFailure(player, "MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_EDITOR_MUTATION", "Malformed editor mutation request");
             return;
         }
         UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
         ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
         if (sessionId == null || bookId == null || wire.draftRevision() == null || wire.action() == null) {
-            sendFailure(player, "MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
+            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
                     "INVALID_EDITOR_MUTATION", "Incomplete editor mutation request");
             return;
         }
         var current = EditSessionService.get().snapshot(player, sessionId, bookId, wire.draftRevision());
         if (!current.success()) {
-            sendFailure(player, "MUTATE", current.status(), current.code(), current.message());
+            responses(player).sendFailure("MUTATE", current.status(), current.code(), current.message());
             return;
         }
         if ("REVIEW".equals(wire.action())) {
@@ -860,31 +835,31 @@ public final class AuthoringNetwork {
                 case "UNDO" -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
                 case "REDO" -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
                 case "ADD_GROUP" -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
-                        new ChapterGroupDefinition(bookId, requireId(targetId), boundedTitle(wire.title()), wire.targetIndex()));
+                        new ChapterGroupDefinition(bookId, requireId(targetId), AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
                 case "UPDATE_GROUP" -> editor.updateGroup(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), new ChapterGroupDefinition(bookId, targetId,
-                                boundedTitle(wire.title()), wire.targetIndex()));
+                                AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
                 case "MOVE_GROUP" -> editor.moveGroup(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), wire.targetIndex());
                 case "DELETE_GROUP" -> editor.removeGroupWithContents(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
                 case "ADD_CHAPTER" -> editor.addChapter(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterDefinition(bookId, requireId(targetId), requireId(parentId),
-                                boundedTitle(wire.title()), "", wire.targetIndex(), List.of()));
+                                AuthoringResponseSender.boundedTitle(wire.title()), "", wire.targetIndex(), List.of()));
                 case "UPDATE_CHAPTER" -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
-                                boundedTitle(wire.title()), wire.targetIndex()));
+                                AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
                 case "MOVE_CHAPTER" -> editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), wire.targetIndex());
                 case "DELETE_CHAPTER" -> editor.removeChapterWithContents(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
                 case "ADD_QUEST" -> editor.addQuest(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new QuestDefinition(bookId, requireId(targetId), parentId,
-                                boundedTitle(wire.title()), "", "", "", wire.x(), wire.y(),
+                                AuthoringResponseSender.boundedTitle(wire.title()), "", "", "", wire.x(), wire.y(),
                                 List.of(), List.of(), List.of(), ""));
                 case "COPY_QUEST" -> editor.copyQuest(player, sessionId, bookId, wire.draftRevision(),
                         requireId(sourceId), questCopy(current.value().book(), sourceId, requireId(targetId),
-                                boundedTitle(wire.title()), wire.x(), wire.y()));
+                                AuthoringResponseSender.boundedTitle(wire.title()), wire.x(), wire.y()));
                 case "DELETE_QUEST" -> editor.removeQuestAndReferences(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
                 case "MOVE_QUESTS" -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
@@ -928,8 +903,8 @@ public final class AuthoringNetwork {
                         "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
             };
         } catch (IllegalArgumentException exception) {
-            sendFailure(player, "MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_EDITOR_MUTATION", exception.getMessage(), List.of(mutationDiagnostic(wire, exception)));
+            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_EDITOR_MUTATION", exception.getMessage(), List.of(AuthoringResponseSender.mutationDiagnostic(wire, exception)));
             return;
         }
         sendMutationResult(player, sessionId, bookId, result, wire);
@@ -940,100 +915,34 @@ public final class AuthoringNetwork {
                                       String draftRevision) {
         var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
         if (!preview.success() && preview.value() == null) {
-            sendFailure(player, "REVIEW", preview.status(), preview.code(), preview.message());
+            responses(player).sendFailure("REVIEW", preview.status(), preview.code(), preview.message());
             return;
         }
         var diff = AuthorApi.diff(player, sessionId, bookId, draftRevision,
                 yourscraft.jasdewstarfield.brnquest.author.DraftDiffService.Baseline.WORKSPACE);
         if (!diff.success() || diff.value() == null) {
-            sendFailure(player, "REVIEW", diff.status(), diff.code(), diff.message());
+            responses(player).sendFailure("REVIEW", diff.status(), diff.code(), diff.message());
             return;
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
         if (!renewed.success()) {
-            sendFailure(player, "REVIEW", renewed.status(), renewed.code(), renewed.message());
+            responses(player).sendFailure("REVIEW", renewed.status(), renewed.code(), renewed.message());
             return;
         }
-        List<EditorDiagnosticWire> allDiagnostics = new java.util.ArrayList<>(preview.value().diagnostics().stream()
-                .map(diagnostic -> new EditorDiagnosticWire(diagnostic.severity().name(), diagnostic.code(),
-                        diagnostic.objectId(), diagnostic.path(), boundedReviewValue(diagnostic.message())))
-                .toList());
-        if (preview.value().revisionCheck() != null) {
-            preview.value().revisionCheck().conflicts().forEach(conflict -> allDiagnostics.add(
-                    new EditorDiagnosticWire("ERROR", conflict.code(), bookId.toString(), "revision",
-                            boundedReviewValue(conflict.message()))));
-        }
-        List<SemanticDiffWire> allChanges = diff.value().entries().stream().map(AuthoringNetwork::diffWire).toList();
-        sendPublishReview(player, renewed.value(), preview.success(), diff.value().fromRevision(),
-                diff.value().toRevision(), allDiagnostics, allChanges);
-    }
-
-    private static SemanticDiffWire diffWire(SemanticDiffEntry entry) {
-        return new SemanticDiffWire(entry.kind().name(), entry.objectKind().name(), entry.objectId().toString(),
-                entry.path(), boundedReviewValue(entry.before()), boundedReviewValue(entry.after()));
-    }
-
-    private static String boundedReviewValue(String value) {
-        String safe = value == null ? "" : value;
-        return safe.length() <= MAX_REVIEW_VALUE_CHARACTERS ? safe
-                : safe.substring(0, MAX_REVIEW_VALUE_CHARACTERS - 1) + "…";
-    }
-
-    private static void sendPublishReview(ServerPlayer player, EditSessionHandle handle, boolean publishAllowed,
-                                          String fromRevision, String targetRevision,
-                                          List<EditorDiagnosticWire> allDiagnostics,
-                                          List<SemanticDiffWire> allChanges) {
-        List<EditorDiagnosticWire> diagnostics = new java.util.ArrayList<>(
-                allDiagnostics.stream().limit(MAX_REVIEW_ROWS).toList());
-        List<SemanticDiffWire> changes = new java.util.ArrayList<>(allChanges.stream().limit(MAX_REVIEW_ROWS).toList());
-        boolean truncated = diagnostics.size() < allDiagnostics.size() || changes.size() < allChanges.size();
-        String json;
-        do {
-            PublishReviewWire review = new PublishReviewWire(publishAllowed, "WORKSPACE", fromRevision,
-                    targetRevision, "BACKUP_AND_REPLACE", allDiagnostics.size(), allChanges.size(), truncated,
-                    diagnostics, changes);
-            EditSessionView view = handle.session();
-            long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
-            SessionResponseWire response = new SessionResponseWire("REVIEW", "SUCCESS", "PUBLISH_REVIEW_READY",
-                    "Publish review generated", handle.sessionId().toString(), view.bookId().toString(),
-                    view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, 0, 0,
-                    view.undoSteps(), view.redoSteps(), List.of(), review, List.of());
-            json = GSON.toJson(response);
-            if (json.getBytes(StandardCharsets.UTF_8).length <= BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) break;
-            truncated = true;
-            if (!changes.isEmpty()) changes.removeLast();
-            else if (!diagnostics.isEmpty()) diagnostics.removeLast();
-            else {
-                sendFailure(player, "REVIEW", AuthorOperationResult.Status.IO_FAILURE,
-                        "PUBLISH_REVIEW_TOO_LARGE", "Publish review exceeds the editor protocol limit");
-                return;
-            }
-        } while (true);
-        BrnQuestNetwork.send(player, new SessionPayload(json));
+        responses(player).sendPublishReview(renewed.value(), preview.success(), bookId,
+                preview.value(), diff.value());
     }
 
     private static void sendMutationResult(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
                                            AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
         if (!result.success()) {
-            String message = result.message();
-            List<EditorDiagnosticWire> diagnostics = List.of();
-            if (result.value() != null && !result.value().diagnostics().isEmpty()) {
-                var first = result.value().diagnostics().getFirst();
-                message += ": " + first.code() + " " + first.message();
-                diagnostics = mutationDiagnosticWires(wire, result.value().diagnostics());
-            } else if ("UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())) {
-                String path = "DUPLICATE_TYPED_ID".equals(result.code())
-                        || "RETIRED_TYPED_ID".equals(result.code()) ? "id" : "";
-                diagnostics = List.of(new EditorDiagnosticWire("ERROR", result.code(),
-                        wire.sourceId(), path, result.message()));
-            }
-            sendFailure(player, "MUTATE", result.status(), result.code(), message, diagnostics);
+            responses(player).sendMutationFailure(result, wire);
             return;
         }
         DraftSnapshot draft = result.value().snapshot();
         var renewed = AuthorApi.renew(player, sessionId, draft.draftRevision());
         if (!renewed.success()) {
-            sendFailure(player, "MUTATE", renewed.status(), renewed.code(), renewed.message());
+            responses(player).sendFailure("MUTATE", renewed.status(), renewed.code(), renewed.message());
             return;
         }
         if ("MOVE_QUESTS".equals(wire.action())) {
@@ -1141,114 +1050,26 @@ public final class AuthoringNetwork {
         return Map.copyOf(positions);
     }
 
-    private static void sendOpened(ServerPlayer player, EditSessionHandle handle, DraftSnapshot draft) {
-        sendDraft(player, "OPEN", "SESSION_OPENED", "Edit session opened", handle, draft);
-    }
-
+    /** The transport reports oversize drafts; the use-case boundary owns closing their leases. */
     private static void sendDraft(ServerPlayer player, String action, String code, String message,
                                   EditSessionHandle handle, DraftSnapshot draft) {
-        String json = NativeBookJson.encode(draft.book());
-        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length > BrnQuestConstants.MAX_BOOK_BYTES
-                || draft.book().quests().size() > BrnQuestConstants.MAX_QUESTS) {
-            AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision());
-            sendFailure(player, action, AuthorOperationResult.Status.INVALID_REQUEST,
-                    "DRAFT_TOO_LARGE", "Draft exceeds the editor protocol limits");
-            return;
-        }
-        List<String> chunks = BrnQuestNetwork.split(json, BrnQuestNetwork.BOOK_CHUNK_CHARACTERS);
-        sendSession(player, action, AuthorOperationResult.Status.SUCCESS, code,
-                message, handle, chunks.size(), bytes.length);
-        for (int index = 0; index < chunks.size(); index++) {
-            BrnQuestNetwork.send(player, new DraftChunkPayload(handle.sessionId().toString(),
-                    draft.draftRevision(), index, chunks.get(index)));
-        }
+        responses(player).sendDraft(action, code, message, handle, draft,
+                () -> AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision()));
     }
 
     private static void sendPositionPatch(ServerPlayer player, String code, String message,
                                           EditSessionHandle handle, DraftSnapshot draft,
                                           List<PositionWire> positions) {
-        EditSessionView view = handle.session();
-        long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
-        SessionResponseWire response = new SessionResponseWire("PATCH", "SUCCESS", code,
-                boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
-                view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, 0, 0,
-                view.undoSteps(), view.redoSteps(), List.of(), null,
-                positions == null ? List.of() : positions);
-        String json = GSON.toJson(response);
-        if (json.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_EDITOR_METADATA_BYTES) {
-            // Extremely long IDs can make even a bounded 4096-node delta larger
-            // than metadata. Fall back to the verified chunk transport so a
-            // successful server mutation never strands the client on a stale revision.
-            sendDraft(player, "MUTATE", code, message, handle, draft);
-            return;
-        }
-        BrnQuestNetwork.send(player, new SessionPayload(json));
+        responses(player).sendPositionPatch(code, message, handle, draft, positions,
+                () -> AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision()));
     }
 
-    private static void sendSession(ServerPlayer player, String action, AuthorOperationResult.Status status,
-                                    String code, String message, EditSessionHandle handle,
-                                    int chunks, int decodedBytes) {
-        EditSessionView view = handle.session();
-        long remaining = Math.max(0L, view.expiresAtTick() - player.getServer().getTickCount());
-        SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
-                boundedMessage(message), handle.sessionId().toString(), view.bookId().toString(),
-                view.baseRevision(), view.draftRevision(), view.savedRevision(), remaining, chunks, decodedBytes,
-                view.undoSteps(), view.redoSteps(), List.of(), null, List.of());
-        BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
+    private static AuthoringResponseSender responses(ServerPlayer player) {
+        return AuthoringResponseSender.forPlayer(player);
     }
 
-    private static void sendFailure(ServerPlayer player, String action, AuthorOperationResult.Status status,
-                                    String code, String message) {
-        sendFailure(player, action, status, code, message, List.of());
-    }
-
-    private static void sendFailure(ServerPlayer player, String action, AuthorOperationResult.Status status,
-                                    String code, String message, List<EditorDiagnosticWire> diagnostics) {
-        SessionResponseWire response = new SessionResponseWire(action, status.name(), code,
-                boundedMessage(message), "", "", "", "", "", 0L, 0, 0, diagnostics);
-        BrnQuestNetwork.send(player, new SessionPayload(GSON.toJson(response)));
-    }
-
-    private static EditorDiagnosticWire mutationDiagnostic(EditorMutationWire wire,
-                                                           IllegalArgumentException exception) {
-        String message = exception.getMessage() == null ? "Invalid editor mutation" : exception.getMessage();
-        String path = message.startsWith("Item config") ? "config.item"
-                : message.startsWith("Reward claim policy") ? "claim_policy" : "";
-        return new EditorDiagnosticWire("ERROR", "INVALID_EDITOR_MUTATION",
-                wire.sourceId() == null ? "" : wire.sourceId(), path, boundedMessage(message));
-    }
-
-    private static List<EditorDiagnosticWire> diagnosticWires(
-            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
-        return diagnostics.stream().limit(8).map(diagnostic -> new EditorDiagnosticWire(
-                diagnostic.severity().name(), diagnostic.code(), boundedMessage(diagnostic.objectId()),
-                boundedMessage(diagnostic.path()), boundedMessage(diagnostic.message()))).toList();
-    }
-
-    static List<EditorDiagnosticWire> mutationDiagnosticWires(EditorMutationWire wire,
-            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
-        boolean typedUpdate = "UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action());
-        return diagnostics.stream().limit(8).map(diagnostic -> {
-            String path = diagnostic.path();
-            if (typedUpdate && path.isBlank()
-                    && ("BQV-119".equals(diagnostic.code()) || "BQV-120".equals(diagnostic.code()))) {
-                // Codec errors concern the complete raw map when no descriptor can identify one field.
-                path = "config";
-            }
-            return new EditorDiagnosticWire(diagnostic.severity().name(), diagnostic.code(),
-                    boundedMessage(diagnostic.objectId()), boundedMessage(path), boundedMessage(diagnostic.message()));
-        }).toList();
-    }
-
-    private static String boundedMessage(String message) {
-        String value = message == null ? "" : message;
-        return value.length() <= 512 ? value : value.substring(0, 512);
-    }
-
-    private static String boundedTitle(String title) {
-        String value = title == null ? "" : title;
-        return value.length() <= 256 ? value : value.substring(0, 256);
+    private static void sendOpened(ServerPlayer player, EditSessionHandle handle, DraftSnapshot draft) {
+        sendDraft(player, "OPEN", "SESSION_OPENED", "Edit session opened", handle, draft);
     }
 
     /** Mutation JSON is untrusted even though the complete candidate is validated before commit. */

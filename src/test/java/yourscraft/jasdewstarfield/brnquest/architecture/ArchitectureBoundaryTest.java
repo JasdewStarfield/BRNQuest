@@ -78,14 +78,14 @@ public class ArchitectureBoundaryTest {
     static final ArchRule authoringDecoderMustOnlyDecode = noClasses()
             .that().haveSimpleName("AuthoringRequestDecoder")
             .should().dependOnClassesThat().haveNameMatching(
-                    ".*(ServerPlayer|AuthorApi|.*Service|AuthoringResponseSender|BrnQuestNetwork|PacketDistributor)")
+                    ".*(ServerPlayer|AuthorApi|.*Service|DraftBookEditor|QuestBookManager|AuthoringNetwork|AuthoringResponseSender|BrnQuestNetwork|PacketDistributor)")
             .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule authoringHandlersMustNotSendOrLoadClient = noClasses()
             .that().haveNameMatching(".*Authoring(Session|Publication|QuestUpdate|Mutation)Handler")
             .should().dependOnClassesThat().haveNameMatching(
-                    ".*\\.client\\..*|.*(PacketDistributor|BrnQuestNetwork)")
+                    ".*\\.client\\..*|.*(PacketDistributor|BrnQuestNetwork|AuthoringNetwork)")
             .allowEmptyShould(true);
 
     @ArchTest
@@ -100,6 +100,15 @@ public class ArchitectureBoundaryTest {
             .should().dependOnClassesThat().resideInAnyPackage(
                     "yourscraft.jasdewstarfield.brnquest.api..",
                     "yourscraft.jasdewstarfield.brnquest.author..",
-                    "yourscraft.jasdewstarfield.brnquest.data..")
+                    "yourscraft.jasdewstarfield.brnquest.data..",
+                    "yourscraft.jasdewstarfield.brnquest.runtime..",
+                    "yourscraft.jasdewstarfield.brnquest.workspace..")
             .allowEmptyShould(true);
+
+    @ArchTest
+    static final ArchRule authoringCommonOwnersMustNotLoadClient = noClasses()
+            .that().haveNameMatching(".*network\\.Authoring(Network|RequestDecoder|ResponseSender|PayloadRegistrar|"
+                    + "SessionHandler|PublicationHandler|QuestUpdateHandler|MutationHandler)")
+            .should().dependOnClassesThat().resideInAnyPackage(CLIENT_PACKAGE, MINECRAFT_CLIENT_PACKAGE)
+            .because("only the physically guarded nested client delegate may resolve client classes");
 }

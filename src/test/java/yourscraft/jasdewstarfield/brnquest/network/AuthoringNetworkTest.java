@@ -80,7 +80,7 @@ class AuthoringNetworkTest {
         var codecFailure = new Diagnostic(Diagnostic.Severity.ERROR, "BQV-119", "", "",
                 "test:task", "Invalid task config");
 
-        var mapped = AuthoringNetwork.mutationDiagnosticWires(wire, List.of(codecFailure));
+        var mapped = AuthoringResponseSender.mutationDiagnosticWires(wire, List.of(codecFailure));
 
         assertEquals("config", mapped.getFirst().path());
     }

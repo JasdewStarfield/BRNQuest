@@ -70,7 +70,7 @@ class AuthoringProtocolTest {
                 if (name.contains("ClientDelegate") || name.contains(".client.")) {
                     throw new AssertionError("Dedicated server tried to resolve " + name);
                 }
-                if (!name.equals(registrarName)) return super.loadClass(name, resolve);
+                if (!name.equals(registrarName) && !name.equals(AuthoringResponseSender.class.getName())) return super.loadClass(name, resolve);
                 Class<?> loaded = findLoadedClass(name);
                 if (loaded == null) {
                     try (var input = getParent().getResourceAsStream(name.replace('.', '/') + ".class")) {
@@ -85,6 +85,8 @@ class AuthoringProtocolTest {
                 return loaded;
             }
         };
+        assertTrue(Class.forName(AuthoringResponseSender.class.getName(), true, isolated)
+                .getDeclaredMethods().length > 0);
         var register = Class.forName(registrarName, true, isolated)
                 .getDeclaredMethod("register", PayloadRegistrar.class);
         register.setAccessible(true);

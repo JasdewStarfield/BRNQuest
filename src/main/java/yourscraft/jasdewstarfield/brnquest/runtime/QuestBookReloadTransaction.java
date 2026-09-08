@@ -16,7 +16,7 @@ public final class QuestBookReloadTransaction {
         if (!scriptFailure.isBlank()) {
             working.add(new Diagnostic(Diagnostic.Severity.FATAL, "BQV-006", "", "", "", scriptFailure));
             ScriptExtensionRegistry.rollbackRegistration();
-            QuestBookManager.get().retainAfterReloadFailure(working);
+            QuestBookManager.get().retainAfterReloadFailure(book, working);
             BRNQuest.LOGGER.error("[BRNQuest/KUBEJS] Rejected script/task-book reload; retained revision {} and task types {}",
                     QuestBookManager.get().active().map(value -> value.revision()).orElse("<none>"),
                     ScriptExtensionRegistry.snapshot().taskTypeIds());

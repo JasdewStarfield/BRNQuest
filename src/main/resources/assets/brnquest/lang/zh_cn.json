@@ -488,5 +488,19 @@
   "command.brnquest.author.backup_entry": "备份 %1$s；版本 %2$s；%3$s 个文件。",
   "command.brnquest.author.backup_preview": "当前版本 %1$s；备份版本 %2$s；需要替换 %3$s。",
   "toast.brnquest.updated": "BRNQuest 已更新",
-  "toast.brnquest.updated.description": "任务进度发生变化。"
+  "toast.brnquest.updated.description": "任务进度发生变化。",
+  "command.brnquest.health.active": "活动任务书：%1$s；任务 %2$s / %3$s。",
+  "command.brnquest.health.no_active": "当前没有有效活动任务书。",
+  "command.brnquest.health.budget": "活动任务书传输预算：UTF-8 正文 %1$s / %2$s 字节，%3$s 个分块（不代表客户端已接收）。",
+  "command.brnquest.health.over_budget": "活动任务书超过同步上限，服务端发送会被拒绝。",
+  "command.brnquest.health.encoding_failed": "无法计算活动任务书编码大小；当前任务书未被改变。",
+  "command.brnquest.health.reload.not_attempted": "尚无已完成的任务书加载记录。",
+  "command.brnquest.health.reload.installed": "最近任务书加载成功：%1$s；%2$s 条诊断。",
+  "command.brnquest.health.reload.rejected": "最近任务书加载被拒绝：%1$s；%2$s 条诊断。",
+  "command.brnquest.health.retained": "该次失败保留了此前有效任务书；没有安装失败候选。",
+  "command.brnquest.health.nothing_retained": "该次失败时没有可保留的有效任务书。",
+  "command.brnquest.health.reason.capacity": "拒绝原因：候选任务数量超过上限。",
+  "command.brnquest.health.reason.validation": "拒绝原因：任务书读取、脚本或校验失败；技术详情可查看具体原因。",
+  "command.brnquest.health.details_hint": "技术详情：/brnquest health details（完整版本、候选信息及最近加载诊断）。",
+  "command.brnquest.health.truncated": "共有 %1$s 条加载诊断，此处仅显示前 5 条。"
 }

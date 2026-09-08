@@ -198,6 +198,16 @@ public final class BrnQuestNetwork {
         syncProgress(player, false);
     }
 
+    /** Logical book-body budget, not evidence that any client received or applied it. */
+    public record BookTransferBudget(int encodedBytes, int chunks, boolean withinLimits) {}
+
+    public static BookTransferBudget bookTransferBudget(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
+        String json = NativeBookJson.encode(snapshot.book());
+        int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        return new BookTransferBudget(bytes, split(json, BOOK_CHUNK_CHARACTERS).size(),
+                bytes <= BrnQuestConstants.MAX_BOOK_BYTES && snapshot.book().quests().size() <= BrnQuestConstants.MAX_QUESTS);
+    }
+
     private static void sendBook(ServerPlayer player) {
         var snapshot = QuestBookManager.get().active().orElseThrow();
         String json = NativeBookJson.encode(snapshot.book());

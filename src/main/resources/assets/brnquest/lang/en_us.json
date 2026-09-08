@@ -488,5 +488,19 @@
   "command.brnquest.author.backup_entry": "Backup %1$s; revision %2$s; %3$s files.",
   "command.brnquest.author.backup_preview": "Current revision %1$s; backup revision %2$s; replacement required %3$s.",
   "toast.brnquest.updated": "BRNQuest updated",
-  "toast.brnquest.updated.description": "Quest progress changed."
+  "toast.brnquest.updated.description": "Quest progress changed.",
+  "command.brnquest.health.active": "Active book: %1$s; quests %2$s / %3$s.",
+  "command.brnquest.health.no_active": "No valid book is active.",
+  "command.brnquest.health.budget": "Active book transfer budget: UTF-8 body %1$s / %2$s bytes, %3$s chunks (not a client receipt).",
+  "command.brnquest.health.over_budget": "The active book exceeds the sync limit; server delivery would be rejected.",
+  "command.brnquest.health.encoding_failed": "Unable to measure the active book encoding; active state is unchanged.",
+  "command.brnquest.health.reload.not_attempted": "No completed book load has been recorded.",
+  "command.brnquest.health.reload.installed": "Last book load installed: %1$s; %2$s diagnostics.",
+  "command.brnquest.health.reload.rejected": "Last book load rejected: %1$s; %2$s diagnostics.",
+  "command.brnquest.health.retained": "That failure retained the previous valid book; the rejected candidate was not installed.",
+  "command.brnquest.health.nothing_retained": "There was no valid book to retain at the time of that failure.",
+  "command.brnquest.health.reason.capacity": "Rejection reason: candidate quest count exceeds the limit.",
+  "command.brnquest.health.reason.validation": "Rejection reason: book reading, scripts or validation failed; see details for the specific cause.",
+  "command.brnquest.health.details_hint": "Technical details: /brnquest health details (full revision, candidate and last-load diagnostics).",
+  "command.brnquest.health.truncated": "There are %1$s load diagnostics; only the first 5 are shown here."
 }

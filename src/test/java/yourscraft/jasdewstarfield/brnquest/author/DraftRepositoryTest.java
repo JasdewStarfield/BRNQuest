@@ -247,7 +247,7 @@ class DraftRepositoryTest {
                 original.draftRevision());
 
         assertEquals("DRAFT_SELECTION_STALE", stale.code());
-        assertEquals("DRAFT_VERSION_CREATED", replaced.code());
+        assertEquals("DRAFT_VERSION_CREATED", replaced.code(), replaced::message);
         assertEquals(replacement, repository.load(drafts, replacement.book().id()).value());
         try (var paths = Files.walk(backups.resolve("drafts/test/versioned"))) {
             Path version = paths.filter(path -> Files.isRegularFile(path.resolve("book.json"))).findFirst().orElseThrow();

@@ -17,15 +17,32 @@ public final class QuestBookManager {
     private static final QuestBookManager INSTANCE = new QuestBookManager();
     private final AtomicReference<QuestBookSnapshot> active = new AtomicReference<>();
     private volatile DiagnosticReport lastReport = new DiagnosticReport();
+    private QuestBookHealth.ReloadResult lastReload = QuestBookHealth.ReloadResult.empty();
     private volatile long liveGeneration;
     private volatile net.minecraft.resources.ResourceLocation activeResource;
 
-    private QuestBookManager() {}
+    // Package access permits isolated lifecycle tests without replacing the server singleton.
+    QuestBookManager() {}
     public static QuestBookManager get() { return INSTANCE; }
     public Optional<QuestBookSnapshot> active() { return Optional.ofNullable(active.get()); }
     public DiagnosticReport lastReport() { return lastReport.copy(); }
     public long liveGeneration() { return liveGeneration; }
     public Optional<net.minecraft.resources.ResourceLocation> activeResource() { return Optional.ofNullable(activeResource); }
+
+    /** Captures references under the same lock as install; no validation, writes or events occur here. */
+    public synchronized QuestBookHealth health() {
+        return new QuestBookHealth(Optional.ofNullable(active.get()), Optional.ofNullable(activeResource), lastReload);
+    }
+
+    /** Records only completed resource loads, independently of live-edit diagnostics. */
+    private void recordReload(QuestBookHealth.Outcome outcome, QuestBookDefinition candidate, DiagnosticReport report) {
+        var diagnostics = report.diagnostics();
+        lastReload = new QuestBookHealth.ReloadResult(outcome, java.time.Instant.now().toString(),
+                candidate == null ? "" : candidate.id().toString(), candidate == null ? -1 : candidate.quests().size(),
+                outcome == QuestBookHealth.Outcome.REJECTED && active.get() != null ? active.get().revision() : "",
+                diagnostics.size(), diagnostics.stream().sorted(java.util.Comparator.comparing(Diagnostic::severity).reversed())
+                        .limit(32).toList());
+    }
 
     /** Internal live-edit path: full validation and durable replacement must finish before this call. */
     public synchronized void installLiveValidated(QuestBookSnapshot current, DiagnosticReport report) {
@@ -66,6 +83,7 @@ public final class QuestBookManager {
         lastReport = working.copy();
         if (working.hasFatal()) {
             onRejected.run();
+            recordReload(QuestBookHealth.Outcome.REJECTED, book, working);
             return false;
         }
         QuestBookSnapshot previous = active.get();
@@ -75,6 +93,7 @@ public final class QuestBookManager {
         beforeCommit.run();
         active.set(current);
         activeResource = resource;
+        recordReload(QuestBookHealth.Outcome.INSTALLED, book, working);
         BrnQuestEvents.post(new QuestBookReloadedEvent(previous == null ? null : ApiViews.book(previous),
                 ApiViews.book(current)));
         return true;
@@ -82,6 +101,12 @@ public final class QuestBookManager {
 
     /** Records diagnostics without modifying the last valid active snapshot or source key. */
     synchronized void retainAfterReloadFailure(DiagnosticReport report) {
+        retainAfterReloadFailure(null, report);
+    }
+
+    /** Script failures may still have a decoded candidate whose identity helps diagnose the rejection. */
+    synchronized void retainAfterReloadFailure(QuestBookDefinition candidate, DiagnosticReport report) {
         lastReport = (report == null ? new DiagnosticReport() : report).copy();
+        recordReload(QuestBookHealth.Outcome.REJECTED, candidate, lastReport);
     }
 }

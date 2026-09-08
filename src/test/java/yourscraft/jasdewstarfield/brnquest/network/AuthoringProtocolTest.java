@@ -60,6 +60,56 @@ class AuthoringProtocolTest {
                 .filter(type -> type.getSimpleName().endsWith("Wire")).count());
     }
 
+    @Test void serverRegistrationNeverResolvesTheClientDelegate() throws Exception {
+        assertEquals(net.neoforged.api.distmarker.Dist.DEDICATED_SERVER,
+                net.neoforged.fml.loading.FMLEnvironment.dist);
+        String registrarName = "yourscraft.jasdewstarfield.brnquest.network.AuthoringPayloadRegistrar";
+        // Load a fresh registrar with a loader that fails even on an attempted client resolution.
+        ClassLoader isolated = new ClassLoader(getClass().getClassLoader()) {
+            @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                if (name.contains("ClientDelegate") || name.contains(".client.")) {
+                    throw new AssertionError("Dedicated server tried to resolve " + name);
+                }
+                if (!name.equals(registrarName)) return super.loadClass(name, resolve);
+                Class<?> loaded = findLoadedClass(name);
+                if (loaded == null) {
+                    try (var input = getParent().getResourceAsStream(name.replace('.', '/') + ".class")) {
+                        assertNotNull(input);
+                        byte[] bytes = input.readAllBytes();
+                        loaded = defineClass(name, bytes, 0, bytes.length);
+                    } catch (java.io.IOException failure) {
+                        throw new ClassNotFoundException(name, failure);
+                    }
+                }
+                if (resolve) resolveClass(loaded);
+                return loaded;
+            }
+        };
+        var register = Class.forName(registrarName, true, isolated)
+                .getDeclaredMethod("register", PayloadRegistrar.class);
+        register.setAccessible(true);
+        var recorder = new RecordingRegistrar();
+        register.invoke(null, recorder);
+        assertEquals(14, recorder.routes.size());
+    }
+
+    @Test @SuppressWarnings("unchecked")
+    void wrongPlayerSideAndServerSideClientCallbacksNeverExecuteUseCases() throws Exception {
+        var recorder = new RecordingRegistrar();
+        AuthoringNetwork.register(recorder);
+        var context = (net.neoforged.neoforge.network.handling.IPayloadContext) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{net.neoforged.neoforge.network.handling.IPayloadContext.class},
+                (proxy, method, args) -> {
+                    if (method.getName().equals("player")) return null;
+                    throw new AssertionError("Rejected context must not execute " + method.getName());
+                });
+        for (var route : recorder.routes) {
+            // Every C2S callback must reject a non-server player before reading its payload.
+            ((IPayloadHandler<CustomPacketPayload>) route.handler()).handle(null, context);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static void roundTrip(Class<?> type, Object codecObject) throws Exception {
         // Different field values detect accidental field reordering as well as omitted fields.

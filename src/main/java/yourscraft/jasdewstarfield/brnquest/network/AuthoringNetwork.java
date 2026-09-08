@@ -10,8 +10,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.jetbrains.annotations.NotNull;
@@ -28,7 +26,6 @@ import yourscraft.jasdewstarfield.brnquest.author.EditSessionHandle;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
 import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
 import yourscraft.jasdewstarfield.brnquest.author.SemanticDiffEntry;
-import yourscraft.jasdewstarfield.brnquest.client.ClientPayloadHandler;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
@@ -270,59 +267,24 @@ public final class AuthoringNetwork {
                                      Map<String, String> config) {}
 
     static void register(PayloadRegistrar registrar) {
-        registrar.playToServer(OpenLivePayload.TYPE, OpenLivePayload.CODEC, (payload, context) -> {
-            if (!(context.player() instanceof ServerPlayer player)) return;
-            var bookId = ResourceLocation.tryParse(payload.bookId());
-            var opened = EditSessionService.get().openLive(player, bookId);
-            if (!opened.success()) {
-                sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
-                return;
-            }
-            var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
-                    opened.value().session().draftRevision());
-            if (!draft.success()) {
-                sendFailure(player, "OPEN", draft.status(), draft.code(), draft.message());
-                return;
-            }
-            sendDraft(player, "OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
-        });
-        registrar.playToServer(RequestCatalogPayload.TYPE, RequestCatalogPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) sendCatalog(player);
-        });
-        registrar.playToServer(OpenSessionPayload.TYPE, OpenSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) open(player, payload.bookId());
-        });
-        registrar.playToServer(OpenCurrentSessionPayload.TYPE, OpenCurrentSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) openCurrent(player, payload);
-        });
-        registrar.playToServer(RenewSessionPayload.TYPE, RenewSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) renew(player, payload.sessionId(), payload.draftRevision());
-        });
-        registrar.playToServer(CloseSessionPayload.TYPE, CloseSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) close(player, payload.sessionId(), payload.draftRevision());
-        });
-        registrar.playToServer(RecoverSessionPayload.TYPE, RecoverSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) recover(player, payload.json());
-        });
-        registrar.playToServer(SaveSessionPayload.TYPE, SaveSessionPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) {
-                save(player, payload.sessionId(), payload.bookId(), payload.draftRevision());
-            }
-        });
-        registrar.playToServer(PublishApplyPayload.TYPE, PublishApplyPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) {
-                publishAndApply(player, payload.sessionId(), payload.bookId(), payload.draftRevision());
-            }
-        });
-        registrar.playToServer(UpdateQuestPayload.TYPE, UpdateQuestPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) updateQuest(player, payload.json());
-        });
-        registrar.playToServer(EditorMutationPayload.TYPE, EditorMutationPayload.CODEC, (payload, context) -> {
-            if (context.player() instanceof ServerPlayer player) mutate(player, payload.json());
-        });
-        registerClient(registrar, CatalogPayload.TYPE, CatalogPayload.CODEC, ClientDelegate::catalog);
-        registerClient(registrar, SessionPayload.TYPE, SessionPayload.CODEC, ClientDelegate::session);
-        registerClient(registrar, DraftChunkPayload.TYPE, DraftChunkPayload.CODEC, ClientDelegate::draftChunk);
+        AuthoringPayloadRegistrar.register(registrar);
+    }
+
+    /** Transitional use-case bridge; registration itself never parses or executes domain requests. */
+    static void openLive(ServerPlayer player, String rawBookId) {
+        var bookId = ResourceLocation.tryParse(rawBookId);
+        var opened = EditSessionService.get().openLive(player, bookId);
+        if (!opened.success()) {
+            sendFailure(player, "OPEN", opened.status(), opened.code(), opened.message());
+            return;
+        }
+        var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
+                opened.value().session().draftRevision());
+        if (!draft.success()) {
+            sendFailure(player, "OPEN", draft.status(), draft.code(), draft.message());
+            return;
+        }
+        sendDraft(player, "OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
     }
 
     public static void requestCatalog() {
@@ -426,7 +388,7 @@ public final class AuthoringNetwork {
                 "REVIEW", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
     }
 
-    private static void sendCatalog(ServerPlayer player) {
+    static void sendCatalog(ServerPlayer player) {
         AuthorOperationResult<List<DraftCatalogEntry>> result = AuthorApi.catalog(player);
         List<CatalogEntryWire> initialEntries = result.success() ? result.value().stream()
                 .limit(BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES)
@@ -449,11 +411,11 @@ public final class AuthoringNetwork {
         BrnQuestNetwork.send(player, new CatalogPayload(json));
     }
 
-    private static void open(ServerPlayer player, String rawBookId) {
+    static void open(ServerPlayer player, String rawBookId) {
         open(player, rawBookId, "");
     }
 
-    private static void open(ServerPlayer player, String rawBookId, String expectedDraftRevision) {
+    static void open(ServerPlayer player, String rawBookId, String expectedDraftRevision) {
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (bookId == null) {
             sendFailure(player, "OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
@@ -476,7 +438,7 @@ public final class AuthoringNetwork {
         sendOpened(player, handle, snapshot.value());
     }
 
-    private static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
+    static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
         ResourceLocation bookId = ResourceLocation.tryParse(payload.bookId());
         var active = QuestBookManager.get().active().orElse(null);
         if (bookId == null || active == null || !bookId.equals(active.book().id())) {
@@ -512,7 +474,7 @@ public final class AuthoringNetwork {
                 payload.draftRevision().isBlank() ? active.revision() : payload.draftRevision());
     }
 
-    private static void renew(ServerPlayer player, String rawSessionId, String draftRevision) {
+    static void renew(ServerPlayer player, String rawSessionId, String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         if (sessionId == null) {
             sendFailure(player, "RENEW", AuthorOperationResult.Status.INVALID_REQUEST,
@@ -527,7 +489,7 @@ public final class AuthoringNetwork {
         sendSession(player, "RENEW", result.status(), result.code(), result.message(), result.value(), 0, 0);
     }
 
-    private static void close(ServerPlayer player, String rawSessionId, String draftRevision) {
+    static void close(ServerPlayer player, String rawSessionId, String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         if (sessionId == null) {
             sendFailure(player, "CLOSE", AuthorOperationResult.Status.INVALID_REQUEST,
@@ -544,7 +506,7 @@ public final class AuthoringNetwork {
         sendSession(player, "CLOSE", result.status(), result.code(), result.message(), handle, 0, 0);
     }
 
-    private static void recover(ServerPlayer player, String json) {
+    static void recover(ServerPlayer player, String json) {
         RecoveryWire wire;
         try {
             wire = GSON.fromJson(json, RecoveryWire.class);
@@ -612,7 +574,7 @@ public final class AuthoringNetwork {
                 opened.value(), copied.value());
     }
 
-    private static void save(ServerPlayer player, String rawSessionId, String rawBookId, String draftRevision) {
+    static void save(ServerPlayer player, String rawSessionId, String rawBookId, String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
         if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
@@ -647,7 +609,7 @@ public final class AuthoringNetwork {
      * Runs the author-facing one-stop operation without weakening any existing server-side gate.
      * Later-stage failures explicitly report that earlier durable stages may already have completed.
      */
-    private static void publishAndApply(ServerPlayer player, String rawSessionId, String rawBookId,
+    static void publishAndApply(ServerPlayer player, String rawSessionId, String rawBookId,
                                         String draftRevision) {
         UUID sessionId = parseUuid(rawSessionId);
         ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
@@ -735,7 +697,7 @@ public final class AuthoringNetwork {
         return Integer.parseInt(values.getOrDefault(key, "0").replaceAll("[^0-9-]", ""));
     }
 
-    private static void updateQuest(ServerPlayer player, String json) {
+    static void updateQuest(ServerPlayer player, String json) {
         QuestUpdateWire wire;
         try {
             wire = GSON.fromJson(json, QuestUpdateWire.class);
@@ -863,7 +825,7 @@ public final class AuthoringNetwork {
                 "Quest properties updated; save the draft to persist them", renewed.value(), draft);
     }
 
-    private static void mutate(ServerPlayer player, String json) {
+    static void mutate(ServerPlayer player, String json) {
         EditorMutationWire wire;
         try {
             wire = GSON.fromJson(json, EditorMutationWire.class);
@@ -1381,28 +1343,4 @@ public final class AuthoringNetwork {
         return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, path));
     }
 
-    private static <T extends CustomPacketPayload> void registerClient(PayloadRegistrar registrar,
-                                                                        CustomPacketPayload.Type<T> type,
-                                                                        StreamCodec<? super ByteBuf, T> codec,
-                                                                        net.neoforged.neoforge.network.handling.IPayloadHandler<T> handler) {
-        if (FMLEnvironment.dist == Dist.CLIENT) registrar.playToClient(type, codec, handler);
-        else registrar.playToClient(type, codec, (payload, context) -> {});
-    }
-
-    private static final class ClientDelegate {
-        static void catalog(CatalogPayload payload,
-                            net.neoforged.neoforge.network.handling.IPayloadContext context) {
-            ClientPayloadHandler.editorCatalog(payload);
-        }
-
-        static void session(SessionPayload payload,
-                            net.neoforged.neoforge.network.handling.IPayloadContext context) {
-            ClientPayloadHandler.editorSession(payload);
-        }
-
-        static void draftChunk(DraftChunkPayload payload,
-                               net.neoforged.neoforge.network.handling.IPayloadContext context) {
-            ClientPayloadHandler.editorDraftChunk(payload);
-        }
-    }
 }

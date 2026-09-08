@@ -54,4 +54,10 @@ class AuthoringRequestDecoderTest {
         assertEquals("INVALID_RECOVERY_ACTION", AuthoringRequestDecoder.recovery(GSON.toJson(
                 new AuthoringNetwork.RecoveryWire(SESSION, "test:book", "UNKNOWN", ""))).failure().code());
     }
+    @Test void publicationEnvelopeRequiresTheCompleteRevisionBoundIdentity() {
+        assertTrue(AuthoringRequestDecoder.publication(SESSION, "test:book", "revision", false).success());
+        assertEquals("INVALID_SAVE_REQUEST", AuthoringRequestDecoder.publication(SESSION, "test:book", "", false).failure().code());
+        assertEquals("INVALID_PUBLISH_REQUEST", AuthoringRequestDecoder.publication(null, "test:book", "r", true).failure().code());
+        assertEquals("bookId", AuthoringRequestDecoder.publication(SESSION, "Bad ID", "r", true).failure().path());
+    }
 }

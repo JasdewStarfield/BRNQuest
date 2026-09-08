@@ -366,37 +366,6 @@ public final class AuthoringNetwork {
                 "REVIEW", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
     }
 
-    static void save(ServerPlayer player, String rawSessionId, String rawBookId, String draftRevision) {
-        UUID sessionId = parseUuid(rawSessionId);
-        ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
-        if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
-            responses(player).sendFailure("SAVE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_SAVE_REQUEST", "Incomplete draft save request");
-            return;
-        }
-        var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
-        if (!saved.success()) {
-            String message = saved.message();
-            if (saved.value() != null && saved.value().revisionCheck() != null
-                    && saved.value().revisionCheck().hasConflicts()) {
-                var first = saved.value().revisionCheck().conflicts().getFirst();
-                message += ": expected " + shortRevision(first.expectedRevision())
-                        + ", actual " + shortRevision(first.actualRevision());
-            } else if (saved.value() != null && !saved.value().diagnostics().isEmpty()) {
-                var first = saved.value().diagnostics().getFirst();
-                message += ": " + first.code() + " " + first.message();
-            }
-            responses(player).sendFailure("SAVE", saved.status(), saved.code(), message);
-            return;
-        }
-        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
-        if (!renewed.success()) {
-            responses(player).sendFailure("SAVE", renewed.status(), renewed.code(), renewed.message());
-            return;
-        }
-        responses(player).sendSession("SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
-    }
-
     /**
      * Runs the author-facing one-stop operation without weakening any existing server-side gate.
      * Later-stage failures explicitly report that earlier durable stages may already have completed.
@@ -1019,4 +988,7 @@ public final class AuthoringNetwork {
         else responses(player).sendDecodeFailure(action, result.failure());
     }
 
+    static void save(ServerPlayer player, String sessionId, String bookId, String revision) {
+        dispatch(player, "SAVE", AuthoringRequestDecoder.publication(sessionId, bookId, revision, false), request -> new AuthoringPublicationHandler(player).save(request));
+    }
 }

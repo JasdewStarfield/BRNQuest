@@ -65,7 +65,8 @@ class AuthoringProtocolTest {
                 net.neoforged.fml.loading.FMLEnvironment.dist);
         String registrarName = "yourscraft.jasdewstarfield.brnquest.network.AuthoringPayloadRegistrar";
         var commonOwners = java.util.Set.of(registrarName, AuthoringResponseSender.class.getName(),
-                AuthoringRequestDecoder.class.getName(), AuthoringSessionHandler.class.getName());
+                AuthoringRequestDecoder.class.getName(), AuthoringSessionHandler.class.getName(),
+                AuthoringPublicationHandler.class.getName());
         // Load a fresh registrar with a loader that fails even on an attempted client resolution.
         ClassLoader isolated = new ClassLoader(getClass().getClassLoader()) {
             @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {

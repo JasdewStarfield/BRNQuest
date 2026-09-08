@@ -116,4 +116,11 @@ final class AuthoringRequestDecoder {
             return new Result<>(null, new Failure(code, "", message));
         }
     }
+    record SessionRequest(UUID sessionId, ResourceLocation bookId, String draftRevision) {}
+
+    static Result<SessionRequest> publication(String sessionId, String bookId, String revision, boolean publish) {
+        return boundary(publish ? "INVALID_PUBLISH_REQUEST" : "INVALID_SAVE_REQUEST",
+                publish ? "Incomplete publish request" : "Incomplete draft save request", () -> new SessionRequest(
+                        uuid(sessionId), id(bookId, "bookId"), text(revision, "draftRevision", 32767, false)));
+    }
 }

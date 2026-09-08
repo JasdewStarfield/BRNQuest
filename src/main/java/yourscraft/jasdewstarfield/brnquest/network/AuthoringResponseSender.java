@@ -263,4 +263,23 @@ final class AuthoringResponseSender {
     void sendDecodeFailure(String action, AuthoringRequestDecoder.Failure failure) {
         sendFailure(action, AuthorOperationResult.Status.INVALID_REQUEST, failure.code(), failure.message());
     }
+    void sendSaveFailure(AuthorOperationResult<yourscraft.jasdewstarfield.brnquest.author.DraftSaveResult> saved) {
+            String message = saved.message();
+            if (saved.value() != null && saved.value().revisionCheck() != null
+                    && saved.value().revisionCheck().hasConflicts()) {
+                var first = saved.value().revisionCheck().conflicts().getFirst();
+                message += ": expected " + shortRevision(first.expectedRevision())
+                        + ", actual " + shortRevision(first.actualRevision());
+            } else if (saved.value() != null && !saved.value().diagnostics().isEmpty()) {
+                var first = saved.value().diagnostics().getFirst();
+                message += ": " + first.code() + " " + first.message();
+            }
+            sendFailure("SAVE", saved.status(), saved.code(), message);
+    }
+
+    /** Compact revision labels preserve the existing error summary and phase log format. */
+    static String shortRevision(String revision) {
+        if (revision == null || revision.isBlank()) return "<none>";
+        return revision.length() <= 12 ? revision : revision.substring(0, 12);
+    }
 }

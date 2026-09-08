@@ -50,6 +50,7 @@ public final class ServerFieldNetwork {
         static void receive(Response payload) {
             var reply = JSON.fromJson(payload.json(), Reply.class);
             if (net.minecraft.client.Minecraft.getInstance().screen instanceof yourscraft.jasdewstarfield.brnquest.client.ui.ServerFieldScreen screen) screen.receive(reply);
+            else if (net.minecraft.client.Minecraft.getInstance().screen instanceof yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen screen) screen.receiveServerField(reply);
         }
     }
 }

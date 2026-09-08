@@ -2422,7 +2422,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
         EditorTextField field = typedPropertySection.form().configField(index);
-        if (descriptor.serverSource().isPresent()) {
+        if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
+            var vector = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(row.field(), descriptor.serverSource().isPresent());
+            for (int axis = 0; axis < 3; axis++) {
+                UiRect bounds = vector.axes().get(axis);
+                graphics.drawString(font, new String[]{"X", "Y", "Z"}[axis], bounds.left(), bounds.top() + 5, 0xFFB7C5D8, false);
+                typedPropertySection.form().vectorField(index, axis).show(new UiRect(bounds.left() + 8, bounds.top(), bounds.right(), bounds.bottom()), !ClientEditorState.get().busy());
+            }
+            if (vector.current() != null) renderEditorTextButton(graphics, vector.current(), Component.literal("@"),
+                    Component.translatable("screen.brnquest.field.current"), !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        } else if (descriptor.serverSource().isPresent()) {
             renderEditorTextButton(graphics, row.field(), Component.literal(field.getValue() + " …"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
@@ -2542,6 +2551,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             typedPropertySection.form().configField(intent.fieldIndex())::setValue,
                             value -> ConfigFieldLabels.value(descriptor, value));
                 }
+                case SERVER_CURRENT -> {
+                    int index = intent.fieldIndex();
+                    var descriptor = typedPropertySection.form().schema().fields().get(index);
+                    String requestId = typedPropertySection.beginCurrentRequest(index);
+                    yourscraft.jasdewstarfield.brnquest.network.ServerFieldNetwork.send(new yourscraft.jasdewstarfield.brnquest.network.ServerFieldNetwork.Query(
+                            requestId, descriptor.serverSource().orElseThrow().toString(), "", typedPropertySection.form().configValue(index)));
+                }
                 case SERVER_FIELD -> {
                     var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
                     var field = typedPropertySection.form().configField(intent.fieldIndex());
@@ -2558,6 +2574,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         super.mouseClicked(mouseX, mouseY, 0);
         return true;
+    }
+
+    /** Read-only field replies return to the still-open form; they never save a draft by themselves. */
+    public void receiveServerField(yourscraft.jasdewstarfield.brnquest.network.ServerFieldNetwork.Reply reply) {
+        if (reply != null && reply.result() != null)
+            typedPropertySection.receiveCurrent(reply.id(), reply.result().current());
     }
 
     private void openTypedPropertyItemSelector(int fieldIndex) {
@@ -2824,7 +2846,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 ? List.of() : typedPropertySection.form().schema().fields();
         for (int index = 0; index < Math.min(fields.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             if (fields.get(index).key().equals(fieldKey)) {
-                if (fields.get(index).valueType() != ConfigValueType.ITEM_STACK) {
+                if (fields.get(index).valueType() == ConfigValueType.INTEGER_VECTOR3) {
+                    setFocused(typedPropertySection.form().vectorField(index, 0));
+                } else if (fields.get(index).valueType() != ConfigValueType.ITEM_STACK) {
                     setFocused(typedPropertySection.form().configField(index));
                 }
                 return;
@@ -4020,9 +4044,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             graphics.renderTooltip(font, hoveredDetailStack, mouseX, mouseY);
         } else if (hoveredDetailText != null) {
             if (lookupHint == null) {
-                graphics.renderTooltip(font, hoveredDetailText, mouseX, mouseY);
+                graphics.renderTooltip(font, font.split(hoveredDetailText, Math.min(320, width - 20)), mouseX, mouseY);
             } else {
-                graphics.renderComponentTooltip(font, List.of(hoveredDetailText, lookupHint), mouseX, mouseY);
+                var lines = new java.util.ArrayList<>(font.split(hoveredDetailText, Math.min(320, width - 20)));
+                lines.addAll(font.split(lookupHint, Math.min(320, width - 20)));
+                graphics.renderTooltip(font, lines, mouseX, mouseY);
             }
         } else if (lookupHint != null) {
             graphics.renderTooltip(font, lookupHint, mouseX, mouseY);

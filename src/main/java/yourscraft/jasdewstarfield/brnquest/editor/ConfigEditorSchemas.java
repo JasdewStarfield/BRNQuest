@@ -97,6 +97,9 @@ public final class ConfigEditorSchemas {
                         throw new IllegalArgumentException();
                     }
                 }
+                case INTEGER_VECTOR3 -> {
+                    for (int axis : IntegerVectorValue.parse(value)) range(field, axis, issues);
+                }
                 case INTEGER -> range(field, Long.parseLong(value.replaceAll("[bBsSlL]$", "")), issues);
                 case DECIMAL -> range(field, Double.parseDouble(value.replaceAll("[fFdD]$", "")), issues);
                 case ENUM -> {

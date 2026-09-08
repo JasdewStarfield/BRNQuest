@@ -63,7 +63,7 @@ class PublicApiSnapshotTest {
         }
         apiTypes.sort(Comparator.comparing(Class::getName));
 
-        StringBuilder output = new StringBuilder("# BRNQuest public API 0.1.0-experimental.5\n");
+        StringBuilder output = new StringBuilder("# BRNQuest public API 0.1.0-experimental.6\n");
         for (Class<?> type : apiTypes) appendType(output, type);
         return output.toString();
     }

@@ -30,9 +30,9 @@ public final class LocationTask implements TaskType<Map<String, String>> {
         fields.add(kind.equals("location") ? selector : selector.asRequired());
         if (kind.equals("location")) {
             fields.add(ConfigFieldDescriptor.field("ignore_dimension", ConfigValueType.BOOLEAN).withDefault("false").withLabel("screen.brnquest.location.ignore_dimension"));
-            fields.add(ConfigFieldDescriptor.field("position", ConfigValueType.TEXT).withDefault("0,0,0").withLabel("screen.brnquest.location.position")
+            fields.add(ConfigFieldDescriptor.field("position", ConfigValueType.INTEGER_VECTOR3).withDefault("0,0,0").withLabel("screen.brnquest.location.position")
                     .withServerSource(ResourceLocation.parse("brnquest:position")));
-            fields.add(ConfigFieldDescriptor.field("size", ConfigValueType.TEXT).withDefault("1,1,1").withLabel("screen.brnquest.location.size"));
+            fields.add(ConfigFieldDescriptor.field("size", ConfigValueType.INTEGER_VECTOR3).withRange(1, Integer.MAX_VALUE).withDefault("1,1,1").withLabel("screen.brnquest.location.size"));
         }
         return List.copyOf(fields);
     }

@@ -91,6 +91,34 @@ class QuestTypedPropertySectionTest {
         assertTrue(section.click(new QuestScreenFrameIdentity(frame.bookId(),"rev-2",true,800,600),QuestTypedEntryKind.TASK,25,5).isEmpty());
     }
 
+    @Test void currentFieldRepliesCannotOverwriteTypingOrAClosedForm() {
+        var section=existingTask();
+        String request=section.beginCurrentRequest(0);
+        section.form().setConfigValue(0,"edited");
+        section.receiveCurrent(request,"4,5,6");
+        assertEquals("edited",section.form().configValue(0));
+        request=section.beginCurrentRequest(0);
+        section.receiveCurrent("stale","7,8,9");
+        assertEquals("edited",section.form().configValue(0));
+        section.receiveCurrent(request,"4,5,6");
+        assertEquals("4,5,6",section.form().configValue(0));
+        request=section.beginCurrentRequest(0);
+        section.close();
+        section.receiveCurrent(request,"7,8,9");
+        assertEquals("4,5,6",section.form().configValue(0));
+    }
+
+    @Test void vectorRowOnlyItsCurrentButtonCapturesTheTextInputClick() {
+        var section=existingTask();
+        var frame=new QuestScreenFrameIdentity(ResourceLocation.parse("test:book"),"r",true,800,600);
+        var field=ConfigFieldDescriptor.field("vector",ConfigValueType.INTEGER_VECTOR3).withServerSource(ResourceLocation.parse("test:position"));
+        var bounds=new UiRect(20,20,200,38);
+        section.captureInteractionFrame(new QuestTypedPropertySection.InteractionFrame(frame,QuestTypedEntryKind.TASK,
+                new UiRect(0,0,9,9),new UiRect(10,0,19,9),null,List.of(new QuestTypedPropertySection.FieldHit(0,field,bounds)),null,null,null));
+        assertTrue(section.click(frame,QuestTypedEntryKind.TASK,40,25).isEmpty(),"X/Y/Z clicks reach native text fields");
+        assertEquals(QuestTypedPropertySection.Action.SERVER_CURRENT,section.click(frame,QuestTypedEntryKind.TASK,190,25).orElseThrow().action());
+    }
+
     private static QuestTypedPropertySection existingTask() {
         QuestTypedPropertySection section = new QuestTypedPropertySection(4);
         var task = new yourscraft.jasdewstarfield.brnquest.data.TaskDefinition(

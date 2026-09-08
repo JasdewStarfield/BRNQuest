@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.5` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.6` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -102,3 +102,5 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 `Source.query(player, filter, selected)` 只读查询当前服务端状态，返回 `Result(entries, total, selectedCount, error, current, detail)`；`Entry` 保存原始值和解析数。`current` 非空时允许填入当前值，`detail` 供错误悬浮提示。来源不要返回超过 64 个候选；客户端可搜索缩小范围。`error` 为空表示无错误，否则对应 `screen.brnquest.field.error.<code>` 翻译键。来源负责相关语言资源。服务端统一要求权限等级 2，输入及响应长度受协议限制，结果不是任何作者写入的授权。
 
 示例附属模组的 marker 类型展示采样和 player_tags 来源；新增同类扩展不需要修改 QuestScreen 或 ProgressEngine。注册表来源在资源 reload 后重新查询，原始 ID、#tag 或 #分组写入配置，不展开保存为具体成员列表。
+
+`INTEGER_VECTOR3`（experimental.6）用于三个整数轴的同行编辑，仍存为原字符串。适用坐标、尺寸及扩展自定义向量；范围元数据逐轴校验。带 serverSource 时显示直接填入 current 的行尾按钮，响应关联到发起表单；等待期间继续输入、关闭或提交表单后，旧响应不会覆盖编辑内容。无 serverSource 时只显示三个输入框。原生 config Codec 仍是最终校验权威。

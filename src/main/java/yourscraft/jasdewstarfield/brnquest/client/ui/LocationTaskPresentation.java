@@ -14,9 +14,8 @@ public record LocationTaskPresentation(String kind) implements ClientTaskPresent
         return title.isBlank() ? typeName(context.task()).copy().append(": " + config.getOrDefault(kind.equals("location") ? "position" : kind, "")) : Component.literal(title);
     }
     public Component interactionHint(TaskPresentationContext context, boolean interactive) {
-        String current = context.minecraft().player == null ? "" : context.minecraft().player.blockPosition().toShortString();
         var config = context.task().config();
-        return title(context).copy().append("\n").append(Component.translatable("screen.brnquest.location.hint",current))
+        return title(context).copy().append("\n").append(Component.translatable("screen.brnquest.location.hint"))
                 .append(kind.equals("location") ? "\n" + config.getOrDefault("dimension", "*") + " | " + config.getOrDefault("size", "1,1,1") : "");
     }
 }

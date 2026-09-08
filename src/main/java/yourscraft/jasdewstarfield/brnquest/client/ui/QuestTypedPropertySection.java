@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  */
 final class QuestTypedPropertySection {
     enum PreparationStatus { INVALID_ID, LOCAL_ISSUE, CONFIRM_RENAME, CLAIM_REQUIRED, READY }
-    enum Action { CANCEL, SUBMIT, CLAIM, SERVER_FIELD, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
+    enum Action { CANCEL, SUBMIT, CLAIM, SERVER_CURRENT, SERVER_FIELD, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
 
     record FieldHit(int index, ConfigFieldDescriptor descriptor, UiRect bounds) {}
 
@@ -69,6 +69,8 @@ final class QuestTypedPropertySection {
     private boolean renameArmed;
     private boolean submissionPending;
     private InteractionFrame interactionFrame;
+    private record PendingCurrent(String id, int index, String previous) {}
+    private PendingCurrent pendingCurrent;
 
     QuestTypedPropertySection(int fieldCapacity) {
         form = new QuestTypedPropertyFormModel(fieldCapacity);
@@ -97,6 +99,7 @@ final class QuestTypedPropertySection {
         renameArmed = false;
         submissionPending = false;
         interactionFrame = null;
+        pendingCurrent = null;
         form.openExisting(schema, entry.id().toString(), entry.claimPolicy());
     }
 
@@ -110,12 +113,13 @@ final class QuestTypedPropertySection {
         renameArmed = false;
         submissionPending = false;
         interactionFrame = null;
+        pendingCurrent = null;
         form.openNew(schema, id.toString(), "manual");
     }
 
     void toggleOptional() { optional = !optional; }
     void toggleTeamReward() { teamReward = !teamReward; }
-    void markSubmissionPending() { submissionPending = true; }
+    void markSubmissionPending() { submissionPending = true; pendingCurrent = null; }
     void clearSubmissionPending() { submissionPending = false; }
 
     void captureInteractionFrame(InteractionFrame frame) { interactionFrame = frame; }
@@ -134,6 +138,11 @@ final class QuestTypedPropertySection {
         for (FieldHit field : frame.fields()) {
             if (!field.bounds().contains(x, y)) continue;
             ConfigValueType type = field.descriptor().valueType();
+            if (type == ConfigValueType.INTEGER_VECTOR3) {
+                var row = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(field.bounds(), field.descriptor().serverSource().isPresent());
+                return row.current() != null && row.current().containsExclusive(x, y)
+                        ? Optional.of(new Intent(Action.SERVER_CURRENT, field.index(), row.current(), List.of())) : Optional.empty();
+            }
             Action action = field.descriptor().serverSource().isPresent() ? Action.SERVER_FIELD : switch (type) {
                 case BOOLEAN -> Action.BOOLEAN;
                 case ENUM -> Action.ENUM;
@@ -181,6 +190,19 @@ final class QuestTypedPropertySection {
         return Preparation.ready(new Submission(replacementId, source, claim, semantics, form.currentConfig()));
     }
 
+    /** Correlates direct-current responses and prevents late replies from overwriting further typing. */
+    String beginCurrentRequest(int index) {
+        String id = java.util.UUID.randomUUID().toString();
+        pendingCurrent = new PendingCurrent(id, index, form.configValue(index));
+        return id;
+    }
+    void receiveCurrent(String id, String value) {
+        var pending = pendingCurrent;
+        if (!open || pending == null || !pending.id().equals(id)) return;
+        pendingCurrent = null;
+        if (!value.isBlank() && form.configValue(pending.index()).equals(pending.previous())) form.setConfigValue(pending.index(), value);
+    }
+
     void close() {
         open = false;
         originalId = null;
@@ -191,6 +213,7 @@ final class QuestTypedPropertySection {
         renameArmed = false;
         submissionPending = false;
         interactionFrame = null;
+        pendingCurrent = null;
         form.close();
     }
 }

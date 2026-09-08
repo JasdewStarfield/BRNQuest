@@ -55,6 +55,33 @@ class QuestTypedPropertyFormModelTest {
         assertEquals("1", described.currentConfig().get("required_entries"));
     }
 
+    @Test void vectorInputsKeepTheirAxesAcrossPartialEditsAndScreenRebinding() {
+        var model = new QuestTypedPropertyFormModel(4);
+        model.openExisting(schema(List.of(ConfigFieldDescriptor.field("position",ConfigValueType.INTEGER_VECTOR3)),
+                Map.of("position","1,2,3","opaque","keep"),false),"test:vector","manual");
+        var font = new net.minecraft.client.gui.Font(id -> null,false) {
+            public String plainSubstrByWidth(String text,int width) { return text.substring(0,Math.min(text.length(),Math.max(0,width))); }
+            public String plainSubstrByWidth(String text,int width,boolean tail) {
+                int count=Math.min(text.length(),Math.max(0,width));
+                return tail ? text.substring(text.length()-count) : text.substring(0,count);
+            }
+        };
+        model.bind(font, field -> {});
+        model.vectorField(0,1).setValue("");
+        assertEquals("1,,3",model.currentConfig().get("position"));
+        assertTrue(model.localIssues().containsKey("position"));
+        model.vectorField(0,0).setValue("-12");
+        model.vectorField(0,1).setValue("64");
+        model.vectorField(0,2).setValue("1,2");
+        assertEquals("3",model.vectorField(0,2).getValue(),"pasting separators into one axis is rejected");
+        model.bind(font,field -> {});
+        assertEquals("-12",model.vectorField(0,0).getValue());
+        assertEquals("64",model.vectorField(0,1).getValue());
+        assertEquals(Map.of("position","-12,64,3","opaque","keep"),model.currentConfig());
+        model.setConfigValue(0,"4,5,6");
+        assertEquals("6",model.vectorField(0,2).getValue(),"direct-current response updates all native inputs");
+    }
+
     private static ConfigEditorSchema schema(List<ConfigFieldDescriptor> fields, Map<String, String> config,
                                              boolean rawFallback) {
         return new ConfigEditorSchema(ConfigEditorSchema.Kind.TASK,

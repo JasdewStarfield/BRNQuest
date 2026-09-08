@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.5`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.6`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -50,3 +50,9 @@ API 版本独立于模组发布版本：补丁发布可以在不改变 API 基�
 `ConfigFieldDescriptor` 新增 `serverSource` 及 `withServerSource(id)`，保留旧十参数和十二参数构造器。反射 record 组件的消费者需要适配。`ServerFieldSources` 及其不可变 `Entry` / `Result` / `Source` 为实验性公共面；插件用 `BrnQuestExtensionRegistrar.fieldSource` 原子注册来源。客户端通用控件查询服务端并回填原始字符串，保存仍走原作者事务。
 
 新增只读字段查询载荷，网络协议升至 10，客户端和服务端须一起更新。任务书 schema 仍为 1。
+
+## experimental.5 → experimental.6
+
+`ConfigValueType` 新增 `INTEGER_VECTOR3`：同一属性行内编辑 X/Y/Z 三个整数，配置仍保存一个 `x,y,z` 字符串。`withRange` 对每个轴生效。已有类型、构造器、任务书 schema 及网络协议 10 不变；对 ConfigValueType 使用穷尽 switch 的扩展需处理新值或提供默认分支。
+
+vector 字段可配合现有 `serverSource` 元数据：行尾按钮直接查询并填入服务端 current 值，不打开候选列表。普通 source 字段继续使用通用列表。新控件不依赖任何地点类型 ID 或特定字段名。

@@ -535,7 +535,7 @@
   "screen.brnquest.location.position": "Min position",
   "screen.brnquest.location.size": "Box size",
   "screen.brnquest.location.ignore_dimension": "Any dimension",
-  "screen.brnquest.location.hint": "Current position: %s; enter the target area to complete",
+  "screen.brnquest.location.hint": "Enter the target area to complete",
   "screen.brnquest.type.task.dimension": "Dimension",
   "screen.brnquest.type.task.biome": "Biome",
   "screen.brnquest.type.task.location": "Location",

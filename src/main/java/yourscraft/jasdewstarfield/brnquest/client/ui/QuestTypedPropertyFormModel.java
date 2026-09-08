@@ -25,6 +25,8 @@ final class QuestTypedPropertyFormModel {
             .define("id", "screen.brnquest.editor.typed.property.id", 256)
             .define("claim", "screen.brnquest.editor.typed.property.claim_policy", 64);
     private final EditorFormFields<Integer> configFields = new EditorFormFields<>();
+    private final EditorFormFields<Integer> vectorFields = new EditorFormFields<>();
+    private boolean syncingVector;
     private final List<String> configValues;
     private final Map<String, String> serverIssues = new LinkedHashMap<>();
     private String id = "";
@@ -39,6 +41,7 @@ final class QuestTypedPropertyFormModel {
         this.capacity = capacity;
         this.configValues = new ArrayList<>(Collections.nCopies(capacity, ""));
         for (int index = 0; index < capacity; index++) {
+            for (int axis = 0; axis < 3; axis++) vectorFields.define(index * 3 + axis, "screen.brnquest.editor.typed.property.config", 256);
             configFields.define(index, "screen.brnquest.editor.typed.property.config", 65_536);
         }
     }
@@ -46,11 +49,24 @@ final class QuestTypedPropertyFormModel {
     void bind(Font font, Consumer<EditorTextField> register) {
         identityFields.bind(font, register);
         configFields.bind(font, register);
+        vectorFields.bind(font, register);
         identityFields.field("id").setResponder(value -> id = value);
         identityFields.field("claim").setResponder(value -> claim = value);
         for (int index = 0; index < capacity; index++) {
             int fieldIndex = index;
             configFields.field(index).setResponder(value -> configValues.set(fieldIndex, value));
+            for (int axis = 0; axis < 3; axis++) {
+                int component = axis;
+                var input = vectorFields.field(index * 3 + axis);
+                input.setFilter(value -> syncingVector || value.matches("-?[0-9]*"));
+                input.setResponder(value -> {
+                    if (!syncingVector) {
+                        String joined = yourscraft.jasdewstarfield.brnquest.editor.IntegerVectorValue.withAxis(configValues.get(fieldIndex), component, value);
+                        configValues.set(fieldIndex, joined);
+                        configFields.field(fieldIndex).setValue(joined);
+                    }
+                });
+            }
         }
         bound = true;
         syncFields();
@@ -87,7 +103,10 @@ final class QuestTypedPropertyFormModel {
         if (!bound) return;
         identityFields.field("id").setValue(id);
         identityFields.field("claim").setValue(claim);
-        for (int index = 0; index < capacity; index++) configFields.field(index).setValue(configValues.get(index));
+        for (int index = 0; index < capacity; index++) {
+            configFields.field(index).setValue(configValues.get(index));
+            syncVector(index);
+        }
     }
 
     ConfigEditorSchema schema() { return schema; }
@@ -101,7 +120,16 @@ final class QuestTypedPropertyFormModel {
 
     void setConfigValue(int index, String value) {
         configValues.set(index, value);
-        if (bound) configFields.field(index).setValue(value);
+        if (bound) { configFields.field(index).setValue(value); syncVector(index); }
+    }
+
+    EditorTextField vectorField(int index, int axis) { return vectorFields.field(index * 3 + axis); }
+    private void syncVector(int index) {
+        syncingVector = true;
+        try {
+            var parts = yourscraft.jasdewstarfield.brnquest.editor.IntegerVectorValue.components(configValues.get(index));
+            for (int axis = 0; axis < 3; axis++) vectorFields.field(index * 3 + axis).setValue(parts.get(axis));
+        } finally { syncingVector = false; }
     }
 
     void replaceRawConfig(Map<String, String> config) { rawConfig = Map.copyOf(config); }
@@ -143,12 +171,14 @@ final class QuestTypedPropertyFormModel {
         if (!bound) return;
         identityFields.hide();
         configFields.hide();
+        vectorFields.hide();
     }
 
     void offsetForDrawerAnimation(int offset) {
         if (!bound) return;
         identityFields.offsetForDrawerAnimation(offset);
         configFields.offsetForDrawerAnimation(offset);
+        vectorFields.offsetForDrawerAnimation(offset);
     }
 
     void close() {

@@ -9,6 +9,8 @@ public enum ConfigValueType {
     BOOLEAN,
     INTEGER,
     DECIMAL,
+    /** Three integer axes edited inline; persisted as the existing comma-separated string. */
+    INTEGER_VECTOR3,
     TEXT,
     ENUM,
     RESOURCE_LOCATION,

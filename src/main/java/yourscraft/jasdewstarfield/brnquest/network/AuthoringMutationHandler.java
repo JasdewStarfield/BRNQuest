@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.UUID;
+import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
+import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 /** Server-authoritative authoring use cases; requests are parsed before entering this boundary. */
 final class AuthoringMutationHandler {
@@ -83,6 +85,8 @@ final class AuthoringMutationHandler {
                         requireId(targetId), requireId(sourceId));
                 case REMOVE_DEPENDENCY -> editor.removeDependency(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId), requireId(sourceId));
+                case ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
+                     ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> mutateTyped(wire, current.value().book());
                 default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                         "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
             };
@@ -182,4 +186,111 @@ final class AuthoringMutationHandler {
         responses.sendDraft(action, code, message, handle, draft,
                 () -> AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision()));
     }
+    /** Typed entries keep server-owned copies, optional flags and reward-claim semantics together. */
+    private AuthorOperationResult<DraftEditResult> mutateTyped(AuthoringRequestDecoder.MutationRequest wire, QuestBookDefinition book) {
+        UUID sessionId = wire.sessionId();
+        ResourceLocation bookId = wire.bookId();
+        ResourceLocation targetId = wire.targetId();
+        ResourceLocation parentId = wire.parentId();
+        ResourceLocation sourceId = wire.sourceId();
+        var editor = AuthorApi.editor();
+            return switch (wire.action()) {
+                case ADD_TASK -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                taskMutationConfig(player, sourceId, wire.config()), false));
+                case UPDATE_TASK -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskReplacement(player, book,
+                                parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
+                case COPY_TASK -> editor.copyTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskCopy(book,
+                                parentId, sourceId, requireId(targetId)));
+                case MOVE_TASK -> editor.moveTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case DELETE_TASK -> editor.removeTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
+                case ADD_REWARD -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                rewardMutationConfig(wire.config()), "manual", false));
+                case UPDATE_REWARD -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardReplacement(book,
+                                parentId, sourceId, requireId(targetId), wire.config(), wire.claimPolicy(),
+                                wire.targetIndex() != 0));
+                case COPY_REWARD -> editor.copyReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardCopy(book,
+                                parentId, sourceId, requireId(targetId)));
+                case MOVE_REWARD -> editor.moveReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case DELETE_REWARD -> editor.removeReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
+                default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                        "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
+            };
+    }
+
+    private static TaskDefinition taskCopy(QuestBookDefinition book, ResourceLocation questId,
+                                           ResourceLocation sourceId, ResourceLocation targetId) {
+        QuestDefinition quest = requireQuest(book, questId);
+        TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Source task no longer exists"));
+        return new TaskDefinition(book.id(), targetId, source.typeId(), source.config(), source.optional());
+    }
+
+    private static RewardDefinition rewardCopy(QuestBookDefinition book, ResourceLocation questId,
+                                                ResourceLocation sourceId, ResourceLocation targetId) {
+        QuestDefinition quest = requireQuest(book, questId);
+        RewardDefinition source = quest.rewards().stream().filter(reward -> reward.id().equals(sourceId))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Source reward no longer exists"));
+        return new RewardDefinition(book.id(), targetId, source.typeId(), source.config(),
+                source.claimPolicy(), source.teamReward());
+    }
+
+    private static QuestDefinition requireQuest(QuestBookDefinition book, ResourceLocation questId) {
+        if (questId == null) throw new IllegalArgumentException("Quest ID is required");
+        return book.quests().stream().filter(quest -> quest.id().equals(questId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected quest no longer exists"));
+    }
+
+    private static Map<String, String> taskMutationConfig(ServerPlayer player, ResourceLocation typeId,
+                                                           Map<String, String> config) {
+        Map<String, String> bounded = AuthoringRequestDecoder.boundedConfig(config);
+        if (TaskTypes.ITEM.equals(typeId) || TaskTypes.ITEM_CHOICE.equals(typeId)) {
+            Map<String, String> canonical = ItemChoiceMatcher.canonicalEditorConfig(bounded);
+            var normalizedResult = ItemChoiceMatcher.normalizeConfig(player.registryAccess(), canonical);
+            ItemChoiceMatcher.Spec normalized = normalizedResult.result().orElseThrow(() ->
+                    new IllegalArgumentException(normalizedResult.error()
+                            .map(error -> error.message()).orElse("Item matcher is invalid")));
+            Map<String, String> normalizedConfig = new LinkedHashMap<>(canonical);
+            normalizedConfig.put("matcher", normalized.encode());
+            normalizedConfig.put("required_entries", Integer.toString(normalized.requiredEntries()));
+            return Map.copyOf(normalizedConfig);
+        }
+        return bounded;
+    }
+
+    private static TaskDefinition taskReplacement(ServerPlayer player, QuestBookDefinition book,
+                                                  ResourceLocation questId, ResourceLocation sourceId,
+                                                  ResourceLocation replacementId, Map<String, String> config,
+                                                  boolean optional) {
+        QuestDefinition quest = requireQuest(book, questId);
+        TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected task no longer exists"));
+        return new TaskDefinition(book.id(), replacementId, source.typeId(),
+                taskMutationConfig(player, source.typeId(), config), optional);
+    }
+
+    static RewardDefinition rewardReplacement(QuestBookDefinition book,
+                                                       ResourceLocation questId, ResourceLocation sourceId,
+                                                       ResourceLocation replacementId, Map<String, String> config,
+                                                       String claimPolicy, boolean teamReward) {
+        QuestDefinition quest = requireQuest(book, questId);
+        RewardDefinition source = quest.rewards().stream().filter(reward -> reward.id().equals(sourceId)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Selected reward no longer exists"));
+        return new RewardDefinition(book.id(), replacementId, source.typeId(),
+                rewardMutationConfig(config), claimPolicy, teamReward);
+    }
+
+    static Map<String, String> rewardMutationConfig(Map<String, String> config) {
+        return AuthoringRequestDecoder.boundedConfig(config);
+    }
+
 }

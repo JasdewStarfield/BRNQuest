@@ -310,4 +310,68 @@ public final class AuthoringHandlerGameTests {
             check(helper, last(packets).code().equals("QUEST_NOT_FOUND"), "disappeared quest keeps stable error");
         }
     }
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void everyMutationAndQuestUpdateUsesAuthoritativeSnapshots(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var fixture = new MutationFixture(helper, admin);
+            fixture.apply("ADD_GROUP", "g", "", "");
+            fixture.apply("ADD_GROUP", "g2", "", "");
+            fixture.apply("UPDATE_GROUP", "g", "", "");
+            fixture.apply("MOVE_GROUP", "g2", "", "");
+            fixture.apply("ADD_CHAPTER", "c", "g", "");
+            fixture.apply("ADD_CHAPTER", "c2", "g2", "");
+            fixture.apply("UPDATE_CHAPTER", "c", "g2", "");
+            fixture.apply("MOVE_CHAPTER", "c2", "", "");
+            fixture.apply("ADD_QUEST", "q", "c", "");
+            fixture.apply("ADD_QUEST", "q2", "c2", "");
+            fixture.apply("ADD_DEPENDENCY", "q2", "", "q");
+            check(helper, fixture.quest("q2").dependencies().contains(fixture.id("q")), "dependency added to target quest");
+            fixture.apply("REMOVE_DEPENDENCY", "q2", "", "q");
+            check(helper, fixture.quest("q2").dependencies().isEmpty(), "dependency removed from target quest");
+            fixture.apply("MOVE_QUESTS", "", "", "");
+            check(helper, last(fixture.packets).action().equals("PATCH") && fixture.quest("q").x() == 12, "movement returns revision-bound position patch");
+            fixture.apply("UPDATE_QUEST_TRANSLATION", "q", "", "");
+            var opaque = Map.of("extension", "keep 原样 {json:1}");
+            fixture.apply("ADD_TASK", "task", "q", "opaque_task", opaque);
+            fixture.apply("UPDATE_TASK", "task", "q", "task", opaque);
+            fixture.apply("COPY_TASK", "task_copy", "q", "task");
+            check(helper, fixture.quest("q").tasks().get(1).config().equals(opaque)
+                    && fixture.quest("q").tasks().get(1).optional(), "server copy preserves unknown config and optional flag");
+            fixture.apply("MOVE_TASK", "task_copy", "q", "");
+            check(helper, fixture.quest("q").tasks().getFirst().id().equals(fixture.id("task_copy")), "task moved to requested index");
+            fixture.apply("DELETE_TASK", "task_copy", "q", "");
+            fixture.apply("ADD_REWARD", "reward", "q", "opaque_reward", opaque);
+            fixture.apply("UPDATE_REWARD", "reward", "q", "reward", opaque);
+            fixture.apply("COPY_REWARD", "reward_copy", "q", "reward");
+            var reward = fixture.quest("q").rewards().get(1);
+            check(helper, reward.config().equals(opaque) && reward.claimPolicy().equals("auto_hidden") && reward.teamReward(),
+                    "server reward copy preserves unknown config, claim policy and team semantics");
+            fixture.apply("MOVE_REWARD", "reward_copy", "q", "");
+            check(helper, fixture.quest("q").rewards().getFirst().id().equals(fixture.id("reward_copy")), "reward moved to requested index");
+            fixture.apply("DELETE_REWARD", "reward_copy", "q", "");
+            fixture.checkQuestProperties();
+            fixture.apply("COPY_QUEST", "q_copy", "", "q");
+            check(helper, fixture.quest("q_copy").tasks().getFirst().config().equals(opaque), "quest copy uses server-owned nested task data");
+            String beforeUndo = fixture.revision;
+            fixture.apply("UNDO", "", "", "");
+            check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q_copy"))), "undo removes copied quest");
+            fixture.apply("REDO", "", "", "");
+            check(helper, fixture.revision.equals(beforeUndo), "redo restores the exact semantic revision");
+            fixture.apply("DELETE_QUEST", "q_copy", "", "");
+            fixture.apply("DELETE_CHAPTER", "c2", "", "");
+            check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q2"))), "chapter deletion removes its contained quest");
+            fixture.apply("DELETE_GROUP", "g", "", "");
+            fixture.apply("REVIEW", "", "", "");
+            // Review mirrors the service validation and revision gates, even before an explicit save.
+            var preview = AuthorApi.previewPublish(admin, fixture.token, fixture.book, fixture.revision);
+            check(helper, last(fixture.packets).review() != null
+                    && last(fixture.packets).review().publishAllowed() == preview.success(),
+                    "review preserves the authoritative publish decision");
+            check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all 27 mutations plus review executed");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
 }

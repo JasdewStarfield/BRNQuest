@@ -263,7 +263,7 @@ final class AuthoringResponseSender {
         List<EditorDiagnosticWire> diagnostics = ("MUTATE".equals(action) || "UPDATE".equals(action))
                 && !failure.path().isBlank() ? List.of(new EditorDiagnosticWire("ERROR", failure.code(),
                 failure.objectId(), failure.path(), failure.message())) : List.of();
-        sendFailure(action, AuthorOperationResult.Status.INVALID_REQUEST, failure.code(), failure.message(), diagnostics);
+        sendFailure(action, AuthorOperationResult.Status.valueOf(failure.status().name()), failure.code(), failure.message(), diagnostics);
     }
     void sendSaveFailure(AuthorOperationResult<yourscraft.jasdewstarfield.brnquest.author.DraftSaveResult> saved) {
             String message = saved.message();

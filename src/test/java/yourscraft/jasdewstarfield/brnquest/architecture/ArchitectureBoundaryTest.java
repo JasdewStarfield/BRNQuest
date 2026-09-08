@@ -76,27 +76,27 @@ public class ArchitectureBoundaryTest {
     // Future slice owners are optional until introduced; negative fixtures exercise every rule now.
     @ArchTest
     static final ArchRule authoringDecoderMustOnlyDecode = noClasses()
-            .that().haveSimpleName("AuthoringRequestDecoder")
+            .that().haveNameMatching(".*AuthoringRequestDecoder(\\$.*)?")
             .should().dependOnClassesThat().haveNameMatching(
                     ".*(ServerPlayer|AuthorApi|.*Service|DraftBookEditor|QuestBookManager|AuthoringNetwork|AuthoringResponseSender|BrnQuestNetwork|PacketDistributor)")
             .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule authoringHandlersMustNotSendOrLoadClient = noClasses()
-            .that().haveNameMatching(".*Authoring(Session|Publication|QuestUpdate|Mutation)Handler")
+            .that().haveNameMatching(".*Authoring(Session|Publication|QuestUpdate|Mutation)Handler(\\$.*)?")
             .should().dependOnClassesThat().haveNameMatching(
                     ".*\\.client\\..*|.*(PacketDistributor|BrnQuestNetwork|AuthoringNetwork)")
             .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule authoringResponseMustNotExecuteServices = noClasses()
-            .that().haveSimpleName("AuthoringResponseSender")
+            .that().haveNameMatching(".*AuthoringResponseSender(\\$.*)?")
             .should().dependOnClassesThat().haveNameMatching(".*(AuthorApi|.*Service|DraftBookEditor|QuestBookManager)")
             .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule authoringRegistrarMustOnlyWire = noClasses()
-            .that().haveSimpleName("AuthoringPayloadRegistrar")
+            .that().haveNameMatching(".*AuthoringPayloadRegistrar(\\$.*)?")
             .should().dependOnClassesThat().resideInAnyPackage(
                     "yourscraft.jasdewstarfield.brnquest.api..",
                     "yourscraft.jasdewstarfield.brnquest.author..",

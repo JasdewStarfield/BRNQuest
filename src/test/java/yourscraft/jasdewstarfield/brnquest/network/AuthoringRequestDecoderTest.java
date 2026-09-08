@@ -60,4 +60,13 @@ class AuthoringRequestDecoderTest {
         assertEquals("INVALID_PUBLISH_REQUEST", AuthoringRequestDecoder.publication(null, "test:book", "r", true).failure().code());
         assertEquals("bookId", AuthoringRequestDecoder.publication(SESSION, "Bad ID", "r", true).failure().path());
     }
+    @Test void invalidLiveBookPreservesTheOriginalConflictResponse() {
+        var decoded = AuthoringRequestDecoder.live("Bad ID");
+        assertEquals("LIVE_BOOK_CHANGED", decoded.failure().code());
+        var packets = new java.util.ArrayList<net.minecraft.network.protocol.common.custom.CustomPacketPayload>();
+        new AuthoringResponseSender(packets::add, () -> 0).sendDecodeFailure("OPEN", decoded.failure());
+        var response = GSON.fromJson(((AuthoringNetwork.SessionPayload) packets.getFirst()).json(), AuthoringNetwork.SessionResponseWire.class);
+        assertEquals("CONFLICT", response.status());
+        assertEquals("LIVE_BOOK_CHANGED", response.code());
+    }
 }

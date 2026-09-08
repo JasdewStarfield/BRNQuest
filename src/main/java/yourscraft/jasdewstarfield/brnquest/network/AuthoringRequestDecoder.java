@@ -16,7 +16,9 @@ final class AuthoringRequestDecoder {
     private static final Gson GSON = new Gson();
     private AuthoringRequestDecoder() {}
 
-    record Failure(String code, String path, String message) {}
+    record Failure(String code, String path, String message, String objectId) {
+        Failure(String code, String path, String message) { this(code, path, message, ""); }
+    }
     record Result<T>(T value, Failure failure) {
         boolean success() { return failure == null; }
     }
@@ -112,7 +114,7 @@ final class AuthoringRequestDecoder {
         catch (InvalidInput invalid) {
             Failure failure = invalid.failure;
             return new Result<>(null, new Failure(failure.code() == null ? code : failure.code(), failure.path(),
-                    failure.code() == null ? message : failure.message()));
+                    failure.code() == null ? message : failure.message(), failure.objectId()));
         } catch (RuntimeException invalid) {
             return new Result<>(null, new Failure(code, "", message));
         }
@@ -213,13 +215,13 @@ final class AuthoringRequestDecoder {
     /** Opaque extension entries remain byte-for-byte strings and are defensively copied. */
     static java.util.Map<String, String> boundedConfig(java.util.Map<String, String> config) {
         if (config == null || config.isEmpty()) return java.util.Map.of();
-        if (config.size() > 64) throw invalid(null, "config", "Typed config exceeds 64 fields");
+        if (config.size() > 64) throw invalid("INVALID_EDITOR_MUTATION", "config", "Typed config exceeds 64 fields");
         var bounded = new java.util.LinkedHashMap<String, String>();
         for (var entry : config.entrySet()) {
             String key = entry.getKey();
             String value = entry.getValue();
             if (key == null || key.isBlank() || key.length() > 128 || value == null || value.length() > 65536)
-                throw invalid(null, "config", "Typed config contains an invalid field");
+                throw invalid("INVALID_EDITOR_MUTATION", "config", "Typed config contains an invalid field");
             bounded.put(key, value);
         }
         return java.util.Collections.unmodifiableMap(bounded);
@@ -261,5 +263,99 @@ final class AuthoringRequestDecoder {
                 }
             }
         }
+    }
+    record Position(double x, double y) {}
+    record MutationRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, AuthoringMutationAction action,
+                           ResourceLocation targetId, ResourceLocation parentId, ResourceLocation sourceId,
+                           String title, int targetIndex, double x, double y,
+                           java.util.Map<ResourceLocation, Position> positions, java.util.Map<String, String> config,
+                           String claimPolicy, String locale) {
+        MutationRequest {
+            positions = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(positions));
+            config = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(config));
+        }
+    }
+
+    static Result<MutationRequest> mutation(String json) {
+        return boundary("INVALID_EDITOR_MUTATION", "Incomplete editor mutation request", () -> {
+            EditorMutationWire wire = json(json, EditorMutationWire.class);
+            try {
+            UUID session = uuid(wire.sessionId());
+            ResourceLocation book = id(wire.bookId(), "bookId");
+            String revision = text(wire.draftRevision(), "draftRevision", 32767, false);
+            if (wire.action() == null) throw invalid(null, "action", "Incomplete editor mutation request");
+            AuthoringMutationAction action = AuthoringMutationAction.fromWire(wire.action()).orElseThrow(() ->
+                    invalid("UNKNOWN_EDITOR_MUTATION", "action", "Unknown editor mutation action"));
+            ResourceLocation target = optionalId(wire.targetId(), "targetId");
+            ResourceLocation parent = optionalId(wire.parentId(), "parentId");
+            ResourceLocation source = optionalId(wire.sourceId(), "sourceId");
+            switch (action) {
+                case UNDO, REDO, REVIEW, MOVE_QUESTS -> { }
+                default -> require(target, "targetId");
+            }
+            switch (action) {
+                case ADD_CHAPTER, UPDATE_CHAPTER, ADD_QUEST, ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
+                     ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> require(parent, "parentId");
+                default -> { }
+            }
+            switch (action) {
+                case COPY_QUEST, ADD_DEPENDENCY, REMOVE_DEPENDENCY, ADD_TASK, UPDATE_TASK, COPY_TASK,
+                     ADD_REWARD, UPDATE_REWARD, COPY_REWARD -> require(source, "sourceId");
+                default -> { }
+            }
+            if (!Double.isFinite(wire.x()) || !Double.isFinite(wire.y()))
+                throw invalid("INVALID_EDITOR_MUTATION", "position", "Moved-node entries require unique IDs and finite coordinates");
+            var positions = new java.util.LinkedHashMap<ResourceLocation, Position>();
+            if (wire.positions() != null) {
+                if (wire.positions().size() > BrnQuestConstants.MAX_QUESTS)
+                    throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
+                for (PositionWire position : wire.positions()) {
+                    if (position == null) throw invalid(null, "positions", "Missing moved-node entry");
+                    ResourceLocation positionId = id(position.questId(), "positions.questId");
+                    if (!Double.isFinite(position.x()) || !Double.isFinite(position.y())
+                            || positions.putIfAbsent(positionId, new Position(position.x(), position.y())) != null)
+                        throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node entries require unique IDs and finite coordinates");
+                }
+            }
+            if (action == AuthoringMutationAction.MOVE_QUESTS && positions.isEmpty())
+                throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
+            var config = boundedConfig(wire.config());
+            String title = wire.title() == null ? "" : wire.title();
+            text(title, "title", 32767, true);
+            String claim = "manual";
+            String locale = "";
+            if (action == AuthoringMutationAction.UPDATE_REWARD) {
+                String policy = title.strip();
+                if (policy.length() > 64 || !yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy.isKnown(policy))
+                    throw invalid("INVALID_EDITOR_MUTATION", "claim_policy", "Reward claim policy must be manual, auto_visible, auto_silent, or auto_hidden");
+                claim = yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy.parse(policy).serializedName();
+            } else if (action == AuthoringMutationAction.UPDATE_QUEST_TRANSLATION) {
+                locale = yourscraft.jasdewstarfield.brnquest.data.BookLocalization.normalizeLocale(title);
+                if (!locale.matches("[a-z0-9_]{2,16}")) throw invalid(null, "title", "Locale must use a code such as en_us");
+                text(config.getOrDefault("title", ""), "config.title", 256, true);
+                text(config.getOrDefault("subtitle", ""), "config.subtitle", 256, true);
+                text(config.getOrDefault("description", ""), "config.description", 32768, true);
+            }
+            // Historical structural titles are truncated, while config and translations are preserved exactly.
+            return new MutationRequest(session, book, revision, action, target, parent, source,
+                    title.length() <= 256 ? title : title.substring(0, 256), wire.targetIndex(), wire.x(), wire.y(),
+                    positions, config, claim, locale);
+            } catch (InvalidInput invalid) {
+                // Typed field errors stay attached to the original entry, even when the replacement ID is invalid.
+                String objectId = "UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())
+                        ? wire.sourceId() : wire.targetId();
+                Failure failure = invalid.failure;
+                throw new InvalidInput(new Failure(failure.code(), failure.path(), failure.message(),
+                        objectId == null ? "" : objectId));
+            }
+        });
+    }
+
+    private static ResourceLocation optionalId(String value, String path) {
+        return value == null || value.isBlank() ? null : id(value, path);
+    }
+
+    private static void require(ResourceLocation value, String path) {
+        if (value == null) throw invalid(null, path, "A valid namespaced ID is required");
     }
 }

@@ -203,13 +203,12 @@ final class AuthoringResponseSender {
         outbound.accept(new SessionPayload(GSON.toJson(response)));
     }
 
-    static EditorDiagnosticWire mutationDiagnostic(EditorMutationWire wire,
-                                                   IllegalArgumentException exception) {
+    static EditorDiagnosticWire mutationDiagnostic(String sourceId, IllegalArgumentException exception) {
         String message = exception.getMessage() == null ? "Invalid editor mutation" : exception.getMessage();
         String path = message.startsWith("Item config") ? "config.item"
                 : message.startsWith("Reward claim policy") ? "claim_policy" : "";
         return new EditorDiagnosticWire("ERROR", "INVALID_EDITOR_MUTATION",
-                wire.sourceId() == null ? "" : wire.sourceId(), path, boundedMessage(message));
+                sourceId == null ? "" : sourceId, path, boundedMessage(message));
     }
 
     static List<EditorDiagnosticWire> diagnosticWires(
@@ -219,9 +218,9 @@ final class AuthoringResponseSender {
                 boundedMessage(diagnostic.path()), boundedMessage(diagnostic.message()))).toList();
     }
 
-    static List<EditorDiagnosticWire> mutationDiagnosticWires(EditorMutationWire wire,
+    private static List<EditorDiagnosticWire> mutationDiagnosticWires(String action,
             List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
-        boolean typedUpdate = "UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action());
+        boolean typedUpdate = "UPDATE_TASK".equals(action) || "UPDATE_REWARD".equals(action);
         return diagnostics.stream().limit(8).map(diagnostic -> {
             String path = diagnostic.path();
             if (typedUpdate && path.isBlank()
@@ -245,23 +244,26 @@ final class AuthoringResponseSender {
     }
 
     /** Preserves typed-field diagnostics while consuming the service's failure unchanged. */
-    void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
+    private void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, String action, String sourceId) {
         String message = result.message();
         List<EditorDiagnosticWire> diagnostics = List.of();
         if (result.value() != null && !result.value().diagnostics().isEmpty()) {
             var first = result.value().diagnostics().getFirst();
             message += ": " + first.code() + " " + first.message();
-            diagnostics = mutationDiagnosticWires(wire, result.value().diagnostics());
-        } else if ("UPDATE_TASK".equals(wire.action()) || "UPDATE_REWARD".equals(wire.action())) {
+            diagnostics = mutationDiagnosticWires(action, result.value().diagnostics());
+        } else if ("UPDATE_TASK".equals(action) || "UPDATE_REWARD".equals(action)) {
             String path = "DUPLICATE_TYPED_ID".equals(result.code())
                     || "RETIRED_TYPED_ID".equals(result.code()) ? "id" : "";
             diagnostics = List.of(new EditorDiagnosticWire("ERROR", result.code(),
-                    wire.sourceId(), path, result.message()));
+                    sourceId, path, result.message()));
         }
         sendFailure("MUTATE", result.status(), result.code(), message, diagnostics);
     }
     void sendDecodeFailure(String action, AuthoringRequestDecoder.Failure failure) {
-        sendFailure(action, AuthorOperationResult.Status.INVALID_REQUEST, failure.code(), failure.message());
+        List<EditorDiagnosticWire> diagnostics = ("MUTATE".equals(action) || "UPDATE".equals(action))
+                && !failure.path().isBlank() ? List.of(new EditorDiagnosticWire("ERROR", failure.code(),
+                failure.objectId(), failure.path(), failure.message())) : List.of();
+        sendFailure(action, AuthorOperationResult.Status.INVALID_REQUEST, failure.code(), failure.message(), diagnostics);
     }
     void sendSaveFailure(AuthorOperationResult<yourscraft.jasdewstarfield.brnquest.author.DraftSaveResult> saved) {
             String message = saved.message();
@@ -281,5 +283,32 @@ final class AuthoringResponseSender {
     static String shortRevision(String revision) {
         if (revision == null || revision.isBlank()) return "<none>";
         return revision.length() <= 12 ? revision : revision.substring(0, 12);
+    }
+    static EditorDiagnosticWire mutationDiagnostic(EditorMutationWire wire, IllegalArgumentException exception) {
+        return mutationDiagnostic(wire.sourceId(), exception);
+    }
+
+    static EditorDiagnosticWire mutationDiagnostic(AuthoringRequestDecoder.MutationRequest request, IllegalArgumentException exception) {
+        return mutationDiagnostic(request.sourceId() == null ? "" : request.sourceId().toString(), exception);
+    }
+
+    static List<EditorDiagnosticWire> mutationDiagnosticWires(EditorMutationWire wire,
+            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
+        return mutationDiagnosticWires(wire.action(), diagnostics);
+    }
+
+    void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
+        sendMutationFailure(result, wire.action(), wire.sourceId());
+    }
+
+    void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, AuthoringRequestDecoder.MutationRequest request) {
+        sendMutationFailure(result, request.action().wireName(), request.sourceId() == null ? "" : request.sourceId().toString());
+    }
+
+    void sendPositionPatch(String code, String message, EditSessionHandle handle, DraftSnapshot draft,
+                           AuthoringRequestDecoder.MutationRequest request, Runnable onTooLarge) {
+        var positions = request.positions().entrySet().stream().map(entry ->
+                new PositionWire(entry.getKey().toString(), entry.getValue().x(), entry.getValue().y())).toList();
+        sendPositionPatch(code, message, handle, draft, positions, onTooLarge);
     }
 }

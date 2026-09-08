@@ -372,119 +372,9 @@ public final class AuthoringNetwork {
      */
     /** Keeps detailed pipeline telemetry available without adding noise to normal INFO logs. */
     /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
-    static void mutate(ServerPlayer player, String json) {
-        EditorMutationWire wire;
-        try {
-            wire = GSON.fromJson(json, EditorMutationWire.class);
-        } catch (RuntimeException exception) {
-            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_EDITOR_MUTATION", "Malformed editor mutation request");
-            return;
-        }
-        UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
-        ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
-        if (sessionId == null || bookId == null || wire.draftRevision() == null || wire.action() == null) {
-            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_EDITOR_MUTATION", "Incomplete editor mutation request");
-            return;
-        }
-        var current = EditSessionService.get().snapshot(player, sessionId, bookId, wire.draftRevision());
-        if (!current.success()) {
-            responses(player).sendFailure("MUTATE", current.status(), current.code(), current.message());
-            return;
-        }
-        if ("REVIEW".equals(wire.action())) {
-            reviewPublish(player, sessionId, bookId, wire.draftRevision());
-            return;
-        }
-        ResourceLocation targetId = parseId(wire.targetId());
-        ResourceLocation parentId = parseId(wire.parentId());
-        ResourceLocation sourceId = parseId(wire.sourceId());
-        var editor = AuthorApi.editor();
-        AuthorOperationResult<DraftEditResult> result;
-        try {
-            result = switch (wire.action()) {
-                case "UNDO" -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
-                case "REDO" -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
-                case "ADD_GROUP" -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
-                        new ChapterGroupDefinition(bookId, requireId(targetId), AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
-                case "UPDATE_GROUP" -> editor.updateGroup(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), new ChapterGroupDefinition(bookId, targetId,
-                                AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
-                case "MOVE_GROUP" -> editor.moveGroup(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), wire.targetIndex());
-                case "DELETE_GROUP" -> editor.removeGroupWithContents(player, sessionId, bookId,
-                        wire.draftRevision(), requireId(targetId));
-                case "ADD_CHAPTER" -> editor.addChapter(player, sessionId, bookId, wire.draftRevision(),
-                        new ChapterDefinition(bookId, requireId(targetId), requireId(parentId),
-                                AuthoringResponseSender.boundedTitle(wire.title()), "", wire.targetIndex(), List.of()));
-                case "UPDATE_CHAPTER" -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
-                                AuthoringResponseSender.boundedTitle(wire.title()), wire.targetIndex()));
-                case "MOVE_CHAPTER" -> editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), wire.targetIndex());
-                case "DELETE_CHAPTER" -> editor.removeChapterWithContents(player, sessionId, bookId,
-                        wire.draftRevision(), requireId(targetId));
-                case "ADD_QUEST" -> editor.addQuest(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), new QuestDefinition(bookId, requireId(targetId), parentId,
-                                AuthoringResponseSender.boundedTitle(wire.title()), "", "", "", wire.x(), wire.y(),
-                                List.of(), List.of(), List.of(), ""));
-                case "COPY_QUEST" -> editor.copyQuest(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(sourceId), questCopy(current.value().book(), sourceId, requireId(targetId),
-                                AuthoringResponseSender.boundedTitle(wire.title()), wire.x(), wire.y()));
-                case "DELETE_QUEST" -> editor.removeQuestAndReferences(player, sessionId, bookId,
-                        wire.draftRevision(), requireId(targetId));
-                case "MOVE_QUESTS" -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
-                        decodePositions(wire.positions()));
-                case "UPDATE_QUEST_TRANSLATION" -> editor.updateQuestTranslation(player, sessionId, bookId,
-                        wire.draftRevision(), requireId(targetId), boundedLocale(wire.title()),
-                        boundedText(wire.config(), "title", 256), boundedText(wire.config(), "subtitle", 256),
-                        boundedText(wire.config(), "description", 32_768));
-                case "ADD_DEPENDENCY" -> editor.addDependency(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), requireId(sourceId));
-                case "REMOVE_DEPENDENCY" -> editor.removeDependency(player, sessionId, bookId,
-                        wire.draftRevision(), requireId(targetId), requireId(sourceId));
-                case "ADD_TASK" -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                taskMutationConfig(player, sourceId, wire.config()), false));
-                case "UPDATE_TASK" -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), taskReplacement(player, current.value().book(),
-                                parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
-                case "COPY_TASK" -> editor.copyTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), taskCopy(current.value().book(),
-                                parentId, sourceId, requireId(targetId)));
-                case "MOVE_TASK" -> editor.moveTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(targetId), wire.targetIndex());
-                case "DELETE_TASK" -> editor.removeTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(targetId));
-                case "ADD_REWARD" -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                rewardMutationConfig(wire.config()), "manual", false));
-                case "UPDATE_REWARD" -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), rewardReplacement(current.value().book(),
-                                parentId, sourceId, requireId(targetId), wire.config(), boundedClaimPolicy(wire.title()),
-                                wire.targetIndex() != 0));
-                case "COPY_REWARD" -> editor.copyReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), rewardCopy(current.value().book(),
-                                parentId, sourceId, requireId(targetId)));
-                case "MOVE_REWARD" -> editor.moveReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(targetId), wire.targetIndex());
-                case "DELETE_REWARD" -> editor.removeReward(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(targetId));
-                default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
-                        "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
-            };
-        } catch (IllegalArgumentException exception) {
-            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_EDITOR_MUTATION", exception.getMessage(), List.of(AuthoringResponseSender.mutationDiagnostic(wire, exception)));
-            return;
-        }
-        sendMutationResult(player, sessionId, bookId, result, wire);
-    }
-
     /** Combines the exact publish gates and workspace semantic diff into one revision-bound preview. */
     private static void sendMutationResult(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
-                                           AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
+                                           AuthorOperationResult<DraftEditResult> result, AuthoringRequestDecoder.MutationRequest wire) {
         if (!result.success()) {
             responses(player).sendMutationFailure(result, wire);
             return;
@@ -495,11 +385,12 @@ public final class AuthoringNetwork {
             responses(player).sendFailure("MUTATE", renewed.status(), renewed.code(), renewed.message());
             return;
         }
-        if ("MOVE_QUESTS".equals(wire.action())) {
+        if (wire.action() == AuthoringMutationAction.MOVE_QUESTS) {
             // Dragging is the highest-frequency graph edit. The server returns only
             // the accepted positions plus the authoritative resulting revision;
             // the client verifies that revision before exposing the patched draft.
-            sendPositionPatch(player, result.code(), result.message(), renewed.value(), draft, wire.positions());
+            responses(player).sendPositionPatch(result.code(), result.message(), renewed.value(), draft, wire,
+                    () -> AuthorApi.close(player, renewed.value().sessionId(), renewed.value().session().draftRevision()));
         } else {
             sendDraft(player, "MUTATE", result.code(), result.message(), renewed.value(), draft);
         }
@@ -583,21 +474,6 @@ public final class AuthoringNetwork {
             if (!exists) return candidate;
         }
         throw new IllegalArgumentException("Unable to allocate copied " + kind + " ID");
-    }
-
-    private static Map<ResourceLocation, DraftBookEditor.Position> decodePositions(List<PositionWire> wires) {
-        if (wires == null || wires.isEmpty() || wires.size() > BrnQuestConstants.MAX_QUESTS) {
-            throw new IllegalArgumentException("Moved-node list is empty or exceeds the editor limit");
-        }
-        Map<ResourceLocation, DraftBookEditor.Position> positions = new LinkedHashMap<>();
-        for (PositionWire wire : wires) {
-            ResourceLocation id = wire == null ? null : ResourceLocation.tryParse(wire.questId());
-            if (id == null || !Double.isFinite(wire.x()) || !Double.isFinite(wire.y())
-                    || positions.putIfAbsent(id, new DraftBookEditor.Position(wire.x(), wire.y())) != null) {
-                throw new IllegalArgumentException("Moved-node entries require unique IDs and finite coordinates");
-            }
-        }
-        return Map.copyOf(positions);
     }
 
     /** The transport reports oversize drafts; the use-case boundary owns closing their leases. */
@@ -754,5 +630,113 @@ public final class AuthoringNetwork {
 
     static Map<String, String> boundedConfig(Map<String, String> config) {
         return AuthoringRequestDecoder.boundedConfig(config);
+    }
+    private static void mutate(ServerPlayer player, AuthoringRequestDecoder.MutationRequest wire) {
+        UUID sessionId = wire.sessionId();
+        ResourceLocation bookId = wire.bookId();
+        var current = EditSessionService.get().snapshot(player, sessionId, bookId, wire.draftRevision());
+        if (!current.success()) {
+            responses(player).sendFailure("MUTATE", current.status(), current.code(), current.message());
+            return;
+        }
+        if (wire.action() == AuthoringMutationAction.REVIEW) {
+            reviewPublish(player, sessionId, bookId, wire.draftRevision());
+            return;
+        }
+        ResourceLocation targetId = wire.targetId();
+        ResourceLocation parentId = wire.parentId();
+        ResourceLocation sourceId = wire.sourceId();
+        var editor = AuthorApi.editor();
+        AuthorOperationResult<DraftEditResult> result;
+        try {
+            result = switch (wire.action().wireName()) {
+                case "UNDO" -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
+                case "REDO" -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
+                case "ADD_GROUP" -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
+                        new ChapterGroupDefinition(bookId, requireId(targetId), wire.title(), wire.targetIndex()));
+                case "UPDATE_GROUP" -> editor.updateGroup(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), new ChapterGroupDefinition(bookId, targetId,
+                                wire.title(), wire.targetIndex()));
+                case "MOVE_GROUP" -> editor.moveGroup(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), wire.targetIndex());
+                case "DELETE_GROUP" -> editor.removeGroupWithContents(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId));
+                case "ADD_CHAPTER" -> editor.addChapter(player, sessionId, bookId, wire.draftRevision(),
+                        new ChapterDefinition(bookId, requireId(targetId), requireId(parentId),
+                                wire.title(), "", wire.targetIndex(), List.of()));
+                case "UPDATE_CHAPTER" -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
+                                wire.title(), wire.targetIndex()));
+                case "MOVE_CHAPTER" -> editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), wire.targetIndex());
+                case "DELETE_CHAPTER" -> editor.removeChapterWithContents(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId));
+                case "ADD_QUEST" -> editor.addQuest(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new QuestDefinition(bookId, requireId(targetId), parentId,
+                                wire.title(), "", "", "", wire.x(), wire.y(),
+                                List.of(), List.of(), List.of(), ""));
+                case "COPY_QUEST" -> editor.copyQuest(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(sourceId), questCopy(current.value().book(), sourceId, requireId(targetId),
+                                wire.title(), wire.x(), wire.y()));
+                case "DELETE_QUEST" -> editor.removeQuestAndReferences(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId));
+                case "MOVE_QUESTS" -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
+                        domainPositions(wire.positions()));
+                case "UPDATE_QUEST_TRANSLATION" -> editor.updateQuestTranslation(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId), wire.locale(),
+                        boundedText(wire.config(), "title", 256), boundedText(wire.config(), "subtitle", 256),
+                        boundedText(wire.config(), "description", 32_768));
+                case "ADD_DEPENDENCY" -> editor.addDependency(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), requireId(sourceId));
+                case "REMOVE_DEPENDENCY" -> editor.removeDependency(player, sessionId, bookId,
+                        wire.draftRevision(), requireId(targetId), requireId(sourceId));
+                case "ADD_TASK" -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                taskMutationConfig(player, sourceId, wire.config()), false));
+                case "UPDATE_TASK" -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskReplacement(player, current.value().book(),
+                                parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
+                case "COPY_TASK" -> editor.copyTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), taskCopy(current.value().book(),
+                                parentId, sourceId, requireId(targetId)));
+                case "MOVE_TASK" -> editor.moveTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case "DELETE_TASK" -> editor.removeTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
+                case "ADD_REWARD" -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
+                                rewardMutationConfig(wire.config()), "manual", false));
+                case "UPDATE_REWARD" -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardReplacement(current.value().book(),
+                                parentId, sourceId, requireId(targetId), wire.config(), wire.claimPolicy(),
+                                wire.targetIndex() != 0));
+                case "COPY_REWARD" -> editor.copyReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(sourceId), rewardCopy(current.value().book(),
+                                parentId, sourceId, requireId(targetId)));
+                case "MOVE_REWARD" -> editor.moveReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId), wire.targetIndex());
+                case "DELETE_REWARD" -> editor.removeReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), requireId(targetId));
+                default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                        "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
+            };
+        } catch (IllegalArgumentException exception) {
+            responses(player).sendFailure("MUTATE", AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_EDITOR_MUTATION", exception.getMessage(), List.of(AuthoringResponseSender.mutationDiagnostic(wire, exception)));
+            return;
+        }
+        sendMutationResult(player, sessionId, bookId, result, wire);
+    }
+
+    static void mutate(ServerPlayer player, String json) {
+        dispatch(player, "MUTATE", AuthoringRequestDecoder.mutation(json), request -> mutate(player, request));
+    }
+
+    /** Convert parsed positions at the use-case boundary, preserving their deterministic input order. */
+    private static Map<ResourceLocation, DraftBookEditor.Position> domainPositions(
+            Map<ResourceLocation, AuthoringRequestDecoder.Position> positions) {
+        Map<ResourceLocation, DraftBookEditor.Position> result = new LinkedHashMap<>();
+        positions.forEach((id, position) -> result.put(id, new DraftBookEditor.Position(position.x(), position.y())));
+        return java.util.Collections.unmodifiableMap(result);
     }
 }

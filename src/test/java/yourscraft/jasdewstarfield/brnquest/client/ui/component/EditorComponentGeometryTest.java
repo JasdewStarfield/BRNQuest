@@ -104,7 +104,8 @@ class EditorComponentGeometryTest {
         EditorPickerList<Integer> picker = new EditorPickerList<>();
         picker.advance(bounds, bounds, 20, i -> i, 0, 12);
         assertEquals(180, EditorPickerList.rowsBounds(bounds).height());
-        picker.mouseClicked(496, 70 + 180 * (90.0 / 420), 0);
+        // Place the thumb center at the position corresponding to three scrolled rows.
+        picker.mouseClicked(496, 70 + 27 + 126 * (90.0 / 420), 0);
         picker.advance(bounds, bounds, 20, i -> i, 0, 12);
         assertTrue(picker.entryAt(120, 60).isEmpty());
         assertEquals(3, picker.entryAt(120, 72).orElseThrow());

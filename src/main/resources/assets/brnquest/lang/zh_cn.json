@@ -548,5 +548,6 @@
   "screen.brnquest.field.error.permission": "需要作者权限",
   "screen.brnquest.field.error.unknown_source": "未注册数据来源",
   "screen.brnquest.field.error.missing": "目标缺失、分组错误或解析为空",
-  "screen.brnquest.field.error.vector": "请输入三个整数：x,y,z"
+  "screen.brnquest.field.error.vector": "请输入三个整数：x,y,z",
+  "screen.brnquest.field.loading": "正在加载…"
 }

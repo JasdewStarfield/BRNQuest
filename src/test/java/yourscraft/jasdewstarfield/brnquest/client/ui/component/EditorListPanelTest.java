@@ -53,7 +53,7 @@ class EditorListPanelTest {
         EditorListPanel<Integer> panel = new EditorListPanel<>();
         frame(panel, BOUNDS, 10);
         // Track location maps to 0.6px: visible rows round to one pixel and input must use that same value.
-        assertTrue(panel.mouseClicked(212, 40 + 0.6 / 285 * 95, 0));
+        assertTrue(panel.mouseClicked(212, 40 + 12 + 0.6 / 285 * 71, 0));
         var next = panel.advance(BOUNDS, SCREEN, 212, 38, 2, 10, i -> i, 0, 12);
         assertEquals(1, next.pixelScroll());
         assertEquals(1, panel.rowAt(20, 77).orElseThrow().key());
@@ -95,6 +95,21 @@ class EditorListPanelTest {
         assertTrue(panel.rowAt(20, 50).isEmpty());
         assertEquals(0, panel.rowAt(170, 50).orElseThrow().key());
         assertTrue(panel.rowAt(300, 50).isEmpty());
+    }
+
+    @Test void largeListsReachTheLastEntryEvenWhenVerticallyClipped() {
+        var panel = new EditorListPanel<Integer>();
+        var bounds = new UiRect(10,20,210,300);
+        var clip = new UiRect(0,40,400,135);
+        for (int count : new int[]{65,1000,10000}) {
+            panel.reset();
+            panel.advance(bounds,clip,212,20,2,count,i -> i,0,12);
+            assertEquals(0,panel.rowAt(20,41).orElseThrow().key(),"top clipping does not hide the first entry");
+            panel.mouseScrolled(20,50,-100000,20);
+            var frame = panel.advance(bounds,clip,212,20,2,count,i -> i,0.1,1000);
+            assertEquals(count-1,panel.rowAt(20,132).orElseThrow().key(),"bottom clipping must not shorten the reachable data set");
+            assertTrue(frame.rows().size()<=6,"large data remains virtualized");
+        }
     }
 
     @Test void invalidMetricsFailAtTheComponentBoundary() {

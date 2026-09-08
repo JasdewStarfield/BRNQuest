@@ -54,7 +54,7 @@ public final class BrnQuestExampleAddon {
             // The companion owns both its sampler and searchable author field source.
             registrar.fieldSource(BrnQuestExampleAddon.id("player_tags"), (player, filter, selected) -> {
                 var tags = player.getTags().stream().filter(tag -> tag.contains(filter)).sorted().toList();
-                return new ServerFieldSources.Result(tags.stream().limit(64).map(tag -> new ServerFieldSources.Entry(tag, 1)).toList(),
+                return new ServerFieldSources.Result(tags.stream().map(tag -> new ServerFieldSources.Entry(tag, 1)).toList(),
                         tags.size(), player.getTags().contains(selected) ? 1 : 0, "", "");
             });
             registrar.task(MARKER_TASK, new MarkerTask())

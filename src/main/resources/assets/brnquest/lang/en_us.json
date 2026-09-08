@@ -548,5 +548,6 @@
   "screen.brnquest.field.error.permission": "Author permission required",
   "screen.brnquest.field.error.unknown_source": "Unregistered source",
   "screen.brnquest.field.error.missing": "Missing target, invalid group or empty result",
-  "screen.brnquest.field.error.vector": "Enter three integers: x,y,z"
+  "screen.brnquest.field.error.vector": "Enter three integers: x,y,z",
+  "screen.brnquest.field.loading": "Loading…"
 }

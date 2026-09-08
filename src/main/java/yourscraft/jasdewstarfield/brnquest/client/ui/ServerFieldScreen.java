@@ -23,7 +23,8 @@ public final class ServerFieldScreen extends Screen {
     private String filter = "";
     private String requestId = "";
     private int delay;
-    private final EditorListPanel<ServerFieldSources.Entry> list = new EditorListPanel<>();
+    private final EditorListPanel<Integer> list = new EditorListPanel<>();
+    private final ServerFieldPages pages = new ServerFieldPages();
     private long lastFrame;
     private String currentRequest = "";
     private ServerFieldSources.Result result;
@@ -46,12 +47,17 @@ public final class ServerFieldScreen extends Screen {
         query();
     }
     private void query() {
-        requestId = UUID.randomUUID().toString();
-        ServerFieldNetwork.send(new ServerFieldNetwork.Query(requestId,source,search.getValue(),input.getValue()));
+        pages.reset();
+        list.invalidate();
+        requestPage(0);
+    }
+    private void requestPage(int offset) {
+        requestId = pages.begin(offset);
+        ServerFieldNetwork.send(new ServerFieldNetwork.Query(requestId,source,search.getValue(),input.getValue(),offset));
     }
     public void tick() { if (delay > 0 && --delay == 0) query(); }
     public void receive(ServerFieldNetwork.Reply reply) {
-        if (reply == null || !requestId.equals(reply.id())) return;
+        if (reply == null || !pages.receive(reply.id(), reply.result())) return;
         result = reply.result();
         useCurrent.active = result != null && !result.current().isBlank();
         // Replace geometry along with data, so a click cannot select an entry from an obsolete reply.
@@ -68,15 +74,16 @@ public final class ServerFieldScreen extends Screen {
         long now = System.nanoTime();
         double elapsed = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1_000_000_000.0);
         lastFrame = now;
-        var entries = result == null ? List.<ServerFieldSources.Entry>of() : result.entries();
         UiRect bounds = new UiRect(width/2-150, 128, width/2+144, Math.max(128,height-36));
-        list.advance(bounds, new UiRect(0,0,width,height), width/2+147,20,2,entries.size(),entries::get,
+        var frame = list.advance(bounds, new UiRect(0,0,width,height), width/2+147,20,2,pages.total(),i -> i,
                 elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
         list.render(graphics, row -> {
             var rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(x,y);
             graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? 0xDD385A72 : 0xAA263646);
-            graphics.drawString(font,font.plainSubstrByWidth(row.key().value()+" ("+row.key().count()+")",rect.width()-6),
+            var entry = pages.entry(row.key());
+            String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+" ("+entry.count()+")";
+            graphics.drawString(font,font.plainSubstrByWidth(label,rect.width()-6),
                     rect.left()+3,rect.top()+5,0xFFFFFFFF,false);
         }, () -> {});
         if (result != null && !result.error().isEmpty()) {
@@ -85,12 +92,15 @@ public final class ServerFieldScreen extends Screen {
             if (!result.detail().isBlank() && y>=112 && y<125 && x>=width/2-150 && x<width/2+150)
                 graphics.renderTooltip(font,font.split(Component.literal(result.detail()),280),x,y);
         }
-        list.rowAt(x,y).ifPresent(row -> graphics.renderTooltip(font,font.split(Component.literal(row.key().value()),280),x,y));
+        list.rowAt(x,y).map(row -> pages.entry(row.key())).ifPresent(entry -> graphics.renderTooltip(font,font.split(Component.literal(entry.value()),280),x,y));
+        // A track jump can request the last page directly; no need to fetch every preceding page.
+        if (delay == 0 && !pages.waiting()) frame.rows().stream().map(EditorListPanel.Row::key).filter(pages::needs).findFirst()
+                .ifPresent(index -> requestPage(index / ServerFieldSources.PAGE_SIZE * ServerFieldSources.PAGE_SIZE));
     }
     public boolean mouseClicked(double x,double y,int button) {
         if (list.mouseClicked(x,y,button)) return true;
-        var row = list.rowAt(x,y);
-        if (button==0 && row.isPresent()) { input.setValue(row.get().key().value()); return true; }
+        var entry = list.rowAt(x,y).map(row -> pages.entry(row.key()));
+        if (button==0 && entry.isPresent()) { input.setValue(entry.get().value()); return true; }
         return super.mouseClicked(x,y,button);
     }
     public boolean mouseScrolled(double x,double y,double dx,double dy) {

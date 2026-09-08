@@ -38,7 +38,7 @@ class AuthoringProtocolTest {
             new Expected(DraftChunkPayload.class, "editor_draft_chunk", false));
 
     @Test void registrationOrderDirectionIdsAndCodecsRemainCompatible() throws Exception {
-        assertEquals("10", BrnQuestConstants.NETWORK_PROTOCOL);
+        assertEquals("11", BrnQuestConstants.NETWORK_PROTOCOL);
         var recorder = new RecordingRegistrar();
         AuthoringNetwork.register(recorder);
         assertEquals(14, recorder.routes.size());

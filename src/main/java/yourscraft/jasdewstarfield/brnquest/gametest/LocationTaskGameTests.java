@@ -99,6 +99,16 @@ public final class LocationTaskGameTests {
         try {
             var result = ServerFieldSources.query(player,ResourceLocation.parse("brnquest:dimension"),"overworld", "minecraft:overworld");
             helper.assertTrue(result.error().isEmpty() && result.selectedCount()==1 && result.current().equals("minecraft:overworld"), "authorized search resolves live dimension and current value");
+            // Real registries contain more than one page: every ID/tag must remain retrievable.
+            var firstPage = ServerFieldSources.query(player,ResourceLocation.parse("brnquest:biome"),"", "");
+            helper.assertTrue(firstPage.total()>64,"biome fixture exercises the historical cutoff");
+            var all = new java.util.HashSet<String>();
+            for (int offset=0; offset<firstPage.total(); offset+=ServerFieldSources.PAGE_SIZE) {
+                var page=ServerFieldSources.query(player,ResourceLocation.parse("brnquest:biome"),"", "",offset);
+                helper.assertTrue(page.entries().size()<=64,"each response remains bounded");
+                page.entries().forEach(entry -> all.add(entry.value()));
+            }
+            helper.assertTrue(all.size()==firstPage.total(),"all real biome IDs and tags are reachable without truncation or duplicate pages");
             var position = ServerFieldSources.query(player,ResourceLocation.parse("brnquest:position"),"", "0,0,0");
             helper.assertTrue(position.current().equals(vector(pos)), "current coordinates come from the server player");
             if (net.neoforged.fml.ModList.get().isLoaded("brnquest_example")) {

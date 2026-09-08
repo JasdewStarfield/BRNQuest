@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.6` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.7` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -99,7 +99,7 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 
 字段调用 `withServerSource(namespace:id)` 后，通用编辑器显示搜索选择入口。来源通过插件回调中的 `registrar.fieldSource(id, source)` 注册，与 task/reward 声明一起预检和提交；命名空间必须归属插件。旧 `resourceRegistry` 元数据只作提示，与此入口独立。
 
-`Source.query(player, filter, selected)` 只读查询当前服务端状态，返回 `Result(entries, total, selectedCount, error, current, detail)`；`Entry` 保存原始值和解析数。`current` 非空时允许填入当前值，`detail` 供错误悬浮提示。来源不要返回超过 64 个候选；客户端可搜索缩小范围。`error` 为空表示无错误，否则对应 `screen.brnquest.field.error.<code>` 翻译键。来源负责相关语言资源。服务端统一要求权限等级 2，输入及响应长度受协议限制，结果不是任何作者写入的授权。
+`Source.query(player, filter, selected)` 只读查询当前服务端状态，返回 `Result(entries, total, selectedCount, error, current, detail)`；`Entry` 保存原始值和解析数。`current` 非空时允许填入当前值，`detail` 供错误悬浮提示。旧 query 回调应返回完整集合，由默认 queryPage 切成每页 64 项；大量或昂贵的来源覆盖 queryPage，只构建请求页。不能先截断完整集合再把 total 写成更大的数量。客户端按总数滚动并加载可见页。`error` 为空表示无错误，否则对应 `screen.brnquest.field.error.<code>` 翻译键。来源负责相关语言资源。服务端统一要求权限等级 2，输入及响应长度受协议限制，结果不是任何作者写入的授权。
 
 示例附属模组的 marker 类型展示采样和 player_tags 来源；新增同类扩展不需要修改 QuestScreen 或 ProgressEngine。注册表来源在资源 reload 后重新查询，原始 ID、#tag 或 #分组写入配置，不展开保存为具体成员列表。
 

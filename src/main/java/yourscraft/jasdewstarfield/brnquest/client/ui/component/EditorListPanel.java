@@ -36,6 +36,9 @@ public final class EditorListPanel<K> {
         if (rowHeight <= 0 || rowGap < 0 || rowGap >= rowHeight || count < 0) {
             throw new IllegalArgumentException("Invalid list metrics");
         }
+        // Vertical clipping changes usable scroll height, not just drawing: keep the last row reachable.
+        UiRect clipped = bounds.intersection(screenClip);
+        bounds = new UiRect(bounds.left(), clipped.top(), bounds.right(), clipped.bottom());
         int contentHeight = Math.multiplyExact(count, rowHeight);
         int offset = (int) Math.round(scroll.advanceFrame(contentHeight, bounds.height(), seconds, speed));
         UiRect viewport = bounds.intersection(screenClip);

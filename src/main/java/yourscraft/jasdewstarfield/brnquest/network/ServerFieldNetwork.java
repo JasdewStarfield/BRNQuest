@@ -16,7 +16,9 @@ import yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources;
 public final class ServerFieldNetwork {
     private static final Gson JSON = new Gson();
     private ServerFieldNetwork() {}
-    public record Query(String id, String source, String filter, String selected) {}
+    public record Query(String id, String source, String filter, String selected, int offset) {
+        public Query(String id, String source, String filter, String selected) { this(id, source, filter, selected, 0); }
+    }
     public record Reply(String id, ServerFieldSources.Result result) {}
     public record Request(String json) implements CustomPacketPayload {
         public static final Type<Request> TYPE = new Type<>(ResourceLocation.parse("brnquest:field_query"));
@@ -33,11 +35,11 @@ public final class ServerFieldNetwork {
             if (!(context.player() instanceof ServerPlayer player)) return;
             try {
                 var query = JSON.fromJson(payload.json(), Query.class);
-                if (query == null || query.id() == null || query.id().length() > 64 || query.source() == null || query.source().length() > 256
+                if (query == null || query.offset() < 0 || query.id() == null || query.id().length() > 64 || query.source() == null || query.source().length() > 256
                         || query.filter() == null || query.filter().length() > 128 || query.selected() == null || query.selected().length() > 256) return;
                 var source = ResourceLocation.tryParse(query.source());
                 if (source == null) return;
-                var result = ServerFieldSources.query(player, source, query.filter(), query.selected());
+                var result = ServerFieldSources.query(player, source, query.filter(), query.selected(), query.offset());
                 BrnQuestNetwork.send(player, new Response(JSON.toJson(new Reply(query.id(),result))));
             } catch (com.google.gson.JsonParseException | IllegalArgumentException ignored) { /* Malformed read requests never reach a source or mutation. */ }
         });

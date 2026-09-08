@@ -104,7 +104,8 @@ final class QuestDetailRows {
             graphics.renderItemDecorations(font, stack, x + 4, y + 4);
         }
         else graphics.drawCenteredString(font, presentation.symbol(rewardView), x + 12, y + 8, 0xFFFFFFFF);
-        if (claimable && !stack.isEmpty()) {
+        // Claim attention belongs to the reward state, including symbol-only extension rewards.
+        if (claimable) {
             renderAttentionPing(graphics, REWARD_PING_TEXTURE, x + 18, y - 2, pingOffset);
         }
         // Keep the claimed marker above the icon; the bottom-right corner belongs to vanilla count text.

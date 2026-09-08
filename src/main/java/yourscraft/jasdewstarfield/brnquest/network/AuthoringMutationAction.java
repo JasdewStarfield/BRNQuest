@@ -44,4 +44,12 @@ enum AuthoringMutationAction {
             return Optional.empty();
         }
     }
+    /** Families remain explicit so adding an action cannot accidentally route it by name substring. */
+    boolean isTypedEntry() {
+        return switch (this) {
+            case ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
+                 ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> true;
+            default -> false;
+        };
+    }
 }

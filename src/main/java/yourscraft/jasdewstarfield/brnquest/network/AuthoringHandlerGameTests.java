@@ -194,4 +194,120 @@ public final class AuthoringHandlerGameTests {
         players.getOps().remove(player.getGameProfile());
         if (players.getPlayer(player.getUUID()) == player) players.remove(player);
     }
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerStructure")
+    @PrefixGameTestTemplate(false)
+    public static void structuralMutationsUseTheDecodedActionAndRevision(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var fixture = new MutationFixture(helper, admin);
+            fixture.apply("ADD_GROUP", "g", "", "");
+            fixture.apply("ADD_GROUP", "g2", "", "");
+            fixture.apply("UPDATE_GROUP", "g", "", "");
+            fixture.apply("MOVE_GROUP", "g2", "", "");
+            fixture.apply("ADD_CHAPTER", "c", "g", "");
+            fixture.apply("ADD_CHAPTER", "c2", "g2", "");
+            fixture.apply("UPDATE_CHAPTER", "c", "g2", "");
+            fixture.apply("MOVE_CHAPTER", "c2", "", "");
+            fixture.apply("ADD_QUEST", "q", "c", "");
+            fixture.apply("ADD_QUEST", "q2", "c2", "");
+            fixture.apply("ADD_DEPENDENCY", "q2", "", "q");
+            fixture.apply("REMOVE_DEPENDENCY", "q2", "", "q");
+            fixture.apply("MOVE_QUESTS", "", "", "");
+            check(helper, fixture.quest("q").x() == 12 && last(fixture.packets).action().equals("PATCH"), "position mutation emits patch");
+            fixture.apply("UPDATE_QUEST_TRANSLATION", "q", "", "");
+            fixture.checkQuestProperties();
+            fixture.apply("COPY_QUEST", "q_copy", "", "q");
+            String copiedRevision = fixture.revision;
+            fixture.apply("UNDO", "", "", "");
+            fixture.apply("REDO", "", "", "");
+            check(helper, fixture.revision.equals(copiedRevision), "history round trip preserves exact revision");
+            fixture.apply("DELETE_QUEST", "q_copy", "", "");
+            fixture.apply("DELETE_CHAPTER", "c2", "", "");
+            fixture.apply("DELETE_GROUP", "g", "", "");
+            fixture.apply("REVIEW", "", "", "");
+            check(helper, fixture.seen.size() == 18, "all structure/history actions and review executed");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Small real-server fixture: the decoder and handler are the same ones used by registered payloads. */
+    private static final class MutationFixture {
+        private final GameTestHelper helper;
+        private final ServerPlayer player;
+        private final ResourceLocation book;
+        private final UUID token;
+        private String revision;
+        private final List<CustomPacketPayload> packets = new ArrayList<>();
+        private final java.util.Set<AuthoringMutationAction> seen = java.util.EnumSet.noneOf(AuthoringMutationAction.class);
+        private final AuthoringResponseSender sender;
+        private final AuthoringMutationHandler handler;
+
+        MutationFixture(GameTestHelper helper, ServerPlayer player) {
+            this.helper = helper; this.player = player;
+            book = ResourceLocation.parse("brnquest:mutation_handler_" + player.getUUID().toString().replace("-", ""));
+            var created = new DraftService().createEmpty(player, book, "Mutation fixture");
+            check(helper, created.success(), created.code());
+            var opened = EditSessionService.get().open(player, created.value());
+            check(helper, opened.success(), opened.code());
+            token = opened.value().sessionId(); revision = created.value().draftRevision();
+            sender = new AuthoringResponseSender(packets::add, player.getServer()::getTickCount);
+            handler = new AuthoringMutationHandler(player, sender);
+        }
+
+        ResourceLocation id(String path) { return ResourceLocation.parse("brnquest:" + path); }
+        String raw(String path) { return path.isEmpty() ? "" : id(path).toString(); }
+        QuestBookDefinition snapshot() { return EditSessionService.get().snapshot(player, token, book, revision).value().book(); }
+        QuestDefinition quest(String path) { return snapshot().quests().stream().filter(q -> q.id().equals(id(path))).findFirst().orElseThrow(); }
+
+        void apply(String action, String target, String parent, String source) { apply(action, target, parent, source, Map.of()); }
+
+        void apply(String action, String target, String parent, String source, Map<String, String> config) {
+            String title = action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
+            if (action.equals("UPDATE_QUEST_TRANSLATION")) config = Map.of("title", "本地化标题", "description", "描述");
+            var positions = action.equals("MOVE_QUESTS") ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
+            int index = action.equals("UPDATE_TASK") || action.equals("UPDATE_REWARD") ? 1 : 0;
+            var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
+                    raw(target), raw(parent), raw(source), title, index, 1, 2, positions, config);
+            var decoded = AuthoringRequestDecoder.mutation(GSON.toJson(wire));
+            check(helper, decoded.success(), action + " decoded: " + decoded.failure());
+            packets.clear(); handler.mutate(decoded.value());
+            var response = last(packets);
+            check(helper, response.status().equals("SUCCESS") || response.status().equals("NO_CHANGE"),
+                    action + " result: " + response.code() + " " + response.message());
+            revision = response.draftRevision(); seen.add(decoded.value().action());
+            check(helper, EditSessionService.get().inspect(player, book).value().draftRevision().equals(revision), "response revision is authoritative");
+        }
+
+        void checkQuestProperties() {
+            var questHandler = new AuthoringQuestUpdateHandler(player, sender);
+            var wire = new AuthoringNetwork.QuestUpdateWire(token.toString(), book.toString(), revision,
+                    raw("q"), raw("renamed"), "Updated", "", "", "ITEM", "minecraft:stone", true,
+                    99.0, 99.0, null, null, null, null, Map.of());
+            questHandler.update(AuthoringRequestDecoder.quest(GSON.toJson(wire)).value());
+            check(helper, last(packets).code().equals("POSITION_WITH_RENAME"), "rename cannot simultaneously move coordinates");
+            wire = new AuthoringNetwork.QuestUpdateWire(token.toString(), book.toString(), revision,
+                    raw("q"), raw("q"), "Updated", "", "", "ITEM", "brnquest:unregistered_icon", false,
+                    null, null, null, null, null, null, Map.of());
+            questHandler.update(AuthoringRequestDecoder.quest(GSON.toJson(wire)).value());
+            check(helper, last(packets).code().equals("INVALID_ICON_ITEM"), "handler checks icon registry on the server");
+            check(helper, EditSessionService.get().inspect(player, book).value().draftRevision().equals(revision), "rejected properties never advance revision");
+            wire = new AuthoringNetwork.QuestUpdateWire(token.toString(), book.toString(), revision,
+                    raw("q"), raw("q"), "Updated", "", "", "ITEM", "minecraft:stone", true,
+                    12.0, -8.0, "square", 1.0, 1.0, 0.0, Map.of("repeatable", "true"));
+            var decoded = AuthoringRequestDecoder.quest(GSON.toJson(wire));
+            check(helper, decoded.success(), "complete property request decoded");
+            questHandler.update(decoded.value());
+            check(helper, last(packets).status().equals("SUCCESS"), "complete property update succeeds");
+            revision = last(packets).draftRevision();
+            check(helper, quest("q").title().equals("Updated") && quest("q").behavior().repeatable(), "properties and behavior applied without losing typed entries");
+            var stale = new AuthoringRequestDecoder.QuestRequest(token, book, "stale", id("q"), id("q"), "Stale", "", "",
+                    null, null, true, null, null, null, null);
+            questHandler.update(stale);
+            check(helper, last(packets).code().equals("STALE_DRAFT_REVISION"), "property handler still defers revision to service");
+            var missing = new AuthoringRequestDecoder.QuestRequest(token, book, revision, id("missing"), id("missing"), "Missing", "", "",
+                    null, null, true, null, null, null, null);
+            questHandler.update(missing);
+            check(helper, last(packets).code().equals("QUEST_NOT_FOUND"), "disappeared quest keeps stable error");
+        }
+    }
 }

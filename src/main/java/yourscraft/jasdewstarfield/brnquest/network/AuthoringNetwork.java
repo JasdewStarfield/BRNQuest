@@ -370,85 +370,8 @@ public final class AuthoringNetwork {
      * Runs the author-facing one-stop operation without weakening any existing server-side gate.
      * Later-stage failures explicitly report that earlier durable stages may already have completed.
      */
-    static void publishAndApply(ServerPlayer player, String rawSessionId, String rawBookId,
-                                        String draftRevision) {
-        UUID sessionId = parseUuid(rawSessionId);
-        ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
-        if (sessionId == null || bookId == null || draftRevision == null || draftRevision.isBlank()) {
-            responses(player).sendFailure("PUBLISH", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_PUBLISH_REQUEST", "Incomplete publish request");
-            return;
-        }
-        debugPublishPhase(player, bookId, draftRevision, "request", "STARTED", "PUBLISH_REQUEST_ACCEPTED");
-        var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
-        debugPublishPhase(player, bookId, draftRevision, "save", saved.status().name(), saved.code());
-        if (!saved.success()) {
-            responses(player).sendFailure("PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
-            return;
-        }
-        var published = AuthorApi.publish(player, sessionId, bookId, draftRevision);
-        debugPublishPhase(player, bookId, draftRevision, "workspace", published.status().name(), published.code());
-        if (!published.success()) {
-            String message = "Draft was saved, but publish failed: " + published.message();
-            if (published.value() != null && published.value().revisionCheck() != null
-                    && published.value().revisionCheck().hasConflicts()) {
-                var first = published.value().revisionCheck().conflicts().getFirst();
-                message += ": expected " + shortRevision(first.expectedRevision())
-                        + ", actual " + shortRevision(first.actualRevision());
-            } else if (published.value() != null && !published.value().diagnostics().isEmpty()) {
-                var first = published.value().diagnostics().getFirst();
-                message += ": " + first.code() + " " + first.objectId() + " — " + first.message();
-            }
-            responses(player).sendFailure("PUBLISH", published.status(), published.code(),
-                    message);
-            return;
-        }
-        var deployed = AuthorApi.deploy(player, true);
-        debugPublishPhase(player, bookId, draftRevision, "deploy", deployed.status().name(), deployed.code());
-        if (!deployed.success()) {
-            responses(player).sendFailure("PUBLISH", deployed.status(), deployed.code(),
-                    "Workspace publish completed, but deployment failed: " + deployed.message());
-            return;
-        }
-        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
-        debugPublishPhase(player, bookId, draftRevision, "renew", renewed.status().name(), renewed.code());
-        if (!renewed.success()) {
-            responses(player).sendFailure("PUBLISH", renewed.status(), renewed.code(),
-                    "Workspace was deployed, but the edit lease could not be renewed: " + renewed.message());
-            return;
-        }
-        AuthorApi.reload(player).whenComplete((reloaded, error) -> player.getServer().execute(() -> {
-            if (error != null) {
-                debugPublishPhase(player, bookId, draftRevision, "reload", "IO_FAILURE", "RELOAD_FAILED");
-                responses(player).sendFailure("PUBLISH", AuthorOperationResult.Status.IO_FAILURE, "RELOAD_FAILED",
-                        "Workspace was deployed, but reload failed: " + error.getMessage());
-            } else if (!reloaded.success()) {
-                debugPublishPhase(player, bookId, draftRevision, "reload",
-                        reloaded.status().name(), reloaded.code());
-                responses(player).sendFailure("PUBLISH", reloaded.status(), reloaded.code(),
-                        "Workspace was deployed, but reload failed: " + reloaded.message());
-            } else {
-                debugPublishPhase(player, bookId, draftRevision, "reload",
-                        reloaded.status().name(), "PUBLISH_APPLY_COMPLETE");
-                responses(player).sendSession("PUBLISH", AuthorOperationResult.Status.SUCCESS, "PUBLISH_APPLY_COMPLETE",
-                        "Draft published, deployed with backup, and reloaded", renewed.value(), 0, 0);
-            }
-        }));
-    }
-
     /** Keeps detailed pipeline telemetry available without adding noise to normal INFO logs. */
-    private static void debugPublishPhase(ServerPlayer player, ResourceLocation bookId, String revision,
-                                          String phase, String status, String code) {
-        BRNQuest.LOGGER.debug("[BRNQuest/EDITOR] actor={} book={} revision={} phase={} status={} code={}",
-                player.getGameProfile().getName(), bookId, shortRevision(revision), phase, status, code);
-    }
-
     /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
-    private static String shortRevision(String revision) {
-        if (revision == null || revision.isBlank()) return "<none>";
-        return revision.length() <= 12 ? revision : revision.substring(0, 12);
-    }
-
     private static boolean bool(Map<String, String> values, String key) {
         String value = values.getOrDefault(key, "false");
         return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
@@ -973,5 +896,8 @@ public final class AuthoringNetwork {
                                       String draftRevision) {
         new AuthoringPublicationHandler(player).review(
                 new AuthoringRequestDecoder.SessionRequest(sessionId, bookId, draftRevision));
+    }
+    static void publishAndApply(ServerPlayer player, String sessionId, String bookId, String revision) {
+        dispatch(player, "PUBLISH", AuthoringRequestDecoder.publication(sessionId, bookId, revision, true), request -> new AuthoringPublicationHandler(player).publishAndApply(request));
     }
 }

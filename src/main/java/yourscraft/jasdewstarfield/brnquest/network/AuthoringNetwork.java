@@ -372,143 +372,6 @@ public final class AuthoringNetwork {
      */
     /** Keeps detailed pipeline telemetry available without adding noise to normal INFO logs. */
     /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
-    private static boolean bool(Map<String, String> values, String key) {
-        String value = values.getOrDefault(key, "false");
-        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
-    }
-
-    private static int integer(Map<String, String> values, String key) {
-        return Integer.parseInt(values.getOrDefault(key, "0").replaceAll("[^0-9-]", ""));
-    }
-
-    static void updateQuest(ServerPlayer player, String json) {
-        QuestUpdateWire wire;
-        try {
-            wire = GSON.fromJson(json, QuestUpdateWire.class);
-        } catch (RuntimeException exception) {
-            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_QUEST_UPDATE", "Malformed quest update request");
-            return;
-        }
-        UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
-        ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
-        ResourceLocation questId = wire == null ? null : ResourceLocation.tryParse(wire.questId());
-        ResourceLocation replacementQuestId = wire == null ? null : ResourceLocation.tryParse(wire.replacementQuestId());
-        if (sessionId == null || bookId == null || questId == null || replacementQuestId == null
-                || wire.draftRevision() == null || wire.title() == null || wire.subtitle() == null
-                || wire.description() == null || wire.iconKind() == null || wire.iconValue() == null) {
-            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_QUEST_UPDATE", "Incomplete quest update request");
-            return;
-        }
-        AuthorOperationResult<DraftSnapshot> current = EditSessionService.get().snapshot(player, sessionId,
-                bookId, wire.draftRevision());
-        QuestDefinition quest = current.success() ? current.value().book().quests().stream()
-                .filter(candidate -> candidate.id().equals(questId)).findFirst().orElse(null) : null;
-        if (!current.success() || quest == null) {
-            responses(player).sendFailure("UPDATE", current.success() ? AuthorOperationResult.Status.NOT_FOUND : current.status(),
-                    current.success() ? "QUEST_NOT_FOUND" : current.code(),
-                    current.success() ? "Selected quest no longer exists" : current.message());
-            return;
-        }
-        boolean hasX = wire.x() != null;
-        boolean hasY = wire.y() != null;
-        if (hasX != hasY || (hasX && (!Double.isFinite(wire.x()) || !Double.isFinite(wire.y())))) {
-            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_QUEST_POSITION", "Quest coordinates must be finite and supplied together");
-            return;
-        }
-        if (!replacementQuestId.equals(questId) && hasX
-                && (Double.compare(wire.x(), quest.x()) != 0 || Double.compare(wire.y(), quest.y()) != 0)) {
-            responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "POSITION_WITH_RENAME", "Rename the quest before editing its coordinates");
-            return;
-        }
-        String icon = quest.icon();
-        if (!wire.preserveIcon()) {
-            ResourceLocation iconId = wire.iconValue().isBlank() ? null : ResourceLocation.tryParse(wire.iconValue());
-            if ("ITEM".equals(wire.iconKind())) {
-                if (!wire.iconValue().isBlank() && (iconId == null || !BuiltInRegistries.ITEM.containsKey(iconId))) {
-                    responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                            "INVALID_ICON_ITEM", "Icon item must be a registered item ID");
-                    return;
-                }
-                icon = iconId == null ? "" : "{id:\"" + iconId + "\",count:1}";
-            } else if ("TEXTURE".equals(wire.iconKind())) {
-                if (!wire.iconValue().isBlank() && iconId == null) {
-                    responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                            "INVALID_ICON_TEXTURE", "Icon texture must be a ResourceLocation");
-                    return;
-                }
-                icon = iconId == null ? "" : QuestIconValue.texture(iconId);
-            } else {
-                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                        "INVALID_ICON_KIND", "Unknown quest icon kind");
-                return;
-            }
-        }
-        double replacementX = hasX ? wire.x() : quest.x();
-        double replacementY = hasY ? wire.y() : quest.y();
-        QuestAppearance appearance = quest.appearance();
-        if (wire.shape() != null || wire.size() != null || wire.iconScale() != null || wire.minWidth() != null) {
-            if (wire.shape() == null || wire.size() == null || wire.iconScale() == null || wire.minWidth() == null
-                    || wire.shape().isBlank() || !Double.isFinite(wire.size()) || wire.size() <= 0
-                    || !Double.isFinite(wire.iconScale()) || wire.iconScale() <= 0
-                    || !Double.isFinite(wire.minWidth()) || wire.minWidth() < 0) {
-                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                        "INVALID_QUEST_APPEARANCE", "Quest appearance values must be finite and positive");
-                return;
-            }
-            appearance = new QuestAppearance(wire.shape(), wire.size(), wire.iconScale(), wire.minWidth());
-        }
-        QuestBehavior behavior = quest.behavior();
-        if (wire.behavior() != null && !wire.behavior().isEmpty()) {
-            try {
-                Map<String, String> values = wire.behavior();
-                behavior = new QuestBehavior(bool(values, "hide_until_dependencies_visible"),
-                        bool(values, "hide_until_dependencies_complete"), bool(values, "invisible_until_complete"),
-                        integer(values, "visible_after_tasks"), bool(values, "hide_details_until_startable"),
-                        bool(values, "hide_text_until_complete"), bool(values, "hide_lock_icon"),
-                        DependencyRequirement.parse(values.get("dependency_requirement")),
-                        integer(values, "minimum_required_dependencies"), bool(values, "sequential_tasks"),
-                        bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"),
-                        bool(values, "ignore_reward_blocking"));
-            } catch (RuntimeException exception) {
-                responses(player).sendFailure("UPDATE", AuthorOperationResult.Status.INVALID_REQUEST,
-                        "INVALID_QUEST_BEHAVIOR", "Quest behavior contains an invalid number or enum");
-                return;
-            }
-        }
-        QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
-                wire.title(), wire.subtitle(), wire.description(), icon, replacementX, replacementY,
-                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior, quest.extensions());
-        // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
-        // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.
-        var updated = replacementQuestId.equals(questId) && hasX
-                ? AuthorApi.editor().updateQuest(player, sessionId, bookId, wire.draftRevision(), questId, replacement)
-                : AuthorApi.editor().updateQuestBasics(player, sessionId, bookId, wire.draftRevision(), questId,
-                replacement);
-        if (!updated.success()) {
-            String message = updated.message();
-            if (updated.value() != null && !updated.value().diagnostics().isEmpty()) {
-                var first = updated.value().diagnostics().getFirst();
-                message += ": " + first.code() + " " + first.message();
-            }
-            responses(player).sendFailure("UPDATE", updated.status(), updated.code(), message);
-            return;
-        }
-        DraftSnapshot draft = updated.value().snapshot();
-        var renewed = AuthorApi.renew(player, sessionId, draft.draftRevision());
-        if (!renewed.success()) {
-            responses(player).sendFailure("UPDATE", renewed.status(), renewed.code(), renewed.message());
-            return;
-        }
-        // Property completion updates the authoritative session; the visible Save
-        // control is the explicit boundary that persists the accumulated draft.
-        sendDraft(player, "UPDATE", "QUEST_UPDATED_UNSAVED",
-                "Quest properties updated; save the draft to persist them", renewed.value(), draft);
-    }
-
     static void mutate(ServerPlayer player, String json) {
         EditorMutationWire wire;
         try {
@@ -760,21 +623,6 @@ public final class AuthoringNetwork {
     }
 
     /** Mutation JSON is untrusted even though the complete candidate is validated before commit. */
-    static Map<String, String> boundedConfig(Map<String, String> config) {
-        if (config == null || config.isEmpty()) return Map.of();
-        if (config.size() > 64) throw new IllegalArgumentException("Typed config exceeds 64 fields");
-        Map<String, String> bounded = new LinkedHashMap<>();
-        for (Map.Entry<String, String> entry : config.entrySet()) {
-            String key = entry.getKey();
-            String value = entry.getValue();
-            if (key == null || key.isBlank() || key.length() > 128 || value == null || value.length() > 65_536) {
-                throw new IllegalArgumentException("Typed config contains an invalid field");
-            }
-            bounded.put(key, value);
-        }
-        return Map.copyOf(bounded);
-    }
-
     private static Map<String, String> taskMutationConfig(ServerPlayer player, ResourceLocation typeId,
                                                            Map<String, String> config) {
         Map<String, String> bounded = boundedConfig(config);
@@ -899,5 +747,12 @@ public final class AuthoringNetwork {
     }
     static void publishAndApply(ServerPlayer player, String sessionId, String bookId, String revision) {
         dispatch(player, "PUBLISH", AuthoringRequestDecoder.publication(sessionId, bookId, revision, true), request -> new AuthoringPublicationHandler(player).publishAndApply(request));
+    }
+    static void updateQuest(ServerPlayer player, String json) {
+        dispatch(player, "UPDATE", AuthoringRequestDecoder.quest(json), request -> new AuthoringQuestUpdateHandler(player).update(request));
+    }
+
+    static Map<String, String> boundedConfig(Map<String, String> config) {
+        return AuthoringRequestDecoder.boundedConfig(config);
     }
 }

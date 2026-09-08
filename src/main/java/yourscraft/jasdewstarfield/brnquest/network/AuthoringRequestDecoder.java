@@ -70,6 +70,7 @@ final class AuthoringRequestDecoder {
             throw invalid(null, "", "Request exceeds the editor metadata limit");
         var tree = JsonParser.parseString(json);
         if (!tree.isJsonObject()) throw invalid(null, "", "Request must be a JSON object");
+        checkShape(tree.getAsJsonObject(), type);
         return GSON.fromJson(tree, type);
     }
 
@@ -122,5 +123,143 @@ final class AuthoringRequestDecoder {
         return boundary(publish ? "INVALID_PUBLISH_REQUEST" : "INVALID_SAVE_REQUEST",
                 publish ? "Incomplete publish request" : "Incomplete draft save request", () -> new SessionRequest(
                         uuid(sessionId), id(bookId, "bookId"), text(revision, "draftRevision", 32767, false)));
+    }
+    enum IconKind { ITEM, TEXTURE }
+    record AppearanceRequest(String shape, double size, double iconScale, double minWidth) {}
+    record BehaviorRequest(boolean hideUntilDependenciesVisible, boolean hideUntilDependenciesComplete,
+                           boolean invisibleUntilComplete, int visibleAfterTasks, boolean hideDetailsUntilStartable,
+                           boolean hideTextUntilComplete, boolean hideLockIcon,
+                           yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement dependencyRequirement,
+                           int minimumRequiredDependencies, boolean sequentialTasks, boolean repeatable,
+                           int repeatCooldownSeconds, boolean ignoreRewardBlocking) {}
+    record QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
+                        ResourceLocation replacementQuestId, String title, String subtitle, String description,
+                        IconKind iconKind, ResourceLocation iconId, boolean preserveIcon, Double x, Double y,
+                        AppearanceRequest appearance, BehaviorRequest behavior) {}
+
+    static Result<QuestRequest> quest(String json) {
+        return boundary("INVALID_QUEST_UPDATE", "Incomplete quest update request", () -> {
+            QuestUpdateWire wire = json(json, QuestUpdateWire.class);
+            UUID session = uuid(wire.sessionId());
+            ResourceLocation book = id(wire.bookId(), "bookId");
+            ResourceLocation quest = id(wire.questId(), "questId");
+            ResourceLocation replacement = id(wire.replacementQuestId(), "replacementQuestId");
+            String revision = text(wire.draftRevision(), "draftRevision", 32767, false);
+            text(wire.title(), "title", 256, true);
+            text(wire.subtitle(), "subtitle", 256, true);
+            text(wire.description(), "description", 32768, true);
+            text(wire.iconKind(), "iconKind", 32767, true);
+            text(wire.iconValue(), "iconValue", 32767, true);
+            if ((wire.x() == null) != (wire.y() == null)
+                    || (wire.x() != null && (!Double.isFinite(wire.x()) || !Double.isFinite(wire.y()))))
+                throw invalid("INVALID_QUEST_POSITION", "position", "Quest coordinates must be finite and supplied together");
+            IconKind kind = null;
+            ResourceLocation icon = null;
+            if (!wire.preserveIcon()) {
+                try { kind = IconKind.valueOf(wire.iconKind()); }
+                catch (RuntimeException invalid) { throw invalid("INVALID_ICON_KIND", "iconKind", "Unknown quest icon kind"); }
+                if (!wire.iconValue().isBlank()) {
+                    try { icon = id(wire.iconValue(), "iconValue"); }
+                    catch (RuntimeException invalid) {
+                        throw invalid(kind == IconKind.ITEM ? "INVALID_ICON_ITEM" : "INVALID_ICON_TEXTURE", "iconValue",
+                                kind == IconKind.ITEM ? "Icon item must be a registered item ID" : "Icon texture must be a ResourceLocation");
+                    }
+                }
+            }
+            AppearanceRequest appearance = null;
+            if (wire.shape() != null || wire.size() != null || wire.iconScale() != null || wire.minWidth() != null) {
+                if (wire.shape() == null || wire.size() == null || wire.iconScale() == null || wire.minWidth() == null
+                        || wire.shape().isBlank() || wire.shape().length() > 32767 || !Double.isFinite(wire.size()) || wire.size() <= 0
+                        || !Double.isFinite(wire.iconScale()) || wire.iconScale() <= 0
+                        || !Double.isFinite(wire.minWidth()) || wire.minWidth() < 0)
+                    throw invalid("INVALID_QUEST_APPEARANCE", "appearance", "Quest appearance values must be finite and positive");
+                appearance = new AppearanceRequest(wire.shape(), wire.size(), wire.iconScale(), wire.minWidth());
+            }
+            BehaviorRequest behavior = null;
+            if (wire.behavior() != null && !wire.behavior().isEmpty()) {
+                try {
+                    var values = boundedConfig(wire.behavior());
+                    String requirement = values.getOrDefault("dependency_requirement", "all_completed");
+                    var dependency = yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement.valueOf(
+                            requirement.strip().toUpperCase(java.util.Locale.ROOT));
+                    behavior = new BehaviorRequest(bool(values, "hide_until_dependencies_visible"),
+                            bool(values, "hide_until_dependencies_complete"), bool(values, "invisible_until_complete"),
+                            integer(values, "visible_after_tasks"), bool(values, "hide_details_until_startable"),
+                            bool(values, "hide_text_until_complete"), bool(values, "hide_lock_icon"), dependency,
+                            integer(values, "minimum_required_dependencies"), bool(values, "sequential_tasks"),
+                            bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"), bool(values, "ignore_reward_blocking"));
+                } catch (RuntimeException invalid) {
+                    throw invalid("INVALID_QUEST_BEHAVIOR", "behavior", "Quest behavior contains an invalid number or enum");
+                }
+            }
+            return new QuestRequest(session, book, revision, quest, replacement, wire.title(), wire.subtitle(),
+                    wire.description(), kind, icon, wire.preserveIcon(), wire.x(), wire.y(), appearance, behavior);
+        });
+    }
+
+    private static boolean bool(java.util.Map<String, String> values, String key) {
+        String value = values.getOrDefault(key, "false");
+        if ("true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value)) return true;
+        if ("false".equalsIgnoreCase(value) || "0b".equalsIgnoreCase(value)) return false;
+        throw invalid(null, "behavior." + key, "Invalid boolean");
+    }
+
+    private static int integer(java.util.Map<String, String> values, String key) {
+        String value = values.getOrDefault(key, "0").strip();
+        if (!value.matches("-?[0-9]+[bBsSlL]?")) throw invalid(null, "behavior." + key, "Invalid integer");
+        return Integer.parseInt(value.replaceAll("[bBsSlL]$", ""));
+    }
+
+    /** Opaque extension entries remain byte-for-byte strings and are defensively copied. */
+    static java.util.Map<String, String> boundedConfig(java.util.Map<String, String> config) {
+        if (config == null || config.isEmpty()) return java.util.Map.of();
+        if (config.size() > 64) throw invalid(null, "config", "Typed config exceeds 64 fields");
+        var bounded = new java.util.LinkedHashMap<String, String>();
+        for (var entry : config.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (key == null || key.isBlank() || key.length() > 128 || value == null || value.length() > 65536)
+                throw invalid(null, "config", "Typed config contains an invalid field");
+            bounded.put(key, value);
+        }
+        return java.util.Collections.unmodifiableMap(bounded);
+    }
+    /** Gson accepts scalar coercions by default; reject them before creating typed request records. */
+    private static void checkShape(com.google.gson.JsonObject object, Class<?> type) {
+        for (var component : type.getRecordComponents()) {
+            var value = object.get(component.getName());
+            if (value == null || value.isJsonNull()) continue; // Required fields are checked by the specific decoder.
+            Class<?> field = component.getType();
+            boolean scalar = field == String.class || field == boolean.class || field == Boolean.class
+                    || field == int.class || field == double.class || field == Double.class;
+            if (scalar) {
+                if (!value.isJsonPrimitive()) throw invalid(null, component.getName(), "Invalid field type");
+                var primitive = value.getAsJsonPrimitive();
+                if ((field == String.class && !primitive.isString())
+                        || ((field == boolean.class || field == Boolean.class) && !primitive.isBoolean())
+                        || ((field == int.class || field == double.class || field == Double.class) && !primitive.isNumber()))
+                    throw invalid(null, component.getName(), "Invalid field type");
+                if (field == int.class) {
+                    try { primitive.getAsBigDecimal().intValueExact(); }
+                    catch (RuntimeException invalid) { throw invalid(null, component.getName(), "Invalid integer"); }
+                }
+            } else if (java.util.Map.class.isAssignableFrom(field)) {
+                if (!value.isJsonObject()) throw invalid(null, component.getName(), "Expected string map");
+                for (var entry : value.getAsJsonObject().entrySet()) {
+                    if (!entry.getValue().isJsonPrimitive() || !entry.getValue().getAsJsonPrimitive().isString())
+                        throw invalid(null, component.getName() + "." + entry.getKey(), "Expected string config value");
+                }
+            } else if (java.util.List.class.isAssignableFrom(field)) {
+                if (!value.isJsonArray()) throw invalid(null, component.getName(), "Expected position list");
+                for (var entry : value.getAsJsonArray()) {
+                    if (!entry.isJsonObject()) throw invalid(null, "positions", "Expected position object");
+                    var position = entry.getAsJsonObject();
+                    for (String required : java.util.List.of("questId", "x", "y"))
+                        if (!position.has(required) || position.get(required).isJsonNull())
+                            throw invalid(null, "positions." + required, "Incomplete position");
+                    checkShape(position, PositionWire.class);
+                }
+            }
+        }
     }
 }

@@ -188,6 +188,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, OpenScreenPayload.TYPE, OpenScreenPayload.CODEC, ClientDelegate::open);
         AuthoringNetwork.register(registrar);
         AdminProgressNetwork.register(registrar);
+        ServerFieldNetwork.register(registrar);
     }
 
     public static void syncAll(ServerPlayer player, boolean revisionMatches) {

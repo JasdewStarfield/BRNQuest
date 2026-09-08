@@ -24,6 +24,7 @@ public final class ExtensionRegistrationLifecycle {
         // companion callback can race the first task-book decode.
         BrnQuestPlugins.freeze();
         TaskTypeRegistry.freeze();
+        yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources.freeze();
         RewardTypeRegistry.freeze();
         ProgressOwnerProviderRegistry.freeze();
         // Script types use their own candidate window and stay closed outside script evaluation.

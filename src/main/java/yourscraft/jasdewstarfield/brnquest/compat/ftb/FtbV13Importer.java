@@ -284,7 +284,30 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].tasks[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("optional_task"));
-            recordConfigFields(raw, Set.of("id", "type", "optional_task"), file,
+            if (mappedType.getNamespace().equals("brnquest") && Set.of("dimension", "biome", "location", "structure").contains(mappedType.getPath())) {
+                String kind = mappedType.getPath();
+                String selectorKey = kind.equals("location") ? "dimension" : kind;
+                config.put(selectorKey, raw.contains(selectorKey) ? raw.getString(selectorKey)
+                        : kind.equals("dimension") ? "minecraft:the_nether" : kind.equals("location") ? "minecraft:overworld" : "");
+                if (kind.equals("location")) {
+                    config.put("ignore_dimension", Boolean.toString(raw.getBoolean("ignore_dimension")));
+                    for (String vector : List.of("position", "size")) {
+                        String original = raw.contains(vector) ? raw.get(vector).toString() : "";
+                        if (!original.isEmpty()) config.put("ftb." + vector, original);
+                        boolean valid = true;
+                        try { config.put(vector, locationVector(raw.get(vector), vector.equals("size") ? "1,1,1" : "0,0,0")); }
+                        catch (IllegalArgumentException error) {
+                            valid = false;
+                            config.put(vector, original);
+                            report.add(problem(Diagnostic.Severity.ERROR, "BQF-108", file, "tasks["+legacy+"]."+vector, legacy, error.getMessage()));
+                        }
+                        conversions.add(new FtbFieldConversion(file, "tasks["+legacy+"]", vector, "config."+vector,
+                                valid ? (original.isEmpty() ? FtbFieldConversion.Status.DEFAULTED : FtbFieldConversion.Status.MAPPED) : FtbFieldConversion.Status.UNSUPPORTED, original+" -> "+config.get(vector)));
+                    }
+                }
+            }
+            recordConfigFields(raw, mappedType.equals(ResourceLocation.parse("brnquest:location"))
+                    ? Set.of("id", "type", "optional_task", "position", "size") : Set.of("id", "type", "optional_task"), file,
                     "quests[" + quest + "].tasks[" + legacy + "]", conversions);
             config.put("title", translations.getOrDefault("task." + legacy + ".title", ""));
             boolean optional = raw.getBoolean("optional_task");
@@ -382,11 +405,28 @@ public final class FtbV13Importer {
         return result;
     }
 
+    /** SNBT int arrays and numeric lists both map to three integer coordinates, never a radius. */
+    private static String locationVector(Tag value, String fallback) {
+        if (value == null) return fallback;
+        int[] values;
+        if (value instanceof net.minecraft.nbt.IntArrayTag array) values = array.getAsIntArray();
+        else if (value instanceof ListTag list && list.size() == 3) {
+            values = new int[3];
+            for (int i=0;i<3;i++) {
+                if (!(list.get(i) instanceof net.minecraft.nbt.NumericTag number) || number.getAsDouble() != number.getAsInt())
+                    throw new IllegalArgumentException("Location vector must contain integers");
+                values[i]=number.getAsInt();
+            }
+        } else throw new IllegalArgumentException("Location vector must contain exactly three integers");
+        if (values.length != 3) throw new IllegalArgumentException("Location vector must contain exactly three integers");
+        return values[0]+","+values[1]+","+values[2];
+    }
+
     private void warnUnknown(String type, String file, String path, String id, DiagnosticReport report) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
-        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command").contains(normalized)
+        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "dimension", "biome", "location", "structure").contains(normalized)
                 || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom", "ftbquests:xp",
-                "ftbquests:xp_levels", "ftbquests:command").contains(normalized);
+                "ftbquests:xp_levels", "ftbquests:command", "ftbquests:dimension", "ftbquests:biome", "ftbquests:location", "ftbquests:structure").contains(normalized);
         if (!supported && !normalized.contains(":")) {
             report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
         }
@@ -396,7 +436,7 @@ public final class FtbV13Importer {
                                       List<FtbFieldConversion> conversions) {
         String normalized = sourceType == null ? "" : sourceType.toLowerCase(Locale.ROOT);
         boolean builtIn = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "ftbquests:checkmark",
-                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels", "ftbquests:command").contains(normalized);
+                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels", "ftbquests:command", "ftbquests:dimension", "ftbquests:biome", "ftbquests:location", "ftbquests:structure").contains(normalized);
         boolean namespaced = sourceType != null && sourceType.contains(":");
         FtbFieldConversion.Status status = builtIn ? FtbFieldConversion.Status.MAPPED
                 : namespaced ? FtbFieldConversion.Status.PRESERVED_EXTENSION
@@ -448,7 +488,7 @@ public final class FtbV13Importer {
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String builtInPath = normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
-        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command").contains(builtInPath)) {
+        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "dimension", "biome", "location", "structure").contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }
         ResourceLocation namespaced = ResourceLocation.tryParse(normalized);

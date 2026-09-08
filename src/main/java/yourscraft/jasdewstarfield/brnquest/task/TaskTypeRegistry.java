@@ -24,6 +24,10 @@ public final class TaskTypeRegistry {
     private static volatile boolean frozen;
 
     static {
+        yourscraft.jasdewstarfield.brnquest.task.location.LocationFieldSources.register();
+        for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
+            register(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("brnquest", kind), new yourscraft.jasdewstarfield.brnquest.task.location.LocationTask(kind));
+
         register(TaskTypes.CHECKMARK, new CheckmarkTask());
         register(TaskTypes.CUSTOM, new ProgressTask());
         register(TaskTypes.ITEM, new UnifiedItemTask());

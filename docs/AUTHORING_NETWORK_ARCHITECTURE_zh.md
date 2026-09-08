@@ -21,7 +21,7 @@
 
 ## 有意保留的兼容面
 
-`AuthoringNetwork` 保留全部 14 个 payload 和 10 个 wire record，包括已有的附加响应字段构造器、客户端发送方法重载及注册委托。此次职责拆分保持协议号 `9`、payload ID、Codec 字段、JSON 字段、11/3 条方向映射和注册顺序。
+`AuthoringNetwork` 保留全部 14 个 payload 和 10 个 wire record，包括已有的附加响应字段构造器、客户端发送方法重载及注册委托。此前职责拆分未改变这些 payload 的 ID、Codec 字段、JSON 字段、11/3 条方向映射和注册顺序。当前总协议号为 `10`：新增的 `ServerFieldNetwork` 独立注册 `brnquest:field_query` / `brnquest:field_result`，仅提供权限等级 2 的只读字段查询，不新增作者写事务或客户端进度权威。
 
 façade 不再包含服务端请求桥接、JSON 解码、领域构造或响应辅助。客户端编码 wire 的 Gson 仅用于发送；服务端请求的 Gson 解码只有 decoder 一个所有者。客户端类只由 registrar 中受物理侧保护的嵌套 delegate 引用。
 

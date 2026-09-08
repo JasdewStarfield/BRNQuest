@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  */
 final class QuestTypedPropertySection {
     enum PreparationStatus { INVALID_ID, LOCAL_ISSUE, CONFIRM_RENAME, CLAIM_REQUIRED, READY }
-    enum Action { CANCEL, SUBMIT, CLAIM, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
+    enum Action { CANCEL, SUBMIT, CLAIM, SERVER_FIELD, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
 
     record FieldHit(int index, ConfigFieldDescriptor descriptor, UiRect bounds) {}
 
@@ -134,7 +134,7 @@ final class QuestTypedPropertySection {
         for (FieldHit field : frame.fields()) {
             if (!field.bounds().contains(x, y)) continue;
             ConfigValueType type = field.descriptor().valueType();
-            Action action = switch (type) {
+            Action action = field.descriptor().serverSource().isPresent() ? Action.SERVER_FIELD : switch (type) {
                 case BOOLEAN -> Action.BOOLEAN;
                 case ENUM -> Action.ENUM;
                 case ITEM_STACK -> Action.ITEM;

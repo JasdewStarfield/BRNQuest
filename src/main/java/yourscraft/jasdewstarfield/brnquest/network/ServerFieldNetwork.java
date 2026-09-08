@@ -1,0 +1,55 @@
+package yourscraft.jasdewstarfield.brnquest.network;
+
+import com.google.gson.Gson;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.network.codec.*;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.neoforged.fml.loading.FMLEnvironment;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.neoforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+import yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources;
+
+/** Bounded, read-only editor queries; the normal author mutation protocol still owns every write. */
+public final class ServerFieldNetwork {
+    private static final Gson JSON = new Gson();
+    private ServerFieldNetwork() {}
+    public record Query(String id, String source, String filter, String selected) {}
+    public record Reply(String id, ServerFieldSources.Result result) {}
+    public record Request(String json) implements CustomPacketPayload {
+        public static final Type<Request> TYPE = new Type<>(ResourceLocation.parse("brnquest:field_query"));
+        public static final StreamCodec<ByteBuf, Request> CODEC = StreamCodec.composite(ByteBufCodecs.stringUtf8(2048),Request::json,Request::new);
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+    public record Response(String json) implements CustomPacketPayload {
+        public static final Type<Response> TYPE = new Type<>(ResourceLocation.parse("brnquest:field_result"));
+        public static final StreamCodec<ByteBuf, Response> CODEC = StreamCodec.composite(ByteBufCodecs.stringUtf8(131072),Response::json,Response::new);
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+    static void register(PayloadRegistrar registrar) {
+        registrar.playToServer(Request.TYPE, Request.CODEC, (payload, context) -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            try {
+                var query = JSON.fromJson(payload.json(), Query.class);
+                if (query == null || query.id() == null || query.id().length() > 64 || query.source() == null || query.source().length() > 256
+                        || query.filter() == null || query.filter().length() > 128 || query.selected() == null || query.selected().length() > 256) return;
+                var source = ResourceLocation.tryParse(query.source());
+                if (source == null) return;
+                var result = ServerFieldSources.query(player, source, query.filter(), query.selected());
+                BrnQuestNetwork.send(player, new Response(JSON.toJson(new Reply(query.id(),result))));
+            } catch (com.google.gson.JsonParseException | IllegalArgumentException ignored) { /* Malformed read requests never reach a source or mutation. */ }
+        });
+        registrar.playToClient(Response.TYPE, Response.CODEC, (payload, context) -> {
+            if (FMLEnvironment.dist == Dist.CLIENT) ClientDelegate.receive(payload);
+        });
+    }
+    public static void send(Query query) { PacketDistributor.sendToServer(new Request(JSON.toJson(query))); }
+    private static class ClientDelegate {
+        static void receive(Response payload) {
+            var reply = JSON.fromJson(payload.json(), Reply.class);
+            if (net.minecraft.client.Minecraft.getInstance().screen instanceof yourscraft.jasdewstarfield.brnquest.client.ui.ServerFieldScreen screen) screen.receive(reply);
+        }
+    }
+}

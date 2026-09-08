@@ -24,6 +24,8 @@ public final class ClientTaskPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
+            register(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTaskPresentation(kind));
         register(TaskTypes.CHECKMARK, new CheckmarkPresentation());
         register(TaskTypes.ITEM, new ItemChoicePresentation());
         register(TaskTypes.ITEM_CHOICE, new ItemChoicePresentation());

@@ -2422,7 +2422,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
         EditorTextField field = typedPropertySection.form().configField(index);
-        if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
+        if (descriptor.serverSource().isPresent()) {
+            renderEditorTextButton(graphics, row.field(), Component.literal(field.getValue() + " …"),
+                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        } else if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -2538,6 +2541,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     openEnumDropdown(intent.anchor(), intent.values(),
                             typedPropertySection.form().configField(intent.fieldIndex())::setValue,
                             value -> ConfigFieldLabels.value(descriptor, value));
+                }
+                case SERVER_FIELD -> {
+                    var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
+                    var field = typedPropertySection.form().configField(intent.fieldIndex());
+                    childLifecycle.prepareChild();
+                    minecraft.setScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value)));
                 }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
                 case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());

@@ -10,6 +10,8 @@ import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskType;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -18,6 +20,7 @@ import java.util.Objects;
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public final class BrnQuestExtensionRegistrar {
     private final ResourceLocation pluginId;
+    private final Map<ResourceLocation, ServerFieldSources.Source> fieldSources = new LinkedHashMap<>();
     private final Map<ResourceLocation, TaskType<?>> tasks = new LinkedHashMap<>();
     private final Map<ResourceLocation, RewardType<?>> rewards = new LinkedHashMap<>();
     private final Map<ResourceLocation, ProgressOwnerProvider> owners = new LinkedHashMap<>();
@@ -36,6 +39,12 @@ public final class BrnQuestExtensionRegistrar {
         return this;
     }
 
+    /** Stages read-only author choices together with the type that declares their source ID. */
+    public BrnQuestExtensionRegistrar fieldSource(ResourceLocation id, ServerFieldSources.Source source) {
+        putOwned(fieldSources, id, source, "field source");
+        return this;
+    }
+
     public BrnQuestExtensionRegistrar progressOwner(ProgressOwnerProvider provider) {
         Objects.requireNonNull(provider, "provider");
         ResourceLocation id = Objects.requireNonNull(provider.id(), "provider.id()");
@@ -49,15 +58,19 @@ public final class BrnQuestExtensionRegistrar {
         synchronized (TaskTypeRegistry.class) {
             synchronized (RewardTypeRegistry.class) {
                 synchronized (ProgressOwnerProviderRegistry.class) {
-                    tasks.keySet().forEach(id -> requireAvailable(TaskTypeRegistry.get(id), id, "task type"));
-                    rewards.keySet().forEach(id -> requireAvailable(RewardTypeRegistry.get(id), id, "reward type"));
-                    owners.keySet().forEach(id -> requireAvailable(ProgressOwnerProviderRegistry.get(id), id,
-                            "progress owner provider"));
+                    synchronized (ServerFieldSources.class) {
+                        fieldSources.keySet().forEach(ServerFieldSources::requireAvailable);
+                        tasks.keySet().forEach(id -> requireAvailable(TaskTypeRegistry.get(id), id, "task type"));
+                        rewards.keySet().forEach(id -> requireAvailable(RewardTypeRegistry.get(id), id, "reward type"));
+                        owners.keySet().forEach(id -> requireAvailable(ProgressOwnerProviderRegistry.get(id), id,
+                                "progress owner provider"));
 
-                    // Static synchronized registry methods are reentrant while these class locks are held.
-                    tasks.forEach(TaskTypeRegistry::register);
-                    rewards.forEach(RewardTypeRegistry::register);
-                    owners.values().forEach(ProgressOwnerProviderRegistry::register);
+                        // Static synchronized registry methods are reentrant while these class locks are held.
+                        tasks.forEach(TaskTypeRegistry::register);
+                        rewards.forEach(RewardTypeRegistry::register);
+                        owners.values().forEach(ProgressOwnerProviderRegistry::register);
+                        fieldSources.forEach(ServerFieldSources::register);
+                    }
                 }
             }
         }

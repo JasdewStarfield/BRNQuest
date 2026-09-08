@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.4`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.5`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -31,6 +31,7 @@
 | `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
 | `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
 | `owner.ProgressOwner*` | `EXPERIMENTAL` | 稳定 owner 身份、成员、生命周期、归档投影及构造期 provider 注册。 |
+| `editor.ServerFieldSources` / `Entry` / `Result` / `Source` | `EXPERIMENTAL` | 构造期注册的只读作者字段查询；插件门面 fieldSource 支持原子批次。 |
 | `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断和无描述类型的原始配置后备投影。 |
 | `runtime.ExtensionRegistrationLifecycle.RegistrationState` | `EXPERIMENTAL` | common/client/script 注册窗口的只读诊断状态；关闭窗口的方法为内部 loader 操作。 |
 

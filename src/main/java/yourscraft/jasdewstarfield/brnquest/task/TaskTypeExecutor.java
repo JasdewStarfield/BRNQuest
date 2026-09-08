@@ -16,6 +16,11 @@ public final class TaskTypeExecutor {
         return decode(type, task).error().map(error -> error.message());
     }
 
+    public static <T> long sampledProgress(TaskType<T> type, TaskContext context) {
+        return StringMapConfigCodec.decode(type.configCodec(), context.task().config()).result()
+                .map(config -> type.sampledProgress(context, config)).orElse(context.progress());
+    }
+
     public static boolean satisfied(TaskType<?> type, TaskContext context) {
         return execute(type, context, Invocation.SATISFIED).orElse(false);
     }

@@ -67,6 +67,19 @@ class BrnQuestPluginContractTest {
         assertFalse(BrnQuestPlugins.registeredPluginIds().contains(plugin));
     }
 
+    @Test void fieldSourceConflictDoesNotLeakAnOtherwiseValidTask() {
+        var source = id("occupied_field_source");
+        var task = id("source_conflict_task");
+        yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources.register(source, (p,f,v) -> null);
+        assertThrows(IllegalStateException.class, () -> BrnQuestPlugins.register(new BrnQuestPlugin() {
+            public ResourceLocation id() { return BrnQuestPluginContractTest.id("source_conflict_plugin"); }
+            public void register(BrnQuestExtensionRegistrar registrar) {
+                registrar.task(task, new PassiveTask()).fieldSource(source, (p,f,v) -> null);
+            }
+        }));
+        assertTrue(TaskTypeRegistry.get(task) == null, "source conflict must abort the whole batch");
+    }
+
     private static ResourceLocation id(String path) {
         return ResourceLocation.fromNamespaceAndPath("brnquest_plugin_test", path);
     }

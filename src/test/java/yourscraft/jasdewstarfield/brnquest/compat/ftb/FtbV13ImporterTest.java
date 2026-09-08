@@ -17,6 +17,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void importsLocationBoxesAndRegistrySelectorsWithoutLosingSourceArrays() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/places.snbt"), """
+                {id:"1000000000000001",quests:[{id:"2000000000000001",tasks:[
+                {id:"3000000000000001",type:"location",dimension:"minecraft:the_nether",position:[I;-2,0,4],size:[I;2,3,4],ignore_dimension:true},
+                {id:"3000000000000002",type:"ftbquests:biome",biome:"#minecraft:is_overworld"},
+                {id:"3000000000000003",type:"dimension",dimension:"minecraft:overworld"},
+                {id:"3000000000000004",type:"structure",structure:"#minecraft:village"}]}]}
+                """,StandardCharsets.UTF_8);
+        var imported=new FtbV13Importer().importBook(temporary,"test","main");
+        assertFalse(imported.report().hasFatal(),imported.report().toJson());
+        var tasks=imported.book().quests().getFirst().tasks();
+        assertEquals("brnquest:location",tasks.getFirst().typeId().toString());
+        assertEquals("-2,0,4",tasks.getFirst().config().get("position"));
+        assertEquals("2,3,4",tasks.getFirst().config().get("size"));
+        assertEquals("true",tasks.getFirst().config().get("ignore_dimension"));
+        assertTrue(tasks.getFirst().config().containsKey("ftb.position"));
+        assertEquals("#minecraft:is_overworld",tasks.get(1).config().get("biome"));
+        assertEquals(imported.book(),NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(imported.book())).getAsJsonObject()));
+    }
+
     @Test void importsCompleteEowFixtureWithoutSilentLoss() throws Exception {
         FtbImportResult result = new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main");
         assertFalse(result.report().hasFatal(), result.report().toJson());

@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.4` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.5` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -92,3 +92,13 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 新增类型的验证应覆盖：注册发现 → 字段/枚举显示元数据 → 作者新增/更新/复制与未知字段保留 → Codec/发布校验 → 服务端实际行为 → 重复请求与失败路径。自动测试通过不能代替新增界面的客户端验收。若类型必须改核心业务分支，应先说明缺失的通用能力并补入口，避免逐类型累积特例。
 
 高级领取尝试必须把 `claimGeneration` 纳入记录身份：完整任务重置代表新的领取授权，历史记录保留但不阻止新代号下执行；同一代号内仍需防重复执行。空代号兼容升级前存档，不能在首次读取时随机生成代号，否则会绕过历史尝试记录。
+
+## 被动采样与服务端字段来源（experimental.5）
+
+被动目标覆盖 `pollingIntervalTicks()`（正整数，单位 tick）和 `sampledProgress(TaskContext, config)`（返回目标总进度）。默认间隔为 0，即不采样。回调运行在服务端线程和 owner 锁内；核心过滤未解锁及非当前顺序目标，保存进度增加、完成判定及同步。回调应只读、低开销、不加载新区块、不调用 locate。进度不会因离开区域而下降，完整重置仍由通用账本负责。重复任务开始新轮后重新采样；仍站在区域内会重新满足目标。
+
+字段调用 `withServerSource(namespace:id)` 后，通用编辑器显示搜索选择入口。来源通过插件回调中的 `registrar.fieldSource(id, source)` 注册，与 task/reward 声明一起预检和提交；命名空间必须归属插件。旧 `resourceRegistry` 元数据只作提示，与此入口独立。
+
+`Source.query(player, filter, selected)` 只读查询当前服务端状态，返回 `Result(entries, total, selectedCount, error, current, detail)`；`Entry` 保存原始值和解析数。`current` 非空时允许填入当前值，`detail` 供错误悬浮提示。来源不要返回超过 64 个候选；客户端可搜索缩小范围。`error` 为空表示无错误，否则对应 `screen.brnquest.field.error.<code>` 翻译键。来源负责相关语言资源。服务端统一要求权限等级 2，输入及响应长度受协议限制，结果不是任何作者写入的授权。
+
+示例附属模组的 marker 类型展示采样和 player_tags 来源；新增同类扩展不需要修改 QuestScreen 或 ProgressEngine。注册表来源在资源 reload 后重新查询，原始 ID、#tag 或 #分组写入配置，不展开保存为具体成员列表。

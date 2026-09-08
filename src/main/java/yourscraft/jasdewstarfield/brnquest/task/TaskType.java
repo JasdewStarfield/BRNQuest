@@ -16,6 +16,9 @@ public interface TaskType<TConfig> {
     Codec<TConfig> configCodec();
     /** Pure author-write normalization. Preserve keys the type does not own; never perform side effects. */
     default java.util.Map<String, String> normalizeConfig(java.util.Map<String, String> config) { return config; }
+    /** Optional server polling. Zero disables polling; samples may only increase persistent progress. */
+    default int pollingIntervalTicks() { return 0; }
+    default long sampledProgress(TaskContext context, TConfig config) { return context.progress(); }
     boolean satisfied(TaskContext context, TConfig config);
     default boolean consume(TaskContext context, TConfig config) { return true; }
     default boolean allowsManualSubmission(TConfig config) { return false; }

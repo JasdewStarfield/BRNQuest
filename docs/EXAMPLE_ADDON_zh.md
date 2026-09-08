@@ -32,3 +32,7 @@
 `brnquest_example:guarded_tag` 在独立附属模组内声明字段标签、枚举翻译和 tag 的空白规范化，并注册 RewardClaimHandler。玩家带 `brnquest_example_block` 时拒绝，带 `brnquest_example_wait` 时等待，清除后再次领取会添加配置的 tag。两种未成功状态均不消耗普通领取次数。它不授予经验，不执行命令；tag 的集合插入本身幂等，不能照搬为非幂等副作用的日志方案。
 
 示例的 source_mode 字段刻意复用命令奖励的原始枚举值，但使用自己的翻译，证明 UI 不根据字段名或值猜测所属类型。新增类型只改附属模组实现、插件注册、客户端展示和资源；核心只通过公共契约调用。
+
+## 被动采样与字段来源
+
+marker 类型每 10 tick 观察玩家 tag，命中后由核心进度账本保留。tag 字段使用附属模组原子注册的 `brnquest_example:player_tags` 服务端来源，可搜索当前玩家已有的 tag，也可直接输入尚不存在的值。此示例仅依赖公共 SPI，不修改内部 Screen 或进度引擎。

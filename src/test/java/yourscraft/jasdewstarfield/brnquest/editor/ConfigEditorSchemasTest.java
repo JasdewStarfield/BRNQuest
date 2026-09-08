@@ -53,6 +53,24 @@ class ConfigEditorSchemasTest {
         assertEquals("2", schema.fields().stream().filter(field -> field.key().equals("permission_level")).findFirst().orElseThrow().defaultValue().orElseThrow());
     }
 
+    @Test void explorationTypesExposeEditableDefaultsWithoutExpandingRawSelectors() {
+        for (String kind : List.of("dimension","biome","structure","location")) {
+            var schema = ConfigEditorSchemas.forTask(task(ResourceLocation.parse("brnquest:"+kind),Map.of("extension.note","keep")));
+            assertFalse(schema.rawFallback());
+            assertTrue(schema.fields().size()<=6, "every exploration field fits the standard property form");
+            Map<String,String> defaults = new java.util.HashMap<>(schema.rawConfig());
+            schema.fields().forEach(field -> field.defaultValue().ifPresent(value -> defaults.put(field.key(),value)));
+            var selector=schema.fields().get(1);
+            assertTrue(selector.serverSource().isPresent());
+            defaults.put(selector.key(),"#test:authored_group");
+            assertTrue(yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor.configError(
+                    yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry.get(ResourceLocation.parse("brnquest:"+kind)),
+                    task(ResourceLocation.parse("brnquest:"+kind),defaults)).isEmpty());
+            assertEquals("#test:authored_group",defaults.get(selector.key()));
+            assertEquals("keep",defaults.get("extension.note"));
+        }
+    }
+
     @Test void unknownTypesRetainLosslessImmutableRawFallback() {
         Map<String, String> mutable = new java.util.HashMap<>(Map.of("opaque", "value"));
         var taskSchema = ConfigEditorSchemas.forTask(task(id("foreign", "item"), mutable));

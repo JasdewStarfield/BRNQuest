@@ -78,6 +78,19 @@ class QuestTypedPropertySectionTest {
         assertTrue(section.click(frame, QuestTypedEntryKind.REWARD, 25, 5).isEmpty());
     }
 
+    @Test void externalServerFieldUsesTheGenericPickerAndRejectsAStaleFrame() {
+        var section = existingTask();
+        var frame = new QuestScreenFrameIdentity(ResourceLocation.parse("test:book"),"rev-1",true,800,600);
+        var field = ConfigFieldDescriptor.field("external_selector",ConfigValueType.TEXT)
+                .withServerSource(ResourceLocation.parse("external:source")).withLabel("external.label").withDefault("#external:group");
+        section.captureInteractionFrame(new QuestTypedPropertySection.InteractionFrame(frame,QuestTypedEntryKind.TASK,
+                new UiRect(0,0,9,9),new UiRect(10,0,19,9),null,
+                List.of(new QuestTypedPropertySection.FieldHit(0,field,new UiRect(20,0,39,9))),null,null,null));
+        assertEquals(QuestTypedPropertySection.Action.SERVER_FIELD,section.click(frame,QuestTypedEntryKind.TASK,25,5).orElseThrow().action());
+        assertEquals(ResourceLocation.parse("external:source"),field.serverSource().orElseThrow());
+        assertTrue(section.click(new QuestScreenFrameIdentity(frame.bookId(),"rev-2",true,800,600),QuestTypedEntryKind.TASK,25,5).isEmpty());
+    }
+
     private static QuestTypedPropertySection existingTask() {
         QuestTypedPropertySection section = new QuestTypedPropertySection(4);
         var task = new yourscraft.jasdewstarfield.brnquest.data.TaskDefinition(

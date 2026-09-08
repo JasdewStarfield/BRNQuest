@@ -12,6 +12,7 @@ import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
+import yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources;
 import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
 import yourscraft.jasdewstarfield.brnquest.extension.BrnQuestExtensionRegistrar;
@@ -50,6 +51,12 @@ public final class BrnQuestExampleAddon {
     private static final class ExamplePlugin implements BrnQuestPlugin {
         public ResourceLocation id() { return PLUGIN_ID; }
         public void register(BrnQuestExtensionRegistrar registrar) {
+            // The companion owns both its sampler and searchable author field source.
+            registrar.fieldSource(BrnQuestExampleAddon.id("player_tags"), (player, filter, selected) -> {
+                var tags = player.getTags().stream().filter(tag -> tag.contains(filter)).sorted().toList();
+                return new ServerFieldSources.Result(tags.stream().limit(64).map(tag -> new ServerFieldSources.Entry(tag, 1)).toList(),
+                        tags.size(), player.getTags().contains(selected) ? 1 : 0, "", "");
+            });
             registrar.task(MARKER_TASK, new MarkerTask())
                     .task(SIGNAL_TASK, new SignalTask());
             registrar.reward(EXPERIENCE_REWARD, new ExperienceReward())
@@ -75,12 +82,17 @@ public final class BrnQuestExampleAddon {
 
         public Codec<MarkerConfig> configCodec() { return CODEC; }
         public boolean satisfied(TaskContext context, MarkerConfig config) {
-            return context.player().getTags().contains(config.tag());
+            return context.progress() >= 1 || context.player().getTags().contains(config.tag());
+        }
+        public int pollingIntervalTicks() { return 10; }
+        public long sampledProgress(TaskContext context, MarkerConfig config) {
+            // Once observed, the ordinary owner ledger retains the hit until reset.
+            return satisfied(context, config) ? 1 : context.progress();
         }
         public List<ConfigFieldDescriptor> configFields() {
             return List.of(ConfigFieldDescriptor.field("tag", ConfigValueType.TEXT)
                     .withDefault("brnquest_example_ready")
-                    .withHelp("Server-side player tag observed by the passive task"));
+                    .withHelp("Server-side player tag observed by the passive task").withServerSource(id("player_tags")));
         }
         public Component describe(TaskView task, MarkerConfig config) {
             return Component.literal("Receive server marker " + config.tag());

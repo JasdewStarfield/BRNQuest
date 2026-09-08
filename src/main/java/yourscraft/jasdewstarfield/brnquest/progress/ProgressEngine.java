@@ -123,6 +123,7 @@ public final class ProgressEngine {
 
     /** Performs time-based repeat reopening even when no inventory event occurs. */
     public void tick(ServerPlayer player) {
+        pollTasks(player);
         // Server time is the stable cadence source; player tick counters can reset during lifecycle transitions.
         if (player.getServer().getTickCount() % 20 != 0) return;
         var snapshot = QuestBookManager.get().active().orElse(null);
@@ -138,6 +139,37 @@ public final class ProgressEngine {
             QuestProgressData.get(player.getServer()).setDirty();
             BrnQuestNetwork.syncProgress(player, true);
         }
+    }
+
+    /** Sample only eligible/current objectives, then retain hits through the existing progress ledger. */
+    public void pollTasks(ServerPlayer player) {
+        synchronizedOwner(player, () -> {
+            var snapshot = QuestBookManager.get().active().orElse(null);
+            if (snapshot == null) return null;
+            var progress = progress(player);
+            for (var quest : snapshot.book().quests()) {
+                var status = progress.status(quest.id().toString());
+                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) || !dependenciesComplete(quest, progress)) continue;
+                boolean changed = false;
+                for (var task : quest.tasks()) {
+                    var type = TaskTypeRegistry.get(task.typeId());
+                    if (type == null || type.pollingIntervalTicks() <= 0
+                            || player.server.getTickCount() % Math.max(1, type.pollingIntervalTicks()) != 0
+                            || !taskIsCurrent(player, quest, task, progress)) continue;
+                    var context = taskContext(player, quest, task, progress);
+                    long next = TaskTypeExecutor.sampledProgress(type, context);
+                    if (next > context.progress()) {
+                        changeTaskProgress(player, quest, task, progress, next - context.progress()); changed = true;
+                    }
+                }
+                if (changed) {
+                    QuestProgressData.get(player.server).setDirty();
+                    complete(player, quest.id(), false);
+                    BrnQuestNetwork.syncProgress(player, true);
+                }
+            }
+            return null;
+        });
     }
 
     /** Server-authored visibility set; clients render it but never infer hidden quest access. */

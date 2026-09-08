@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.4`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.5`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -42,3 +42,11 @@ API 版本独立于模组发布版本：补丁发布可以在不改变 API 基�
 ## experimental.3 → experimental.4
 
 `RewardClaimContext` 新增 `claimGeneration`：完整任务重置时创建并持久化的领取代号。高级奖励的尝试键应包含 owner、奖励身份、完成周期、claimGeneration 和相应领取者身份。保留旧三参数构造器，代号默认为空；旧存档同样使用空代号，以继续识别历史记录。只有明确重置任务才生成新代号。依赖 record 组件反射的扩展需适配新增组件。
+
+## experimental.4 → experimental.5
+
+新增 `TaskType.pollingIntervalTicks()` / `sampledProgress(context, config)` 默认方法。旧类型默认不采样，已有实现无需改动。服务端只采样可开始且顺序上当前可执行的目标，将单调增加的结果通过原 owner 账本保存。
+
+`ConfigFieldDescriptor` 新增 `serverSource` 及 `withServerSource(id)`，保留旧十参数和十二参数构造器。反射 record 组件的消费者需要适配。`ServerFieldSources` 及其不可变 `Entry` / `Result` / `Source` 为实验性公共面；插件用 `BrnQuestExtensionRegistrar.fieldSource` 原子注册来源。客户端通用控件查询服务端并回填原始字符串，保存仍走原作者事务。
+
+新增只读字段查询载荷，网络协议升至 10，客户端和服务端须一起更新。任务书 schema 仍为 1。

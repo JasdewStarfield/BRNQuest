@@ -218,7 +218,7 @@ final class AuthoringResponseSender {
                 boundedMessage(diagnostic.path()), boundedMessage(diagnostic.message()))).toList();
     }
 
-    private static List<EditorDiagnosticWire> mutationDiagnosticWires(String action,
+    static List<EditorDiagnosticWire> mutationDiagnosticWires(String action,
             List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
         boolean typedUpdate = "UPDATE_TASK".equals(action) || "UPDATE_REWARD".equals(action);
         return diagnostics.stream().limit(8).map(diagnostic -> {
@@ -259,6 +259,11 @@ final class AuthoringResponseSender {
         }
         sendFailure("MUTATE", result.status(), result.code(), message, diagnostics);
     }
+    /** Forward a service rejection unchanged; handlers still own stage-specific partial-failure messages. */
+    void sendFailure(String action, AuthorOperationResult<?> result) {
+        sendFailure(action, result.status(), result.code(), result.message());
+    }
+
     void sendDecodeFailure(String action, AuthoringRequestDecoder.Failure failure) {
         List<EditorDiagnosticWire> diagnostics = ("MUTATE".equals(action) || "UPDATE".equals(action))
                 && !failure.path().isBlank() ? List.of(new EditorDiagnosticWire("ERROR", failure.code(),
@@ -284,21 +289,8 @@ final class AuthoringResponseSender {
         if (revision == null || revision.isBlank()) return "<none>";
         return revision.length() <= 12 ? revision : revision.substring(0, 12);
     }
-    static EditorDiagnosticWire mutationDiagnostic(EditorMutationWire wire, IllegalArgumentException exception) {
-        return mutationDiagnostic(wire.sourceId(), exception);
-    }
-
     static EditorDiagnosticWire mutationDiagnostic(AuthoringRequestDecoder.MutationRequest request, IllegalArgumentException exception) {
         return mutationDiagnostic(request.sourceId() == null ? "" : request.sourceId().toString(), exception);
-    }
-
-    static List<EditorDiagnosticWire> mutationDiagnosticWires(EditorMutationWire wire,
-            List<yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic> diagnostics) {
-        return mutationDiagnosticWires(wire.action(), diagnostics);
-    }
-
-    void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
-        sendMutationFailure(result, wire.action(), wire.sourceId());
     }
 
     void sendMutationFailure(AuthorOperationResult<DraftEditResult> result, AuthoringRequestDecoder.MutationRequest request) {

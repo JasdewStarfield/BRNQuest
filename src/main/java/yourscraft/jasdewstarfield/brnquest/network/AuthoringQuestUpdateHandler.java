@@ -91,7 +91,7 @@ final class AuthoringQuestUpdateHandler {
         DraftSnapshot draft = updated.value().snapshot();
         var renewed = AuthorApi.renew(player, sessionId, draft.draftRevision());
         if (!renewed.success()) {
-            responses.sendFailure("UPDATE", renewed.status(), renewed.code(), renewed.message());
+            responses.sendFailure("UPDATE", renewed);
             return;
         }
         // Property completion updates the authoritative session; the visible Save

@@ -31,7 +31,7 @@ final class AuthoringPublicationHandler {
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
         if (!renewed.success()) {
-            responses.sendFailure("SAVE", renewed.status(), renewed.code(), renewed.message());
+            responses.sendFailure("SAVE", renewed);
             return;
         }
         responses.sendSession("SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
@@ -43,18 +43,18 @@ final class AuthoringPublicationHandler {
         String draftRevision = request.draftRevision();
         var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
         if (!preview.success() && preview.value() == null) {
-            responses.sendFailure("REVIEW", preview.status(), preview.code(), preview.message());
+            responses.sendFailure("REVIEW", preview);
             return;
         }
         var diff = AuthorApi.diff(player, sessionId, bookId, draftRevision,
                 yourscraft.jasdewstarfield.brnquest.author.DraftDiffService.Baseline.WORKSPACE);
         if (!diff.success() || diff.value() == null) {
-            responses.sendFailure("REVIEW", diff.status(), diff.code(), diff.message());
+            responses.sendFailure("REVIEW", diff);
             return;
         }
         var renewed = AuthorApi.renew(player, sessionId, draftRevision);
         if (!renewed.success()) {
-            responses.sendFailure("REVIEW", renewed.status(), renewed.code(), renewed.message());
+            responses.sendFailure("REVIEW", renewed);
             return;
         }
         responses.sendPublishReview(renewed.value(), preview.success(), bookId,

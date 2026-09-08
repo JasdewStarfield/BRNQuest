@@ -41,10 +41,10 @@ class AuthoringNetworkTest {
                 List.of(new ChapterDefinition(bookId, chapterId, groupId, "Chapter", "", 0, List.of(quest))), Map.of());
 
         // Exercise the same replacement path as UPDATE_REWARD, not just the bounding helper.
-        var replacement = AuthoringNetwork.rewardReplacement(book, questId, rewardId, rewardId,
+        var replacement = AuthoringMutationHandler.rewardReplacement(book, questId, rewardId, rewardId,
                 config, "manual", false);
         assertEquals(reward, replacement);
-        assertEquals(config, AuthoringNetwork.rewardMutationConfig(config), "ADD_REWARD preserves the same schema");
+        assertEquals(config, AuthoringMutationHandler.rewardMutationConfig(config), "ADD_REWARD preserves the same schema");
         var error = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor.configError(
                 yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId()),
                 yourscraft.jasdewstarfield.brnquest.api.ApiViews.reward(replacement));
@@ -55,7 +55,7 @@ class AuthoringNetworkTest {
         Map<String, String> source = new LinkedHashMap<>();
         source.put("item", "{id:\"minecraft:stone\",count:1}");
 
-        Map<String, String> decoded = AuthoringNetwork.boundedConfig(source);
+        Map<String, String> decoded = AuthoringRequestDecoder.boundedConfig(source);
         source.put("count", "64");
 
         assertEquals(Map.of("item", "{id:\"minecraft:stone\",count:1}"), decoded);
@@ -64,13 +64,13 @@ class AuthoringNetworkTest {
 
     @Test void typedMutationConfigRejectsOversizedOrMalformedFields() {
         assertThrows(IllegalArgumentException.class,
-                () -> AuthoringNetwork.boundedConfig(Map.of("", "value")));
+                () -> AuthoringRequestDecoder.boundedConfig(Map.of("", "value")));
         assertThrows(IllegalArgumentException.class,
-                () -> AuthoringNetwork.boundedConfig(Map.of("item", "x".repeat(65_537))));
+                () -> AuthoringRequestDecoder.boundedConfig(Map.of("item", "x".repeat(65_537))));
 
         Map<String, String> tooMany = new LinkedHashMap<>();
         for (int index = 0; index < 65; index++) tooMany.put("field_" + index, "value");
-        assertThrows(IllegalArgumentException.class, () -> AuthoringNetwork.boundedConfig(tooMany));
+        assertThrows(IllegalArgumentException.class, () -> AuthoringRequestDecoder.boundedConfig(tooMany));
     }
 
     @Test void typedCodecFailuresPointBackToTheCompleteRawConfig() {
@@ -80,7 +80,7 @@ class AuthoringNetworkTest {
         var codecFailure = new Diagnostic(Diagnostic.Severity.ERROR, "BQV-119", "", "",
                 "test:task", "Invalid task config");
 
-        var mapped = AuthoringResponseSender.mutationDiagnosticWires(wire, List.of(codecFailure));
+        var mapped = AuthoringResponseSender.mutationDiagnosticWires(wire.action(), List.of(codecFailure));
 
         assertEquals("config", mapped.getFirst().path());
     }

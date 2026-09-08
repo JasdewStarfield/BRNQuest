@@ -24,13 +24,13 @@ final class AuthoringSessionHandler {
         var bookId = request.bookId();
         var opened = EditSessionService.get().openLive(player, bookId);
         if (!opened.success()) {
-            responses.sendFailure("OPEN", opened.status(), opened.code(), opened.message());
+            responses.sendFailure("OPEN", opened);
             return;
         }
         var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
                 opened.value().session().draftRevision());
         if (!draft.success()) {
-            responses.sendFailure("OPEN", draft.status(), draft.code(), draft.message());
+            responses.sendFailure("OPEN", draft);
             return;
         }
         sendDraft("OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
@@ -45,7 +45,7 @@ final class AuthoringSessionHandler {
         String expectedDraftRevision = request.expectedDraftRevision();
         AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId, expectedDraftRevision);
         if (!opened.success()) {
-            responses.sendFailure("OPEN", opened.status(), opened.code(), opened.message());
+            responses.sendFailure("OPEN", opened);
             return;
         }
         EditSessionHandle handle = opened.value();
@@ -53,7 +53,7 @@ final class AuthoringSessionHandler {
                 handle.sessionId(), bookId, handle.session().draftRevision());
         if (!snapshot.success()) {
             AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision());
-            responses.sendFailure("OPEN", snapshot.status(), snapshot.code(), snapshot.message());
+            responses.sendFailure("OPEN", snapshot);
             return;
         }
         sendDraft("OPEN", "SESSION_OPENED", "Edit session opened", handle, snapshot.value());
@@ -76,14 +76,14 @@ final class AuthoringSessionHandler {
             AuthorOperationResult<DraftSnapshot> replaced = new DraftService().replaceFromActive(player,
                     payload.draftRevision());
             if (!replaced.success()) {
-                responses.sendFailure("OPEN", replaced.status(), replaced.code(), replaced.message());
+                responses.sendFailure("OPEN", replaced);
                 return;
             }
         } else {
             if (payload.draftRevision().isBlank()) {
                 AuthorOperationResult<DraftSnapshot> created = AuthorApi.createFromActive(player);
                 if (!created.success()) {
-                    responses.sendFailure("OPEN", created.status(), created.code(), created.message());
+                    responses.sendFailure("OPEN", created);
                     return;
                 }
             }
@@ -100,7 +100,7 @@ final class AuthoringSessionHandler {
         String draftRevision = request.draftRevision();
         AuthorOperationResult<EditSessionHandle> result = AuthorApi.renew(player, sessionId, draftRevision);
         if (!result.success()) {
-            responses.sendFailure("RENEW", result.status(), result.code(), result.message());
+            responses.sendFailure("RENEW", result);
             return;
         }
         responses.sendSession("RENEW", result.status(), result.code(), result.message(), result.value(), 0, 0);
@@ -111,7 +111,7 @@ final class AuthoringSessionHandler {
         String draftRevision = request.draftRevision();
         AuthorOperationResult<EditSessionView> result = AuthorApi.close(player, sessionId, draftRevision);
         if (!result.success()) {
-            responses.sendFailure("CLOSE", result.status(), result.code(), result.message());
+            responses.sendFailure("CLOSE", result);
             return;
         }
         EditSessionView view = result.value();
@@ -125,7 +125,7 @@ final class AuthoringSessionHandler {
         if (wire.action() == AuthoringRequestDecoder.RecoveryAction.ABANDON) {
             var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
             if (!abandoned.success()) {
-                responses.sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+                responses.sendFailure("RECOVER", abandoned);
                 return;
             }
             responses.sendSession("CLOSE", abandoned.status(), abandoned.code(), abandoned.message(),
@@ -134,13 +134,13 @@ final class AuthoringSessionHandler {
         }
         var recovered = EditSessionService.get().recover(player, sessionId, bookId);
         if (!recovered.success()) {
-            responses.sendFailure("RECOVER", recovered.status(), recovered.code(), recovered.message());
+            responses.sendFailure("RECOVER", recovered);
             return;
         }
         var snapshot = EditSessionService.get().snapshot(player, sessionId, bookId,
                 recovered.value().session().draftRevision());
         if (!snapshot.success()) {
-            responses.sendFailure("RECOVER", snapshot.status(), snapshot.code(), snapshot.message());
+            responses.sendFailure("RECOVER", snapshot);
             return;
         }
         if (wire.action() == AuthoringRequestDecoder.RecoveryAction.REFRESH) {
@@ -152,17 +152,17 @@ final class AuthoringSessionHandler {
         var copied = new yourscraft.jasdewstarfield.brnquest.author.DraftService()
                 .createRecoveryCopy(player, snapshot.value(), target);
         if (!copied.success()) {
-            responses.sendFailure("RECOVER", copied.status(), copied.code(), copied.message());
+            responses.sendFailure("RECOVER", copied);
             return;
         }
         var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
         if (!abandoned.success()) {
-            responses.sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
+            responses.sendFailure("RECOVER", abandoned);
             return;
         }
         var opened = EditSessionService.get().open(player, copied.value());
         if (!opened.success()) {
-            responses.sendFailure("RECOVER", opened.status(), opened.code(), opened.message());
+            responses.sendFailure("RECOVER", opened);
             return;
         }
         sendDraft("RECOVER", "RECOVERY_COPY_OPENED", "Recovery copy created and opened",

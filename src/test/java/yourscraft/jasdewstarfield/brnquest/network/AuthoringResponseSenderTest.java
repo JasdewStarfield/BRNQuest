@@ -162,10 +162,10 @@ class AuthoringResponseSenderTest {
     }
 
     @Test void mutationFailureKeepsTypedIdPathAndOriginalServiceCode() {
-        var wire = new EditorMutationWire("session", "test:book", "revision", "UPDATE_TASK",
+        var wire = new EditorMutationWire("00000000-0000-0000-0000-000000000001", "test:book", "revision", "UPDATE_TASK",
                 "test:new", "test:quest", "test:old", "", 0, 0, 0, List.of(), Map.of());
         sender.sendMutationFailure(AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
-                "DUPLICATE_TYPED_ID", "duplicate"), wire);
+                "DUPLICATE_TYPED_ID", "duplicate"), AuthoringRequestDecoder.mutation(GSON.toJson(wire)).value());
         var response = session(0);
         assertEquals("CONFLICT", response.status());
         assertEquals("DUPLICATE_TYPED_ID", response.code());

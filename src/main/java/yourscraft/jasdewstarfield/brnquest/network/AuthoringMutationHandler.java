@@ -30,7 +30,7 @@ final class AuthoringMutationHandler {
         ResourceLocation bookId = wire.bookId();
         var current = EditSessionService.get().snapshot(player, sessionId, bookId, wire.draftRevision());
         if (!current.success()) {
-            responses.sendFailure("MUTATE", current.status(), current.code(), current.message());
+            responses.sendFailure("MUTATE", current);
             return;
         }
         if (wire.action() == AuthoringMutationAction.REVIEW) {
@@ -109,7 +109,7 @@ final class AuthoringMutationHandler {
         DraftSnapshot draft = result.value().snapshot();
         var renewed = AuthorApi.renew(player, sessionId, draft.draftRevision());
         if (!renewed.success()) {
-            responses.sendFailure("MUTATE", renewed.status(), renewed.code(), renewed.message());
+            responses.sendFailure("MUTATE", renewed);
             return;
         }
         if (wire.action() == AuthoringMutationAction.MOVE_QUESTS) {

@@ -73,26 +73,31 @@ public class ArchitectureBoundaryTest {
                     "yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen")
             .because("composed UI parts receive immutable models and frames instead of a whole-Screen backdoor");
 
-    // Future slice owners are optional until introduced; negative fixtures exercise every rule now.
+    // Every split owner is required; deliberate negative fixtures keep these boundaries executable.
+    @ArchTest
+    static final ArchRule authoringFacadeMustOnlyExposeTransport = noClasses()
+            .that().haveNameMatching(".*AuthoringNetwork(\\$.*)?")
+            .should().dependOnClassesThat().haveNameMatching(
+                    ".*\\.brnquest\\.(api|author|data|runtime|workspace)\\..*"
+                    + "|.*(ServerPlayer|AuthoringRequestDecoder|AuthoringResponseSender|Authoring.*Handler)")
+            .because("the compatibility facade retains only wire contracts, client sends and registration delegation");
+
     @ArchTest
     static final ArchRule authoringDecoderMustOnlyDecode = noClasses()
             .that().haveNameMatching(".*AuthoringRequestDecoder(\\$.*)?")
             .should().dependOnClassesThat().haveNameMatching(
-                    ".*(ServerPlayer|AuthorApi|.*Service|DraftBookEditor|QuestBookManager|AuthoringNetwork|AuthoringResponseSender|BrnQuestNetwork|PacketDistributor)")
-            .allowEmptyShould(true);
+                    ".*(ServerPlayer|AuthorApi|.*Service|DraftBookEditor|QuestBookManager|AuthoringNetwork|AuthoringResponseSender|BrnQuestNetwork|PacketDistributor)");
 
     @ArchTest
     static final ArchRule authoringHandlersMustNotSendOrLoadClient = noClasses()
             .that().haveNameMatching(".*Authoring(Session|Publication|QuestUpdate|Mutation)Handler(\\$.*)?")
             .should().dependOnClassesThat().haveNameMatching(
-                    ".*\\.client\\..*|.*(PacketDistributor|BrnQuestNetwork|AuthoringNetwork)")
-            .allowEmptyShould(true);
+                    ".*\\.client\\..*|.*(PacketDistributor|BrnQuestNetwork|AuthoringNetwork)");
 
     @ArchTest
     static final ArchRule authoringResponseMustNotExecuteServices = noClasses()
             .that().haveNameMatching(".*AuthoringResponseSender(\\$.*)?")
-            .should().dependOnClassesThat().haveNameMatching(".*(AuthorApi|.*Service|DraftBookEditor|QuestBookManager)")
-            .allowEmptyShould(true);
+            .should().dependOnClassesThat().haveNameMatching(".*(AuthorApi|.*Service|DraftBookEditor|QuestBookManager)");
 
     @ArchTest
     static final ArchRule authoringRegistrarMustOnlyWire = noClasses()
@@ -102,8 +107,7 @@ public class ArchitectureBoundaryTest {
                     "yourscraft.jasdewstarfield.brnquest.author..",
                     "yourscraft.jasdewstarfield.brnquest.data..",
                     "yourscraft.jasdewstarfield.brnquest.runtime..",
-                    "yourscraft.jasdewstarfield.brnquest.workspace..")
-            .allowEmptyShould(true);
+                    "yourscraft.jasdewstarfield.brnquest.workspace..");
 
     @ArchTest
     static final ArchRule authoringCommonOwnersMustNotLoadClient = noClasses()

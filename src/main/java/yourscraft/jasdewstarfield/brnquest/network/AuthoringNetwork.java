@@ -6,46 +6,17 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.TagParser;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.jetbrains.annotations.NotNull;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
-import yourscraft.jasdewstarfield.brnquest.api.AuthorApi;
-import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
-import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
-import yourscraft.jasdewstarfield.brnquest.author.DraftEditResult;
-import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
-import yourscraft.jasdewstarfield.brnquest.author.DraftService;
-import yourscraft.jasdewstarfield.brnquest.author.EditSessionHandle;
-import yourscraft.jasdewstarfield.brnquest.author.EditSessionService;
-import yourscraft.jasdewstarfield.brnquest.author.EditSessionView;
-import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
-import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
-import yourscraft.jasdewstarfield.brnquest.data.QuestAppearance;
-import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
-import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
-import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
-import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
-import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/** Stage-5 authoring channel. Every request is re-authorized against the connected target server. */
+/** Stable authoring payload/wire contracts and client sends; server routing belongs to the registrar. */
 public final class AuthoringNetwork {
     private static final Gson GSON = new Gson();
 
@@ -264,7 +235,7 @@ public final class AuthoringNetwork {
         AuthoringPayloadRegistrar.register(registrar);
     }
 
-    /** Transitional use-case bridge; registration itself never parses or executes domain requests. */
+    /** Client convenience entry points preserve the existing authoring protocol. */
     public static void requestCatalog() {
         PacketDistributor.sendToServer(new RequestCatalogPayload());
     }
@@ -366,149 +337,7 @@ public final class AuthoringNetwork {
                 "REVIEW", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
     }
 
-    /**
-     * Runs the author-facing one-stop operation without weakening any existing server-side gate.
-     * Later-stage failures explicitly report that earlier durable stages may already have completed.
-     */
-    /** Keeps detailed pipeline telemetry available without adding noise to normal INFO logs. */
-    /** Keeps revision diagnostics readable in the fixed-height editor status bar. */
-    /** Combines the exact publish gates and workspace semantic diff into one revision-bound preview. */
-    /** Optional mutation slots use empty strings; malformed clients may omit them entirely. */
-    private static ResourceLocation parseId(String raw) {
-        return raw == null || raw.isBlank() ? null : ResourceLocation.tryParse(raw);
-    }
-
-    /** Copies opaque extension data on the server; the client never reconstructs unknown task config. */
-    /** Copies claim semantics and opaque extension data without client-side decoding. */
-    /** The transport reports oversize drafts; the use-case boundary owns closing their leases. */
-    private static void sendDraft(ServerPlayer player, String action, String code, String message,
-                                  EditSessionHandle handle, DraftSnapshot draft) {
-        responses(player).sendDraft(action, code, message, handle, draft,
-                () -> AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision()));
-    }
-
-    private static void sendPositionPatch(ServerPlayer player, String code, String message,
-                                          EditSessionHandle handle, DraftSnapshot draft,
-                                          List<PositionWire> positions) {
-        responses(player).sendPositionPatch(code, message, handle, draft, positions,
-                () -> AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision()));
-    }
-
-    private static AuthoringResponseSender responses(ServerPlayer player) {
-        return AuthoringResponseSender.forPlayer(player);
-    }
-
-    private static void sendOpened(ServerPlayer player, EditSessionHandle handle, DraftSnapshot draft) {
-        sendDraft(player, "OPEN", "SESSION_OPENED", "Edit session opened", handle, draft);
-    }
-
-    /** Mutation JSON is untrusted even though the complete candidate is validated before commit. */
-    /** Reward and task registries may share IDs; only task configs use item-matcher migration. */
-    private static String boundedClaimPolicy(String policy) {
-        String value = policy == null ? "" : policy.strip();
-        if (value.length() > 64 || !RewardClaimPolicy.isKnown(value)) {
-            throw new IllegalArgumentException("Reward claim policy must be manual, auto_visible, auto_silent, or auto_hidden");
-        }
-        return RewardClaimPolicy.parse(value).serializedName();
-    }
-
-    private static String boundedLocale(String locale) {
-        String value = BookLocalization.normalizeLocale(locale);
-        if (!value.matches("[a-z0-9_]{2,16}")) throw new IllegalArgumentException("Locale must use a code such as en_us");
-        return value;
-    }
-
-    private static String boundedText(Map<String, String> values, String key, int maximum) {
-        String value = values == null ? "" : values.getOrDefault(key, "");
-        if (value.length() > maximum) throw new IllegalArgumentException(key + " exceeds " + maximum + " characters");
-        return value;
-    }
-
-    private static UUID parseUuid(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (RuntimeException exception) {
-            return null;
-        }
-    }
-
     private static <T extends CustomPacketPayload> CustomPacketPayload.Type<T> type(String path) {
         return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, path));
-    }
-
-    /** Compatibility bridges remain until checkpoint B has passed client acceptance. */
-    static void sendCatalog(ServerPlayer player) { new AuthoringSessionHandler(player).sendCatalog(); }
-
-    static void openLive(ServerPlayer player, String bookId) {
-        dispatch(player, "OPEN", AuthoringRequestDecoder.live(bookId), request -> new AuthoringSessionHandler(player).openLive(request));
-    }
-
-    static void open(ServerPlayer player, String bookId) {
-        dispatch(player, "OPEN", AuthoringRequestDecoder.open(bookId, ""), request -> new AuthoringSessionHandler(player).open(request));
-    }
-
-    static void open(ServerPlayer player, String bookId, String revision) {
-        dispatch(player, "OPEN", AuthoringRequestDecoder.open(bookId, revision), request -> new AuthoringSessionHandler(player).open(request));
-    }
-
-    static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
-        dispatch(player, "OPEN", AuthoringRequestDecoder.current(payload), request -> new AuthoringSessionHandler(player).openCurrent(request));
-    }
-
-    static void renew(ServerPlayer player, String sessionId, String revision) {
-        dispatch(player, "RENEW", AuthoringRequestDecoder.lease(sessionId, revision), request -> new AuthoringSessionHandler(player).renew(request));
-    }
-
-    static void close(ServerPlayer player, String sessionId, String revision) {
-        dispatch(player, "CLOSE", AuthoringRequestDecoder.lease(sessionId, revision), request -> new AuthoringSessionHandler(player).close(request));
-    }
-
-    static void recover(ServerPlayer player, String json) {
-        dispatch(player, "RECOVER", AuthoringRequestDecoder.recovery(json), request -> new AuthoringSessionHandler(player).recover(request));
-    }
-
-    /** Decoding failures never enter a handler or mutate the current session. */
-    private static <T> void dispatch(ServerPlayer player, String action, AuthoringRequestDecoder.Result<T> result,
-                                     java.util.function.Consumer<T> handler) {
-        if (result.success()) handler.accept(result.value());
-        else responses(player).sendDecodeFailure(action, result.failure());
-    }
-
-    static void save(ServerPlayer player, String sessionId, String bookId, String revision) {
-        dispatch(player, "SAVE", AuthoringRequestDecoder.publication(sessionId, bookId, revision, false), request -> new AuthoringPublicationHandler(player).save(request));
-    }
-    private static void reviewPublish(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
-                                      String draftRevision) {
-        new AuthoringPublicationHandler(player).review(
-                new AuthoringRequestDecoder.SessionRequest(sessionId, bookId, draftRevision));
-    }
-    static void publishAndApply(ServerPlayer player, String sessionId, String bookId, String revision) {
-        dispatch(player, "PUBLISH", AuthoringRequestDecoder.publication(sessionId, bookId, revision, true), request -> new AuthoringPublicationHandler(player).publishAndApply(request));
-    }
-    static void updateQuest(ServerPlayer player, String json) {
-        dispatch(player, "UPDATE", AuthoringRequestDecoder.quest(json), request -> new AuthoringQuestUpdateHandler(player).update(request));
-    }
-
-    static Map<String, String> boundedConfig(Map<String, String> config) {
-        return AuthoringRequestDecoder.boundedConfig(config);
-    }
-    static void mutate(ServerPlayer player, String json) {
-        dispatch(player, "MUTATE", AuthoringRequestDecoder.mutation(json), request -> mutate(player, request));
-    }
-
-    /** Convert parsed positions at the use-case boundary, preserving their deterministic input order. */
-    private static void mutate(ServerPlayer player, AuthoringRequestDecoder.MutationRequest request) {
-        new AuthoringMutationHandler(player).mutate(request);
-    }
-
-    /** Temporary package bridges preserve existing regression callers until checkpoint B is accepted. */
-    static RewardDefinition rewardReplacement(QuestBookDefinition book, ResourceLocation questId,
-                                              ResourceLocation sourceId, ResourceLocation replacementId,
-                                              Map<String, String> config, String claimPolicy, boolean teamReward) {
-        return AuthoringMutationHandler.rewardReplacement(book, questId, sourceId, replacementId, config, claimPolicy, teamReward);
-    }
-
-    static Map<String, String> rewardMutationConfig(Map<String, String> config) {
-        return AuthoringMutationHandler.rewardMutationConfig(config);
     }
 }

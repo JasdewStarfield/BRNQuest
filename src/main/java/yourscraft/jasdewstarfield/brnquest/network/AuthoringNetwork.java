@@ -697,28 +697,6 @@ public final class AuthoringNetwork {
     }
 
     /** Combines the exact publish gates and workspace semantic diff into one revision-bound preview. */
-    private static void reviewPublish(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
-                                      String draftRevision) {
-        var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
-        if (!preview.success() && preview.value() == null) {
-            responses(player).sendFailure("REVIEW", preview.status(), preview.code(), preview.message());
-            return;
-        }
-        var diff = AuthorApi.diff(player, sessionId, bookId, draftRevision,
-                yourscraft.jasdewstarfield.brnquest.author.DraftDiffService.Baseline.WORKSPACE);
-        if (!diff.success() || diff.value() == null) {
-            responses(player).sendFailure("REVIEW", diff.status(), diff.code(), diff.message());
-            return;
-        }
-        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
-        if (!renewed.success()) {
-            responses(player).sendFailure("REVIEW", renewed.status(), renewed.code(), renewed.message());
-            return;
-        }
-        responses(player).sendPublishReview(renewed.value(), preview.success(), bookId,
-                preview.value(), diff.value());
-    }
-
     private static void sendMutationResult(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
                                            AuthorOperationResult<DraftEditResult> result, EditorMutationWire wire) {
         if (!result.success()) {
@@ -990,5 +968,10 @@ public final class AuthoringNetwork {
 
     static void save(ServerPlayer player, String sessionId, String bookId, String revision) {
         dispatch(player, "SAVE", AuthoringRequestDecoder.publication(sessionId, bookId, revision, false), request -> new AuthoringPublicationHandler(player).save(request));
+    }
+    private static void reviewPublish(ServerPlayer player, UUID sessionId, ResourceLocation bookId,
+                                      String draftRevision) {
+        new AuthoringPublicationHandler(player).review(
+                new AuthoringRequestDecoder.SessionRequest(sessionId, bookId, draftRevision));
     }
 }

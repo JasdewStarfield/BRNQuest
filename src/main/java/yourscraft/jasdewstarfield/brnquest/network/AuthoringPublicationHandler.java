@@ -35,4 +35,28 @@ final class AuthoringPublicationHandler {
         responses.sendSession("SAVE", saved.status(), saved.code(), saved.message(), renewed.value(), 0, 0);
     }
 
+    void review(AuthoringRequestDecoder.SessionRequest request) {
+        UUID sessionId = request.sessionId();
+        ResourceLocation bookId = request.bookId();
+        String draftRevision = request.draftRevision();
+        var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
+        if (!preview.success() && preview.value() == null) {
+            responses.sendFailure("REVIEW", preview.status(), preview.code(), preview.message());
+            return;
+        }
+        var diff = AuthorApi.diff(player, sessionId, bookId, draftRevision,
+                yourscraft.jasdewstarfield.brnquest.author.DraftDiffService.Baseline.WORKSPACE);
+        if (!diff.success() || diff.value() == null) {
+            responses.sendFailure("REVIEW", diff.status(), diff.code(), diff.message());
+            return;
+        }
+        var renewed = AuthorApi.renew(player, sessionId, draftRevision);
+        if (!renewed.success()) {
+            responses.sendFailure("REVIEW", renewed.status(), renewed.code(), renewed.message());
+            return;
+        }
+        responses.sendPublishReview(renewed.value(), preview.success(), bookId,
+                preview.value(), diff.value());
+    }
+
 }

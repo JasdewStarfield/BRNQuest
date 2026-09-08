@@ -39,8 +39,16 @@ class ExampleAddonBoundaryTest {
         }).reduce("", String::concat);
         for (String required : List.of("BrnQuestPlugins.register", "registrar.task", "registrar.reward",
                 "ClientTaskPresentationRegistry.register", "ClientRewardPresentationRegistry.register",
-                "configFields", "BrnQuestEvents.subscribe")) {
+                "configFields", "BrnQuestEvents.subscribe", "normalizeConfig", "claimHandler", "withValueLabels")) {
             assertTrue(combined.contains(required), "example add-on must demonstrate " + required);
+        }
+    }
+    @Test void genericCoreDoesNotKnowTheCommandRewardImplementation() throws IOException {
+        Path root = Path.of(System.getProperty("brnquest.projectDir"), "src/main/java/yourscraft/jasdewstarfield/brnquest");
+        for (String file : List.of("client/ui/QuestScreen.java", "author/DraftBookEditor.java", "progress/ProgressEngine.java")) {
+            String source = Files.readString(root.resolve(file), StandardCharsets.UTF_8);
+            for (String token : List.of("CommandReward", "RewardTypes.COMMAND", "commandSourceLabel", "screen.brnquest.command.source.", "\"source_mode\""))
+                assertFalse(source.contains(token), file + " leaks command-specific behavior: " + token);
         }
     }
 }

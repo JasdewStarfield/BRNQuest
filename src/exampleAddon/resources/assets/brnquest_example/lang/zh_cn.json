@@ -2,5 +2,10 @@
   "screen.brnquest_example.reward.experience": "经验奖励",
   "screen.brnquest_example.reward.experience.title": "%s 点经验值",
   "screen.brnquest_example.task.marker": "服务端标记条件",
-  "screen.brnquest_example.task.signal": "信号条件"
+  "screen.brnquest_example.task.signal": "信号条件",
+  "screen.brnquest_example.reward.guarded_tag": "受条件控制的标记",
+  "screen.brnquest_example.field.tag": "标记名称",
+  "screen.brnquest_example.field.mode": "示例模式",
+  "screen.brnquest_example.mode.explicit": "固定示例",
+  "screen.brnquest_example.mode.player": "玩家示例"
 }

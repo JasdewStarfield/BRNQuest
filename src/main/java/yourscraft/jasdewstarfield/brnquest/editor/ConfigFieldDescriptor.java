@@ -15,7 +15,8 @@ public record ConfigFieldDescriptor(String key, ConfigValueType valueType, boole
                                     Optional<String> defaultValue, OptionalDouble minimum,
                                     OptionalDouble maximum, List<String> allowedValues,
                                     Optional<ResourceLocation> resourceRegistry, String helpText,
-                                    Optional<ConfigFieldValidator> validator) {
+                                    Optional<ConfigFieldValidator> validator, String labelKey,
+                                    java.util.Map<String, String> valueLabelKeys) {
     public ConfigFieldDescriptor {
         key = Objects.requireNonNull(key, "key");
         if (key.isBlank()) throw new IllegalArgumentException("Field key must not be blank");
@@ -27,12 +28,34 @@ public record ConfigFieldDescriptor(String key, ConfigValueType valueType, boole
         resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
         helpText = Objects.requireNonNull(helpText, "helpText");
         validator = Objects.requireNonNull(validator, "validator");
+        labelKey = Objects.requireNonNull(labelKey, "labelKey");
+        valueLabelKeys = java.util.Map.copyOf(valueLabelKeys);
         if (minimum.isPresent() && maximum.isPresent() && minimum.getAsDouble() > maximum.getAsDouble()) {
             throw new IllegalArgumentException("Field minimum exceeds maximum: " + key);
         }
         if (valueType == ConfigValueType.ENUM && allowedValues.isEmpty()) {
             throw new IllegalArgumentException("Enum field requires allowed values: " + key);
         }
+    }
+
+    /** Compatibility constructor: existing extensions keep raw value labels and legacy field labels. */
+    public ConfigFieldDescriptor(String key, ConfigValueType valueType, boolean required,
+                                 Optional<String> defaultValue, OptionalDouble minimum, OptionalDouble maximum,
+                                 List<String> allowedValues, Optional<ResourceLocation> resourceRegistry,
+                                 String helpText, Optional<ConfigFieldValidator> validator) {
+        this(key, valueType, required, defaultValue, minimum, maximum, allowedValues, resourceRegistry,
+                helpText, validator, "", java.util.Map.of());
+    }
+
+    /** Translation keys belong to the declaring type; saved field names and enum values stay unchanged. */
+    public ConfigFieldDescriptor withLabel(String translationKey) {
+        return new ConfigFieldDescriptor(key, valueType, required, defaultValue, minimum, maximum,
+                allowedValues, resourceRegistry, helpText, validator, translationKey, valueLabelKeys);
+    }
+
+    public ConfigFieldDescriptor withValueLabels(java.util.Map<String, String> translationKeys) {
+        return new ConfigFieldDescriptor(key, valueType, required, defaultValue, minimum, maximum,
+                allowedValues, resourceRegistry, helpText, validator, labelKey, translationKeys);
     }
 
     public static ConfigFieldDescriptor field(String key, ConfigValueType type) {
@@ -80,6 +103,6 @@ public record ConfigFieldDescriptor(String key, ConfigValueType valueType, boole
                                        Optional<ResourceLocation> nextRegistry, String nextHelp,
                                        Optional<ConfigFieldValidator> nextValidator) {
         return new ConfigFieldDescriptor(key, valueType, nextRequired, nextDefault, nextMinimum, nextMaximum,
-                nextAllowed, nextRegistry, nextHelp, nextValidator);
+                nextAllowed, nextRegistry, nextHelp, nextValidator, labelKey, valueLabelKeys);
     }
 }

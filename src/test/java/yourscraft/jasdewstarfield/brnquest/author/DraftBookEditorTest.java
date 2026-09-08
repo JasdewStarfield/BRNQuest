@@ -10,6 +10,27 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DraftBookEditorTest {
+    @Test void typeNormalizationRunsOnCreateUpdateAndCopyWithoutDroppingOpaqueFields() {
+        var book = bookWithDependency();
+        var reward = new RewardDefinition(id("book"), id("normalized_command"),
+                yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND,
+                Map.of("command", " /say hello ", "opaque", "keep"), "manual", false);
+        book = value(DraftBookEditor.addReward(book, id("root"), reward));
+        assertEquals("say hello", book.quests().stream().filter(q -> q.id().equals(id("root")))
+                .findFirst().orElseThrow().rewards().getFirst().config().get("command"));
+        var replacement = new RewardDefinition(reward.bookId(), reward.id(), reward.typeId(),
+                Map.of("command", " /say updated ", "opaque", "keep"), "manual", false);
+        book = value(DraftBookEditor.updateReward(book, id("root"), reward.id(), replacement));
+        var copy = new RewardDefinition(reward.bookId(), id("copy_command"), reward.typeId(),
+                Map.of("command", " /say copy ", "opaque", "copy keep"), "manual", false);
+        book = value(DraftBookEditor.copyReward(book, id("root"), reward.id(), copy));
+        var rewards = book.quests().stream().filter(q -> q.id().equals(id("root"))).findFirst().orElseThrow().rewards();
+        assertEquals("say updated", rewards.get(0).config().get("command"));
+        assertEquals("keep", rewards.get(0).config().get("opaque"));
+        assertEquals("say copy", rewards.get(1).config().get("command"));
+        assertEquals("copy keep", rewards.get(1).config().get("opaque"));
+    }
+
     @Test void supportsStableIdCrudAcrossTheWholeBook() {
         QuestBookDefinition book = emptyBook();
         ChapterGroupDefinition group = new ChapterGroupDefinition(id("book"), id("group"), "Group", 0);

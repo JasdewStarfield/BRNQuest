@@ -422,7 +422,7 @@ public final class DraftBookEditor {
         if (task == null || !task.bookId().equals(book.id())) return invalid("TASK_BOOK_MISMATCH", "Task belongs to another book");
         if (typedIdExists(book, task.id())) return conflict("DUPLICATE_TYPED_ID", task.id());
         if (typedLegacySourceExists(book, task.id())) return retiredTypedId(task.id());
-        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), append(quest.tasks(), task), quest.rewards()), task.id());
+        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), append(quest.tasks(), normalizeTask(task)), quest.rewards()), task.id());
     }
 
     public static AuthorOperationResult<DraftChange> copyTask(QuestBookDefinition book, ResourceLocation questId,
@@ -445,7 +445,7 @@ public final class DraftBookEditor {
         if (!replacement.id().equals(taskId) && typedLegacySourceExists(book, replacement.id())) {
             return retiredTypedId(replacement.id());
         }
-        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, replacement, true);
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, normalizeTask(replacement), true);
         return renamedTyped(updated, "@task:", taskId, replacement.id());
     }
 
@@ -465,12 +465,21 @@ public final class DraftBookEditor {
         return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), normalizeReward(reward))), reward.id());
     }
 
-    /** Normalize command spelling on author writes while preserving opaque imported configuration. */
+    /** Types normalize only their own fields; opaque keys remain available for future extensions. */
     private static RewardDefinition normalizeReward(RewardDefinition reward) {
-        if (!reward.typeId().equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)) return reward;
+        var type = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId());
+        if (type == null) return reward;
         Map<String, String> config = new java.util.TreeMap<>(reward.config());
-        config.computeIfPresent("command", (key, command) -> yourscraft.jasdewstarfield.brnquest.reward.CommandRewardConfig.normalize(command));
+        config.putAll(type.normalizeConfig(reward.config()));
         return new RewardDefinition(reward.bookId(), reward.id(), reward.typeId(), config, reward.claimPolicy(), reward.teamReward());
+    }
+
+    private static TaskDefinition normalizeTask(TaskDefinition task) {
+        var type = yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry.get(task.typeId());
+        if (type == null) return task;
+        Map<String, String> config = new java.util.TreeMap<>(task.config());
+        config.putAll(type.normalizeConfig(task.config()));
+        return new TaskDefinition(task.bookId(), task.id(), task.typeId(), config, task.optional());
     }
 
     public static AuthorOperationResult<DraftChange> copyReward(QuestBookDefinition book, ResourceLocation questId,

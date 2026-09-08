@@ -55,4 +55,4 @@
 
 FTB `feedback_message` 是资源翻译键。无法从任务书输入解析该资源键时，保留为 `ftb.feedback_message` 并输出 BQF-107，作者应填写原生 `feedback` 文本后再发布；不依赖已卸载 FTB 的语言资源。非空反馈覆盖这项待修复检查，源键仍保留。团队等不支持的占位符必须由作者调整。
 
-数据 schema、网络协议与原有 RewardType API 均保持不变；命令类型的实际执行由服务端领取协调器负责，直接调用通用 RewardType.execute 不能绕过尝试记录。
+数据 schema 与网络协议保持不变；命令类型通过 experimental.3 的可选 RewardClaimHandler 接入服务端领取协调器，直接调用通用 RewardType.execute 不能绕过尝试记录。

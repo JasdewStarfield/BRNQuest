@@ -65,6 +65,42 @@ import java.util.stream.Collectors;
 public final class BrnQuestGameTests {
     private BrnQuestGameTests() {}
 
+    @GameTest(template = "empty", batch = "externalRewardBoundary")
+    @PrefixGameTestTemplate(false)
+    public static void externalRewardOwnsNormalizationAndClaimPolicy(GameTestHelper helper) {
+        if (!ModList.get().isLoaded("brnquest_example")) { helper.succeed(); return; }
+        var player = helper.makeMockServerPlayerInLevel();
+        var typeId = ResourceLocation.parse("brnquest_example:guarded_tag");
+        var raw = new RewardDefinition(id("book"), id("guarded_tag_reward"), typeId,
+                Map.of("tag", "  granted_tag  ", "opaque", "keep"), "manual", false);
+        var quest = quest("external_guarded", List.of(), List.of(), List.of());
+        install(quest);
+        var book = QuestBookManager.get().active().orElseThrow().book();
+        // Exercise the author mutation boundary, not merely the extension method in isolation.
+        var changed = yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor.addReward(book, quest.id(), raw);
+        var updatedBook = changed.value().book();
+        var updatedQuest = updatedBook.quests().stream().filter(q -> q.id().equals(quest.id())).findFirst().orElseThrow();
+        var reward = updatedQuest.rewards().getFirst();
+        helper.assertTrue(reward.config().get("tag").equals("granted_tag") && reward.config().get("opaque").equals("keep"),
+                "external normalization and opaque data survive author writes");
+        var schema = ConfigEditorSchemas.forReward(ApiViews.reward(reward));
+        helper.assertTrue(schema.fields().get(1).valueLabelKeys().get("player").equals("screen.brnquest_example.mode.player"),
+                "external enum metadata is isolated from built-in command labels");
+        install(updatedQuest);
+        var engine = ProgressEngine.get();
+        player.addTag("brnquest_example_block");
+        helper.assertTrue(!engine.claim(player, reward.id()).success(), "incomplete quest remains protected");
+        engine.progress(player).status(quest.id().toString(), yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.COMPLETED);
+        helper.assertTrue(!engine.claim(player, reward.id()).success() && !engine.rewardClaimed(player, reward), "failure does not consume claim");
+        player.removeTag("brnquest_example_block"); player.addTag("brnquest_example_wait");
+        var pending = engine.claim(player, reward.id());
+        helper.assertTrue(pending.success() && !pending.changed() && !engine.rewardClaimed(player, reward), "pending does not consume claim");
+        player.removeTag("brnquest_example_wait");
+        helper.assertTrue(engine.claim(player, reward.id()).changed() && player.getTags().contains("granted_tag"), "external handler grants and commits");
+        helper.assertTrue(!engine.claim(player, reward.id()).changed(), "duplicate claim stays closed");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)
     public static void publicApiExampleAddonCompletesItsFullContract(GameTestHelper helper) {

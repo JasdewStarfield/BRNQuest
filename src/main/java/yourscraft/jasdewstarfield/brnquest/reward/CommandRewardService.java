@@ -27,9 +27,41 @@ public final class CommandRewardService {
     public static String key(yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId owner, java.util.UUID player,
                              QuestDefinition quest, RewardDefinition reward, int cycle) {
         // Revision is deliberately excluded: publishing an edit must not reopen the same earned reward.
-        return owner.providerId() + "/" + owner.ownerId() + "/" + quest.bookId() + "/" + reward.id()
-                + "/" + cycle + "/" + (reward.teamReward() ? "shared" : player);
+        return key(owner, player, quest.bookId(), reward.id(), cycle, reward.teamReward());
     }
+    private static String key(yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId owner, java.util.UUID player,
+                              net.minecraft.resources.ResourceLocation bookId, net.minecraft.resources.ResourceLocation rewardId,
+                              int cycle, boolean shared) {
+        return owner.providerId() + "/" + owner.ownerId() + "/" + bookId + "/" + rewardId
+                + "/" + cycle + "/" + (shared ? "shared" : player);
+    }
+    /** Command-specific journal policy is plugged into the generic authoritative claim boundary. */
+    public static RewardClaimResult claim(RewardClaimContext context) {
+        var execution = context.rewardContext();
+        var player = execution.player();
+        var view = execution.reward();
+        var reward = new RewardDefinition(view.bookId(), view.id(), view.typeId(), view.config(), view.claimPolicy(), view.teamReward());
+        String key = key(context.ownerId(), player.getUUID(), execution.bookId(), view.id(), context.completionCycle(), view.teamReward());
+        Prepared prepared;
+        try {
+            var receipt = journal(player).read(key);
+            if (receipt != null) {
+                if (receipt.outcome().state().equals("REPORTED_SUCCESS") || receipt.outcome().state().equals("ACKNOWLEDGED"))
+                    return RewardClaimResult.success("Command receipt reconciled without replay");
+                return RewardClaimResult.failure("COMMAND_ATTEMPT_REQUIRES_REVIEW", receipt.outcome().state() + " attempt=" + receipt.intent().attempt());
+            }
+            prepared = prepare(player, reward);
+            // Persist intent before executing anything; final ledger writes remain the coordinator's job.
+            journal(player).begin(key, prepared.command());
+        } catch (Exception error) {
+            return RewardClaimResult.failure("COMMAND_PREFLIGHT_REJECTED", error.getMessage() == null ? "Command preflight failed" : error.getMessage());
+        }
+        var result = execute(player, key, prepared);
+        if (result.state() == RewardClaimResult.State.SUCCESS && !prepared.config().feedback().isBlank())
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(prepared.config().feedback()), false);
+        return result;
+    }
+
     public static Prepared prepare(ServerPlayer player, RewardDefinition reward) throws Exception {
         CommandRewardConfig config = CommandRewardConfig.decode(reward.config()).getOrThrow();
         int ceiling = BrnQuestServerConfig.commandPermissionLimit();
@@ -68,7 +100,7 @@ public final class CommandRewardService {
         } catch (Exception error) { BRNQuest.LOGGER.error("Command receipt reconciliation failed for {}", expectedKey, error); }
     }
 
-    public static RewardResult execute(ServerPlayer player, String key, Prepared prepared) {
+    public static RewardClaimResult execute(ServerPlayer player, String key, Prepared prepared) {
         var journal = journal(player);
         int[] callbacks = {0, 0, 0};
         var source = prepared.source().withCallback((success, result) -> {
@@ -84,12 +116,12 @@ public final class CommandRewardService {
         try {
             // The Minecraft execution context supports /function and /execute; dispatcher.execute alone does not.
             player.server.getCommands().performCommand(player.server.getCommands().getDispatcher().parse(prepared.command(), source), prepared.command());
-            if (callbacks[2] > 0) return RewardResult.failure("Command reported failure; attempt retained, no automatic retry");
-            if (callbacks[0] == 0) return RewardResult.failure("Command queued or result unknown; inspect command receipt before recovery");
-            return RewardResult.success("Command executed; result=" + callbacks[1]);
+            if (callbacks[2] > 0) return RewardClaimResult.failure("EXECUTION_FAILED", "Command reported failure; attempt retained, no automatic retry");
+            if (callbacks[0] == 0) return RewardClaimResult.pending("COMMAND_PENDING", "Command queued or result unknown; inspect command receipt before recovery");
+            return RewardClaimResult.success("Command executed; result=" + callbacks[1]);
         } catch (Exception error) {
             BRNQuest.LOGGER.error("Command reward attempt has an uncertain result for {}", key, error);
-            return RewardResult.failure("Command result unknown; attempt retained");
+            return RewardClaimResult.failure("EXECUTION_FAILED", "Command result unknown; attempt retained");
         }
     }
 }

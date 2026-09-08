@@ -9,12 +9,19 @@ import java.util.List;
 public final class CommandReward implements RewardType<CommandRewardConfig> {
     public Codec<CommandRewardConfig> configCodec() { return CommandRewardConfig.CODEC; }
     public List<ConfigFieldDescriptor> configFields() {
-        return List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT),
-                ConfigFieldDescriptor.field("command", ConfigValueType.TEXT).asRequired(),
-                ConfigFieldDescriptor.enumeration("source_mode", List.of("explicit", "player")).withDefault("explicit"),
-                ConfigFieldDescriptor.field("permission_level", ConfigValueType.INTEGER).withDefault("2").withRange(0, 4),
-                ConfigFieldDescriptor.field("silent", ConfigValueType.BOOLEAN).withDefault("false"),
-                ConfigFieldDescriptor.field("feedback", ConfigValueType.TEXT));
+        return List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.title"),
+                ConfigFieldDescriptor.field("command", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.command").asRequired(),
+                ConfigFieldDescriptor.enumeration("source_mode", List.of("explicit", "player")).withLabel("screen.brnquest.editor.config.source_mode")
+                        .withValueLabels(java.util.Map.of("explicit", "screen.brnquest.command.source.explicit", "player", "screen.brnquest.command.source.player")).withDefault("explicit"),
+                ConfigFieldDescriptor.field("permission_level", ConfigValueType.INTEGER).withLabel("screen.brnquest.editor.config.permission_level").withDefault("2").withRange(0, 4),
+                ConfigFieldDescriptor.field("silent", ConfigValueType.BOOLEAN).withLabel("screen.brnquest.editor.config.silent").withDefault("false"),
+                ConfigFieldDescriptor.field("feedback", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.feedback"));
+    }
+    public java.util.Optional<RewardClaimHandler> claimHandler() { return java.util.Optional.of(CommandRewardService::claim); }
+    public java.util.Map<String, String> normalizeConfig(java.util.Map<String, String> config) {
+        var normalized = new java.util.TreeMap<>(config);
+        normalized.computeIfPresent("command", (key, value) -> CommandRewardConfig.normalize(value));
+        return normalized;
     }
     public RewardResult execute(RewardContext context, CommandRewardConfig config) {
         // Never expose an unjournaled execution route to extensions calling the generic executor.

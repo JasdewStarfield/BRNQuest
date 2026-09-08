@@ -172,6 +172,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component typedPropertyMessage;
     private UiRect enumDropdownAnchor;
     private List<String> enumDropdownValues = List.of();
+    private java.util.function.Function<String, Component> enumDropdownLabel = Component::literal;
     private Consumer<String> enumDropdownConsumer;
     private ResourceLocation discardSwitchTarget;
     private boolean discardClosesScreen;
@@ -1201,11 +1202,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Opens a real popup list while keeping the selected value in the form field owned by the caller. */
     private void openEnumDropdown(UiRect anchor, List<String> values, Consumer<String> consumer) {
+        openEnumDropdown(anchor, values, consumer, Component::literal);
+    }
+
+    /** The caller supplies labels; dropdown values remain stable configuration tokens. */
+    private void openEnumDropdown(UiRect anchor, List<String> values, Consumer<String> consumer,
+                                  java.util.function.Function<String, Component> labels) {
         if (anchor == null || values.isEmpty() || consumer == null || ClientEditorState.get().busy()) return;
         closeActiveEditorOverlay();
         enumDropdownAnchor = anchor;
         enumDropdownValues = List.copyOf(values);
         enumDropdownConsumer = consumer;
+        enumDropdownLabel = labels;
         setFocused(null);
         editorOverlays.show(EditorOverlayHost.Kind.ENUM_DROPDOWN);
     }
@@ -1242,8 +1250,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<EditorPopupMenu.Entry> enumDropdownEntries() {
         List<EditorPopupMenu.Entry> entries = new ArrayList<>();
         for (int index = 0; index < enumDropdownValues.size(); index++) {
-            entries.add(new EditorPopupMenu.Entry("ENUM_" + index, enumDropdownValues.equals(List.of("explicit", "player"))
-                            ? commandSourceLabel(enumDropdownValues.get(index)) : Component.literal(enumDropdownValues.get(index)),
+            entries.add(new EditorPopupMenu.Entry("ENUM_" + index, enumDropdownLabel.apply(enumDropdownValues.get(index)),
                     false, true, List.of()));
         }
         return List.copyOf(entries);
@@ -1261,6 +1268,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         enumDropdownAnchor = null;
         enumDropdownValues = List.of();
         enumDropdownConsumer = null;
+        enumDropdownLabel = Component::literal;
         editorOverlays.close();
     }
 
@@ -2412,15 +2420,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderTypedConfigRow(GuiGraphics graphics, ConfigFieldDescriptor descriptor, int index,
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
-        drawTypedLabel(graphics, typedConfigLabel(descriptor.key()), row.label(), issue);
+        drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
         EditorTextField field = typedPropertySection.form().configField(index);
         if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ENUM) {
-            renderEditorTextButton(graphics, row.field(), descriptor.key().equals("source_mode")
-                            ? commandSourceLabel(field.getValue()).copy().append(" ▾") : Component.literal(field.getValue() + " ▾"),
+            renderEditorTextButton(graphics, row.field(), ConfigFieldLabels.value(descriptor, field.getValue()).copy().append(" ▾"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
             ItemStack stack = item(typedPropertySection.originalId(), field.getValue());
@@ -2478,12 +2485,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyRow.label(graphics, font, Component.translatable(labelKey), bounds, issue);
     }
 
-    /** Presentation changes the label only; source-mode values remain stable in saved configuration. */
-    private Component commandSourceLabel(String value) {
-        return value.equals("explicit") || value.equals("player")
-                ? Component.translatable("screen.brnquest.command.source." + value) : Component.literal(value);
-    }
-
     private String typedConfigLabel(String key) {
         return switch (key) {
             case "item" -> "screen.brnquest.editor.config.item";
@@ -2494,11 +2495,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             // Built-in crafting progress uses a localized label instead of exposing its storage key.
             case "only_from_crafting" -> "screen.brnquest.editor.config.only_from_crafting";
             case "title" -> "screen.brnquest.editor.config.title";
-            case "command" -> "screen.brnquest.editor.config.command";
-            case "source_mode" -> "screen.brnquest.editor.config.source_mode";
-            case "permission_level" -> "screen.brnquest.editor.config.permission_level";
-            case "silent" -> "screen.brnquest.editor.config.silent";
-            case "feedback" -> "screen.brnquest.editor.config.feedback";
             case "script_id" -> "screen.brnquest.editor.config.script_id";
             case "message_id" -> "screen.brnquest.editor.config.message_id";
             default -> key;
@@ -2537,8 +2533,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     EditorTextField field = typedPropertySection.form().configField(intent.fieldIndex());
                     field.setValue(Boolean.toString(!booleanValue(field.getValue())));
                 }
-                case ENUM -> openEnumDropdown(intent.anchor(), intent.values(),
-                        typedPropertySection.form().configField(intent.fieldIndex())::setValue);
+                case ENUM -> {
+                    var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
+                    openEnumDropdown(intent.anchor(), intent.values(),
+                            typedPropertySection.form().configField(intent.fieldIndex())::setValue,
+                            value -> ConfigFieldLabels.value(descriptor, value));
+                }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
                 case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());
                 case RAW -> openTypedPropertyRawEditor();

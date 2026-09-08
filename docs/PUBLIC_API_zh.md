@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.2`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.3`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -141,3 +141,7 @@ Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS s
 ## 作者文本语言选择
 
 任务书、章节组、章节和任务查询现支持显式 locale 重载，不带 locale 的查询保留原文。完整字段、回退规则和兼容格式见 [`AUTHOR_TEXT_LOCALIZATION_zh.md`](AUTHOR_TEXT_LOCALIZATION_zh.md)。语言选择只影响返回投影，不改变同步数据与 revision。
+
+### experimental.3 类型扩展补充
+
+公开的 `RewardClaimContext`、`RewardClaimHandler`、`RewardClaimResult` 为可选领取接口，`RewardType.claimHandler()` 默认不启用。普通领取账本仍归核心所有。任务/奖励新增 normalizeConfig 默认方法，字段描述新增显示翻译元数据；详见 [类型扩展边界](EXTENSION_API_zh.md) 与 [迁移说明](API_VERSIONING_zh.md)。

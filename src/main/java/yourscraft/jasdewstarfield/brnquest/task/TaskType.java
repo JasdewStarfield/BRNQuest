@@ -14,6 +14,8 @@ import java.util.Map;
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public interface TaskType<TConfig> {
     Codec<TConfig> configCodec();
+    /** Pure author-write normalization. Preserve keys the type does not own; never perform side effects. */
+    default java.util.Map<String, String> normalizeConfig(java.util.Map<String, String> config) { return config; }
     boolean satisfied(TaskContext context, TConfig config);
     default boolean consume(TaskContext context, TConfig config) { return true; }
     default boolean allowsManualSubmission(TConfig config) { return false; }

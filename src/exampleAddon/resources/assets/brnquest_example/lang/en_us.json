@@ -2,5 +2,10 @@
   "screen.brnquest_example.reward.experience": "Experience reward",
   "screen.brnquest_example.reward.experience.title": "%s experience points",
   "screen.brnquest_example.task.marker": "Server marker objective",
-  "screen.brnquest_example.task.signal": "Signal objective"
+  "screen.brnquest_example.task.signal": "Signal objective",
+  "screen.brnquest_example.reward.guarded_tag": "Guarded tag",
+  "screen.brnquest_example.field.tag": "Tag name",
+  "screen.brnquest_example.field.mode": "Example mode",
+  "screen.brnquest_example.mode.explicit": "Fixed example",
+  "screen.brnquest_example.mode.player": "Player example"
 }

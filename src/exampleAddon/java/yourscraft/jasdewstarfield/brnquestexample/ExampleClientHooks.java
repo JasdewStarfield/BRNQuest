@@ -15,6 +15,11 @@ final class ExampleClientHooks {
     private ExampleClientHooks() {}
 
     static void register() {
+        ClientRewardPresentationRegistry.register(BrnQuestExampleAddon.GUARDED_TAG_REWARD, new ClientRewardPresentation() {
+            public String symbol(RewardView reward) { return "G"; }
+            public Component typeName(RewardView reward) { return Component.translatable("screen.brnquest_example.reward.guarded_tag"); }
+            public Component title(RewardPresentationContext context) { return typeName(context.reward()); }
+        });
         ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.MARKER_TASK, new MarkerPresentation());
         ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.SIGNAL_TASK, new SignalPresentation());
         ClientRewardPresentationRegistry.register(BrnQuestExampleAddon.EXPERIENCE_REWARD,

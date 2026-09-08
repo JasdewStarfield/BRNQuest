@@ -18,8 +18,8 @@ import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService;
-import yourscraft.jasdewstarfield.brnquest.reward.CommandRewardService;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardClaimContext;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardClaimResult;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
@@ -375,7 +375,6 @@ public final class ProgressEngine {
             PlayerProgress progress = progress(player);
             if (progress.status(owner.id().toString()).ordinal() < QuestStatus.COMPLETED.ordinal()) return OperationResult.failure("LOCKED", "Quest is incomplete");
             RewardDefinition reward = owner.rewards().stream().filter(r -> r.id().equals(rewardId)).findFirst().orElseThrow();
-            boolean commandReward = reward.typeId().equals(RewardTypes.COMMAND);
             if (rewardClaimed(player, reward))
                 return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
             if (shared(player) && !progress.completionMembers(owner.id().toString()).contains(player.getUUID())) {
@@ -383,50 +382,38 @@ public final class ProgressEngine {
             }
             RewardType<?> type = RewardTypeRegistry.get(reward.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown reward type");
-            CommandRewardService.Prepared prepared = null;
-            boolean recoveredCommand = false;
-            String commandKey = "";
-            if (commandReward) {
-                commandKey = CommandRewardService.key(player, owner, reward, progress);
-                try {
-                    var receipt = CommandRewardService.journal(player).read(commandKey);
-                    if (receipt != null) {
-                        recoveredCommand = receipt.outcome().state().equals("REPORTED_SUCCESS")
-                                || receipt.outcome().state().equals("ACKNOWLEDGED");
-                        if (!recoveredCommand) return OperationResult.failure("COMMAND_ATTEMPT_REQUIRES_REVIEW",
-                                receipt.outcome().state() + " attempt=" + receipt.intent().attempt());
-                    } else {
-                        if (rewardClaimed(player, reward)) return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
-                        prepared = CommandRewardService.prepare(player, reward);
-                        // Intent must reach storage before any command side effect or receipt mutation.
-                        CommandRewardService.journal(player).begin(commandKey, prepared.command());
-                    }
-                } catch (Exception error) {
-                    return OperationResult.failure("COMMAND_PREFLIGHT_REJECTED", error.getMessage() == null ? "Command preflight failed" : error.getMessage());
-                }
-            }
-            // Ordinary rewards retain their existing policy. A command intent blocks replay separately;
-            // it must not count as a completed claim until execution succeeds or an admin acknowledges it.
-            if (!commandReward) {
-                if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
-                else progress.claim(rewardId.toString());
-            }
+            var execution = new RewardContext(player, owner.bookId(), owner.id(), ApiViews.reward(reward));
+            var handler = type.claimHandler();
             QuestProgressData data = QuestProgressData.get(player.getServer());
-            data.setDirty();
-            var result = commandReward
-                    ? recoveredCommand ? yourscraft.jasdewstarfield.brnquest.reward.RewardResult.success("Command receipt reconciled without replay")
-                        : CommandRewardService.execute(player, commandKey, prepared)
-                    : RewardTypeExecutor.execute(type, new RewardContext(player, owner.bookId(), owner.id(), ApiViews.reward(reward)));
-            if (commandReward) BrnQuestNetwork.syncProgress(player, true);
-            if (commandReward && result.success() && !recoveredCommand && prepared != null && !prepared.config().feedback().isBlank())
-                player.displayClientMessage(Component.literal(prepared.config().feedback()), false);
-            if (!result.success() && commandReward && result.message().startsWith("Command queued"))
-                return OperationResult.noChange("COMMAND_PENDING", "Command scheduled; inspect the receipt if no result arrives");
-            if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
-            if (commandReward) {
+            String message;
+            if (handler.isPresent()) {
+                // Advanced types own attempt persistence; only a confirmed success commits the core ledger.
+                RewardClaimResult result;
+                try {
+                    result = java.util.Objects.requireNonNull(handler.orElseThrow().claim(new RewardClaimContext(
+                            execution, ProgressOwnerService.require(player), progress.completionCycles(owner.id().toString()))));
+                } catch (Exception error) {
+                    yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.error("Reward claim handler failed for {} ({})", rewardId, reward.typeId(), error);
+                    return OperationResult.failure("CLAIM_HANDLER_FAILED", "Reward attempt failed; consult the type's recovery policy");
+                }
+                if (result.state() != RewardClaimResult.State.SUCCESS) {
+                    BrnQuestNetwork.syncProgress(player, true);
+                    return result.state() == RewardClaimResult.State.PENDING
+                            ? OperationResult.noChange(result.code(), result.message())
+                            : OperationResult.failure(result.code(), result.message());
+                }
+                message = result.message();
                 if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
                 else progress.claim(rewardId.toString());
                 data.setDirty();
+            } else {
+                // Preserve the existing ordinary-reward policy for extensions that only implement execute.
+                if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
+                else progress.claim(rewardId.toString());
+                data.setDirty();
+                var result = RewardTypeExecutor.execute(type, execution);
+                if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
+                message = result.message();
             }
             if (rewardsResolved(owner, progress)) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
             BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
@@ -438,7 +425,7 @@ public final class ProgressEngine {
                 player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
                         rewardId.toString()), true);
             }
-            return OperationResult.success(result.message());
+            return OperationResult.success(message);
         });
     }
 

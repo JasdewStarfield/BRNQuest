@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.2`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.3`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -32,3 +32,9 @@ API 版本独立于模组发布版本：补丁发布可以在不改变 API 基�
 ## experimental.1 → experimental.2
 
 新增作者文本查询的六个 locale 重载：`getActiveBook(locale)`、`getChapterGroups(locale)`、`getChapterGroup(id, locale)`、`getChapters(locale)`、`getChapter(id, locale)`、`getQuests(locale)`。原有 `getQuest(id, locale)` 继续可用。已有签名和不带 locale 的原文查询行为不变，无需迁移；需要展示译文的调用方显式传入语言。数据 schema 和网络协议没有变化。
+
+## experimental.2 → experimental.3
+
+新增 `TaskType.normalizeConfig`、`RewardType.normalizeConfig`、`RewardType.claimHandler` 默认方法，以及 `RewardClaimContext` / `RewardClaimHandler` / `RewardClaimResult`。现有类型无需实现新增方法；普通奖励继续沿用 execute 路径。
+
+`ConfigFieldDescriptor` 增加 `labelKey` 和不可变 `valueLabelKeys` 元数据及构建方法。保留原十参数构造器，已有构造调用无需改动；record 组件形状及生成的 equals/toString 随之扩展，依赖反射组件列表的消费者需调整。数据 schema 与网络协议不变。新扩展应通过字段描述提供翻译，并通过 normalizeConfig/claimHandler 定义类型行为，不修改内部 Screen、作者协调器或进度引擎。

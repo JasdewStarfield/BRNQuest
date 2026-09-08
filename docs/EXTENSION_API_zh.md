@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.2` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.3` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -34,7 +34,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 `ProgressEngine` 不识别具体任务类型 ID。常规新类型不应要求修改进度引擎或网络协议；现有 `CompleteTaskPayload` 会把任务行意图交给注册类型重新校验。
 
-`RewardType<TConfig>` 接收不可变 `RewardContext`，其中包含玩家、book/quest ID 和 `RewardView`。领取账本在调用扩展奖励前由 BRNQuest 持久化；扩展不得自行修改领取状态，并应把一次执行所需的全部副作用放在同一次调用中。
+`RewardType<TConfig>` 接收不可变 `RewardContext`，其中包含玩家、book/quest ID 和 `RewardView`。默认执行路径在调用扩展前标记普通领取账本并请求存档；这不等于强制落盘。扩展不得自行修改领取状态，并应把一次执行所需的全部副作用放在同一次调用中。需要独立尝试记录的类型使用下述可选领取接口。
 
 任务书 reload 成功后，BRNQuest 会在服务器线程重新对账所有在线玩家，并发送新定义和完整进度快照。新增的无前置任务因此应立即进入 `AVAILABLE`，而不是等待玩家重登。
 
@@ -76,3 +76,17 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 common 插件门面与 Java task/reward/owner provider 在首次服务端资源 reload 前冻结；客户端 presentation 在 client setup 冻结。Java 注册只能发生在对应构造/setup 窗口，冻结后的重复或迟到注册都会明确抛出错误。KubeJS 脚本类型使用独立候选窗口：只在 server scripts 评估时开放，脚本无错误后先封存候选，再用候选解码并校验任务书；只有二者都成功时，才紧邻提交类型表与任务书指针。任一环节失败均保留上一组已成功的类型和任务书快照。
 
 任务书 reload 先在候选对象上完成解码、所有已冻结类型的 Codec 校验和整本校验，只有没有 fatal 诊断时才原子替换当前快照。候选失败会更新诊断报告但保留上一 revision；成功替换后才发布只读事件并对账在线玩家。扩展不得把 reload 中获得的内部配置对象跨 revision 缓存。
+
+## 新类型的实现边界（experimental.3）
+
+新增任务或奖励应由具体实现、注册、客户端 presentation 和语言资源完成接入。`QuestScreen`、`DraftBookEditor`、`ProgressEngine` 不应增加按新类型 ID、字段名或枚举值判断的业务分支。需要新能力时，先补最小通用入口，再让具体类型接入；新控件属于通用编辑器能力，FTB 字段转换属于导入适配器，不放进通用 Screen。
+
+- 字段标题使用 `ConfigFieldDescriptor.withLabel(translationKey)`；枚举显示使用 `withValueLabels(Map.of(rawValue, translationKey))`。类型负责提供对应语言资源。界面只翻译显示文本，配置仍保存原始键和值；没有枚举翻译时显示原值。旧字段描述构造器及内置字段标签后备继续兼容。新类型应显式声明标签，不能扩充 Screen 的旧标签 switch。
+- `TaskType.normalizeConfig` / `RewardType.normalizeConfig` 是作者新增、更新及复制时的纯函数入口，默认原样返回。输入不可变；不得读写世界或执行奖励。只规范化自己拥有的字段，必须保留未知扩展数据。作者协调器会把返回值合并到原始 Map，未返回的键不会被删除；格式错误仍交由 Codec/发布校验报告。运行时也应兼容历史配置。
+- `RewardType.claimHandler()` 默认为空，继续调用既有 `execute`。需要预检、独立尝试记录或等待结果时，返回 `RewardClaimHandler`。该接口在服务端线程、owner 锁内、完成/成员/重复领取检查之后调用，接收 `RewardClaimContext`（既有 RewardContext、owner 身份、完成周期）。不暴露可变账本。
+- handler 返回 `RewardClaimResult`：`SUCCESS` 才写入普通领取记录、发出领取事件并推进周期；`PENDING` 不改领取记录，返回成功但未变化；`FAILURE` 不改领取记录并报告失败。code/message 为诊断，不用消息前缀判断状态。handler 自己负责配置预检、失败后恢复、重入与重复调用安全；抛异常会报告 `CLAIM_HANDLER_FAILED`，核心不会伪造成功。任意非幂等副作用必须有类型自己的持久化策略，不能把此接口当成通用事务保证。
+- 异步结果若需完成领取，回到服务器线程，通过公共 `BrnQuestApi.claimRewardResult` 重走资格检查；类型必须核对原 owner、周期和奖励身份，读取自己的结果记录，返回成功而不重放副作用。禁止从异步线程改进度，禁止直接写普通领取账本。
+
+命令奖励的规范化、权限与尝试记录现在由自己的实现承担。示例附属模组 `brnquest_example:guarded_tag` 使用相同扩展入口，以幂等玩家 tag 演示拒绝、等待、成功；它不是可用于任意命令的持久化日志模板。
+
+新增类型的验证应覆盖：注册发现 → 字段/枚举显示元数据 → 作者新增/更新/复制与未知字段保留 → Codec/发布校验 → 服务端实际行为 → 重复请求与失败路径。自动测试通过不能代替新增界面的客户端验收。若类型必须改核心业务分支，应先说明缺失的通用能力并补入口，避免逐类型累积特例。

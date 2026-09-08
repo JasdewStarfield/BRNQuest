@@ -36,6 +36,7 @@ public final class BrnQuestExampleAddon {
     public static final ResourceLocation MARKER_TASK = id("marker");
     public static final ResourceLocation SIGNAL_TASK = id("signal");
     public static final ResourceLocation EXPERIENCE_REWARD = id("experience");
+    public static final ResourceLocation GUARDED_TAG_REWARD = id("guarded_tag");
     public static final ResourceLocation PLUGIN_ID = id("core");
     public static final String OBSERVED_TAG = "brnquest_example_observed";
 
@@ -51,7 +52,8 @@ public final class BrnQuestExampleAddon {
         public void register(BrnQuestExtensionRegistrar registrar) {
             registrar.task(MARKER_TASK, new MarkerTask())
                     .task(SIGNAL_TASK, new SignalTask());
-            registrar.reward(EXPERIENCE_REWARD, new ExperienceReward());
+            registrar.reward(EXPERIENCE_REWARD, new ExperienceReward())
+                    .reward(GUARDED_TAG_REWARD, new GuardedTagReward());
         }
     }
 

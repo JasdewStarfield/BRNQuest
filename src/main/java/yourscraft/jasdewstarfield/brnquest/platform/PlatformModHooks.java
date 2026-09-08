@@ -50,8 +50,6 @@ public final class PlatformModHooks {
     private static void onReloadListeners(AddReloadListenerEvent event) {
         // Third-party construction/setup registration must finish before any book is decoded.
         ExtensionRegistrationLifecycle.freezeCommonAndScript();
-        event.addListener((net.minecraft.server.packs.resources.ResourceManagerReloadListener) resources ->
-                yourscraft.jasdewstarfield.brnquest.task.location.LocationTargets.invalidate());
         event.addListener(new QuestBookReloadListener());
     }
     private static void onServerStarted(ServerStartedEvent event) {

@@ -40,6 +40,25 @@ class FtbV13ImporterTest {
         assertEquals(imported.book(),NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(imported.book())).getAsJsonObject()));
     }
 
+    @Test void explorationAliasesReportTheSameMappingAsTheImportedType() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        for (String kind : List.of("dimension", "biome", "location", "structure")) {
+            for (String prefix : List.of("", "ftbquests:")) {
+                String source = prefix + kind;
+                Files.writeString(temporary.resolve("chapters/places.snbt"),
+                        "{id:'1000000000000001',quests:[{id:'2000000000000001',tasks:[{id:'3000000000000001',type:'"
+                                + source + "'}]}]}", StandardCharsets.UTF_8);
+                var imported = new FtbV13Importer().importBook(temporary, "test", "main");
+                assertEquals("brnquest:" + kind, imported.book().quests().getFirst().tasks().getFirst().typeId().toString());
+                var conversions = imported.fieldConversions().stream().filter(c -> c.sourceField().equals("type")).toList();
+                assertEquals(1, conversions.size(), source);
+                assertEquals(FtbFieldConversion.Status.MAPPED, conversions.getFirst().status(), source);
+            }
+        }
+    }
+
     @Test void importsCompleteEowFixtureWithoutSilentLoss() throws Exception {
         FtbImportResult result = new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main");
         assertFalse(result.report().hasFatal(), result.report().toJson());

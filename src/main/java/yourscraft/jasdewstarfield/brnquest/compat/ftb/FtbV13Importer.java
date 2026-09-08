@@ -17,6 +17,15 @@ import java.util.*;
 
 /** Maps the observed FTB Quests v13 subset into BRNQuest's independent immutable model. */
 public final class FtbV13Importer {
+    // Mapping, diagnostics and conversion reports must recognize the same source aliases.
+    private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
+            "xp_levels", "command", "dimension", "biome", "location", "structure");
+
+    private static String builtInPath(String type) {
+        String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
+    }
+
     private final SnbtReader reader = new SnbtReader();
 
     public FtbImportResult importBook(Path source, String namespace, String bookPath) {
@@ -424,9 +433,7 @@ public final class FtbV13Importer {
 
     private void warnUnknown(String type, String file, String path, String id, DiagnosticReport report) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
-        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "dimension", "biome", "location", "structure").contains(normalized)
-                || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom", "ftbquests:xp",
-                "ftbquests:xp_levels", "ftbquests:command", "ftbquests:dimension", "ftbquests:biome", "ftbquests:location", "ftbquests:structure").contains(normalized);
+        boolean supported = BUILT_IN_TYPES.contains(builtInPath(type));
         if (!supported && !normalized.contains(":")) {
             report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
         }
@@ -434,9 +441,7 @@ public final class FtbV13Importer {
 
     private void recordTypeConversion(String file, String path, String sourceType, ResourceLocation targetType,
                                       List<FtbFieldConversion> conversions) {
-        String normalized = sourceType == null ? "" : sourceType.toLowerCase(Locale.ROOT);
-        boolean builtIn = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "ftbquests:checkmark",
-                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels", "ftbquests:command", "ftbquests:dimension", "ftbquests:biome", "ftbquests:location", "ftbquests:structure").contains(normalized);
+        boolean builtIn = BUILT_IN_TYPES.contains(builtInPath(sourceType));
         boolean namespaced = sourceType != null && sourceType.contains(":");
         FtbFieldConversion.Status status = builtIn ? FtbFieldConversion.Status.MAPPED
                 : namespaced ? FtbFieldConversion.Status.PRESERVED_EXTENSION
@@ -487,8 +492,8 @@ public final class FtbV13Importer {
 
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
-        String builtInPath = normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
-        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "dimension", "biome", "location", "structure").contains(builtInPath)) {
+        String builtInPath = builtInPath(type);
+        if (BUILT_IN_TYPES.contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }
         ResourceLocation namespaced = ResourceLocation.tryParse(normalized);

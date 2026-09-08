@@ -265,22 +265,6 @@ public final class AuthoringNetwork {
     }
 
     /** Transitional use-case bridge; registration itself never parses or executes domain requests. */
-    static void openLive(ServerPlayer player, String rawBookId) {
-        var bookId = ResourceLocation.tryParse(rawBookId);
-        var opened = EditSessionService.get().openLive(player, bookId);
-        if (!opened.success()) {
-            responses(player).sendFailure("OPEN", opened.status(), opened.code(), opened.message());
-            return;
-        }
-        var draft = EditSessionService.get().snapshot(player, opened.value().sessionId(), bookId,
-                opened.value().session().draftRevision());
-        if (!draft.success()) {
-            responses(player).sendFailure("OPEN", draft.status(), draft.code(), draft.message());
-            return;
-        }
-        sendDraft(player, "OPEN", "SESSION_LIVE_OPENED", "Live editing", opened.value(), draft.value());
-    }
-
     public static void requestCatalog() {
         PacketDistributor.sendToServer(new RequestCatalogPayload());
     }
@@ -380,173 +364,6 @@ public final class AuthoringNetwork {
     public static void reviewPublish(UUID sessionId, ResourceLocation bookId, String draftRevision) {
         mutate(new EditorMutationWire(sessionId.toString(), bookId.toString(), draftRevision,
                 "REVIEW", "", "", "", "", 0, 0.0D, 0.0D, List.of(), Map.of()));
-    }
-
-    static void sendCatalog(ServerPlayer player) {
-        responses(player).sendCatalog(AuthorApi.catalog(player));
-    }
-
-    static void open(ServerPlayer player, String rawBookId) {
-        open(player, rawBookId, "");
-    }
-
-    static void open(ServerPlayer player, String rawBookId, String expectedDraftRevision) {
-        ResourceLocation bookId = ResourceLocation.tryParse(rawBookId);
-        if (bookId == null) {
-            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_BOOK_ID", "Invalid draft book ID");
-            return;
-        }
-        AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId, expectedDraftRevision);
-        if (!opened.success()) {
-            responses(player).sendFailure("OPEN", opened.status(), opened.code(), opened.message());
-            return;
-        }
-        EditSessionHandle handle = opened.value();
-        AuthorOperationResult<DraftSnapshot> snapshot = EditSessionService.get().snapshot(player,
-                handle.sessionId(), bookId, handle.session().draftRevision());
-        if (!snapshot.success()) {
-            AuthorApi.close(player, handle.sessionId(), handle.session().draftRevision());
-            responses(player).sendFailure("OPEN", snapshot.status(), snapshot.code(), snapshot.message());
-            return;
-        }
-        sendOpened(player, handle, snapshot.value());
-    }
-
-    static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
-        ResourceLocation bookId = ResourceLocation.tryParse(payload.bookId());
-        var active = QuestBookManager.get().active().orElse(null);
-        if (bookId == null || active == null || !bookId.equals(active.book().id())) {
-            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "ACTIVE_BOOK_CHANGED", "The displayed task book is no longer active on this server");
-            return;
-        }
-        if (!active.revision().equals(payload.activeRevision())) {
-            responses(player).sendFailure("OPEN", AuthorOperationResult.Status.CONFLICT,
-                    "ACTIVE_BOOK_CHANGED", "The active task book changed after the draft choice was shown");
-            return;
-        }
-        if (payload.replaceDraft()) {
-            AuthorOperationResult<DraftSnapshot> replaced = new DraftService().replaceFromActive(player,
-                    payload.draftRevision());
-            if (!replaced.success()) {
-                responses(player).sendFailure("OPEN", replaced.status(), replaced.code(), replaced.message());
-                return;
-            }
-        } else {
-            if (payload.draftRevision().isBlank()) {
-                AuthorOperationResult<DraftSnapshot> created = AuthorApi.createFromActive(player);
-                if (!created.success()) {
-                    responses(player).sendFailure("OPEN", created.status(), created.code(), created.message());
-                    return;
-                }
-            }
-        }
-        sendCatalog(player);
-        // Continuing and replacing both pass through the normal permission,
-        // ownership, migration, revision, and lease checks below.
-        open(player, bookId.toString(), payload.replaceDraft() ? "" :
-                payload.draftRevision().isBlank() ? active.revision() : payload.draftRevision());
-    }
-
-    static void renew(ServerPlayer player, String rawSessionId, String draftRevision) {
-        UUID sessionId = parseUuid(rawSessionId);
-        if (sessionId == null) {
-            responses(player).sendFailure("RENEW", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_SESSION_ID", "Invalid edit-session ID");
-            return;
-        }
-        AuthorOperationResult<EditSessionHandle> result = AuthorApi.renew(player, sessionId, draftRevision);
-        if (!result.success()) {
-            responses(player).sendFailure("RENEW", result.status(), result.code(), result.message());
-            return;
-        }
-        responses(player).sendSession("RENEW", result.status(), result.code(), result.message(), result.value(), 0, 0);
-    }
-
-    static void close(ServerPlayer player, String rawSessionId, String draftRevision) {
-        UUID sessionId = parseUuid(rawSessionId);
-        if (sessionId == null) {
-            responses(player).sendFailure("CLOSE", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_SESSION_ID", "Invalid edit-session ID");
-            return;
-        }
-        AuthorOperationResult<EditSessionView> result = AuthorApi.close(player, sessionId, draftRevision);
-        if (!result.success()) {
-            responses(player).sendFailure("CLOSE", result.status(), result.code(), result.message());
-            return;
-        }
-        EditSessionView view = result.value();
-        EditSessionHandle handle = new EditSessionHandle(sessionId, view);
-        responses(player).sendSession("CLOSE", result.status(), result.code(), result.message(), handle, 0, 0);
-    }
-
-    static void recover(ServerPlayer player, String json) {
-        RecoveryWire wire;
-        try {
-            wire = GSON.fromJson(json, RecoveryWire.class);
-        } catch (RuntimeException exception) {
-            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_RECOVERY_REQUEST", "Invalid conflict recovery request");
-            return;
-        }
-        UUID sessionId = wire == null ? null : parseUuid(wire.sessionId());
-        ResourceLocation bookId = wire == null ? null : ResourceLocation.tryParse(wire.bookId());
-        if (sessionId == null || bookId == null) {
-            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_RECOVERY_REQUEST", "Incomplete conflict recovery request");
-            return;
-        }
-        if ("ABANDON".equals(wire.action())) {
-            var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
-            if (!abandoned.success()) {
-                responses(player).sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
-                return;
-            }
-            responses(player).sendSession("CLOSE", abandoned.status(), abandoned.code(), abandoned.message(),
-                    new EditSessionHandle(sessionId, abandoned.value()), 0, 0);
-            return;
-        }
-        var recovered = EditSessionService.get().recover(player, sessionId, bookId);
-        if (!recovered.success()) {
-            responses(player).sendFailure("RECOVER", recovered.status(), recovered.code(), recovered.message());
-            return;
-        }
-        var snapshot = EditSessionService.get().snapshot(player, sessionId, bookId,
-                recovered.value().session().draftRevision());
-        if (!snapshot.success()) {
-            responses(player).sendFailure("RECOVER", snapshot.status(), snapshot.code(), snapshot.message());
-            return;
-        }
-        if ("REFRESH".equals(wire.action())) {
-            sendDraft(player, "RECOVER", "SESSION_RECOVERED", "Authoritative draft re-synchronized",
-                    recovered.value(), snapshot.value());
-            return;
-        }
-        ResourceLocation target = ResourceLocation.tryParse(wire.targetBookId());
-        if (!"SAVE_AS".equals(wire.action()) || target == null) {
-            responses(player).sendFailure("RECOVER", AuthorOperationResult.Status.INVALID_REQUEST,
-                    "INVALID_RECOVERY_ACTION", "Unknown conflict recovery action");
-            return;
-        }
-        var copied = new yourscraft.jasdewstarfield.brnquest.author.DraftService()
-                .createRecoveryCopy(player, snapshot.value(), target);
-        if (!copied.success()) {
-            responses(player).sendFailure("RECOVER", copied.status(), copied.code(), copied.message());
-            return;
-        }
-        var abandoned = EditSessionService.get().abandon(player, sessionId, bookId);
-        if (!abandoned.success()) {
-            responses(player).sendFailure("RECOVER", abandoned.status(), abandoned.code(), abandoned.message());
-            return;
-        }
-        var opened = EditSessionService.get().open(player, copied.value());
-        if (!opened.success()) {
-            responses(player).sendFailure("RECOVER", opened.status(), opened.code(), opened.message());
-            return;
-        }
-        sendDraft(player, "RECOVER", "RECOVERY_COPY_OPENED", "Recovery copy created and opened",
-                opened.value(), copied.value());
     }
 
     static void save(ServerPlayer player, String rawSessionId, String rawBookId, String draftRevision) {
@@ -1162,6 +979,44 @@ public final class AuthoringNetwork {
 
     private static <T extends CustomPacketPayload> CustomPacketPayload.Type<T> type(String path) {
         return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, path));
+    }
+
+    /** Compatibility bridges remain until checkpoint B has passed client acceptance. */
+    static void sendCatalog(ServerPlayer player) { new AuthoringSessionHandler(player).sendCatalog(); }
+
+    static void openLive(ServerPlayer player, String bookId) {
+        dispatch(player, "OPEN", AuthoringRequestDecoder.open(bookId, ""), request -> new AuthoringSessionHandler(player).openLive(request));
+    }
+
+    static void open(ServerPlayer player, String bookId) {
+        dispatch(player, "OPEN", AuthoringRequestDecoder.open(bookId, ""), request -> new AuthoringSessionHandler(player).open(request));
+    }
+
+    static void open(ServerPlayer player, String bookId, String revision) {
+        dispatch(player, "OPEN", AuthoringRequestDecoder.open(bookId, revision), request -> new AuthoringSessionHandler(player).open(request));
+    }
+
+    static void openCurrent(ServerPlayer player, OpenCurrentSessionPayload payload) {
+        dispatch(player, "OPEN", AuthoringRequestDecoder.current(payload), request -> new AuthoringSessionHandler(player).openCurrent(request));
+    }
+
+    static void renew(ServerPlayer player, String sessionId, String revision) {
+        dispatch(player, "RENEW", AuthoringRequestDecoder.lease(sessionId, revision), request -> new AuthoringSessionHandler(player).renew(request));
+    }
+
+    static void close(ServerPlayer player, String sessionId, String revision) {
+        dispatch(player, "CLOSE", AuthoringRequestDecoder.lease(sessionId, revision), request -> new AuthoringSessionHandler(player).close(request));
+    }
+
+    static void recover(ServerPlayer player, String json) {
+        dispatch(player, "RECOVER", AuthoringRequestDecoder.recovery(json), request -> new AuthoringSessionHandler(player).recover(request));
+    }
+
+    /** Decoding failures never enter a handler or mutate the current session. */
+    private static <T> void dispatch(ServerPlayer player, String action, AuthoringRequestDecoder.Result<T> result,
+                                     java.util.function.Consumer<T> handler) {
+        if (result.success()) handler.accept(result.value());
+        else responses(player).sendDecodeFailure(action, result.failure());
     }
 
 }

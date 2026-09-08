@@ -64,13 +64,15 @@ class AuthoringProtocolTest {
         assertEquals(net.neoforged.api.distmarker.Dist.DEDICATED_SERVER,
                 net.neoforged.fml.loading.FMLEnvironment.dist);
         String registrarName = "yourscraft.jasdewstarfield.brnquest.network.AuthoringPayloadRegistrar";
+        var commonOwners = java.util.Set.of(registrarName, AuthoringResponseSender.class.getName(),
+                AuthoringRequestDecoder.class.getName(), AuthoringSessionHandler.class.getName());
         // Load a fresh registrar with a loader that fails even on an attempted client resolution.
         ClassLoader isolated = new ClassLoader(getClass().getClassLoader()) {
             @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
                 if (name.contains("ClientDelegate") || name.contains(".client.")) {
                     throw new AssertionError("Dedicated server tried to resolve " + name);
                 }
-                if (!name.equals(registrarName) && !name.equals(AuthoringResponseSender.class.getName())) return super.loadClass(name, resolve);
+                if (!commonOwners.contains(name)) return super.loadClass(name, resolve);
                 Class<?> loaded = findLoadedClass(name);
                 if (loaded == null) {
                     try (var input = getParent().getResourceAsStream(name.replace('.', '/') + ".class")) {
@@ -85,8 +87,9 @@ class AuthoringProtocolTest {
                 return loaded;
             }
         };
-        assertTrue(Class.forName(AuthoringResponseSender.class.getName(), true, isolated)
-                .getDeclaredMethods().length > 0);
+        for (String owner : commonOwners) {
+            assertTrue(Class.forName(owner, true, isolated).getDeclaredMethods().length > 0);
+        }
         var register = Class.forName(registrarName, true, isolated)
                 .getDeclaredMethod("register", PayloadRegistrar.class);
         register.setAccessible(true);

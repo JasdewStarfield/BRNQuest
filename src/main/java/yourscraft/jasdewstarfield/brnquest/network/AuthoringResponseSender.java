@@ -260,4 +260,7 @@ final class AuthoringResponseSender {
         }
         sendFailure("MUTATE", result.status(), result.code(), message, diagnostics);
     }
+    void sendDecodeFailure(String action, AuthoringRequestDecoder.Failure failure) {
+        sendFailure(action, AuthorOperationResult.Status.INVALID_REQUEST, failure.code(), failure.message());
+    }
 }

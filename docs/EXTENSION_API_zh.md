@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.3` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.4` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -83,10 +83,12 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 
 - 字段标题使用 `ConfigFieldDescriptor.withLabel(translationKey)`；枚举显示使用 `withValueLabels(Map.of(rawValue, translationKey))`。类型负责提供对应语言资源。界面只翻译显示文本，配置仍保存原始键和值；没有枚举翻译时显示原值。旧字段描述构造器及内置字段标签后备继续兼容。新类型应显式声明标签，不能扩充 Screen 的旧标签 switch。
 - `TaskType.normalizeConfig` / `RewardType.normalizeConfig` 是作者新增、更新及复制时的纯函数入口，默认原样返回。输入不可变；不得读写世界或执行奖励。只规范化自己拥有的字段，必须保留未知扩展数据。作者协调器会把返回值合并到原始 Map，未返回的键不会被删除；格式错误仍交由 Codec/发布校验报告。运行时也应兼容历史配置。
-- `RewardType.claimHandler()` 默认为空，继续调用既有 `execute`。需要预检、独立尝试记录或等待结果时，返回 `RewardClaimHandler`。该接口在服务端线程、owner 锁内、完成/成员/重复领取检查之后调用，接收 `RewardClaimContext`（既有 RewardContext、owner 身份、完成周期）。不暴露可变账本。
+- `RewardType.claimHandler()` 默认为空，继续调用既有 `execute`。需要预检、独立尝试记录或等待结果时，返回 `RewardClaimHandler`。该接口在服务端线程、owner 锁内、完成/成员/重复领取检查之后调用，接收 `RewardClaimContext`（既有 RewardContext、owner 身份、完成周期、完整重置代号 claimGeneration）。不暴露可变账本。
 - handler 返回 `RewardClaimResult`：`SUCCESS` 才写入普通领取记录、发出领取事件并推进周期；`PENDING` 不改领取记录，返回成功但未变化；`FAILURE` 不改领取记录并报告失败。code/message 为诊断，不用消息前缀判断状态。handler 自己负责配置预检、失败后恢复、重入与重复调用安全；抛异常会报告 `CLAIM_HANDLER_FAILED`，核心不会伪造成功。任意非幂等副作用必须有类型自己的持久化策略，不能把此接口当成通用事务保证。
-- 异步结果若需完成领取，回到服务器线程，通过公共 `BrnQuestApi.claimRewardResult` 重走资格检查；类型必须核对原 owner、周期和奖励身份，读取自己的结果记录，返回成功而不重放副作用。禁止从异步线程改进度，禁止直接写普通领取账本。
+- 异步结果若需完成领取，回到服务器线程，通过公共 `BrnQuestApi.claimRewardResult` 重走资格检查；类型必须核对原 owner、周期、claimGeneration 和奖励身份，读取自己的结果记录，返回成功而不重放副作用。禁止从异步线程改进度，禁止直接写普通领取账本。
 
 命令奖励的规范化、权限与尝试记录现在由自己的实现承担。示例附属模组 `brnquest_example:guarded_tag` 使用相同扩展入口，以幂等玩家 tag 演示拒绝、等待、成功；它不是可用于任意命令的持久化日志模板。
 
 新增类型的验证应覆盖：注册发现 → 字段/枚举显示元数据 → 作者新增/更新/复制与未知字段保留 → Codec/发布校验 → 服务端实际行为 → 重复请求与失败路径。自动测试通过不能代替新增界面的客户端验收。若类型必须改核心业务分支，应先说明缺失的通用能力并补入口，避免逐类型累积特例。
+
+高级领取尝试必须把 `claimGeneration` 纳入记录身份：完整任务重置代表新的领取授权，历史记录保留但不阻止新代号下执行；同一代号内仍需防重复执行。空代号兼容升级前存档，不能在首次读取时随机生成代号，否则会绕过历史尝试记录。

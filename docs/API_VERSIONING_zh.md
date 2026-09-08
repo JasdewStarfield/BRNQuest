@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.3`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.4`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -38,3 +38,7 @@ API 版本独立于模组发布版本：补丁发布可以在不改变 API 基�
 新增 `TaskType.normalizeConfig`、`RewardType.normalizeConfig`、`RewardType.claimHandler` 默认方法，以及 `RewardClaimContext` / `RewardClaimHandler` / `RewardClaimResult`。现有类型无需实现新增方法；普通奖励继续沿用 execute 路径。
 
 `ConfigFieldDescriptor` 增加 `labelKey` 和不可变 `valueLabelKeys` 元数据及构建方法。保留原十参数构造器，已有构造调用无需改动；record 组件形状及生成的 equals/toString 随之扩展，依赖反射组件列表的消费者需调整。数据 schema 与网络协议不变。新扩展应通过字段描述提供翻译，并通过 normalizeConfig/claimHandler 定义类型行为，不修改内部 Screen、作者协调器或进度引擎。
+
+## experimental.3 → experimental.4
+
+`RewardClaimContext` 新增 `claimGeneration`：完整任务重置时创建并持久化的领取代号。高级奖励的尝试键应包含 owner、奖励身份、完成周期、claimGeneration 和相应领取者身份。保留旧三参数构造器，代号默认为空；旧存档同样使用空代号，以继续识别历史记录。只有明确重置任务才生成新代号。依赖 record 组件反射的扩展需适配新增组件。

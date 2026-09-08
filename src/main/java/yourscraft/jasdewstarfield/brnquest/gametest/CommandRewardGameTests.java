@@ -30,6 +30,7 @@ public final class CommandRewardGameTests {
         var engine = ProgressEngine.get();
         var progress = engine.progress(player);
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
+        var beforeClaim = QuestProgressData.get(player.server).save(new net.minecraft.nbt.CompoundTag(), player.registryAccess());
         int before = player.totalExperience;
         var first = engine.claim(player, reward.id());
         helper.assertTrue(first.success(), first.code() + ": " + first.message());
@@ -38,8 +39,8 @@ public final class CommandRewardGameTests {
         engine.claim(player, reward.id());
         helper.assertTrue(player.totalExperience == before + 3, "duplicate claim never executes again");
         // Simulate a stale SavedData snapshot while the forced receipt survives.
-        progress.resetQuest(quest.id().toString(), List.of(), List.of(reward.id().toString()));
-        progress.status(quest.id().toString(), QuestStatus.COMPLETED);
+        player.server.overworld().getDataStorage().set("brnquest_progress", QuestProgressData.load(beforeClaim, player.registryAccess()));
+        progress = engine.progress(player);
         helper.assertTrue(engine.claim(player, reward.id()).success(), "durable outcome reconciles a missing progress receipt");
         helper.assertTrue(player.totalExperience == before + 3, "reconciliation does not replay the command");
 
@@ -61,6 +62,35 @@ public final class CommandRewardGameTests {
             var functionResult = engine.claim(player, functionReward.id());
             helper.assertTrue(functionResult.success(), functionResult.message());
             helper.assertTrue(player.totalExperience == before + 7, "native function executes against the reward recipient");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty", batch = "commandRewardReset")
+    @PrefixGameTestTemplate(false)
+    public static void explicitResetCreatesANewClaimWhileReloadKeepsIt(GameTestHelper helper) throws Exception {
+        var player = helper.makeMockServerPlayerInLevel();
+        var reward = reward("reset", "experience add @s 3 points");
+        var quest = install(reward);
+        var engine = ProgressEngine.get();
+        engine.forceComplete(player, quest.id());
+        int before = player.totalExperience;
+        helper.assertTrue(engine.claim(player, reward.id()).changed(), "first command claim succeeds");
+        String previousKey = CommandRewardService.key(player, quest, reward, engine.progress(player));
+        for (int round = 1; round <= 2; round++) {
+            engine.reset(player, quest.id());
+            engine.forceComplete(player, quest.id());
+            String nextKey = CommandRewardService.key(player, quest, reward, engine.progress(player));
+            helper.assertTrue(!previousKey.equals(nextKey), "explicit reset creates fresh command identity");
+            helper.assertTrue(CommandRewardService.journal(player).read(previousKey) != null, "old receipts remain available");
+            // Reload saved owner state before claiming to verify the reset identity survives a restart.
+            var saved = QuestProgressData.get(player.server).save(new net.minecraft.nbt.CompoundTag(), player.registryAccess());
+            player.server.overworld().getDataStorage().set("brnquest_progress", QuestProgressData.load(saved, player.registryAccess()));
+            helper.assertTrue(nextKey.equals(CommandRewardService.key(player, quest, reward, engine.progress(player))), "reload preserves identity");
+            helper.assertTrue(engine.claim(player, reward.id()).changed(), "new round executes successfully");
+            helper.assertTrue(player.totalExperience == before + 3 * (round + 1), "each reset permits one new command effect");
+            helper.assertTrue(!engine.claim(player, reward.id()).changed(), "same-round duplicate remains blocked");
+            previousKey = nextKey;
         }
         helper.succeed();
     }

@@ -14,6 +14,40 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class PlayerProgressTest {
+    @Test void emptyResetIsNoOpButPersistedAttemptSurvivesPartialReset() {
+        var progress = new PlayerProgress();
+        progress.resetQuest("q", List.of(), List.of());
+        assertEquals("", progress.claimGeneration("q"));
+        progress.rewardAttempted("q");
+        progress = PlayerProgress.load(progress.save());
+        progress.resetTask("q", "t", QuestStatus.AVAILABLE);
+        progress.resetQuest("q", List.of("t"), List.of());
+        String generation = progress.claimGeneration("q");
+        assertFalse(generation.isBlank());
+        progress.resetQuest("q", List.of("t"), List.of());
+        assertEquals(generation, progress.claimGeneration("q"));
+    }
+
+    @Test void claimGenerationSurvivesSaveRenameAndPartialReset() {
+        var progress = PlayerProgress.load(new net.minecraft.nbt.CompoundTag());
+        assertEquals("", progress.claimGeneration("test:quest"), "old saves retain legacy receipt identity");
+        progress.status("test:quest", QuestStatus.COMPLETED);
+        progress.resetQuest("test:quest", List.of(), List.of());
+        String first = progress.claimGeneration("test:quest");
+        assertFalse(first.isBlank());
+        var loaded = PlayerProgress.load(progress.save());
+        assertEquals(first, loaded.claimGeneration("test:quest"));
+        loaded.resetTask("test:quest", "test:task", QuestStatus.AVAILABLE);
+        assertEquals(first, loaded.claimGeneration("test:quest"), "partial reset cannot reopen reward attempts");
+        loaded.migrateQuestId("test:quest", "test:renamed");
+        assertEquals(first, loaded.claimGeneration("test:renamed"));
+        loaded.beginNextCycle("test:renamed", List.of(), List.of(), QuestStatus.AVAILABLE);
+        assertEquals(first, loaded.claimGeneration("test:renamed"));
+        loaded.rewardAttempted("test:renamed");
+        loaded.resetQuest("test:renamed", List.of(), List.of());
+        assertNotEquals(first, loaded.claimGeneration("test:renamed"));
+    }
+
     @Test void taskResetReopensQuestButPreservesOtherTasksAndClaimsAcrossSave() {
         PlayerProgress progress = new PlayerProgress();
         progress.status("test:quest", QuestStatus.REWARD_CLAIMED);

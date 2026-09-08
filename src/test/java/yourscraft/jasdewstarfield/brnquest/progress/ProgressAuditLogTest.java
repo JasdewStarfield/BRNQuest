@@ -15,6 +15,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProgressAuditLogTest {
     @TempDir Path directory;
 
+    @Test void resetGenerationInvalidatesAnOtherwiseIdenticalAdminConfirmation() {
+        var before = new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of(), Set.of(), 0, Map.of(), Map.of(), "first");
+        var after = new AdminProgressService.State(QuestStatus.AVAILABLE, Map.of(), Set.of(), 0, Map.of(), Map.of(), "second");
+        assertNotEquals(before, after);
+    }
+
     @Test void appendsUtf8RecordsWithoutSplittingUserTextIntoFakeEntries() throws Exception {
         var intent = new AdminProgressService.Intent("target-uuid", "test:book", "revision", "test:quest",
                 "test:task", AdminProgressAction.RESET_TASK);

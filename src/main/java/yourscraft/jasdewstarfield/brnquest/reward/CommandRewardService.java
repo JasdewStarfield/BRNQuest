@@ -21,7 +21,8 @@ public final class CommandRewardService {
         return new CommandRewardJournal(player.server.getWorldPath(LevelResource.ROOT).resolve("data/brnquest-command-rewards"));
     }
     public static String key(ServerPlayer player, QuestDefinition quest, RewardDefinition reward, PlayerProgress progress) {
-        return key(ProgressOwnerService.require(player), player.getUUID(), quest, reward, progress.completionCycles(quest.id().toString()));
+        return withGeneration(key(ProgressOwnerService.require(player), player.getUUID(), quest, reward, progress.completionCycles(quest.id().toString())),
+                progress.claimGeneration(quest.id().toString()));
     }
     /** Shared receipts exclude the claimant; individual rewards retain it even inside a shared owner. */
     public static String key(yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId owner, java.util.UUID player,
@@ -35,13 +36,17 @@ public final class CommandRewardService {
         return owner.providerId() + "/" + owner.ownerId() + "/" + bookId + "/" + rewardId
                 + "/" + cycle + "/" + (shared ? "shared" : player);
     }
+    /** Empty generations retain the pre-upgrade journal key; a reset never deletes earlier evidence. */
+    private static String withGeneration(String key, String generation) {
+        return generation.isEmpty() ? key : key + "/reset/" + generation;
+    }
     /** Command-specific journal policy is plugged into the generic authoritative claim boundary. */
     public static RewardClaimResult claim(RewardClaimContext context) {
         var execution = context.rewardContext();
         var player = execution.player();
         var view = execution.reward();
         var reward = new RewardDefinition(view.bookId(), view.id(), view.typeId(), view.config(), view.claimPolicy(), view.teamReward());
-        String key = key(context.ownerId(), player.getUUID(), execution.bookId(), view.id(), context.completionCycle(), view.teamReward());
+        String key = withGeneration(key(context.ownerId(), player.getUUID(), execution.bookId(), view.id(), context.completionCycle(), view.teamReward()), context.claimGeneration());
         Prepared prepared;
         try {
             var receipt = journal(player).read(key);

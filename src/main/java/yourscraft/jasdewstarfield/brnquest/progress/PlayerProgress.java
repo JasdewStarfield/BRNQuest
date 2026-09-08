@@ -19,6 +19,12 @@ public final class PlayerProgress {
     // Frozen completion cohorts prevent join/leave cycling from minting old-cycle rewards.
     private final Map<String, Set<UUID>> completionMembers = new HashMap<>();
     private final Map<UUID, Set<String>> memberClaims = new HashMap<>();
+    // Explicit quest resets create a fresh identity, independently of visible repeat-cycle counters.
+    private final Map<String, String> claimGenerations = new HashMap<>();
+    private final Set<String> rewardAttempts = new HashSet<>();
+    /** Preserve attempts even if an objective is reopened before a full quest reset. */
+    public void rewardAttempted(String questId) { rewardAttempts.add(questId); }
+    public String claimGeneration(String questId) { return claimGenerations.getOrDefault(questId, ""); }
     private String revision = "";
 
     public QuestStatus status(String id) { return quests.getOrDefault(id, QuestStatus.LOCKED); }
@@ -74,12 +80,16 @@ public final class PlayerProgress {
     /** Moves quest-level state across a canonical ID alias without touching stable task/reward ledgers. */
     public boolean migrateQuestId(String oldId, String newId) {
         if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        boolean oldAttempt = rewardAttempts.remove(oldId);
+        if (oldAttempt) rewardAttempts.add(newId);
+        String oldGeneration = claimGenerations.remove(oldId);
         QuestStatus oldStatus = quests.remove(oldId);
         Long oldCompletion = completionTimes.remove(oldId);
         Integer oldCycles = completionCycles.remove(oldId);
         Long oldNext = nextAvailableTimes.remove(oldId);
-        boolean changed = oldStatus != null || oldCompletion != null || oldCycles != null || oldNext != null
+        boolean changed = oldAttempt || oldGeneration != null || oldStatus != null || oldCompletion != null || oldCycles != null || oldNext != null
                 || orphanedQuestIds.remove(oldId);
+        if (oldGeneration != null) claimGenerations.putIfAbsent(newId, oldGeneration);
         if (oldStatus != null) {
             QuestStatus current = quests.get(newId);
             quests.put(newId, current == null || statusRank(oldStatus) > statusRank(current) ? oldStatus : current);
@@ -114,6 +124,14 @@ public final class PlayerProgress {
         return changed;
     }
     public void resetQuest(String questId, Collection<String> taskIds, Collection<String> rewardIds) {
+        // An already empty quest is a no-op; a failed or pending attempt still needs a new identity.
+        boolean hadAttempt = rewardAttempts.remove(questId);
+        if (hadAttempt || status(questId) == QuestStatus.COMPLETED || status(questId) == QuestStatus.REWARD_CLAIMED
+                || completionCycles(questId) > 0 || taskIds.stream().anyMatch(id -> taskProgress(id) != 0)
+                || rewardIds.stream().anyMatch(claimedRewards::contains)
+                || memberClaims.values().stream().anyMatch(claims -> rewardIds.stream().anyMatch(claims::contains))) {
+            claimGenerations.put(questId, UUID.randomUUID().toString());
+        }
         quests.remove(questId);
         completionTimes.remove(questId);
         taskIds.forEach(taskProgress::remove);
@@ -160,6 +178,10 @@ public final class PlayerProgress {
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putString("revision", revision);
+        CompoundTag generations = new CompoundTag();
+        claimGenerations.forEach(generations::putString);
+        tag.put("claim_generations", generations);
+        tag.put("reward_attempts", stringList(rewardAttempts));
         CompoundTag questTag = new CompoundTag();
         quests.forEach((id, status) -> questTag.putString(id, status.name()));
         tag.put("quests", questTag);
@@ -190,6 +212,9 @@ public final class PlayerProgress {
     public static PlayerProgress load(CompoundTag tag) {
         PlayerProgress result = new PlayerProgress();
         result.revision = tag.getString("revision");
+        readStrings(tag.getList("reward_attempts", Tag.TAG_STRING), result.rewardAttempts);
+        CompoundTag generations = tag.getCompound("claim_generations");
+        generations.getAllKeys().forEach(key -> result.claimGenerations.put(key, generations.getString(key)));
         CompoundTag quests = tag.getCompound("quests");
         for (String key : quests.getAllKeys()) {
             try { result.quests.put(key, QuestStatus.valueOf(quests.getString(key))); }

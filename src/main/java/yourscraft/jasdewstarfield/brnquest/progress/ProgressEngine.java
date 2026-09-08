@@ -385,13 +385,16 @@ public final class ProgressEngine {
             var execution = new RewardContext(player, owner.bookId(), owner.id(), ApiViews.reward(reward));
             var handler = type.claimHandler();
             QuestProgressData data = QuestProgressData.get(player.getServer());
+            // Full reset can distinguish an unresolved attempt from an already empty quest.
+            progress.rewardAttempted(owner.id().toString());
+            data.setDirty();
             String message;
             if (handler.isPresent()) {
                 // Advanced types own attempt persistence; only a confirmed success commits the core ledger.
                 RewardClaimResult result;
                 try {
                     result = java.util.Objects.requireNonNull(handler.orElseThrow().claim(new RewardClaimContext(
-                            execution, ProgressOwnerService.require(player), progress.completionCycles(owner.id().toString()))));
+                            execution, ProgressOwnerService.require(player), progress.completionCycles(owner.id().toString()), progress.claimGeneration(owner.id().toString()))));
                 } catch (Exception error) {
                     yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.error("Reward claim handler failed for {} ({})", rewardId, reward.typeId(), error);
                     return OperationResult.failure("CLAIM_HANDLER_FAILED", "Reward attempt failed; consult the type's recovery policy");

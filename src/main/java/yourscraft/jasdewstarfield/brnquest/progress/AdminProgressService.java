@@ -34,7 +34,12 @@ public final class AdminProgressService {
     /** Equality is the confirmation concurrency guard; it never trusts a client-supplied snapshot. */
     public record State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed,
                         long completedAt, Map<String, QuestStatus> dependencies,
-                        Map<UUID, Set<String>> memberClaims) {}
+                        Map<UUID, Set<String>> memberClaims, String claimGeneration) {
+        public State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed, long completedAt,
+                     Map<String, QuestStatus> dependencies, Map<UUID, Set<String>> memberClaims) {
+            this(status, tasks, claimed, completedAt, dependencies, memberClaims, "");
+        }
+    }
     private record Resolved(ServerPlayer player, QuestDefinition quest, String owner) {}
     private record Pending(String actor, Intent intent, String owner, State state, long expires) {}
     private record Completed(String actor, Intent intent, Reply reply, long expires) {}
@@ -213,7 +218,8 @@ public final class AdminProgressService {
         quest.dependencies().forEach(id -> dependencies.put(id.toString(), progress.status(id.toString())));
         return new State(progress.status(quest.id().toString()), Map.copyOf(tasks), Set.copyOf(claimed),
                 progress.completedAt(quest.id().toString()), Map.copyOf(dependencies),
-                progress.memberClaimsFor(quest.rewards().stream().map(reward -> reward.id().toString()).toList()));
+                progress.memberClaimsFor(quest.rewards().stream().map(reward -> reward.id().toString()).toList()),
+                progress.claimGeneration(quest.id().toString()));
     }
 
     private static View view(Resolved resolved, Intent intent, State state) {

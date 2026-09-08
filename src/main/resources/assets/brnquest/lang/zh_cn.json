@@ -516,5 +516,17 @@
   "command.brnquest.client_health.applied": "本机已应用完整校验后的任务书。",
   "command.brnquest.client_health.progress": "当前候选：%1$s / %2$s 个分块，%3$s / %4$s 字节；已忽略 %5$s 个过期或无候选分块。",
   "command.brnquest.client_health.rejected": "本次连接曾拒收候选；最近原因保留在技术详情中，成功重试不会抹去记录。",
-  "command.brnquest.client_health.details_hint": "本机技术详情：/brnquest_client health details；该查询不会请求重同步。"
+  "command.brnquest.client_health.details_hint": "本机技术详情：/brnquest_client health details；该查询不会请求重同步。",
+  "screen.brnquest.type.reward.command": "命令",
+  "screen.brnquest.editor.config.command": "命令",
+  "screen.brnquest.editor.config.source_mode": "权限来源",
+  "screen.brnquest.editor.config.permission_level": "权限等级",
+  "screen.brnquest.editor.config.silent": "静默执行",
+  "screen.brnquest.editor.config.feedback": "领取提示",
+  "command.brnquest.command_reward.absent": "当前周期没有命令执行记录。",
+  "command.brnquest.command_reward.status": "状态：%1$s；尝试：%2$s；回调：%3$s；结果：%4$s；%5$s",
+  "command.brnquest.command_reward.acknowledged": "已确认消耗本次奖励，不会重放命令。领取状态：%s",
+  "command.brnquest.command_reward.error": "命令奖励记录操作失败：%s",
+  "screen.brnquest.command.source.explicit": "指定等级",
+  "screen.brnquest.command.source.player": "玩家权限"
 }

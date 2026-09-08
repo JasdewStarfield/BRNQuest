@@ -126,6 +126,30 @@ class FtbV13ImporterTest {
         assertTrue(result.reportJson().contains("PRESERVED_EXTENSION"));
     }
 
+    @Test void commandRewardsConvertPermissionsTemplatesAndUnresolvedFeedback() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/test.snbt"), """
+                {id:"B000000000000001",quests:[{id:"C000000000000001",rewards:[
+                  {id:"D000000000000001",type:"command",command:"/say {p}",silent:true},
+                  {id:"D000000000000002",type:"command",command:"say hello",elevate_perms:true,permission_level:4},
+                  {id:"D000000000000003",type:"command",command:"say feedback",feedback_message:"missing.key"}
+                ]}]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "converted", "commands");
+        var rewards = result.book().quests().getFirst().rewards();
+        assertEquals("brnquest:command", rewards.getFirst().typeId().toString());
+        assertEquals("say {p}", rewards.getFirst().config().get("command"));
+        assertEquals("player", rewards.getFirst().config().get("source_mode"));
+        assertEquals("true", rewards.getFirst().config().get("silent"));
+        assertEquals("2", rewards.get(1).config().get("permission_level"));
+        assertEquals("missing.key", rewards.get(2).config().get("ftb.feedback_message"));
+        assertTrue(result.reportJson().contains("BQF-107"));
+        var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject());
+        assertEquals(rewards, decoded.quests().getFirst().rewards());
+    }
+
     private Path fixture() throws URISyntaxException {
         return Path.of(getClass().getResource("/fixtures/ftb_v13/eow/data.snbt").toURI()).getParent();
     }

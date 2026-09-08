@@ -33,6 +33,7 @@ public final class PlatformModHooks {
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
                 yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.tick(event.getServer()));
         container.registerConfig(ModConfig.Type.CLIENT, BrnQuestClientConfig.SPEC);
+        container.registerConfig(ModConfig.Type.SERVER, yourscraft.jasdewstarfield.brnquest.config.BrnQuestServerConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onReloadListeners);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onCommands);
         NeoForge.EVENT_BUS.addListener(PlatformModHooks::onLogin);

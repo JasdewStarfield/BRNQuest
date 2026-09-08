@@ -462,7 +462,15 @@ public final class DraftBookEditor {
         if (reward == null || !reward.bookId().equals(book.id())) return invalid("REWARD_BOOK_MISMATCH", "Reward belongs to another book");
         if (typedIdExists(book, reward.id())) return conflict("DUPLICATE_TYPED_ID", reward.id());
         if (typedLegacySourceExists(book, reward.id())) return retiredTypedId(reward.id());
-        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), reward)), reward.id());
+        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), normalizeReward(reward))), reward.id());
+    }
+
+    /** Normalize command spelling on author writes while preserving opaque imported configuration. */
+    private static RewardDefinition normalizeReward(RewardDefinition reward) {
+        if (!reward.typeId().equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)) return reward;
+        Map<String, String> config = new java.util.TreeMap<>(reward.config());
+        config.computeIfPresent("command", (key, command) -> yourscraft.jasdewstarfield.brnquest.reward.CommandRewardConfig.normalize(command));
+        return new RewardDefinition(reward.bookId(), reward.id(), reward.typeId(), config, reward.claimPolicy(), reward.teamReward());
     }
 
     public static AuthorOperationResult<DraftChange> copyReward(QuestBookDefinition book, ResourceLocation questId,
@@ -485,7 +493,7 @@ public final class DraftBookEditor {
         if (!replacement.id().equals(rewardId) && typedLegacySourceExists(book, replacement.id())) {
             return retiredTypedId(replacement.id());
         }
-        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, replacement, false);
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, normalizeReward(replacement), false);
         return renamedTyped(updated, "@reward:", rewardId, replacement.id());
     }
 

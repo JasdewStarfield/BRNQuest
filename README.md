@@ -24,6 +24,7 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 Project design, implementation plans, provenance records, and acceptance evidence are maintained in the separate [BRNQuest-Docs repository](https://github.com/JasdewStarfield/BRNQuest-Docs). User-facing and extension-author documentation for this version remains alongside the source:
 
 - 整合包作者的任务工作区、草稿、部署、更新与恢复流程：[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)
+- 命令奖励、执行权限与异常处理：[`docs/COMMAND_REWARDS_zh.md`](docs/COMMAND_REWARDS_zh.md)
 - 作者文本、任务书翻译表与语言回退：[`docs/AUTHOR_TEXT_LOCALIZATION_zh.md`](docs/AUTHOR_TEXT_LOCALIZATION_zh.md)
 - Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)

@@ -1242,7 +1242,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<EditorPopupMenu.Entry> enumDropdownEntries() {
         List<EditorPopupMenu.Entry> entries = new ArrayList<>();
         for (int index = 0; index < enumDropdownValues.size(); index++) {
-            entries.add(new EditorPopupMenu.Entry("ENUM_" + index, Component.literal(enumDropdownValues.get(index)),
+            entries.add(new EditorPopupMenu.Entry("ENUM_" + index, enumDropdownValues.equals(List.of("explicit", "player"))
+                            ? commandSourceLabel(enumDropdownValues.get(index)) : Component.literal(enumDropdownValues.get(index)),
                     false, true, List.of()));
         }
         return List.copyOf(entries);
@@ -2418,7 +2419,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ENUM) {
-            renderEditorTextButton(graphics, row.field(), Component.literal(field.getValue() + " ▾"),
+            renderEditorTextButton(graphics, row.field(), descriptor.key().equals("source_mode")
+                            ? commandSourceLabel(field.getValue()).copy().append(" ▾") : Component.literal(field.getValue() + " ▾"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
             ItemStack stack = item(typedPropertySection.originalId(), field.getValue());
@@ -2476,6 +2478,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyRow.label(graphics, font, Component.translatable(labelKey), bounds, issue);
     }
 
+    /** Presentation changes the label only; source-mode values remain stable in saved configuration. */
+    private Component commandSourceLabel(String value) {
+        return value.equals("explicit") || value.equals("player")
+                ? Component.translatable("screen.brnquest.command.source." + value) : Component.literal(value);
+    }
+
     private String typedConfigLabel(String key) {
         return switch (key) {
             case "item" -> "screen.brnquest.editor.config.item";
@@ -2486,6 +2494,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             // Built-in crafting progress uses a localized label instead of exposing its storage key.
             case "only_from_crafting" -> "screen.brnquest.editor.config.only_from_crafting";
             case "title" -> "screen.brnquest.editor.config.title";
+            case "command" -> "screen.brnquest.editor.config.command";
+            case "source_mode" -> "screen.brnquest.editor.config.source_mode";
+            case "permission_level" -> "screen.brnquest.editor.config.permission_level";
+            case "silent" -> "screen.brnquest.editor.config.silent";
+            case "feedback" -> "screen.brnquest.editor.config.feedback";
             case "script_id" -> "screen.brnquest.editor.config.script_id";
             case "message_id" -> "screen.brnquest.editor.config.message_id";
             default -> key;

@@ -20,6 +20,16 @@ public final class ClientRewardPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(RewardTypes.COMMAND, new ClientRewardPresentation() {
+            public String symbol(RewardView reward) { return ">_"; }
+            public Component title(RewardPresentationContext context) {
+                String title = context.reward().config().getOrDefault("title", "");
+                return title.isBlank() ? typeName(context.reward()) : Component.literal(title);
+            }
+            public Component typeName(RewardView reward) {
+                return Component.translatable("screen.brnquest.type.reward.command");
+            }
+        });
         register(RewardTypes.ITEM, new ClientRewardPresentation() {
             public String itemSnbt(RewardView reward) { return reward.config().getOrDefault("item", ""); }
             public ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {

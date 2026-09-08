@@ -516,5 +516,17 @@
   "command.brnquest.client_health.applied": "This client has applied a fully verified book.",
   "command.brnquest.client_health.progress": "Current candidate: %1$s / %2$s chunks, %3$s / %4$s bytes; %5$s stale or unsolicited chunks ignored.",
   "command.brnquest.client_health.rejected": "A candidate was rejected during this connection; the last reason remains in details even after a successful retry.",
-  "command.brnquest.client_health.details_hint": "Local details: /brnquest_client health details; this query does not request a resync."
+  "command.brnquest.client_health.details_hint": "Local details: /brnquest_client health details; this query does not request a resync.",
+  "screen.brnquest.type.reward.command": "Command",
+  "screen.brnquest.editor.config.command": "Command",
+  "screen.brnquest.editor.config.source_mode": "Source",
+  "screen.brnquest.editor.config.permission_level": "Permission",
+  "screen.brnquest.editor.config.silent": "Silent",
+  "screen.brnquest.editor.config.feedback": "Feedback",
+  "command.brnquest.command_reward.absent": "No command attempt in this cycle.",
+  "command.brnquest.command_reward.status": "State: %1$s; attempt: %2$s; callbacks: %3$s; result: %4$s; %5$s",
+  "command.brnquest.command_reward.acknowledged": "Attempt acknowledged without replay. Claim status: %s",
+  "command.brnquest.command_reward.error": "Command receipt operation failed: %s",
+  "screen.brnquest.command.source.explicit": "Explicit",
+  "screen.brnquest.command.source.player": "Player"
 }

@@ -22,3 +22,7 @@
 - 纯核心 GameTest 中同一测试会确认附属模组缺失后安全跳过其运行契约，其余专服测试必须全部通过。
 
 示例代码是 API 消费范例，不是新的内置任务类型，也不会被打进 BRNQuest 核心 mod 的生产资源。
+
+## 命令奖励函数示例
+
+示例扩展提供 `brnquest_example:reward_experience` 原生函数，为执行者增加 4 点经验。可将命令奖励的 command 设为 `function brnquest_example:reward_experience`，以领取玩家作为 `@s`，展示命令奖励调用数据包函数的用法。

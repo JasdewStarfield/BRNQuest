@@ -43,6 +43,16 @@ class ConfigEditorSchemasTest {
                 && issue.code().equals("INVALID_ITEM_MATCHER")));
     }
 
+    @Test void commandRewardHasDiscoverableTypedFieldsAndPreservesOpaqueConfig() {
+        var schema = ConfigEditorSchemas.forReward(reward(RewardTypes.COMMAND,
+                Map.of("command", "say hello", "extension.note", "keep")));
+        assertFalse(schema.rawFallback());
+        assertEquals(List.of("title", "command", "source_mode", "permission_level", "silent", "feedback"),
+                schema.fields().stream().map(ConfigFieldDescriptor::key).toList());
+        assertEquals("keep", schema.rawConfig().get("extension.note"));
+        assertEquals("2", schema.fields().stream().filter(field -> field.key().equals("permission_level")).findFirst().orElseThrow().defaultValue().orElseThrow());
+    }
+
     @Test void unknownTypesRetainLosslessImmutableRawFallback() {
         Map<String, String> mutable = new java.util.HashMap<>(Map.of("opaque", "value"));
         var taskSchema = ConfigEditorSchemas.forTask(task(id("foreign", "item"), mutable));

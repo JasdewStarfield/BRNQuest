@@ -312,7 +312,29 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].rewards[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("auto", "team_reward"));
-            recordConfigFields(raw, Set.of("id", "type", "auto", "team_reward"), file,
+            if (mappedType.equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)) {
+                // FTB field values are semantic strings/booleans here, not their quoted SNBT representation.
+                config.put("command", yourscraft.jasdewstarfield.brnquest.reward.CommandRewardConfig.normalize(raw.getString("command")));
+                int permission = raw.getBoolean("elevate_perms") ? 2 : raw.getInt("permission_level");
+                config.put("source_mode", permission == 0 ? "player" : "explicit");
+                config.put("permission_level", Integer.toString(permission));
+                config.put("silent", Boolean.toString(raw.getBoolean("silent")));
+                config.put("feedback", "");
+                config.remove("feedback_message");
+                if (!raw.getString("feedback_message").isBlank()) {
+                    // Quest SNBT language tables do not provide arbitrary resource-pack translation keys.
+                    config.put("ftb.feedback_message", raw.getString("feedback_message"));
+                    conversions.add(new FtbFieldConversion(file, "quests[" + quest + "].rewards[" + legacy + "]",
+                            "feedback_message", "config.ftb.feedback_message", FtbFieldConversion.Status.PRESERVED_EXTENSION,
+                            "Resource translation key requires author resolution"));
+                    report.add(problem(Diagnostic.Severity.ERROR, "BQF-107", file, "rewards[" + legacy + "].feedback_message", legacy,
+                            "Resolve the feedback translation key into native author text before publishing"));
+                }
+                conversions.add(new FtbFieldConversion(file, "rewards[" + legacy + "]", "permission_level/elevate_perms", "config.source_mode/permission_level",
+                        FtbFieldConversion.Status.MAPPED, "Zero inherits player permission; legacy elevate_perms becomes explicit level 2"));
+            }
+            recordConfigFields(raw, mappedType.equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)
+                            ? Set.of("id", "type", "auto", "team_reward", "feedback_message") : Set.of("id", "type", "auto", "team_reward"), file,
                     "quests[" + quest + "].rewards[" + legacy + "]", conversions);
             config.put("title", translations.getOrDefault("reward." + legacy + ".title", ""));
             String ftbAuto = raw.contains("auto", Tag.TAG_STRING) ? raw.getString("auto") : "default";
@@ -362,9 +384,9 @@ public final class FtbV13Importer {
 
     private void warnUnknown(String type, String file, String path, String id, DiagnosticReport report) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
-        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels").contains(normalized)
+        boolean supported = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command").contains(normalized)
                 || Set.of("ftbquests:checkmark", "ftbquests:item", "ftbquests:custom", "ftbquests:xp",
-                "ftbquests:xp_levels").contains(normalized);
+                "ftbquests:xp_levels", "ftbquests:command").contains(normalized);
         if (!supported && !normalized.contains(":")) {
             report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
         }
@@ -373,8 +395,8 @@ public final class FtbV13Importer {
     private void recordTypeConversion(String file, String path, String sourceType, ResourceLocation targetType,
                                       List<FtbFieldConversion> conversions) {
         String normalized = sourceType == null ? "" : sourceType.toLowerCase(Locale.ROOT);
-        boolean builtIn = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "ftbquests:checkmark",
-                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels").contains(normalized);
+        boolean builtIn = Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command", "ftbquests:checkmark",
+                "ftbquests:item", "ftbquests:custom", "ftbquests:xp", "ftbquests:xp_levels", "ftbquests:command").contains(normalized);
         boolean namespaced = sourceType != null && sourceType.contains(":");
         FtbFieldConversion.Status status = builtIn ? FtbFieldConversion.Status.MAPPED
                 : namespaced ? FtbFieldConversion.Status.PRESERVED_EXTENSION
@@ -426,7 +448,7 @@ public final class FtbV13Importer {
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String builtInPath = normalized.startsWith("ftbquests:") ? normalized.substring("ftbquests:".length()) : normalized;
-        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels").contains(builtInPath)) {
+        if (Set.of("checkmark", "item", "custom", "xp", "xp_levels", "command").contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }
         ResourceLocation namespaced = ResourceLocation.tryParse(normalized);

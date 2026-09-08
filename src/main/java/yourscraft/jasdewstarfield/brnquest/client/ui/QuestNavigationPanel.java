@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -56,7 +57,7 @@ final class QuestNavigationPanel {
     void resetScroll() { scroll.snap(0); }
 
     RenderResult render(GuiGraphics graphics, Font font, Model model, Layout layout,
-                        double seconds, double speed, int mouseX, int mouseY) {
+                        double seconds, double speed, int mouseX, int mouseY, String locale) {
         advance(model, layout);
         List<Component> tooltip = List.of();
         if (layout.visibleRight() > 0) {
@@ -74,7 +75,8 @@ final class QuestNavigationPanel {
                     if (entry.group() != null) {
                         graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xE01B222C);
                         EditorTextRenderer.drawFittedString(graphics, font,
-                                Component.literal("▾ " + entry.group().title()),
+                                Component.literal("▾ " + BookText.structureTitle(
+                                        model.book(), "chapter_group", entry.group().id(), locale, entry.group().title())),
                                 4, y + 2, layout.width() - 8, 0xFFB7C5D8, 0.75F);
                         y += GROUP_HEIGHT;
                     } else {
@@ -82,7 +84,9 @@ final class QuestNavigationPanel {
                         int color = model.selected() != null && chapter.id().equals(model.selected().id())
                                 ? 0xFF4A6A88 : 0xE0262D38;
                         graphics.fill(4, y, layout.width(), y + CHAPTER_HEIGHT, color);
-                        EditorTextRenderer.drawFittedString(graphics, font, Component.literal(chapter.title()),
+                        EditorTextRenderer.drawFittedString(graphics, font, Component.literal(
+                                BookText.structureTitle(
+                                        model.book(), "chapter", chapter.id(), locale, chapter.title())),
                                 9, y + 3, layout.width() - 13, 0xFFFFFFFF, 0.75F);
                         y += CHAPTER_HEIGHT;
                     }

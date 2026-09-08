@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.network;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import com.google.gson.Gson;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
@@ -354,6 +355,10 @@ public final class AuthoringHandlerGameTests {
             fixture.checkQuestProperties();
             fixture.apply("COPY_QUEST", "q_copy", "", "q");
             check(helper, fixture.quest("q_copy").tasks().getFirst().config().equals(opaque), "quest copy uses server-owned nested task data");
+            // Exercise translation copying through the actual decoder, handler and draft transaction.
+            check(helper, BookText.quest(fixture.snapshot(),
+                    fixture.quest("q_copy"), "zh_cn", "title", "").equals("本地化标题"),
+                    "quest copy preserves server-owned localized text");
             String beforeUndo = fixture.revision;
             fixture.apply("UNDO", "", "", "");
             check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q_copy"))), "undo removes copied quest");

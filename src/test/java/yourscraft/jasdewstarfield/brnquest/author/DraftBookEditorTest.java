@@ -315,6 +315,36 @@ class DraftBookEditorTest {
                 .containsKey("quest.brnquest:root.title"));
     }
 
+    @Test void copiedQuestRetainsAllLocalesAcrossSaveAndIndependentEdits() {
+        QuestBookDefinition book = bookWithDependency();
+        // Imported quests and native quests use different semantic identities; cover both.
+        for (String legacyId : List.of("", "OLD_SOURCE")) {
+            QuestDefinition original = book.quests().stream().filter(q -> q.id().equals(id("root"))).findFirst().orElseThrow();
+            QuestDefinition source = new QuestDefinition(book.id(), original.id(), original.chapterId(), original.title(),
+                    original.subtitle(), original.description(), "", 0, 0, List.of(), List.of(), List.of(), legacyId);
+            QuestBookDefinition candidate = value(DraftBookEditor.updateQuest(book, source.id(), source));
+            String prefix = BookText.questPrefix(candidate.quests().stream().filter(q -> q.id().equals(source.id())).findFirst().orElseThrow());
+            candidate = new QuestBookDefinition(candidate.id(), candidate.schemaVersion(), candidate.title(),
+                    candidate.chapterGroups(), candidate.chapters(), candidate.legacyIds(),
+                    new BookLocalization("en_us", Map.of("zh_cn", Map.of(prefix + "title", "原任务",
+                            prefix + "quest_desc", "第一行\n第二行", prefix + "extension", "opaque"),
+                            "ja_jp", Map.of(prefix + "title", "元"))), candidate.extensions());
+            QuestDefinition copy = quest("copy", source.chapterId(), List.of());
+            QuestBookDefinition copied = value(DraftBookEditor.copyQuest(candidate, source.id(), copy));
+            var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(copied)).getAsJsonObject());
+            assertEquals("原任务", BookText.quest(decoded, copy, "zh_cn", "title", copy.title()));
+            assertEquals("元", BookText.quest(decoded, copy, "ja_jp", "title", copy.title()));
+            assertEquals("opaque", decoded.localization().translations().get("zh_cn").get(BookText.questPrefix(copy) + "extension"));
+            assertEquals(candidate.localization().translations().get("zh_cn").get(prefix + "title"),
+                    decoded.localization().translations().get("zh_cn").get(prefix + "title"));
+            assertTrue(QuestBookDiffer.diff(copied, decoded).empty());
+            var edited = value(DraftBookEditor.updateQuestTranslation(decoded, copy.id(), "zh_cn", "副本", "", "正文"));
+            assertEquals("原任务", edited.localization().resolve("zh_cn", prefix + "title", ""));
+            assertEquals("副本", BookText.quest(edited, copy, "zh_cn", "title", ""));
+            assertFalse(QuestBookDiffer.diff(decoded, edited).empty());
+        }
+    }
+
     private static QuestBookDefinition bookWithDependency() {
         QuestBookDefinition book = emptyBook();
         ChapterGroupDefinition group = new ChapterGroupDefinition(id("book"), id("group"), "Group", 0);

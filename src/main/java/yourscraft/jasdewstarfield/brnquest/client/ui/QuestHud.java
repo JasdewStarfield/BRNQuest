@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -20,7 +21,11 @@ public final class QuestHud {
         ClientQuestState.get().trackedQuest().flatMap(id -> ClientQuestState.get().book().map(s -> s.quests().get(id))).ifPresent(quest -> {
             if (quest == null || !ClientQuestState.get().visible(quest.id())) return;
             int taskLines = Math.min(3, quest.tasks().size());
-            String questTitle = QuestPresentation.questTitle(quest.title(), () -> quest.tasks().isEmpty()
+            // Resolve from the same immutable book and client locale as the quest screen.
+            String localizedTitle = ClientQuestState.get().book().map(snapshot ->
+                    BookText.quest(snapshot.book(), quest,
+                            minecraft.getLanguageManager().getSelected(), "title", quest.title())).orElse(quest.title());
+            String questTitle = QuestPresentation.questTitle(localizedTitle, () -> quest.tasks().isEmpty()
                     ? net.minecraft.network.chat.Component.translatable("screen.brnquest.quest.untitled").getString()
                     : taskTitle(minecraft, quest.tasks().getFirst()));
             int width = Math.max(120, minecraft.font.width(questTitle) + 20);

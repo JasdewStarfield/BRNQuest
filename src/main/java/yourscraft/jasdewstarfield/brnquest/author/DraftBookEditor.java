@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 
@@ -182,7 +183,25 @@ public final class DraftBookEditor {
                                                                 QuestDefinition copy) {
         if (quest(book, sourceId) == null) return notFound("QUEST_NOT_FOUND", sourceId);
         if (copy == null || copy.id().equals(sourceId)) return invalid("COPY_ID_REQUIRED", "Quest copy requires a new stable ID");
-        return addQuest(book, copy.chapterId(), copy);
+        AuthorOperationResult<DraftChange> added = addQuest(book, copy.chapterId(), copy);
+        if (!added.success()) return added;
+        // Copy every locale and extension text suffix to the new identity; later edits stay independent.
+        String sourcePrefix = BookText.questPrefix(quest(book, sourceId));
+        String targetPrefix = BookText.questPrefix(copy);
+        Map<String, Map<String, String>> translations = new java.util.TreeMap<>();
+        book.localization().translations().forEach((locale, source) -> {
+            Map<String, String> values = new java.util.TreeMap<>(source);
+            source.forEach((key, value) -> {
+                if (key.startsWith(sourcePrefix)) values.put(targetPrefix + key.substring(sourcePrefix.length()), value);
+            });
+            translations.put(locale, values);
+        });
+        QuestBookDefinition candidate = added.value().book();
+        return AuthorOperationResult.success(added.code(), added.message(), new DraftChange(
+                new QuestBookDefinition(candidate.id(), candidate.schemaVersion(), candidate.title(),
+                        candidate.chapterGroups(), candidate.chapters(), candidate.legacyIds(),
+                        new BookLocalization(book.localization().fallbackLocale(), translations), candidate.extensions()),
+                added.value().affectedObjects()));
     }
 
     public static AuthorOperationResult<DraftChange> updateQuest(QuestBookDefinition book, ResourceLocation questId,

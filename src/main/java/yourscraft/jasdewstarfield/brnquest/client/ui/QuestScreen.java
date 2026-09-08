@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -465,7 +466,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         navigationHandleWidth(), contentCenterY(), navigationCollapsed),
                 motionFrameSeconds, scrollSmoothSpeed(),
                 navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE,
-                navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE);
+                navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE,
+                minecraft.getLanguageManager().getSelected());
         if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
     }
 
@@ -1131,7 +1133,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 && !structureFormOpen() && editorOverlays.active() == EditorOverlayHost.Kind.NONE;
         List<Component> errorTooltip = editor.mode() == ClientEditorState.Mode.ERROR
                 ? EditorTooltipComposer.operationError(editor.statusCode(), editor.statusMessage()) : List.of();
-        QuestEditorChrome.Model chromeModel = new QuestEditorChrome.Model(currentFrameIdentity(), book.title(),
+        QuestEditorChrome.Model chromeModel = new QuestEditorChrome.Model(currentFrameIdentity(),
+                BookText.title(book, minecraft.getLanguageManager().getSelected()),
                 book.id(), editor.allowed(), editor.editing(), editor.hasLease(), editor.live(), editor.busy(),
                 editor.dirty(), editor.canUndo(), editor.canRedo(), editor.undoSteps(), editor.redoSteps(),
                 publishSurfaceReady, editorHistorySurfaceReady(), status,
@@ -3197,7 +3200,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<QuestDependencyEditorModel.Candidate> dependencyCandidates() {
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null || dependencyEditorQuestId == null) return List.of();
-        return QuestDependencyEditorModel.candidates(snapshot.book(), dependencyEditorQuestId, dependencyFilter);
+        return QuestDependencyEditorModel.candidates(snapshot.book(), dependencyEditorQuestId, dependencyFilter,
+                minecraft.getLanguageManager().getSelected());
     }
 
     private UiRect dependencyPickerBounds() {
@@ -3906,10 +3910,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             ChapterDefinition chapter = snapshot.book().chapters().stream()
                     .filter(candidate -> candidate.id().equals(dependency.chapterId())).findFirst().orElse(null);
-            String chapterTitle = chapter == null || chapter.title().isBlank()
-                    ? Component.translatable("screen.brnquest.chapter.untitled").getString() : chapter.title();
-            String dependencyTitle = dependency.title().isBlank()
-                    ? Component.translatable("screen.brnquest.quest.untitled").getString() : dependency.title();
+            String chapterTitle = chapter == null ? "" : chapterTitle(snapshot.book(), chapter.id());
+            if (chapterTitle.isBlank()) chapterTitle = Component.translatable("screen.brnquest.chapter.untitled").getString();
+            String dependencyTitle = questTitle(dependency);
             lines.add(Component.translatable("screen.brnquest.dependency.entry", chapterTitle, dependencyTitle));
         }
         if (quest.dependencies().isEmpty()) lines.add(Component.translatable("screen.brnquest.dependencies.none"));
@@ -4025,9 +4028,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private String localizedQuestText(QuestDefinition quest, String field, String fallback) {
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null) return fallback;
-        String sourceId = quest.legacyId().isBlank() ? quest.id().toString() : quest.legacyId();
-        String locale = minecraft.getLanguageManager().getSelected();
-        return snapshot.book().localization().resolve(locale, "quest." + sourceId + "." + field, fallback);
+        return BookText.quest(snapshot.book(), quest,
+                minecraft.getLanguageManager().getSelected(), field, fallback);
     }
 
     /** Every editor entry point reads the same locale-resolved value that the player-facing screen renders. */
@@ -4046,11 +4048,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private String localizedStructureTitle(String kind, ResourceLocation id, String fallback) {
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null) return fallback;
-        String sourceId = snapshot.book().legacyIds().entrySet().stream()
-                .filter(entry -> !entry.getKey().startsWith("@") && entry.getValue().equals(id))
-                .map(Map.Entry::getKey).findFirst().orElse(id.toString());
-        return snapshot.book().localization().resolve(minecraft.getLanguageManager().getSelected(),
-                kind + "." + sourceId + ".title", fallback);
+        return BookText.structureTitle(snapshot.book(), kind, id,
+                minecraft.getLanguageManager().getSelected(), fallback);
     }
 
     private ItemStack item(ResourceLocation cacheId, String snbt) {
@@ -4299,9 +4298,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return chapters.get(Math.min(chapterIndex, chapters.size() - 1)).id();
     }
 
-    private static String chapterTitle(QuestBookDefinition book, ResourceLocation chapterId) {
+    private String chapterTitle(QuestBookDefinition book, ResourceLocation chapterId) {
         return book.chapters().stream().filter(chapter -> chapter.id().equals(chapterId))
-                .map(ChapterDefinition::title).findFirst().orElse("");
+                .map(chapter -> BookText.structureTitle(book, "chapter",
+                        chapter.id(), minecraft.getLanguageManager().getSelected(), chapter.title())).findFirst().orElse("");
     }
 
     private QuestBookSnapshot displaySnapshot() {

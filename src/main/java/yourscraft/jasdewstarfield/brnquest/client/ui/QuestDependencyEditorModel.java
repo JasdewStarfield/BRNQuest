@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
@@ -21,12 +22,19 @@ final class QuestDependencyEditorModel {
     private QuestDependencyEditorModel() {}
 
     static List<Candidate> candidates(QuestBookDefinition book, ResourceLocation selectedQuestId, String filter) {
+        return candidates(book, selectedQuestId, filter, null);
+    }
+
+    /** Filtering uses the displayed locale while stable IDs remain searchable in every language. */
+    static List<Candidate> candidates(QuestBookDefinition book, ResourceLocation selectedQuestId, String filter, String locale) {
         QuestDefinition selected = quest(book, selectedQuestId);
         if (selected == null) return List.of();
 
         Map<ResourceLocation, String> chapterTitles = new HashMap<>();
         for (ChapterDefinition chapter : book.chapters()) {
-            chapterTitles.put(chapter.id(), chapter.title().isBlank() ? chapter.id().toString() : chapter.title());
+            String title = locale == null ? chapter.title()
+                    : BookText.structureTitle(book, "chapter", chapter.id(), locale, chapter.title());
+            chapterTitles.put(chapter.id(), title.isBlank() ? chapter.id().toString() : title);
         }
         String normalizedFilter = filter == null ? "" : filter.strip().toLowerCase(Locale.ROOT);
         Set<ResourceLocation> cycleCandidates = cycleCandidates(book, selectedQuestId);
@@ -35,7 +43,9 @@ final class QuestDependencyEditorModel {
         for (ChapterDefinition chapter : book.chapters()) {
             for (QuestDefinition candidate : chapter.quests()) {
                 if (candidate.id().equals(selectedQuestId) || selected.dependencies().contains(candidate.id())) continue;
-                String title = candidate.title().isBlank() ? candidate.id().toString() : candidate.title();
+                String title = locale == null ? candidate.title()
+                        : BookText.quest(book, candidate, locale, "title", candidate.title());
+                if (title.isBlank()) title = candidate.id().toString();
                 String chapterTitle = chapterTitles.getOrDefault(candidate.chapterId(), candidate.chapterId().toString());
                 if (!matches(normalizedFilter, title, candidate.id().toString(), chapterTitle)) continue;
                 candidates.add(new Candidate(candidate.id(), title, chapterTitle,

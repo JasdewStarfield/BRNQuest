@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.1`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.2`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -137,3 +137,7 @@ Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS s
 事件不可取消，只在对应状态提交后发布，并携带稳定 ID 和不可变 view。监听器按注册顺序独立调用；单个监听器抛出的运行时异常或链接错误会被记录，但不会阻止后续监听器，也不会回滚合法任务事务。关闭 `EventSubscription` 后不再接收事件。
 
 `ProgressOwnerChangedEvent` 在服务端对账确认在线玩家 owner 变化后发布，携带前后稳定 `ProgressOwnerId`。首次登录只建立快照；成员变化而 party UUID 不变时不伪造 owner 切换事件。写入前查询可以先于下一次通知生效，监听器不能将事件缓存当作授权依据。
+
+## 作者文本语言选择
+
+任务书、章节组、章节和任务查询现支持显式 locale 重载，不带 locale 的查询保留原文。完整字段、回退规则和兼容格式见 [`AUTHOR_TEXT_LOCALIZATION_zh.md`](AUTHOR_TEXT_LOCALIZATION_zh.md)。语言选择只影响返回投影，不改变同步数据与 revision。

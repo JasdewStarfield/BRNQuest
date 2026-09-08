@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.1`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.2`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -28,3 +28,7 @@ API 版本独立于模组发布版本：补丁发布可以在不改变 API 基�
 ## 调用约束
 
 公共查询返回不可变投影；服务端写操作只能在目标玩家所属服务器线程执行，并通过 `OperationContext` 与 `OperationResult` 表达权限和结果。客户端 presentation 不是进度权威。事件只读、不可取消，监听器异常不会回滚已提交事务。更完整的包边界和生命周期规则见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)。
+
+## experimental.1 → experimental.2
+
+新增作者文本查询的六个 locale 重载：`getActiveBook(locale)`、`getChapterGroups(locale)`、`getChapterGroup(id, locale)`、`getChapters(locale)`、`getChapter(id, locale)`、`getQuests(locale)`。原有 `getQuest(id, locale)` 继续可用。已有签名和不带 locale 的原文查询行为不变，无需迁移；需要展示译文的调用方显式传入语言。数据 schema 和网络协议没有变化。

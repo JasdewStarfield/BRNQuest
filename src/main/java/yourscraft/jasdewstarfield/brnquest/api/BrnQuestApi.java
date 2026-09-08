@@ -218,6 +218,42 @@ public final class BrnQuestApi {
                 .orElseGet(List::of);
     }
 
+    /** Resolves author text for the caller's locale without altering the active book. */
+    public static Optional<QuestBookView> getActiveBook(String locale) {
+        return snapshot().map(value -> ApiViews.book(value, locale));
+    }
+
+    public static List<ChapterGroupView> getChapterGroups(String locale) {
+        return snapshot().map(value -> value.book().chapterGroups().stream()
+                .map(group -> ApiViews.chapterGroup(value, group, locale)).toList()).orElseGet(List::of);
+    }
+
+    public static Optional<ChapterGroupView> getChapterGroup(String groupId, String locale) {
+        Optional<ResourceLocation> id = resolve(groupId);
+        if (id.isEmpty()) return Optional.empty();
+        return snapshot().flatMap(value -> value.book().chapterGroups().stream()
+                .filter(group -> group.id().equals(id.orElseThrow())).findFirst()
+                .map(group -> ApiViews.chapterGroup(value, group, locale)));
+    }
+
+    public static List<ChapterView> getChapters(String locale) {
+        return snapshot().map(value -> value.book().chapters().stream()
+                .map(chapter -> ApiViews.chapter(value, chapter, locale)).toList()).orElseGet(List::of);
+    }
+
+    public static Optional<ChapterView> getChapter(String chapterId, String locale) {
+        Optional<ResourceLocation> id = resolve(chapterId);
+        if (id.isEmpty()) return Optional.empty();
+        return snapshot().flatMap(value -> value.book().chapters().stream()
+                .filter(chapter -> chapter.id().equals(id.orElseThrow())).findFirst()
+                .map(chapter -> ApiViews.chapter(value, chapter, locale)));
+    }
+
+    public static List<QuestView> getQuests(String locale) {
+        return snapshot().map(value -> value.book().quests().stream()
+                .map(quest -> ApiViews.quest(value, quest, locale)).toList()).orElseGet(List::of);
+    }
+
     /** Returns immutable source translations for integrations that provide their own locale selection. */
     public static Map<String, Map<String, String>> getTranslations() {
         return snapshot().map(value -> value.book().localization().translations()).orElseGet(Map::of);

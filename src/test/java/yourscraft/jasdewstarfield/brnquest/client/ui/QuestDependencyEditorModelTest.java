@@ -47,6 +47,19 @@ class QuestDependencyEditorModelTest {
         assertDoesNotThrow(() -> QuestScreen.dependencyCandidateSubtitle(candidate));
     }
 
+    @Test void pickerSearchesLocalizedTitlesAndKeepsStableIdLookup() {
+        var source = book();
+        var localized = new QuestBookDefinition(source.id(), source.schemaVersion(), source.title(),
+                source.chapterGroups(), source.chapters(), source.legacyIds(),
+                new yourscraft.jasdewstarfield.brnquest.data.BookLocalization("en_us", Map.of("zh_cn", Map.of(
+                        "quest.test:free.title", "自由任务", "chapter.test:other_chapter.title", "其他章节"))), source.extensions());
+        var byTitle = QuestDependencyEditorModel.candidates(localized, id("leaf"), "自由", "zh_cn");
+        assertEquals(List.of(id("free")), byTitle.stream().map(QuestDependencyEditorModel.Candidate::questId).toList());
+        assertEquals("其他章节", byTitle.getFirst().chapterTitle());
+        assertEquals("自由任务", QuestDependencyEditorModel.candidates(localized, id("leaf"), "test:free", "zh_cn").getFirst().title());
+        assertTrue(QuestDependencyEditorModel.candidates(localized, id("leaf"), "自由", "en_us").isEmpty());
+    }
+
     private static QuestBookDefinition book() {
         ResourceLocation bookId = id("book");
         ResourceLocation groupId = id("group");

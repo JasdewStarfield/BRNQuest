@@ -50,6 +50,23 @@ class FtbV13ImporterTest {
         assertEquals(NativeBookJson.encode(result.book()), NativeBookJson.encode(new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main").book()));
     }
 
+    @Test void equivalentLanguageFilesMergeAndConflictingTextBlocksImport() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.createDirectories(temporary.resolve("lang"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/zh-CN.snbt"), "{title:\"中文\"}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/zh_cn.snbt"), "{extra:\"保留\"}", StandardCharsets.UTF_8);
+        var merged = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(merged.report().hasFatal(), merged.report().toJson());
+        assertEquals("中文", merged.book().localization().resolve("zh_cn", "title", ""));
+        assertEquals("保留", merged.book().localization().resolve("zh_cn", "extra", ""));
+        Files.writeString(temporary.resolve("lang/zh_cn.snbt"), "{title:\"冲突\"}", StandardCharsets.UTF_8);
+        var conflict = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertTrue(conflict.report().hasFatal());
+        assertTrue(conflict.report().toJson().contains("BQF-106"));
+    }
+
     @Test void mapsV13OptionalAutoPoliciesNamespacesLanguagesAndExtensions() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.createDirectories(temporary.resolve("lang"));

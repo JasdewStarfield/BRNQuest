@@ -11,7 +11,17 @@ public record BookLocalization(String fallbackLocale, Map<String, Map<String, St
     public BookLocalization {
         fallbackLocale = normalizeLocale(fallbackLocale);
         Map<String, Map<String, String>> copied = new LinkedHashMap<>();
-        translations.forEach((locale, values) -> copied.put(normalizeLocale(locale), Map.copyOf(values)));
+        // Equivalent locale spellings may contribute different keys, but must never silently lose text.
+        translations.forEach((locale, values) -> {
+            Map<String, String> merged = copied.computeIfAbsent(normalizeLocale(locale), ignored -> new LinkedHashMap<>());
+            values.forEach((key, value) -> {
+                String previous = merged.putIfAbsent(key, value);
+                if (previous != null && !previous.equals(value)) {
+                    throw new IllegalArgumentException("Conflicting translation for " + normalizeLocale(locale) + ": " + key);
+                }
+            });
+        });
+        copied.replaceAll((locale, values) -> Map.copyOf(values));
         translations = Map.copyOf(copied);
     }
 

@@ -98,7 +98,16 @@ public final class FtbV13Importer {
                 Map<String, String> translations = new TreeMap<>();
                 try {
                     readTranslations(reader.read(path), translations);
-                    target.put(locale, translations);
+                    // Multiple source filenames may normalize to one locale; do not overwrite a whole table.
+                    Map<String, String> merged = new TreeMap<>(target.getOrDefault(locale, Map.of()));
+                    translations.forEach((key, value) -> {
+                        String previous = merged.putIfAbsent(key, value);
+                        if (previous != null && !previous.equals(value)) {
+                            report.add(problem(Diagnostic.Severity.FATAL, "BQF-106", filename, key, "",
+                                    "Conflicting translation for normalized locale " + locale));
+                        }
+                    });
+                    target.put(locale, merged);
                 } catch (Exception exception) {
                     report.add(problem(Diagnostic.Severity.ERROR, "BQF-105", filename, "", "",
                             "Language file could not be read: " + exception.getMessage()));

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.api;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
@@ -31,6 +32,28 @@ public final class ApiViews {
                 chapter.order(), chapter.quests().stream().map(QuestDefinition::id).toList());
     }
 
+    /** Localized projections keep identifiers and source storage unchanged. */
+    public static QuestBookView book(QuestBookSnapshot snapshot, String locale) {
+        var source = book(snapshot);
+        return new QuestBookView(source.id(), source.schemaVersion(),
+                BookText.title(snapshot.book(), locale), source.revision(),
+                source.chapterGroupIds(), source.chapterIds(), source.questIds(), source.legacyIds());
+    }
+
+    public static ChapterGroupView chapterGroup(QuestBookSnapshot snapshot, ChapterGroupDefinition group, String locale) {
+        var source = chapterGroup(snapshot, group);
+        return new ChapterGroupView(group.bookId(), group.id(),
+                BookText.structureTitle(snapshot.book(), "chapter_group",
+                        group.id(), locale, group.title()), group.order(), source.chapterIds());
+    }
+
+    public static ChapterView chapter(QuestBookSnapshot snapshot, ChapterDefinition chapter, String locale) {
+        return new ChapterView(chapter.bookId(), chapter.id(), chapter.groupId(),
+                BookText.structureTitle(snapshot.book(), "chapter",
+                        chapter.id(), locale, chapter.title()), chapter.icon(), chapter.order(),
+                chapter.quests().stream().map(QuestDefinition::id).toList());
+    }
+
     public static QuestView quest(QuestDefinition quest) {
         return new QuestView(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(),
@@ -39,7 +62,7 @@ public final class ApiViews {
     }
 
     public static QuestView quest(QuestBookSnapshot snapshot, QuestDefinition quest, String locale) {
-        String prefix = "quest." + (quest.legacyId().isBlank() ? quest.id() : quest.legacyId()) + ".";
+        String prefix = BookText.questPrefix(quest);
         var localization = snapshot.book().localization();
         return new QuestView(quest.bookId(), quest.id(), quest.chapterId(),
                 localization.resolve(locale, prefix + "title", quest.title()),

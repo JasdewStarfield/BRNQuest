@@ -2421,6 +2421,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
+        // Types may supply either a translated help key or existing literal help text.
+        if (!descriptor.helpText().isBlank() && row.label().containsExclusive(mouseX, mouseY))
+            hoveredDetailText = Component.translatable(descriptor.helpText());
         EditorTextField field = typedPropertySection.form().configField(index);
         if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
             var vector = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(row.field(), descriptor.serverSource().isPresent());

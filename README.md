@@ -42,3 +42,5 @@ Project design, implementation plans, provenance records, and acceptance evidenc
 Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Stable API, data/import, progress, task, reward, owner, network, client, integration, command, and diagnostics concerns remain separated by package.
 
 Internal implementation plans, validation procedures, and historical acceptance reports are maintained in BRNQuest-Docs and are not part of the user documentation set shipped with the mod.
+
+- [原版进度目标与奖励 / Advancement tasks and rewards](docs/ADVANCEMENT_TYPES_zh.md)

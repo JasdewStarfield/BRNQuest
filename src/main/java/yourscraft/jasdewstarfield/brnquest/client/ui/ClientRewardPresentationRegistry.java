@@ -20,6 +20,7 @@ public final class ClientRewardPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Reward());
         register(RewardTypes.COMMAND, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return ">_"; }
             public Component title(RewardPresentationContext context) {

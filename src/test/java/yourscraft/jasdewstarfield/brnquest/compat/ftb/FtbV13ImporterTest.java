@@ -59,6 +59,27 @@ class FtbV13ImporterTest {
         }
     }
 
+    @Test void advancementTasksAndRewardsPreserveCriterionForBothAliases() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        for (String source : List.of("advancement", "ftbquests:advancement")) {
+            Files.writeString(temporary.resolve("chapters/main.snbt"),
+                    "{id:'1000000000000001',quests:[{id:'2000000000000001',tasks:[{id:'3000000000000001',type:'" + source
+                    + "',advancement:'test:one',criterion:'a'}],rewards:[{id:'4000000000000001',type:'" + source
+                    + "',advancement:'test:one',criterion:'b'}]}]}", StandardCharsets.UTF_8);
+            var result = new FtbV13Importer().importBook(temporary,"test","main");
+            var quest = result.book().quests().getFirst();
+            assertEquals("brnquest:advancement",quest.tasks().getFirst().typeId().toString());
+            assertEquals("brnquest:advancement",quest.rewards().getFirst().typeId().toString());
+            assertEquals("a",quest.tasks().getFirst().config().get("criterion"));
+            assertEquals("b",quest.rewards().getFirst().config().get("criterion"));
+            assertTrue(result.fieldConversions().stream().filter(c->c.sourceField().equals("type"))
+                    .allMatch(c->c.status()==FtbFieldConversion.Status.MAPPED));
+            assertEquals(result.book(),NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject()));
+        }
+    }
+
     @Test void importsCompleteEowFixtureWithoutSilentLoss() throws Exception {
         FtbImportResult result = new FtbV13Importer().importBook(fixture(), "embers_of_winter", "main");
         assertFalse(result.report().hasFatal(), result.report().toJson());

@@ -549,5 +549,15 @@
   "screen.brnquest.field.error.unknown_source": "Unregistered source",
   "screen.brnquest.field.error.missing": "Missing target, invalid group or empty result",
   "screen.brnquest.field.error.vector": "Enter three integers: x,y,z",
-  "screen.brnquest.field.loading": "Loading…"
+  "screen.brnquest.field.loading": "Loading…",
+  "screen.brnquest.type.task.advancement": "Advancement",
+  "screen.brnquest.type.reward.advancement": "Advancement",
+  "screen.brnquest.advancement.selector": "ID / group",
+  "screen.brnquest.advancement.criterion": "Criterion",
+  "screen.brnquest.advancement.mode": "Match mode",
+  "screen.brnquest.advancement.any": "Any complete",
+  "screen.brnquest.advancement.all": "All complete",
+  "screen.brnquest.advancement.task_hint": "Existing advancements count; completion stays recorded. Resetting the quest does not revoke vanilla progress.",
+  "screen.brnquest.advancement.reward_hint": "Grants the selected advancement or criterion, without parents. Vanilla rewards and functions may run; granted criteria are not rewarded again.",
+  "screen.brnquest.advancement.criterion_hint": "Leave empty for the whole advancement; otherwise check or grant only this criterion. Groups cannot specify a criterion."
 }

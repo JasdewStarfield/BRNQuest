@@ -1,0 +1,11 @@
+{
+  "parent": "brnquest_f3:first",
+  "criteria": {
+    "only": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "rewards": {
+    "experience": 5
+  }
+}

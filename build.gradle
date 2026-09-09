@@ -38,6 +38,14 @@ def prepareGameTestFixture = tasks.register('prepareGameTestFixture', Sync) {
     from layout.projectDirectory.dir('src/test/resources/fixtures/ftb_v13/eow')
     into gameTestRunDirectory.dir('config/brnquest/imports/eow')
 }
+// Native advancement fixtures never enter the user's runClient world or the distributed mod JAR.
+def prepareAdvancementGameTestFixture = tasks.register('prepareAdvancementGameTestFixture', Copy) {
+    dependsOn resetGameTestBrnQuestState
+    from layout.projectDirectory.dir('src/test/resources/fixtures/advancement_pack')
+    into gameTestRunDirectory.dir('world/datapacks/brnquest_f3')
+}
+prepareGameTestFixture.configure { dependsOn prepareAdvancementGameTestFixture }
+
 def resetKubeJsSmokeState = tasks.register('resetKubeJsSmokeState', Delete) {
     delete kubeJsSmokeRunDirectory.dir('config/brnquest'), kubeJsSmokeRunDirectory.dir('world'),
             kubeJsSmokeRunDirectory.dir('kubejs')

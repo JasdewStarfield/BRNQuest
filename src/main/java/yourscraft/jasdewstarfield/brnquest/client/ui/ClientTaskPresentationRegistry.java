@@ -24,6 +24,7 @@ public final class ClientTaskPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Task());
         for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
             register(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTaskPresentation(kind));
         register(TaskTypes.CHECKMARK, new CheckmarkPresentation());

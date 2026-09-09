@@ -19,7 +19,7 @@ import java.util.*;
 public final class FtbV13Importer {
     // Mapping, diagnostics and conversion reports must recognize the same source aliases.
     private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
-            "xp_levels", "command", "dimension", "biome", "location", "structure");
+            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement");
 
     private static String builtInPath(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
@@ -293,6 +293,7 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].tasks[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("optional_task"));
+            advancementFields(mappedType, raw, config);
             if (mappedType.getNamespace().equals("brnquest") && Set.of("dimension", "biome", "location", "structure").contains(mappedType.getPath())) {
                 String kind = mappedType.getPath();
                 String selectorKey = kind.equals("location") ? "dimension" : kind;
@@ -344,6 +345,7 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].rewards[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("auto", "team_reward"));
+            advancementFields(mappedType, raw, config);
             if (mappedType.equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)) {
                 // FTB field values are semantic strings/booleans here, not their quoted SNBT representation.
                 config.put("command", yourscraft.jasdewstarfield.brnquest.reward.CommandRewardConfig.normalize(raw.getString("command")));
@@ -377,6 +379,13 @@ public final class FtbV13Importer {
                     policy, raw.getBoolean("team_reward")));
         }
         return result;
+    }
+
+    /** Advancement identifiers and criteria are semantic strings, not quoted SNBT literals. */
+    private static void advancementFields(ResourceLocation type, CompoundTag raw, Map<String,String> config) {
+        if (!type.equals(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID)) return;
+        config.put("advancement", raw.contains("advancement") ? raw.getString("advancement") : "minecraft:story/root");
+        config.put("criterion", raw.getString("criterion"));
     }
 
     private Map<String, String> flatten(CompoundTag raw, Set<String> semanticFields) {

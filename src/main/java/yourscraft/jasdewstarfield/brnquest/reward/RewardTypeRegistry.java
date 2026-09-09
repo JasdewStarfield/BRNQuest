@@ -25,6 +25,7 @@ public final class RewardTypeRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementReward());
         register(RewardTypes.COMMAND, new CommandReward());
         register(RewardTypes.ITEM, new ItemReward());
         register(RewardTypes.XP, new ExperienceReward(false));

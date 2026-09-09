@@ -549,5 +549,15 @@
   "screen.brnquest.field.error.unknown_source": "未注册数据来源",
   "screen.brnquest.field.error.missing": "目标缺失、分组错误或解析为空",
   "screen.brnquest.field.error.vector": "请输入三个整数：x,y,z",
-  "screen.brnquest.field.loading": "正在加载…"
+  "screen.brnquest.field.loading": "正在加载…",
+  "screen.brnquest.type.task.advancement": "原版进度",
+  "screen.brnquest.type.reward.advancement": "原版进度",
+  "screen.brnquest.advancement.selector": "进度 ID / 分组",
+  "screen.brnquest.advancement.criterion": "条件（可选）",
+  "screen.brnquest.advancement.mode": "匹配模式",
+  "screen.brnquest.advancement.any": "任一完成",
+  "screen.brnquest.advancement.all": "全部完成",
+  "screen.brnquest.advancement.task_hint": "已有进度也计入；完成后不倒退。重置任务不会撤销原版进度。",
+  "screen.brnquest.advancement.reward_hint": "授予指定进度或条件，不授予父进度。可能触发原版奖励与函数；已授予项不会重复发奖。",
+  "screen.brnquest.advancement.criterion_hint": "留空检查或授予完整进度；非空只处理指定条件。分组不能指定条件。"
 }

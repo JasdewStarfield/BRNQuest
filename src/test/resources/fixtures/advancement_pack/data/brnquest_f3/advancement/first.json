@@ -1,0 +1,22 @@
+{
+  "criteria": {
+    "a": {
+      "trigger": "minecraft:impossible"
+    },
+    "b": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "a"
+    ],
+    [
+      "b"
+    ]
+  ],
+  "rewards": {
+    "experience": 7,
+    "function": "brnquest_f3:bonus"
+  }
+}

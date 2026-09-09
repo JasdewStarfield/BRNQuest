@@ -104,3 +104,10 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 示例附属模组的 marker 类型展示采样和 player_tags 来源；新增同类扩展不需要修改 QuestScreen 或 ProgressEngine。注册表来源在资源 reload 后重新查询，原始 ID、#tag 或 #分组写入配置，不展开保存为具体成员列表。
 
 `INTEGER_VECTOR3`（experimental.6）用于三个整数轴的同行编辑，仍存为原字符串。适用坐标、尺寸及扩展自定义向量；范围元数据逐轴校验。带 serverSource 时显示直接填入 current 的行尾按钮，响应关联到发起表单；等待期间继续输入、关闭或提交表单后，旧响应不会覆盖编辑内容。无 serverSource 时只显示三个输入框。原生 config Codec 仍是最终校验权威。
+
+
+### 原版进度类型的扩展边界
+
+内置 advancement 目标复用 TaskType 的 pollingIntervalTicks / sampledProgress，奖励复用 RewardType.claimHandler；字段选择器使用 ServerFieldSources 分页。原版事件只使模块读取缓存失效，不直接推进任务或领取奖励。其它新类型可沿用此模式，无需修改 QuestScreen、ProgressEngine 或平台入口。
+
+字段描述的 helpText 可保存翻译键或原有字面帮助文本，作者悬浮字段标签时通过通用表单显示；这没有新增配置协议字段。服务端校验仍由类型 codec 和具体执行前校验负责。

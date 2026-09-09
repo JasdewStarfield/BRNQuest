@@ -470,11 +470,26 @@ public final class ProgressEngine {
             if (quest == null) return null;
             progress(player).resetQuest(questId.toString(), quest.tasks().stream().map(t -> t.id().toString()).toList(),
                     quest.rewards().stream().map(r -> r.id().toString()).toList());
+            resetTransientStates(player, quest, quest.tasks());
             QuestProgressData.get(player.getServer()).setDirty();
             reconcile(player);
             BrnQuestNetwork.syncProgress(player, false);
             return null;
         });
+    }
+
+    /** Dispatch through the type SPI so partial local state resets for every current owner member. */
+    private void resetTransientStates(ServerPlayer player, QuestDefinition quest, List<TaskDefinition> tasks) {
+        var owner = ProgressOwnerService.require(player);
+        var players = new java.util.LinkedHashSet<ServerPlayer>();
+        players.add(player);
+        for (var online : player.getServer().getPlayerList().getPlayers()) {
+            if (ProgressOwnerService.resolve(online).map(view -> view.id().equals(owner)).orElse(false)) players.add(online);
+        }
+        for (var member : players) for (var task : tasks) {
+            var type = TaskTypeRegistry.get(task.typeId());
+            if (type != null) type.resetTransientState(taskContext(member, quest, task, progress(member)));
+        }
     }
 
     /** Called only by the permission/revision-checked admin service while holding the same owner lock. */
@@ -492,6 +507,7 @@ public final class ProgressEngine {
             progress.resetTask(quest.id().toString(), taskId.toString(),
                     dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
             QuestProgressData.get(player.getServer()).setDirty();
+            resetTransientStates(player, quest, List.of(task));
             if (previous != 0) BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(),
                     player.getScoreboardName(), quest.bookId(), quest.id(), taskId, ApiViews.task(task), previous, 0));
             // A task reset can invalidate descendants, so recompute the owner graph before synchronization.

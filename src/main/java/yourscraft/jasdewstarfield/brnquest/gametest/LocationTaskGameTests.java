@@ -174,6 +174,18 @@ public final class LocationTaskGameTests {
     }
 
     /** Vanilla's mock helper hardcodes isSpectator=false; use a normal player for game-mode checks. */
+    @GameTest(template="empty",batch="locationPreview") @PrefixGameTestTemplate(false)
+    public static void ordinaryPlayerReceivesResolvedBiomeMembers(GameTestHelper helper) {
+        var player=helper.makeMockServerPlayerInLevel();
+        var pages=yourscraft.jasdewstarfield.brnquest.network.LocationOptionsNetwork.snapshot(player);
+        helper.assertTrue(pages.getFirst().reset(),"login/reload resets removed selectors");
+        var members=pages.stream().filter(page->page.selector().equals("biome|#minecraft:is_overworld"))
+                .flatMap(page->page.members().stream()).toList();
+        helper.assertTrue(members.contains("minecraft:plains"),"native biome tag expands for ordinary players");
+        helper.assertTrue(pages.stream().allMatch(page->page.members().size()<=64),"display pages stay bounded");
+        helper.succeed();
+    }
+
     private static net.minecraft.server.level.ServerPlayer realPlayer(GameTestHelper helper) {
         var cookie = net.minecraft.server.network.CommonListenerCookie.createInitial(
                 new com.mojang.authlib.GameProfile(UUID.randomUUID(), "exploration-player"), false);

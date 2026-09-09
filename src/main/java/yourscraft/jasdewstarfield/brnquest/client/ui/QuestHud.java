@@ -28,18 +28,40 @@ public final class QuestHud {
             String questTitle = QuestPresentation.questTitle(localizedTitle, () -> quest.tasks().isEmpty()
                     ? net.minecraft.network.chat.Component.translatable("screen.brnquest.quest.untitled").getString()
                     : taskTitle(minecraft, quest.tasks().getFirst()));
+            // Use each registered presentation for both receipt interpretation and live progress text.
+            var lines = new java.util.ArrayList<String>();
+            var completed = new java.util.ArrayList<Boolean>();
+            var progressLabels = new java.util.ArrayList<String>();
+            for (int index = 0; index < taskLines; index++) {
+                TaskDefinition task = quest.tasks().get(index);
+                var view = ApiViews.task(task);
+                var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+                long stored = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
+                boolean done = presentation.confirmed(view, stored);
+                var context = new TaskPresentationContext(minecraft, view,
+                        yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.ACTIVE, stored, ItemStack.EMPTY);
+                String progress = presentation.progressText(context, done).getString();
+                lines.add((done ? "✓ " : "• ") + taskTitle(minecraft, task));
+                progressLabels.add(progress);
+                completed.add(done);
+            }
             int width = Math.max(120, minecraft.font.width(questTitle) + 20);
+            for (int index = 0; index < lines.size(); index++)
+                width = Math.max(width, minecraft.font.width(lines.get(index)) + minecraft.font.width(progressLabels.get(index)) + 28);
+            width = Math.min(width, Math.max(120, graphics.guiWidth() - 16));
             int left = graphics.guiWidth() - width - 8;
             int bottom = 30 + taskLines * 11;
             graphics.fill(left, 10, graphics.guiWidth() - 8, bottom, 0xC010141C);
             graphics.fill(left, 10, left + 3, bottom, 0xFF57C7F2);
             graphics.drawString(minecraft.font, "★ " + questTitle, left + 8, 16, 0xFF8DDCFA, false);
             for (int index = 0; index < taskLines; index++) {
-                TaskDefinition task = quest.tasks().get(index);
-                boolean done = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L) >= 1;
-                String title = taskTitle(minecraft, task);
-                graphics.drawString(minecraft.font, (done ? "✓ " : "• ") + title, left + 8, 28 + index * 11,
-                        done ? 0xFF72D88D : 0xFFD8DEE8, false);
+                // Reserve the counter first so a long translated title cannot hide live progress.
+                String progress = progressLabels.get(index);
+                int progressWidth = minecraft.font.width(progress);
+                int color = completed.get(index) ? 0xFF72D88D : 0xFFD8DEE8;
+                graphics.drawString(minecraft.font, minecraft.font.plainSubstrByWidth(lines.get(index), Math.max(0, width - progressWidth - 24)),
+                        left + 8, 28 + index * 11, color, false);
+                graphics.drawString(minecraft.font, progress, left + width - progressWidth - 8, 28 + index * 11, color, false);
             }
         });
     }

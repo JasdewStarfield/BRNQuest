@@ -17,6 +17,25 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void importsObservationAndKillAliasesThroughNativeRoundTrip() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"),"{version:13}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"),"{}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/encounters.snbt"),"""
+                {id:"1000000000000001",quests:[{id:"2000000000000001",tasks:[
+                {id:"3000000000000001",type:"ftbquests:observation",observation_type:"block_tag",to_observe:"minecraft:logs",timer:20L},
+                {id:"3000000000000002",type:"kill",entity:"minecraft:zombie",value:3L}]}]}
+                """,StandardCharsets.UTF_8);
+        var imported=new FtbV13Importer().importBook(temporary,"test","main");
+        assertFalse(imported.report().hasFatal(),imported.report().toJson());
+        var tasks=imported.book().quests().getFirst().tasks();
+        assertEquals("brnquest:observe",tasks.getFirst().typeId().toString());
+        assertEquals("#minecraft:logs",tasks.getFirst().config().get("target"));
+        assertEquals("brnquest:kill_entity",tasks.get(1).typeId().toString());
+        assertEquals("3",tasks.get(1).config().get("count"));
+        assertEquals(imported.book(),NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(imported.book())).getAsJsonObject()));
+    }
+
     @Test void importsLocationBoxesAndRegistrySelectorsWithoutLosingSourceArrays() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);

@@ -566,5 +566,21 @@
   "screen.brnquest.field.preview": "Members",
   "screen.brnquest.field.clear": "Clear",
   "screen.brnquest.field.error.single_advancement": "Select one advancement first; groups cannot use criteria",
-  "screen.brnquest.advancement.group_unavailable": "Advancement group members unavailable"
+  "screen.brnquest.advancement.group_unavailable": "Advancement group members unavailable",
+  "screen.brnquest.encounter.kind": "Observe",
+  "screen.brnquest.encounter.block": "Block",
+  "screen.brnquest.encounter.entity": "Entity",
+  "screen.brnquest.encounter.target": "Target ID / tag",
+  "screen.brnquest.encounter.distance": "Distance (blocks)",
+  "screen.brnquest.encounter.duration": "Gaze duration (ticks)",
+  "screen.brnquest.encounter.count": "Kills required",
+  "screen.brnquest.encounter.observe_help": "Keep looking at the same target. Looking away, switching targets or disconnecting resets the timer. 20 ticks are about 1 second; 0 completes on the first hit.",
+  "screen.brnquest.encounter.kill_help": "Counts new kills by the player or their projectiles while eligible. Pet and environmental kills do not count.",
+  "screen.brnquest.encounter.observe_heading": "Observe the following target:",
+  "screen.brnquest.encounter.kill_heading": "Kill the following entity:",
+  "screen.brnquest.encounter.gaze": "Within %s blocks; observe continuously for %s ticks",
+  "screen.brnquest.type.task.observe": "Observe",
+  "screen.brnquest.type.task.kill_entity": "Kill entities",
+  "screen.brnquest.options.title": "View all options",
+  "screen.brnquest.options.empty": "No resolved entries"
 }

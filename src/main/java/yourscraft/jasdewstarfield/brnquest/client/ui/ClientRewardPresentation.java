@@ -14,6 +14,9 @@ public interface ClientRewardPresentation {
         return java.util.Optional.empty();
     }
 
+    /** Resolved, read-only choices. Empty Optional means no browser; an empty list means no resolved members. */
+    default java.util.Optional<java.util.List<Component>> resolvedOptions(RewardView view) { return java.util.Optional.empty(); }
+
     default String itemSnbt(RewardView reward) { return ""; }
     default String symbol(RewardView reward) { return "?"; }
     /** Returns a defensive display copy; item rewards may apply a separate configured multiplier. */

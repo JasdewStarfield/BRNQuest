@@ -19,7 +19,7 @@ import java.util.*;
 public final class FtbV13Importer {
     // Mapping, diagnostics and conversion reports must recognize the same source aliases.
     private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
-            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement");
+            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill");
 
     private static String builtInPath(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
@@ -294,6 +294,11 @@ public final class FtbV13Importer {
             recordTypeConversion(file, "quests[" + quest + "].tasks[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("optional_task"));
             advancementFields(mappedType, raw, config);
+            String encounterError=FtbEncounterFields.apply(mappedType,raw,config);
+            if(!encounterError.isEmpty()) report.add(problem(Diagnostic.Severity.ERROR,"BQF-109",file,"tasks["+legacy+"]",legacy,encounterError));
+            if(config.containsKey("ftb.observation_mode_conflict")) report.add(problem(Diagnostic.Severity.WARN,"BQF-110",file,"tasks["+legacy+"].observe_type",legacy,"Legacy observe_type takes precedence: "+config.get("ftb.observation_mode_conflict")));
+            if(mappedType.equals(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE) || mappedType.equals(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL))
+                conversions.add(new FtbFieldConversion(file,"tasks["+legacy+"]","target/timer/value","config.target/duration/count",encounterError.isEmpty() ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.UNSUPPORTED,"Server-authoritative ID/tag conversion; source constraints retained"));
             if (mappedType.getNamespace().equals("brnquest") && Set.of("dimension", "biome", "location", "structure").contains(mappedType.getPath())) {
                 String kind = mappedType.getPath();
                 String selectorKey = kind.equals("location") ? "dimension" : kind;
@@ -502,6 +507,8 @@ public final class FtbV13Importer {
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String builtInPath = builtInPath(type);
+        if (builtInPath.equals("observation")) return yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE;
+        if (builtInPath.equals("kill")) return yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL;
         if (BUILT_IN_TYPES.contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }

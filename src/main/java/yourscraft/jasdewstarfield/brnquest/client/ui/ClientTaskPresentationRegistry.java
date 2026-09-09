@@ -24,6 +24,8 @@ public final class ClientTaskPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE,new EncounterPresentation(true));
+        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL,new EncounterPresentation(false));
         register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Task());
         for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
             register(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTaskPresentation(kind));
@@ -182,6 +184,7 @@ public final class ClientTaskPresentationRegistry {
     }
 
     private static final class ItemPresentation implements ClientTaskPresentation {
+        public boolean confirmed(TaskView task, long storedProgress) { return itemObjectiveSubmitted(task, storedProgress); }
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.ITEM; }
         public String itemSnbt(TaskView task) { return task.config().getOrDefault("item", ""); }
         public Component typeName(TaskView task) {
@@ -237,6 +240,7 @@ public final class ClientTaskPresentationRegistry {
     }
 
     private static final class ItemChoicePresentation implements ClientTaskPresentation {
+        public boolean confirmed(TaskView task, long storedProgress) { return itemObjectiveSubmitted(task, storedProgress); }
         @Override
         public NodeStyle nodeStyle(TaskView task) {
             ItemChoiceMatcher.Spec spec = spec(task);
@@ -360,11 +364,9 @@ public final class ClientTaskPresentationRegistry {
         return booleanConfig(task, "only_from_crafting");
     }
 
-    /** Internal receipt interpretation; counted crafting rows require their full configured amount. */
+    /** Shared receipt dispatch; each registered type owns the meaning of its persistent counter. */
     static boolean confirmed(TaskView task, long storedProgress) {
-        return task.typeId().equals(TaskTypes.ITEM) || task.typeId().equals(TaskTypes.ITEM_CHOICE)
-                ? itemObjectiveSubmitted(task, storedProgress)
-                : storedProgress >= 1;
+        return get(task.typeId()).confirmed(task, storedProgress);
     }
 
     private static boolean usesRawExperiencePoints(TaskView task) {

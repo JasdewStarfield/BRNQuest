@@ -20,7 +20,7 @@ final class QuestRewardCellWidget {
 
     record Layout(int x, int y, UiRect viewport, int mouseX, int mouseY, int attentionPingOffsetY) {}
 
-    record Result(UiRect action, RecipeLookupTarget lookup, Component hint, ItemStack hoveredStack) {
+    record Result(UiRect action, UiRect candidates, RecipeLookupTarget lookup, Component hint, ItemStack hoveredStack) {
         Result {
             hoveredStack = hoveredStack == null ? ItemStack.EMPTY : hoveredStack.copy();
         }
@@ -31,6 +31,6 @@ final class QuestRewardCellWidget {
                 model.presentationContext(), layout.x(), layout.y(), layout.viewport(),
                 layout.mouseX(), layout.mouseY(), layout.attentionPingOffsetY());
         ItemStack hoveredStack = cell.lookup() == null ? ItemStack.EMPTY : cell.lookup().stack();
-        return new Result(cell.action(), cell.lookup(), cell.hint(), hoveredStack);
+        return new Result(cell.action(), cell.candidates(), cell.lookup(), cell.hint(), hoveredStack);
     }
 }

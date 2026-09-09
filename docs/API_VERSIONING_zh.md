@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.9`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.12`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -71,3 +71,19 @@ ClientTaskPresentation 与 ClientRewardPresentation 新增默认 `icon(view)`，
 ## experimental.8 → experimental.9
 
 `ServerFieldSources.Source` 增加携带只读表单上下文的 `queryPage` 默认重载；旧来源无需修改。`Result` 增加 `previewSource`，声明注册的只读成员预览来源，保留旧构造器。上下文不是服务端事实，来源必须自行解析/验证，不能用于权限或写操作。编辑器仅携带最多 64 个键长不超过 128、值长不超过 256 的字段；过长字段不发送。网络协议升级为 13，客户端与服务端需同步更新，任务书 schema 不变。
+
+## experimental.9 → experimental.10
+
+`TaskType.resetTransientState(TaskContext)` 新增默认空实现。显式重置整个任务或单个目标时，引擎为同一进度所有者的在线成员调用此方法，即使持久化进度本来为零；旧实现无需修改。实现只清理该玩家、任务书、目标对应的临时状态，不得写入持久化进度。离线状态的清理仍由类型模块负责。观察目标用此入口清空未完成的连续观察计时，核心引擎不识别具体类型。
+
+观察计时新增只读客户端展示 payload，网络协议升级为 14；客户端与服务端须同时更新。任务书 schema 1、进度 schema 2 保持不变。
+
+## experimental.10 → experimental.11
+
+`ClientTaskPresentation.confirmed(TaskView, long)` 增加默认实现（单次提交类型仍以账本值 ≥ 1 为准）。累计类型应覆盖此方法，按配置数量解释服务端账本；它不能用本地背包就绪状态或整个任务的历史完成状态代替目标完成。目标行和追踪 HUD 统一调用注册类型的实现，已有类型无需修改。网络协议保持 14。
+
+## experimental.11 → experimental.12
+
+任务和奖励 presentation 新增 `resolvedOptions(view)` 默认入口，返回 `Optional<List<Component>>`。未提供表示维持原有行为；提供空列表表示有候选浏览入口但没有解析成员。共享只读窗口显示完整列表，类型负责解析成员和名称，不由 QuestScreen 判断具体类型。任务的默认 `hasCandidateMenu` 使用此入口；既有物品候选功能继续沿用原实现。
+
+地点分组/原生标签解析成员在登录和数据包同步时分包发送给普通玩家，网络协议升级为 15；没有放宽 OP 作者字段查询权限。客户端与服务端需同时更新。

@@ -566,5 +566,21 @@
   "screen.brnquest.field.preview": "成员预览",
   "screen.brnquest.field.clear": "清空",
   "screen.brnquest.field.error.single_advancement": "请先选择单个进度；分组不支持条件",
-  "screen.brnquest.advancement.group_unavailable": "进度组成员不可用"
+  "screen.brnquest.advancement.group_unavailable": "进度组成员不可用",
+  "screen.brnquest.encounter.kind": "观察对象",
+  "screen.brnquest.encounter.block": "方块",
+  "screen.brnquest.encounter.entity": "实体",
+  "screen.brnquest.encounter.target": "目标 ID / 标签",
+  "screen.brnquest.encounter.distance": "最大距离（格）",
+  "screen.brnquest.encounter.duration": "连续观察（tick）",
+  "screen.brnquest.encounter.count": "击杀数量",
+  "screen.brnquest.encounter.observe_help": "连续观察同一目标，转开、换目标或断线后重新计时；20 tick 约为 1 秒，0 表示首次命中即完成。",
+  "screen.brnquest.encounter.kill_help": "只计目标启用后的玩家直接击杀或本人投射物；宠物与环境死亡不计入。",
+  "screen.brnquest.encounter.observe_heading": "观察以下目标：",
+  "screen.brnquest.encounter.kill_heading": "击杀以下实体：",
+  "screen.brnquest.encounter.gaze": "距离 %s 格以内；连续观察 %s tick",
+  "screen.brnquest.type.task.observe": "观察",
+  "screen.brnquest.type.task.kill_entity": "击杀实体",
+  "screen.brnquest.options.title": "查看所有可选项",
+  "screen.brnquest.options.empty": "没有可解析的条目"
 }

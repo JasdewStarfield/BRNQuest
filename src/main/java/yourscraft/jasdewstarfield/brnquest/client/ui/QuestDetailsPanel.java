@@ -19,6 +19,7 @@ final class QuestDetailsPanel {
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
         void reward(RewardDefinition reward, int x, int y);
+        default int rewardWidth(RewardDefinition reward) { return QuestViewportMath.REWARD_ROW_HEIGHT; }
     }
     record Result(Map<String, UiRect> textAreas, UiRect completeAction, UiRect trackAction,
                   Component hint, boolean lockedStatusHovered) {}
@@ -136,20 +137,17 @@ final class QuestDetailsPanel {
             y += 4;
             graphics.drawString(font, Component.translatable("screen.brnquest.rewards"), contentLeft, y, 0xFFE6B55B, false);
             y += 13;
-            int rewardTop = y;
-            int rewardColumns = Math.max(1, contentWidth / QuestViewportMath.REWARD_ROW_HEIGHT);
-            int column = 0;
+            // Candidate buttons reserve their own horizontal space without enlarging every reward.
+            int rewardX = contentLeft;
             for (RewardDefinition reward : visibleRewards) {
-                int rewardX = contentLeft + column * QuestViewportMath.REWARD_ROW_HEIGHT;
-                rows.reward(reward, rewardX, y);
-                column++;
-                if (column >= rewardColumns) {
-                    column = 0;
-                    y += QuestViewportMath.REWARD_ROW_HEIGHT;
+                int cellWidth = rows.rewardWidth(reward);
+                if (rewardX > contentLeft && rewardX + cellWidth > contentLeft + contentWidth) {
+                    rewardX = contentLeft; y += QuestViewportMath.REWARD_ROW_HEIGHT;
                 }
+                rows.reward(reward,rewardX,y);
+                rewardX += cellWidth;
             }
-            // Compute from row count so a partially populated final row is never clipped.
-            y = rewardTop + QuestViewportMath.rewardGridHeight(visibleRewards.size(), rewardColumns);
+            y += QuestViewportMath.REWARD_ROW_HEIGHT;
         }
         contentHeight = Math.max(0, y + (int) Math.round(drawnScroll) - layout.content().top() + 8);
         scroll.constrain(contentHeight, viewportHeight);

@@ -53,7 +53,7 @@ public final class TagChoiceScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        parent.render(graphics, -1, -1, partialTick);
+        ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
         UiRect panel = panel();

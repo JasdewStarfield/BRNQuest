@@ -56,3 +56,5 @@ BRNQuest 提供四种被动目标。玩家进入目标位置后自动完成，�
 支持 FTB Quests 1.21.1 的 dimension、biome、location、structure 目标及带 `ftbquests:` 前缀的类型 ID。ID 和 tag 保留原表达式。缺省访问维度沿用 FTB 的下界默认值；坐标目标维度默认主世界。
 
 FTB location 的 position/size 三整数数组转成逗号分隔字段，原 SNBT 同时保留为 `ftb.position` / `ftb.size`。非法数组报告 BQF-108，非法尺寸或选择器由类型 Codec 拒绝；不会用半径近似源长方体。未知扩展字段继续保留。原生 biome/structure 标签直接使用；自定义维度分组需在数据包中定义。
+
+地点目标旁的省略号可查看标签或分组的全部解析成员；客户端存在对应翻译时显示名称，否则回退 ID。tooltip 最多预览三项。成员在登录和数据包同步时更新，普通玩家无需 OP 权限；网络协议 15 要求客户端与服务端一起更新。

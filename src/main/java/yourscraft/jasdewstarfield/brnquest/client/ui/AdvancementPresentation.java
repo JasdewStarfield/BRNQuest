@@ -76,7 +76,12 @@ public final class AdvancementPresentation {
     /** Resolve each name at render time so changing the client language also updates group members. */
     static void appendMembers(net.minecraft.network.chat.MutableComponent detail, java.util.List<String> members,
             java.util.function.Function<String,Component> names) {
-        for (String member : members) detail.append("\n- ").append(names.apply(member));
+        ResolvedOptions.appendPreview(detail, members.stream().map(names).toList());
+    }
+    static java.util.List<Component> options(Map<String,String> values) {
+        String selector = values.getOrDefault("advancement", "");
+        var members = selector.startsWith("#") ? AdvancementGroupCache.members(selector) : java.util.List.of(selector);
+        return members == null ? java.util.List.of() : members.stream().map(id -> ResolvedOptions.entry(id,advancementTitle(id))).toList();
     }
     static Component rewardHint(Map<String,String> values, boolean claimable, boolean claimed) {
         var hint = detail(values,false).copy();
@@ -85,6 +90,7 @@ public final class AdvancementPresentation {
         return hint;
     }
     public static final class Task implements ClientTaskPresentation {
+        public java.util.Optional<java.util.List<Component>> resolvedOptions(TaskView view) { return java.util.Optional.of(options(view.config())); }
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
         public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(TaskView task) { return AdvancementPresentation.icon(task.config()); }
         public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.advancement"); }
@@ -92,6 +98,7 @@ public final class AdvancementPresentation {
         public Component interactionHint(TaskPresentationContext context, boolean interactive) { return detail(context.task().config(),true); }
     }
     public static final class Reward implements ClientRewardPresentation {
+        public java.util.Optional<java.util.List<Component>> resolvedOptions(RewardView view) { return java.util.Optional.of(options(view.config())); }
         public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(RewardView reward) { return AdvancementPresentation.icon(reward.config()); }
         public Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.advancement"); }
         public Component title(RewardPresentationContext context) { return AdvancementPresentation.title(context.reward().config()); }

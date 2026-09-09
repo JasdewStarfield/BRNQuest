@@ -287,6 +287,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientEditorState editor = ClientEditorState.get();
         editor.tick();
         reconcileModeSelection(editor);
+        // Session loss must also remove the typed form widgets, not merely stop painting its panel.
+        if (!editor.editing() && (typedEditorOpen || typedPropertySection.open())) closeTypedEditor();
         if (questEditorOpen && !editor.editing()) closeQuestEditor();
         if (dependencyEditorOpen && !editor.editing()) closeDependencyEditor();
         if ((!editor.editing() && switch (editorOverlays.active()) {
@@ -624,6 +626,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     public int task(TaskDefinition task, int x, int y, int rowWidth) {
                         return renderTask(graphics, quest, task, status, x, y, rowWidth, mouseX, mouseY);
                     }
+                    public int rewardWidth(RewardDefinition reward) {
+                        return ClientRewardPresentationRegistry.get(reward.typeId()).resolvedOptions(ApiViews.reward(reward)).isPresent() ? 44 : 28;
+                    }
                     public void reward(RewardDefinition reward, int x, int y) {
                         renderReward(graphics, reward, x, y, status, mouseX, mouseY);
                     }
@@ -737,8 +742,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_SUBMISSION_CHOICES -> {
                 TaskDefinition task = quest.tasks().stream()
                         .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
-                if (task != null) ItemChoiceMatcher.parseConfig(task.config()).result()
-                        .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, true));
+                if (task != null) {
+                    var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+                    var view = ApiViews.task(task);
+                    if (presentation.resolvedOptions(view).isPresent()) minecraft.setScreen(new ResolvedOptionsScreen(this,
+                            () -> presentation.resolvedOptions(view).orElse(List.of())));
+                    else ItemChoiceMatcher.parseConfig(task.config()).result()
+                            .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, true));
+                }
             }
             case COMPLETE_QUEST -> {
                 QuestStatus status = status(quest);
@@ -754,6 +765,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case SUBMIT_TASK, OPEN_ITEM_SLOT_SELECTION -> handleDetailsTaskIntent(intent.action(), quest,
                     intent.targetId());
+            case OPEN_REWARD_OPTIONS -> {
+                var reward = quest.rewards().stream().filter(value -> value.id().equals(intent.targetId())).findFirst().orElse(null);
+                if (reward != null) {
+                    var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
+                    var view = ApiViews.reward(reward);
+                    if (presentation.resolvedOptions(view).isPresent()) minecraft.setScreen(new ResolvedOptionsScreen(this,
+                            () -> presentation.resolvedOptions(view).orElse(List.of())));
+                }
+            }
             case CLAIM_REWARD -> {
                 RewardDefinition reward = quest.rewards().stream()
                         .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
@@ -797,6 +817,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 new QuestRewardCellWidget.Layout(x, y, detailRecipeLookupViewport(),
                         mouseX, mouseY, attentionPingOffsetY));
         detailsInteraction.reward(reward.id(), cell.action());
+        detailsInteraction.rewardOptions(reward.id(), cell.candidates());
         acceptRewardCellHover(cell);
     }
 

@@ -47,6 +47,8 @@
 
 FTB 的 `advancement` / `ftbquests:advancement` 目标和奖励映射到此类型，保留 `advancement`、`criterion` 及未知配置；不把单条件转换成整个进度。
 
-类型通过现有任务/奖励和 presentation 注册表接入，字段由类型自身声明，查询来源复用 `ServerFieldSources`，缓存生命周期由模块自行订阅 NeoForge 事件。无需给 QuestScreen、ProgressEngine 或平台入口增加 advancement 类型判断。本功能保持公共 API experimental.9、网络协议 13 和任务书 schema 1。
+类型通过现有任务/奖励和 presentation 注册表接入，字段由类型自身声明，查询来源复用 `ServerFieldSources`，缓存生命周期由模块自行订阅 NeoForge 事件。无需给 QuestScreen、ProgressEngine 或平台入口增加 advancement 类型判断。进度功能首次交付使用公共 API experimental.9、网络协议 13；当前版本以 API 版本文档为准，任务书 schema 仍为 1。
 
 分组成员在登录与数据包重载时由服务端分包同步给客户端，目标/奖励 tooltip 以无序列表列出全部成员，逐项优先显示客户端可用的进度译名，缺失时回退该成员 ID。此同步不需要作者权限，不授予进度；无效分组显示不可用提示。列表仅在搜索改变时清空，点击选择保留已加载页与滚动位置。
+
+进度目标和奖励旁的省略号打开只读候选窗口，展示全部分组成员，优先显示进度名称，缺失时回退 ID。tooltip 仅展示前三项，超出显示省略号；完整列表不截断。

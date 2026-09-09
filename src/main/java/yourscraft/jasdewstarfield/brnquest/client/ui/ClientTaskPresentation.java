@@ -20,12 +20,18 @@ public interface ClientTaskPresentation {
     enum NodeStyle { ITEM, CHECKMARK, CUSTOM, PLACEHOLDER }
 
     default NodeStyle nodeStyle(TaskView task) { return NodeStyle.PLACEHOLDER; }
+    /** Resolved, read-only choices. Empty Optional means no browser; an empty list means no resolved members. */
+    default java.util.Optional<java.util.List<Component>> resolvedOptions(TaskView view) { return java.util.Optional.empty(); }
+
     default String itemSnbt(TaskView task) { return ""; }
     default String symbol(TaskView task) { return "?"; }
     /** Player-facing fallback stays localizable; authoring technical details retain the full type ID separately. */
     default Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.unknown"); }
     default boolean interactive(TaskView task) { return false; }
     default boolean acceptsQuestCompletionIntent(TaskView task) { return false; }
+
+    /** Interpret only the server ledger, independently of inventory readiness or historical quest status. */
+    default boolean confirmed(TaskView task, long storedProgress) { return storedProgress >= 1; }
 
     default boolean satisfied(TaskPresentationContext context) {
         return context.questStatus() == QuestStatus.COMPLETED
@@ -61,7 +67,7 @@ public interface ClientTaskPresentation {
 
     /** Whether the compact row should expose its candidate-list button. */
     default boolean hasCandidateMenu(TaskPresentationContext context) {
-        return false;
+        return resolvedOptions(context.task()).isPresent();
     }
 
     /**

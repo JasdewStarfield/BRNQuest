@@ -82,7 +82,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        parent.render(graphics, -1, -1, partialTick);
+        ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         graphics.pose().pushPose();
         // Match the other modal editor surfaces: authored items use raised render depth, so the modal must be higher.
         graphics.pose().translate(0, 0, 500);

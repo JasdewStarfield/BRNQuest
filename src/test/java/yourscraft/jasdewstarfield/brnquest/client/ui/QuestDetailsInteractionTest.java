@@ -65,6 +65,16 @@ class QuestDetailsInteractionTest {
         assertNull(interaction.click(identity("r1", 800), 700, 112, 1).intent());
     }
 
+    @Test void rewardOptionsAreReadOnlyAndRejectStaleGeometry() {
+        var interaction = frame(false,false);
+        interaction.rewardOptions(REWARD,new UiRect(645,154,659,170));
+        interaction.finish();
+        assertEquals(QuestDetailsInteraction.Action.OPEN_REWARD_OPTIONS,
+                interaction.click(identity("r1",800),650,160,0).intent().action());
+        assertNull(interaction.click(identity("r1",800),650,160,1).intent());
+        assertFalse(interaction.click(identity("r2",800),650,160,0).consumed());
+    }
+
     private static QuestDetailsInteraction frame(boolean editing, boolean gameplay) {
         QuestDetailsInteraction interaction = new QuestDetailsInteraction();
         interaction.begin(identity("r1", 800), QUEST, editing, gameplay, PANEL,

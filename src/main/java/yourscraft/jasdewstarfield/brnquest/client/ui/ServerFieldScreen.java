@@ -94,8 +94,13 @@ public final class ServerFieldScreen extends Screen {
             input.setValue(result.current());
         }
     }
+    /** The child blurs the parent once, before drawing its own controls, like the item picker. */
+    @Override public void renderBackground(GuiGraphics graphics,int x,int y,float partial) {}
     public void render(GuiGraphics graphics, int x, int y, float partial) {
-        renderBackground(graphics,x,y,partial); super.render(graphics,x,y,partial);
+        ChildScreenBackground.render(parent, graphics, width, height, partial);
+        super.renderBackground(graphics,x,y,partial);
+        graphics.fill(0,0,width,height,0x70151820);
+        super.render(graphics,x,y,partial);
         graphics.drawCenteredString(font,title,width/2,16,0xFFFFFFFF);
         graphics.drawString(font,Component.translatable("screen.brnquest.field.status",result == null ? 0 : result.total(),result == null ? 0 : result.selectedCount()),width/2-150,100,0xFFCCCCCC,false);
         long now = System.nanoTime();
@@ -134,5 +139,5 @@ public final class ServerFieldScreen extends Screen {
         return list.mouseScrolled(x,y,dy,BrnQuestClientConfig.VALUES.scrollStep.get()) || super.mouseScrolled(x,y,dx,dy);
     }
     public void onClose() { minecraft.setScreen(parent); }
-    public boolean isPauseScreen() { return false; }
+    public boolean isPauseScreen() { return parent.isPauseScreen(); }
 }

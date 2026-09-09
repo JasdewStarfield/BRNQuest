@@ -24,6 +24,10 @@ public final class TaskTypeRegistry {
     private static volatile boolean frozen;
 
     static {
+        yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterTargets.register();
+        yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterEvents.initialize();
+        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE,new yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterTask(true));
+        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL,new yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterTask(false));
         yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementFieldSource.register();
         register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID,
                 new yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementTask());

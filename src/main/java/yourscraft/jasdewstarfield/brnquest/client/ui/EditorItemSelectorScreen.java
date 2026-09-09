@@ -56,7 +56,7 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // Render the persistent editor first so JEI's setScreen recipe round-trip can return to the
         // same visual context. Off-screen mouse coordinates suppress hover and tooltip side effects.
-        parent.render(graphics, -1, -1, partialTick);
+        ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         // Blur and dim the completed parent framebuffer before drawing selector content. JEI draws
         // from ScreenEvent.Render.Post afterwards, so its ingredient list remains the final layer.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);

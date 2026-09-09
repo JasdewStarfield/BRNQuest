@@ -143,7 +143,7 @@ public final class AdminProgressScreen extends Screen {
     @Override public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
 
     @Override public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        parent.render(graphics, -1, -1, partialTick);
+        ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.pose().pushPose();
         graphics.pose().translate(0, 0, 500);

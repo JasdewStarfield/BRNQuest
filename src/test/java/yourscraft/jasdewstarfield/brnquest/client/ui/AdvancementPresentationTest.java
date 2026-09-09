@@ -10,10 +10,17 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AdvancementPresentationTest {
-    @Test void groupTooltipListsEveryTranslatedMemberSeparately() {
+    @Test void groupTooltipListsTranslatedMembersSeparately() {
         var detail=Component.literal("Heading");
         AdvancementPresentation.appendMembers(detail,java.util.List.of("test:a","test:b"),id -> Component.literal(id.equals("test:a") ? "Translated A" : id));
         assertEquals("Heading\n- Translated A\n- test:b",detail.getString());
+    }
+    @Test void tooltipPreviewStopsAtThreeWithoutTruncatingTheSource() {
+        var members=java.util.stream.IntStream.range(0,130).mapToObj(i->"test:"+i).toList();
+        var text=Component.literal("Heading");
+        AdvancementPresentation.appendMembers(text,members,Component::literal);
+        assertEquals("Heading\n- test:0\n- test:1\n- test:2\n…",text.getString());
+        assertEquals(130,members.size());
     }
     @Test void nativeDisplayIsCopiedAndMissingOrGroupedDisplaysUseFallback() {
         var original = new ItemStack(Items.DIAMOND,7);

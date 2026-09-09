@@ -19,6 +19,9 @@ public interface TaskType<TConfig> {
     /** Optional server polling. Zero disables polling; samples may only increase persistent progress. */
     default int pollingIntervalTicks() { return 0; }
     default long sampledProgress(TaskContext context, TConfig config) { return context.progress(); }
+    /** Clear player-local transient state after an explicit reset, including when saved progress was zero.
+     * Called for each online player sharing the reset owner; must not write persistent progress. */
+    default void resetTransientState(TaskContext context) {}
     boolean satisfied(TaskContext context, TConfig config);
     default boolean consume(TaskContext context, TConfig config) { return true; }
     default boolean allowsManualSubmission(TConfig config) { return false; }

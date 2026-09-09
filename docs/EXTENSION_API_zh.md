@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.9` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.12` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -122,3 +122,17 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 来源可覆盖 `queryPage(player, filter, selected, offset, context)`，从 `context` 读取同一表单尚未保存的字段值，解析所依赖的服务端对象并返回候选。上下文仅用于查询，必须重新校验 ID，不能作为权限或对象存在的依据。旧重载仍兼容。
 
 `Result.previewSource` 非空时，选择器显示“成员预览”，打开该已注册来源的只读分页列表；原选择值作为 `selected` 传入，上下文保留。预览条目不能写回父字段。来源仍受服务端作者权限校验，且每页不超过 `ServerFieldSources.PAGE_SIZE`。依赖条件和成员展开均由具体来源负责，通用界面不检查类型 ID。
+
+### 可重置的临时目标状态（experimental.10）
+
+连续观察等目标可将未完成的计时保留在服务端模块内，仅在完成时通过 `sampledProgress` 返回持久化值。实现 `TaskType.resetTransientState(context)` 清理显式重置后的临时状态；引擎会覆盖共享同一进度所有者的在线玩家，包含尚未产生持久化进度的目标。该回调不得改写账本，默认空实现兼容已有类型。断线、重载等生命周期仍由模块自己的事件订阅处理。
+
+### 累计目标显示（experimental.11）
+
+累计型目标覆盖 `ClientTaskPresentation.confirmed(task, storedProgress)`，让目标行与 HUD 按所需总量判断完成。`satisfied` / `readyForSubmission` 仍负责本地满足/可提交含义；`confirmed` 只解释服务端账本。HUD 复用 `progressText` 显示实时进度，因此瞬时计时也可在关闭任务界面后阅读。
+
+### 只读候选项（experimental.12）
+
+`ClientTaskPresentation` 和 `ClientRewardPresentation` 可通过 `resolvedOptions(view)` 提供完整的已解析成员名称。使用本地化 Component，缺失名称时回退成员 ID，避免返回标签/组 ID 代替其内容。共享窗口使用已有平滑滚动列表，支持按名称搜索，无成员数截断。候选入口只读，在未解锁或已领取状态仍可查看；它不替代提交或领取接口。内置类型 tooltip 最多列三项，超出显示省略号。
+
+候选项可在名称 Component 的 `SHOW_TEXT` hover 元数据中携带原始 ID；共享窗口将其作为条目悬浮提示。未提供 hover 的旧扩展仍显示名称提示，方法签名与协议不变。内置类型始终携带原始 ID。

@@ -80,7 +80,8 @@ final class QuestDetailRows {
                     ? ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView)
                     : ClientTaskPresentationRegistry.defaultItemObjectiveTitle(presentationContext);
         } else if (visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)) {
-            hoveredText = Component.translatable("screen.brnquest.item_choice.view_candidates");
+            hoveredText = Component.translatable(presentation.resolvedOptions(taskView).isPresent()
+                    ? "screen.brnquest.options.title" : "screen.brnquest.item_choice.view_candidates");
         } else if (interactive && rowHovered) {
             // The item and semantic qualifier keep their more specific help; the remaining row
             // communicates that the complete actionable row submits this objective.
@@ -128,7 +129,15 @@ final class QuestDetailRows {
         } else if ((icon.isPresent() || stack.isEmpty()) && visibleCell != null && visibleCell.containsExclusive(mouseX, mouseY)) {
             hoveredText = presentation.interactionHint(context);
         }
-        return new Result(y + 24, clickable, null, hoveredLookup, hoveredText);
+        UiRect candidates = presentation.resolvedOptions(rewardView).isPresent()
+                ? visiblePart(new UiRect(x+25,y+4,x+39,y+20),viewport) : null;
+        if (candidates != null) {
+            boolean hovered = candidates.containsExclusive(mouseX,mouseY);
+            graphics.fill(candidates.left(),candidates.top(),candidates.right(),candidates.bottom(),hovered ? 0xFF526C84 : 0xFF394858);
+            graphics.drawCenteredString(font,Component.literal("…"),x+32,y+8,0xFFFFFFFF);
+            if (hovered) { hoveredLookup = null; hoveredText = Component.translatable("screen.brnquest.options.title"); }
+        }
+        return new Result(y + 24, clickable, candidates, hoveredLookup, hoveredText);
     }
 
     /** Partially clipped controls remain usable only through the pixels the player can still see. */

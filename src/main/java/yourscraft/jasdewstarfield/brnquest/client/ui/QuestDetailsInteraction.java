@@ -12,7 +12,7 @@ import java.util.Map;
 final class QuestDetailsInteraction {
     enum Action {
         CLOSE, COMPLETE_QUEST, TOGGLE_TRACKED, SUBMIT_TASK, OPEN_SUBMISSION_CHOICES,
-        OPEN_ITEM_SLOT_SELECTION, CLAIM_REWARD, QUICK_EDIT_TEXT,
+        OPEN_ITEM_SLOT_SELECTION, CLAIM_REWARD, OPEN_REWARD_OPTIONS, QUICK_EDIT_TEXT,
         EDIT_PROPERTIES, EDIT_TASKS, EDIT_REWARDS, EDIT_DEPENDENCIES
     }
 
@@ -47,6 +47,7 @@ final class QuestDetailsInteraction {
     private final List<TaskTarget> tasks = new ArrayList<>();
     private final Map<ResourceLocation, UiRect> rewards = new LinkedHashMap<>();
     private Frame frame;
+    private final Map<ResourceLocation,UiRect> rewardOptions = new LinkedHashMap<>();
 
     void begin(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
                UiRect panel, UiRect close) {
@@ -62,6 +63,7 @@ final class QuestDetailsInteraction {
         editorActions.clear();
         tasks.clear();
         rewards.clear();
+        rewardOptions.clear();
         frame = null;
     }
 
@@ -85,6 +87,9 @@ final class QuestDetailsInteraction {
     void reward(ResourceLocation rewardId, UiRect bounds) {
         if (rewardId != null && bounds != null) rewards.put(rewardId, bounds);
     }
+
+    /** Read-only candidates remain clickable even when a reward cannot be claimed. */
+    void rewardOptions(ResourceLocation id, UiRect bounds) { if (bounds != null) rewardOptions.put(id,bounds); }
 
     Frame finish() {
         frame = new Frame(identity, questId, editing, gameplay, panel, close, complete, track,
@@ -116,6 +121,8 @@ final class QuestDetailsInteraction {
                 return intent(Action.OPEN_SUBMISSION_CHOICES, task.taskId(), null);
             }
         }
+        for (var entry : rewardOptions.entrySet())
+            if (entry.getValue().contains(x,y)) return intent(Action.OPEN_REWARD_OPTIONS,entry.getKey(),null);
         // Candidate explanations stay readable in preview/locked states; mutations do not.
         if (!frame.gameplay()) return intent(null, null, null);
         if (frame.complete() != null && frame.complete().contains(x, y)) {

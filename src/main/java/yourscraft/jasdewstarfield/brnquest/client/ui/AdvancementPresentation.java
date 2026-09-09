@@ -29,15 +29,36 @@ public final class AdvancementPresentation {
     }
     private static Component title(Map<String,String> values) {
         String title = values.getOrDefault("title", "");
-        return Component.literal(title.isBlank() ? values.getOrDefault("advancement", "") : title);
+        if (!title.isBlank()) return Component.literal(title);
+        return advancementTitle(values.getOrDefault("advancement", ""));
+    }
+    private static Component advancementTitle(String selector) {
+        var minecraft = net.minecraft.client.Minecraft.getInstance();
+        var connection = minecraft == null ? null : minecraft.getConnection();
+        return displayTitle(selector, id -> {
+            var node = connection == null ? null : connection.getAdvancements().getTree().get(id);
+            return node == null ? null : node.holder().value().display().map(display -> display.getTitle()).orElse(null);
+        });
+    }
+    /** Keep the native component so the current client language and formatting remain authoritative. */
+    static Component displayTitle(String selector,
+            java.util.function.Function<net.minecraft.resources.ResourceLocation,Component> lookup) {
+        var id = net.minecraft.resources.ResourceLocation.tryParse(selector);
+        var title = id == null ? null : lookup.apply(id);
+        if (title == null || title.getString().isBlank()) return Component.literal(selector);
+        if (title.getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents translated
+                && translated.getFallback() == null && !net.minecraft.locale.Language.getInstance().has(translated.getKey()))
+            return Component.literal(selector);
+        return title.copy();
     }
     private static Component detail(Map<String,String> values, boolean task) {
         var detail = title(values).copy();
-        if (!values.getOrDefault("title", "").isBlank()) detail.append("\n" + values.getOrDefault("advancement", ""));
+        if (!values.getOrDefault("title", "").isBlank()) detail.append("\n").append(advancementTitle(values.getOrDefault("advancement", "")));
         String criterion = values.getOrDefault("criterion", "");
         if (!criterion.isBlank()) detail.append("\n").append(Component.translatable("screen.brnquest.advancement.criterion")).append(": " + criterion);
         if (task) detail.append("\n").append(Component.translatable("screen.brnquest.advancement." + values.getOrDefault("mode", "any")));
-        return detail.append("\n").append(Component.translatable(task ? "screen.brnquest.advancement.task_hint" : "screen.brnquest.advancement.reward_hint"));
+        // Authoring field help retains the detailed mechanics; gameplay tooltips stay concise.
+        return detail;
     }
     static Component rewardHint(Map<String,String> values, boolean claimable, boolean claimed) {
         var hint = detail(values,false).copy();

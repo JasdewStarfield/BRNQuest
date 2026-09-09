@@ -31,6 +31,8 @@ class AdvancementPresentationTest {
         var type=ResourceLocation.parse("brnquest:advancement");
         var task=ApiViews.task(new TaskDefinition(book,id,type,Map.of("advancement","test:one"),false));
         var reward=ApiViews.reward(new RewardDefinition(book,id,type,task.config(),"manual",false));
+        assertEquals(Component.translatable("screen.brnquest.advancement.task_title"),AdvancementPresentation.taskTitle(task.config()));
+        assertEquals("Custom",AdvancementPresentation.taskTitle(Map.of("title","Custom")).getString());
         assertEquals("",new AdvancementPresentation.Task().itemSnbt(task));
         assertEquals("",new AdvancementPresentation.Reward().itemSnbt(reward));
         assertEquals(ClientTaskPresentation.NodeStyle.CUSTOM,new AdvancementPresentation.Task().nodeStyle(task));
@@ -38,6 +40,7 @@ class AdvancementPresentationTest {
     @Test void rewardTooltipKeepsSelectionAndClaimStateWithoutMechanics() {
         var values=Map.of("title","Author title","advancement","test:one","criterion","my_criterion");
         var hint=AdvancementPresentation.rewardHint(values,true,false).getString();
+        assertTrue(hint.startsWith(Component.translatable("screen.brnquest.advancement.reward_heading").getString()+"\n"));
         assertTrue(hint.contains("Author title")); assertTrue(hint.contains("test:one")); assertTrue(hint.contains("my_criterion"));
         assertFalse(hint.contains(Component.translatable("screen.brnquest.advancement.reward_hint").getString()));
         assertTrue(hint.contains(Component.translatable("screen.brnquest.reward.click_to_claim").getString()));

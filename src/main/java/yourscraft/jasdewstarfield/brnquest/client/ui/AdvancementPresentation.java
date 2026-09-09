@@ -32,6 +32,11 @@ public final class AdvancementPresentation {
         if (!title.isBlank()) return Component.literal(title);
         return advancementTitle(values.getOrDefault("advancement", ""));
     }
+    /** The objective label states the action; its tooltip identifies the selected advancement. */
+    static Component taskTitle(Map<String,String> values) {
+        String title = values.getOrDefault("title", "");
+        return title.isBlank() ? Component.translatable("screen.brnquest.advancement.task_title") : Component.literal(title);
+    }
     private static Component advancementTitle(String selector) {
         var minecraft = net.minecraft.client.Minecraft.getInstance();
         var connection = minecraft == null ? null : minecraft.getConnection();
@@ -52,7 +57,8 @@ public final class AdvancementPresentation {
         return title.copy();
     }
     private static Component detail(Map<String,String> values, boolean task) {
-        var detail = title(values).copy();
+        var detail = Component.translatable(task ? "screen.brnquest.advancement.task_heading"
+                : "screen.brnquest.advancement.reward_heading").append("\n").append(title(values));
         if (!values.getOrDefault("title", "").isBlank()) detail.append("\n").append(advancementTitle(values.getOrDefault("advancement", "")));
         String criterion = values.getOrDefault("criterion", "");
         if (!criterion.isBlank()) detail.append("\n").append(Component.translatable("screen.brnquest.advancement.criterion")).append(": " + criterion);
@@ -70,7 +76,7 @@ public final class AdvancementPresentation {
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
         public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(TaskView task) { return AdvancementPresentation.icon(task.config()); }
         public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.advancement"); }
-        public Component title(TaskPresentationContext context) { return AdvancementPresentation.title(context.task().config()); }
+        public Component title(TaskPresentationContext context) { return taskTitle(context.task().config()); }
         public Component interactionHint(TaskPresentationContext context, boolean interactive) { return detail(context.task().config(),true); }
     }
     public static final class Reward implements ClientRewardPresentation {

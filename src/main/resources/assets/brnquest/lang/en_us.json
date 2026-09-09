@@ -559,5 +559,8 @@
   "screen.brnquest.advancement.all": "All complete",
   "screen.brnquest.advancement.task_hint": "Existing advancements count; completion stays recorded. Resetting the quest does not revoke vanilla progress.",
   "screen.brnquest.advancement.reward_hint": "Grants the selected advancement or criterion, without parents. Vanilla rewards and functions may run; granted criteria are not rewarded again.",
-  "screen.brnquest.advancement.criterion_hint": "Leave empty for the whole advancement; otherwise check or grant only this criterion. Groups cannot specify a criterion."
+  "screen.brnquest.advancement.criterion_hint": "Leave empty for the whole advancement; otherwise check or grant only this criterion. Groups cannot specify a criterion.",
+  "screen.brnquest.advancement.task_title": "Complete the specified advancement",
+  "screen.brnquest.advancement.task_heading": "Required advancement:",
+  "screen.brnquest.advancement.reward_heading": "Grants the following advancement:"
 }

@@ -242,6 +242,15 @@ final class QuestCanvasRenderer {
 
     private static void renderQuestVisual(GuiGraphics graphics, Font font, NodeModel node, int x, int y, int size) {
         QuestPresentation.QuestVisual visual = node.visual();
+        if (visual.icon().isPresent()) {
+            float scale = Math.max(0.25F, (float) (size / 18.0F * safeScale(node.appearance().iconScale())));
+            graphics.pose().pushPose();
+            graphics.pose().translate(x - 8.0F * scale, y - 8.0F * scale, 0);
+            graphics.pose().scale(scale, scale, 1.0F);
+            visual.icon().orElseThrow().render(graphics,font,new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(0,0,16,16),0xFFFFFFFF);
+            graphics.pose().popPose();
+            return;
+        }
         if (visual.kind() == QuestPresentation.VisualKind.TEXTURE) {
             int iconSize = Math.max(1, (int) Math.round(size * safeScale(node.appearance().iconScale())));
             yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.textureId(visual.value()).ifPresent(texture ->

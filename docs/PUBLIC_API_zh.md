@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.7`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.8`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -146,3 +146,8 @@ Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS s
 ### experimental.3 类型扩展补充
 
 公开的 `RewardClaimContext`、`RewardClaimHandler`、`RewardClaimResult` 为可选领取接口，`RewardType.claimHandler()` 默认不启用。普通领取账本仍归核心所有。任务/奖励新增 normalizeConfig 默认方法，字段描述新增显示翻译元数据；详见 [类型扩展边界](EXTENSION_API_zh.md) 与 [迁移说明](API_VERSIONING_zh.md)。
+
+
+### 纯图标 presentation（experimental.8）
+
+ClientTaskPresentation.icon(TaskView) 与 ClientRewardPresentation.icon(RewardView) 是兼容的默认方法；返回空值保留旧行为。client.ui.component.EditorIcon 是实验性绘制契约，提供 glyph/item 工厂及 width/render；render 接收现有 UiRect 几何。此图标入口没有物品 tooltip 或配方查询语义，具体类型仍通过原有 presentation 注册系统提供实现。

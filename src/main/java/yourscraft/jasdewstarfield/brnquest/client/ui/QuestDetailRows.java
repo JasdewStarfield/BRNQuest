@@ -30,7 +30,9 @@ final class QuestDetailRows {
         ItemStack stack = presentationContext.displayedItem();
         boolean locallySatisfied = presentation.satisfied(presentationContext);
         graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
-        if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
+        var icon = presentation.icon(taskView);
+        if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+3,y+4,x+19,y+20),0xFFFFFFFF);
+        else if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
         else graphics.drawCenteredString(font, presentation.symbol(taskView), x + 11, y + 8, 0xFFFFFFFF);
         if (displayState == TaskDisplayState.READY && !stack.isEmpty()) {
             renderAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x + 17, y - 2, pingOffset);
@@ -62,7 +64,7 @@ final class QuestDetailRows {
         EditorTextRenderer.drawFittedStringRight(graphics, font, progress, x + width - 4, y + 13,
                 Math.max(1, width - textInset), taskProgressColor(displayState), 0.75F);
         UiRect itemBounds = new UiRect(x + 3, y + 4, x + 19, y + 20);
-        RecipeLookupTarget lookup = RecipeLookupTarget.clipped(stack, itemBounds, viewport).orElse(null);
+        RecipeLookupTarget lookup = RecipeLookupTarget.clipped(icon.isPresent() ? ItemStack.EMPTY : stack, itemBounds, viewport).orElse(null);
         boolean itemHovered = lookup != null && lookup.contains(mouseX, mouseY);
         boolean interactive = displayState.actionable();
         if (interactive) clickable = visibleRow;
@@ -85,7 +87,7 @@ final class QuestDetailRows {
             hoveredText = Component.translatable("screen.brnquest.task.click_to_submit");
         } else if (displayState == TaskDisplayState.HISTORICAL && rowHovered) {
             hoveredText = Component.translatable("screen.brnquest.task.historical_hint");
-        } else if (stack.isEmpty() && rowHovered) {
+        } else if ((icon.isPresent() || stack.isEmpty()) && rowHovered) {
             hoveredText = presentation.interactionHint(presentationContext, interactive);
         }
         return new Result(y + 28, clickable, visibleCandidate, hoveredLookup, hoveredText);
@@ -98,7 +100,9 @@ final class QuestDetailRows {
         ItemStack stack = context.displayedItem();
         boolean claimed = context.claimed();
         boolean claimable = context.claimable();
-        if (!stack.isEmpty()) {
+        var icon = presentation.icon(rewardView);
+        if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+4,y+4,x+20,y+20),0xFFFFFFFF);
+        else if (!stack.isEmpty()) {
             graphics.renderItem(stack, x + 4, y + 4);
             // Match vanilla slot rendering so configured reward multipliers appear at bottom-right.
             graphics.renderItemDecorations(font, stack, x + 4, y + 4);
@@ -115,13 +119,13 @@ final class QuestDetailRows {
         Component hoveredText = null;
         RecipeLookupTarget hoveredLookup = null;
         UiRect itemBounds = new UiRect(x + 4, y + 4, x + 20, y + 20);
-        RecipeLookupTarget lookup = RecipeLookupTarget.clipped(stack, itemBounds, viewport).orElse(null);
+        RecipeLookupTarget lookup = RecipeLookupTarget.clipped(icon.isPresent() ? ItemStack.EMPTY : stack, itemBounds, viewport).orElse(null);
         boolean itemHovered = lookup != null && lookup.contains(mouseX, mouseY);
         if (claimable) clickable = visibleCell;
         if (itemHovered) {
             // Item tooltip and recipe lookup now stop together at the icon's exclusive edges.
             hoveredLookup = lookup;
-        } else if (stack.isEmpty() && visibleCell != null && visibleCell.containsExclusive(mouseX, mouseY)) {
+        } else if ((icon.isPresent() || stack.isEmpty()) && visibleCell != null && visibleCell.containsExclusive(mouseX, mouseY)) {
             hoveredText = presentation.interactionHint(context);
         }
         return new Result(y + 24, clickable, null, hoveredLookup, hoveredText);

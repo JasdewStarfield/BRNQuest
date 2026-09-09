@@ -11,7 +11,7 @@
 | `criterion` | 留空检查完整进度；非空检查单个条件 | 留空授予全部条件；非空仅授予该条件 |
 | `mode` | `any`（默认）或 `all` | 不使用此字段，分组始终授予全部成员 |
 
-编辑器提供服务端 ID/分组搜索和分页选择。`criterion` 仅支持单 ID，不能与分组同时使用；不存在的条件不会满足目标或吞掉奖励。悬浮在字段标签上可查看说明，包括重置行为和原版授予副作用。任务和奖励以知识之书图标显示，标题/tooltip 保留选定进度或作者标题。
+编辑器提供服务端 ID/分组搜索和分页选择。`criterion` 仅支持单 ID，不能与分组同时使用；不存在的条件不会满足目标或吞掉奖励。悬浮在字段标签上可查看说明，包括重置行为和原版授予副作用。任务和奖励优先使用客户端已同步的原版进度 display 图标；未同步、无 display 或分组使用知识之书回退。图标仅用于绘制，不显示物品名称或 JEI 快捷键。奖励 tooltip 包括所选进度、criterion、授予说明与领取状态。
 
 ## 分组
 
@@ -47,4 +47,4 @@
 
 FTB 的 `advancement` / `ftbquests:advancement` 目标和奖励映射到此类型，保留 `advancement`、`criterion` 及未知配置；不把单条件转换成整个进度。
 
-类型通过现有任务/奖励和 presentation 注册表接入，字段由类型自身声明，查询来源复用 `ServerFieldSources`，缓存生命周期由模块自行订阅 NeoForge 事件。无需给 QuestScreen、ProgressEngine 或平台入口增加 advancement 类型判断。本功能保持公共 API experimental.7、网络协议 11 和任务书 schema 1。
+类型通过现有任务/奖励和 presentation 注册表接入，字段由类型自身声明，查询来源复用 `ServerFieldSources`，缓存生命周期由模块自行订阅 NeoForge 事件。无需给 QuestScreen、ProgressEngine 或平台入口增加 advancement 类型判断。本功能保持公共 API experimental.8、网络协议 11 和任务书 schema 1。

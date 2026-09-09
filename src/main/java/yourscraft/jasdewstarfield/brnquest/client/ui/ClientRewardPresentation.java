@@ -9,6 +9,11 @@ import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 /** Client-only icon, title and interaction contract paired with a reward type by full ID. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public interface ClientRewardPresentation {
+    /** Decorative icon only: no item tooltip, count overlay, ingredient lookup or submission semantics. */
+    default java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(RewardView view) {
+        return java.util.Optional.empty();
+    }
+
     default String itemSnbt(RewardView reward) { return ""; }
     default String symbol(RewardView reward) { return "?"; }
     /** Returns a defensive display copy; item rewards may apply a separate configured multiplier. */

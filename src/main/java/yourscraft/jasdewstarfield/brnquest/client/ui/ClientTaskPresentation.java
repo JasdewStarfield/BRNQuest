@@ -12,6 +12,11 @@ import java.util.List;
 /** Client-only presentation contract paired with a server task type by full ID. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public interface ClientTaskPresentation {
+    /** Decorative icon only: no item tooltip, count overlay, ingredient lookup or submission semantics. */
+    default java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(TaskView view) {
+        return java.util.Optional.empty();
+    }
+
     enum NodeStyle { ITEM, CHECKMARK, CUSTOM, PLACEHOLDER }
 
     default NodeStyle nodeStyle(TaskView task) { return NodeStyle.PLACEHOLDER; }

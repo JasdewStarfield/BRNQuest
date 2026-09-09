@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
  * rendering. Later icon classes can implement their native rendering without making
  * the generic button depend on JEI, registries, or a particular texture atlas.</p>
  */
+@yourscraft.jasdewstarfield.brnquest.api.ApiStatus(yourscraft.jasdewstarfield.brnquest.api.ApiStability.EXPERIMENTAL)
 public interface EditorIcon {
     int width(Font font);
 

@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.7` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.8` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -111,3 +111,8 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 内置 advancement 目标复用 TaskType 的 pollingIntervalTicks / sampledProgress，奖励复用 RewardType.claimHandler；字段选择器使用 ServerFieldSources 分页。原版事件只使模块读取缓存失效，不直接推进任务或领取奖励。其它新类型可沿用此模式，无需修改 QuestScreen、ProgressEngine 或平台入口。
 
 字段描述的 helpText 可保存翻译键或原有字面帮助文本，作者悬浮字段标签时通过通用表单显示；这没有新增配置协议字段。服务端校验仍由类型 codec 和具体执行前校验负责。
+
+
+### 纯展示图标
+
+使用 presentation 的 `icon(view)` 返回 `Optional<EditorIcon>`，即可在目标行、奖励格、任务节点和作者列表绘制图标。需要原生物品外观时可调用 `EditorIcon.item(stack)`；此入口只有绘制能力，不代表可提交/可领取物品，不参与 JEI 查询或物品悬浮。未提供 icon 时沿用旧 itemSnbt/symbol 行为。原版进度实现使用客户端已同步的 display 图标，无 display、未同步或分组时回退到知识之书；tooltip 使用 interactionHint。

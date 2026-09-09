@@ -2284,10 +2284,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         QuestTypedEntryKind.Value value = typedEditorKind.value(quest, index);
         TypedRowPresentation presentation = typedRowPresentation(quest, index);
         boolean known = typedEditorKind.known(value.typeId());
-        EditorIcon icon = presentation.stack().isEmpty()
-                ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack());
+        EditorIcon icon = presentation.icon().orElseGet(() -> presentation.stack().isEmpty()
+                ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack()));
         return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, presentation.typeName(),
-                typedRowSummary(quest, index, known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.stack());
+                typedRowSummary(quest, index, known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.icon().isPresent() ? ItemStack.EMPTY : presentation.stack());
     }
 
     private Component typedRowSummary(QuestDefinition quest, int index, boolean known) {
@@ -2316,14 +2316,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             TaskPresentationContext context = new TaskPresentationContext(minecraft, view, status(quest),
                     ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L), parsed);
             return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
-                    presentation.displayedItem(context));
+                    presentation.displayedItem(context), presentation.icon(view));
         }
         RewardDefinition reward = quest.rewards().get(index);
         var view = ApiViews.reward(reward);
         var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
         String snbt = presentation.itemSnbt(view);
         return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
-                snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt));
+                snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt), presentation.icon(view));
     }
 
     private void openTypedPropertyEditor(QuestDefinition quest, ResourceLocation typedId) {
@@ -4493,7 +4493,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
 
-    private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack) {}
+    private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack, java.util.Optional<EditorIcon> icon) {}
 
     private enum IconEditorMode {
         ITEM("screen.brnquest.editor.quest.icon_mode.item"),

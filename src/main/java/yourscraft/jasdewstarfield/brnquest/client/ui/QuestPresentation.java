@@ -54,6 +54,8 @@ final class QuestPresentation {
         for (TaskDefinition task : quest.tasks()) {
             var view = ApiViews.task(task);
             ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
+            var icon = presentation.icon(view);
+            if (icon.isPresent()) return new QuestVisual(VisualKind.CUSTOM, "", icon);
             String itemSnbt = presentation.itemSnbt(view);
             VisualKind kind = switch (presentation.nodeStyle(view)) {
                 case ITEM -> VisualKind.ITEM;
@@ -92,7 +94,8 @@ final class QuestPresentation {
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}
-    record QuestVisual(VisualKind kind, String value) {
+    record QuestVisual(VisualKind kind, String value, java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon) {
+        QuestVisual(VisualKind kind, String value) { this(kind, value, java.util.Optional.empty()); }
         String itemSnbt() { return kind == VisualKind.ITEM ? value : ""; }
     }
     enum VisualKind { ITEM, TEXTURE, CHECKMARK, CUSTOM, PLACEHOLDER }

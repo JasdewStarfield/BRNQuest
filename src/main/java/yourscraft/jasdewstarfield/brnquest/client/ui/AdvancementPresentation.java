@@ -58,13 +58,25 @@ public final class AdvancementPresentation {
     }
     private static Component detail(Map<String,String> values, boolean task) {
         var detail = Component.translatable(task ? "screen.brnquest.advancement.task_heading"
-                : "screen.brnquest.advancement.reward_heading").append("\n").append(title(values));
-        if (!values.getOrDefault("title", "").isBlank()) detail.append("\n").append(advancementTitle(values.getOrDefault("advancement", "")));
+                : "screen.brnquest.advancement.reward_heading");
+        if (!values.getOrDefault("title", "").isBlank()) detail.append("\n").append(title(values));
+        // List markers distinguish advancement names from the supplementary condition and status lines.
+        String selector = values.getOrDefault("advancement", "");
+        if (selector.startsWith("#")) {
+            var members = AdvancementGroupCache.members(selector);
+            if (members == null || members.isEmpty()) detail.append("\n").append(Component.translatable("screen.brnquest.advancement.group_unavailable"));
+            else appendMembers(detail,members,AdvancementPresentation::advancementTitle);
+        } else detail.append("\n- ").append(advancementTitle(selector));
         String criterion = values.getOrDefault("criterion", "");
         if (!criterion.isBlank()) detail.append("\n").append(Component.translatable("screen.brnquest.advancement.criterion")).append(": " + criterion);
         if (task) detail.append("\n").append(Component.translatable("screen.brnquest.advancement." + values.getOrDefault("mode", "any")));
         // Authoring field help retains the detailed mechanics; gameplay tooltips stay concise.
         return detail;
+    }
+    /** Resolve each name at render time so changing the client language also updates group members. */
+    static void appendMembers(net.minecraft.network.chat.MutableComponent detail, java.util.List<String> members,
+            java.util.function.Function<String,Component> names) {
+        for (String member : members) detail.append("\n- ").append(names.apply(member));
     }
     static Component rewardHint(Map<String,String> values, boolean claimable, boolean claimed) {
         var hint = detail(values,false).copy();

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.gametest;
 
+import yourscraft.jasdewstarfield.brnquest.network.AdvancementGroupNetwork;
 import net.minecraft.gametest.framework.*;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -127,6 +128,34 @@ public final class AdvancementGameTests {
         helper.assertTrue(engine.progress(player).taskProgress(follow.id().toString())==0,"future task cannot record preexisting vanilla progress");
         engine.progress(player).addTaskProgress(gate.id().toString(),1);engine.pollTasks(player);
         helper.assertTrue(engine.progress(player).taskProgress(follow.id().toString())==1,"eligible task counts preexisting progress");
+        helper.succeed();
+    }
+
+    @GameTest(template="empty", batch="advancementPicker")
+    @PrefixGameTestTemplate(false)
+    public static void dependentChoicesAndNestedPreviewUseServerData(GameTestHelper helper) {
+        var player=helper.makeMockServerPlayerInLevel();
+        // GameTestServer uses a zero default operator level, so give this fixture an explicit author level.
+        player.server.getPlayerList().getOps().add(new net.minecraft.server.players.ServerOpListEntry(player.getGameProfile(),2,false));
+        try {
+            var first=Map.of("advancement",id("first").toString());
+            var criteria=ServerFieldSources.query(player,AdvancementFieldSource.CRITERIA,"","",0,first);
+            helper.assertTrue(criteria.entries().stream().map(ServerFieldSources.Entry::value).toList().equals(List.of("a","b")),"criteria come from selected native advancement: "+criteria);
+            var second=ServerFieldSources.query(player,AdvancementFieldSource.CRITERIA,"","",0,Map.of("advancement",id("second").toString()));
+            helper.assertTrue(second.entries().getFirst().value().equals("only"),"changing the advancement changes its choices");
+            helper.assertTrue(ServerFieldSources.query(player,AdvancementFieldSource.CRITERIA,"","",0,Map.of("advancement","#brnquest_f3:pair")).error().equals("single_advancement"),"groups cannot expose ambiguous criteria");
+            var group=ServerFieldSources.query(player,AdvancementConfig.ID,"","#brnquest_f3:nested");
+            helper.assertTrue(group.previewSource().equals(AdvancementFieldSource.MEMBERS.toString()),"valid group advertises its registered preview");
+            var members=ServerFieldSources.query(player,AdvancementFieldSource.MEMBERS,"","#brnquest_f3:nested");
+            helper.assertTrue(members.entries().stream().map(ServerFieldSources.Entry::value).toList().equals(List.of(id("first").toString(),id("second").toString())),"nested preview expands actual group members");
+            helper.assertTrue(!ServerFieldSources.query(player,AdvancementFieldSource.MEMBERS,"","#brnquest_f3:missing").error().isEmpty(),"missing references report an error");
+            helper.assertTrue(!player.getAdvancements().getOrStartProgress(holder(player,"first")).isDone(),"read-only queries never grant advancements");
+        } finally { player.server.getPlayerList().deop(player.getGameProfile()); }
+        // Ordinary-player tooltip data follows the same resolved groups without author permissions.
+        var snapshot=new AdvancementGroupSnapshot();
+        AdvancementGroupNetwork.snapshot(player.server).forEach(snapshot::receive);
+        helper.assertTrue(snapshot.members("#brnquest_f3:nested").equals(List.of(id("first").toString(),id("second").toString())),"public snapshot includes every nested member");
+        helper.assertTrue(snapshot.members("#brnquest_f3:missing").isEmpty(),"invalid group never publishes a partial member list");
         helper.succeed();
     }
 

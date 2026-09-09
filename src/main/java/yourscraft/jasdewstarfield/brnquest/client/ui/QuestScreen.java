@@ -2565,7 +2565,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
                     var field = typedPropertySection.form().configField(intent.fieldIndex());
                     childLifecycle.prepareChild();
-                    minecraft.setScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value)));
+                    minecraft.setScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value), typedPropertySection.form().currentConfig(), false, descriptor.labelKey().isBlank() ? Component.literal(descriptor.key()) : Component.translatable(descriptor.labelKey())));
                 }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
                 case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());

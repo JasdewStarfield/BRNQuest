@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.8`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.9`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -67,3 +67,7 @@ ServerFieldSources 新增 PAGE_SIZE=64、带 offset 的 query 重载，以及 So
 ## experimental.7 → experimental.8
 
 ClientTaskPresentation 与 ClientRewardPresentation 新增默认 `icon(view)`，返回 Optional<EditorIcon>，默认空值保留原有行为。EditorIcon 的绘制契约与 item/glyph 工厂作为实验 API 开放；其中 item 只复制物品模型用于绘制，不注册物品 tooltip、数量叠字或配方查询。旧 presentation 无需修改；纯图标类型应保持 itemSnbt 为空。网络协议仍为 11。
+
+## experimental.8 → experimental.9
+
+`ServerFieldSources.Source` 增加携带只读表单上下文的 `queryPage` 默认重载；旧来源无需修改。`Result` 增加 `previewSource`，声明注册的只读成员预览来源，保留旧构造器。上下文不是服务端事实，来源必须自行解析/验证，不能用于权限或写操作。编辑器仅携带最多 64 个键长不超过 128、值长不超过 256 的字段；过长字段不发送。网络协议升级为 13，客户端与服务端需同步更新，任务书 schema 不变。

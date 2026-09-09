@@ -24,9 +24,7 @@ public final class TaskTypeRegistry {
     private static volatile boolean frozen;
 
     static {
-        yourscraft.jasdewstarfield.brnquest.editor.ServerFieldSources.register(
-                yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID,
-                new yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementFieldSource());
+        yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementFieldSource.register();
         register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID,
                 new yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementTask());
         yourscraft.jasdewstarfield.brnquest.task.location.LocationFieldSources.register();

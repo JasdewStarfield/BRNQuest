@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.8` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.9` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -116,3 +116,9 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 ### 纯展示图标
 
 使用 presentation 的 `icon(view)` 返回 `Optional<EditorIcon>`，即可在目标行、奖励格、任务节点和作者列表绘制图标。需要原生物品外观时可调用 `EditorIcon.item(stack)`；此入口只有绘制能力，不代表可提交/可领取物品，不参与 JEI 查询或物品悬浮。未提供 icon 时沿用旧 itemSnbt/symbol 行为。原版进度实现使用客户端已同步的 display 图标，无 display、未同步或分组时回退到知识之书；tooltip 使用 interactionHint。
+
+### 依赖字段与只读预览（experimental.9）
+
+来源可覆盖 `queryPage(player, filter, selected, offset, context)`，从 `context` 读取同一表单尚未保存的字段值，解析所依赖的服务端对象并返回候选。上下文仅用于查询，必须重新校验 ID，不能作为权限或对象存在的依据。旧重载仍兼容。
+
+`Result.previewSource` 非空时，选择器显示“成员预览”，打开该已注册来源的只读分页列表；原选择值作为 `selected` 传入，上下文保留。预览条目不能写回父字段。来源仍受服务端作者权限校验，且每页不超过 `ServerFieldSources.PAGE_SIZE`。依赖条件和成员展开均由具体来源负责，通用界面不检查类型 ID。

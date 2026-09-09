@@ -10,6 +10,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AdvancementPresentationTest {
+    @Test void groupTooltipListsEveryTranslatedMemberSeparately() {
+        var detail=Component.literal("Heading");
+        AdvancementPresentation.appendMembers(detail,java.util.List.of("test:a","test:b"),id -> Component.literal(id.equals("test:a") ? "Translated A" : id));
+        assertEquals("Heading\n- Translated A\n- test:b",detail.getString());
+    }
     @Test void nativeDisplayIsCopiedAndMissingOrGroupedDisplaysUseFallback() {
         var original = new ItemStack(Items.DIAMOND,7);
         var icon = AdvancementPresentation.displayIcon("minecraft:story/root",id -> original);
@@ -41,7 +46,7 @@ class AdvancementPresentationTest {
         var values=Map.of("title","Author title","advancement","test:one","criterion","my_criterion");
         var hint=AdvancementPresentation.rewardHint(values,true,false).getString();
         assertTrue(hint.startsWith(Component.translatable("screen.brnquest.advancement.reward_heading").getString()+"\n"));
-        assertTrue(hint.contains("Author title")); assertTrue(hint.contains("test:one")); assertTrue(hint.contains("my_criterion"));
+        assertTrue(hint.contains("Author title")); assertTrue(hint.contains("\n- test:one\n")); assertTrue(hint.contains("my_criterion"));
         assertFalse(hint.contains(Component.translatable("screen.brnquest.advancement.reward_hint").getString()));
         assertTrue(hint.contains(Component.translatable("screen.brnquest.reward.click_to_claim").getString()));
         assertTrue(AdvancementPresentation.rewardHint(values,false,true).getString()

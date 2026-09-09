@@ -562,5 +562,9 @@
   "screen.brnquest.advancement.criterion_hint": "Leave empty for the whole advancement; otherwise check or grant only this criterion. Groups cannot specify a criterion.",
   "screen.brnquest.advancement.task_title": "Complete the specified advancement",
   "screen.brnquest.advancement.task_heading": "Required advancement:",
-  "screen.brnquest.advancement.reward_heading": "Grants the following advancement:"
+  "screen.brnquest.advancement.reward_heading": "Grants the following advancement:",
+  "screen.brnquest.field.preview": "Members",
+  "screen.brnquest.field.clear": "Clear",
+  "screen.brnquest.field.error.single_advancement": "Select one advancement first; groups cannot use criteria",
+  "screen.brnquest.advancement.group_unavailable": "Advancement group members unavailable"
 }

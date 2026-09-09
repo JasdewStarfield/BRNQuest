@@ -27,6 +27,18 @@ class ServerFieldPagesTest {
         assertFalse(pages.receive(fresh,page(0,200)));
         assertEquals(2,pages.total());
     }
+    @Test void selectionRefreshRetainsVisiblePagesAndRejectsObsoleteReplies() {
+        var pages=new ServerFieldPages();
+        pages.receive(pages.begin(0),page(0,200));
+        pages.receive(pages.begin(128),page(128,200));
+        String old=pages.begin(64);
+        pages.cancelPending();
+        assertEquals(200,pages.total());
+        assertEquals("test:150",pages.entry(150).value());
+        assertFalse(pages.receive(old,page(64,200)));
+        pages.receive(pages.begin(0),page(0,200));
+        assertEquals("test:150",pages.entry(150).value(),"metadata refresh does not evict a scrolled page");
+    }
     private static ServerFieldSources.Result page(int offset,int total) {
         return new ServerFieldSources.Result(IntStream.range(offset,Math.min(offset+64,total))
                 .mapToObj(i -> new ServerFieldSources.Entry("test:"+i,1)).toList(),total,1,"","");

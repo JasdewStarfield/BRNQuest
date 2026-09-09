@@ -562,5 +562,9 @@
   "screen.brnquest.advancement.criterion_hint": "留空检查或授予完整进度；非空只处理指定条件。分组不能指定条件。",
   "screen.brnquest.advancement.task_title": "达成指定进度",
   "screen.brnquest.advancement.task_heading": "需要达成以下进度：",
-  "screen.brnquest.advancement.reward_heading": "达成以下进度："
+  "screen.brnquest.advancement.reward_heading": "达成以下进度：",
+  "screen.brnquest.field.preview": "成员预览",
+  "screen.brnquest.field.clear": "清空",
+  "screen.brnquest.field.error.single_advancement": "请先选择单个进度；分组不支持条件",
+  "screen.brnquest.advancement.group_unavailable": "进度组成员不可用"
 }

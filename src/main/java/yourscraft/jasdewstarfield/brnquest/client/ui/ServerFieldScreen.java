@@ -19,7 +19,9 @@ public final class ServerFieldScreen extends Screen {
     private final Consumer<String> commit;
     private String value;
     private EditBox input, search;
-    private Button useCurrent;
+    private Button useCurrent, preview;
+    private final Map<String,String> context;
+    private final boolean readOnly;
     private String filter = "";
     private String requestId = "";
     private int delay;
@@ -29,7 +31,19 @@ public final class ServerFieldScreen extends Screen {
     private String currentRequest = "";
     private ServerFieldSources.Result result;
     public ServerFieldScreen(Screen parent, String source, String value, Consumer<String> commit) {
-        super(Component.translatable("screen.brnquest.field.title"));
+        this(parent,source,value,commit,Map.of(),false);
+    }
+    /** The same paged list serves dependent choices and read-only source-provided previews. */
+    public ServerFieldScreen(Screen parent, String source, String value, Consumer<String> commit, Map<String,String> context, boolean readOnly) {
+        this(parent,source,value,commit,context,readOnly,Component.translatable(readOnly ? "screen.brnquest.field.preview" : "screen.brnquest.field.title"));
+    }
+    /** Declaring fields supply their own label; the shared screen never identifies concrete task types. */
+    public ServerFieldScreen(Screen parent, String source, String value, Consumer<String> commit, Map<String,String> context, boolean readOnly, Component title) {
+        super(title);
+        this.readOnly = readOnly;
+        var bounded = new TreeMap<String,String>();
+        context.forEach((key,text) -> { if (key.length() <= 128 && text.length() <= 256 && bounded.size() < 64) bounded.put(key,text); });
+        this.context = Map.copyOf(bounded);
         this.parent = parent; this.source = source; this.value = value; this.commit = commit;
     }
     protected void init() {
@@ -37,29 +51,42 @@ public final class ServerFieldScreen extends Screen {
         list.invalidate();
         lastFrame = 0;
         input = new EditBox(font,left,42,300,20,Component.translatable("screen.brnquest.field.value"));
-        input.setMaxLength(256); input.setValue(value); input.setResponder(text -> { value = text; currentRequest = ""; delay = 6; }); addRenderableWidget(input);
+        input.setMaxLength(256); input.setValue(value); input.setResponder(text -> { value = text; currentRequest = ""; invalidateSelection(); delay = 6; }); addRenderableWidget(input);
+        input.setEditable(!readOnly);
         search = new EditBox(font,left,72,220,20,Component.translatable("screen.brnquest.field.search"));
-        search.setMaxLength(128); search.setValue(filter); search.setHint(Component.translatable("screen.brnquest.field.search")); search.setResponder(text -> { filter = text; list.reset(); delay = 6; }); addRenderableWidget(search);
-        useCurrent = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.field.current"), b -> { query(); currentRequest = requestId; }).bounds(left+224,72,76,20).build());
-        useCurrent.active = result != null && !result.current().isBlank();
-        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> { commit.accept(input.getValue()); onClose(); }).bounds(left,height-30,146,20).build());
+        search.setMaxLength(128); search.setValue(filter); search.setHint(Component.translatable("screen.brnquest.field.search")); search.setResponder(text -> { filter = text; pages.reset(); list.reset(); invalidateSelection(); delay = 6; }); addRenderableWidget(search);
+        useCurrent = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.field.current"), b -> { if (result == null || result.current().isBlank()) input.setValue(""); else { query(); currentRequest = requestId; } }).bounds(left+224,72,76,20).build());
+        useCurrent.active = !readOnly;
+        useCurrent.setMessage(Component.translatable(result != null && !result.current().isBlank() ? "screen.brnquest.field.current" : "screen.brnquest.field.clear"));
+        preview = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.field.preview"), b -> {
+            if (result != null && !result.previewSource().isBlank())
+                minecraft.setScreen(new ServerFieldScreen(this,result.previewSource(),value,ignored -> {},context,true));
+        }).bounds(left+224,112,76,14).build());
+        preview.visible = !readOnly && result != null && !result.previewSource().isBlank();
+        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> { if (!readOnly) commit.accept(input.getValue()); onClose(); }).bounds(left,height-30,146,20).build());
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(left+154,height-30,146,20).build());
         query();
     }
+    /** Discard old selection metadata immediately, before the delayed replacement query. */
+    private void invalidateSelection() {
+        pages.cancelPending(); result = null;
+        if (preview != null) preview.visible = false;
+    }
     private void query() {
-        pages.reset();
-        list.invalidate();
+        // Refresh selection metadata in place; only a changed search clears the result pages.
         requestPage(0);
     }
     private void requestPage(int offset) {
         requestId = pages.begin(offset);
-        ServerFieldNetwork.send(new ServerFieldNetwork.Query(requestId,source,search.getValue(),input.getValue(),offset));
+        ServerFieldNetwork.send(new ServerFieldNetwork.Query(requestId,source,search.getValue(),input.getValue(),offset,context));
     }
     public void tick() { if (delay > 0 && --delay == 0) query(); }
     public void receive(ServerFieldNetwork.Reply reply) {
         if (reply == null || !pages.receive(reply.id(), reply.result())) return;
         result = reply.result();
-        useCurrent.active = result != null && !result.current().isBlank();
+        useCurrent.active = !readOnly;
+        useCurrent.setMessage(Component.translatable(result != null && !result.current().isBlank() ? "screen.brnquest.field.current" : "screen.brnquest.field.clear"));
+        preview.visible = !readOnly && result != null && !result.previewSource().isBlank();
         // Replace geometry along with data, so a click cannot select an entry from an obsolete reply.
         list.invalidate();
         if (requestId.equals(currentRequest) && result != null && !result.current().isBlank()) {
@@ -82,7 +109,7 @@ public final class ServerFieldScreen extends Screen {
             boolean hovered = row.visible().containsExclusive(x,y);
             graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? 0xDD385A72 : 0xAA263646);
             var entry = pages.entry(row.key());
-            String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+" ("+entry.count()+")";
+            String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+(readOnly ? "" : " ("+entry.count()+")");
             graphics.drawString(font,font.plainSubstrByWidth(label,rect.width()-6),
                     rect.left()+3,rect.top()+5,0xFFFFFFFF,false);
         }, () -> {});
@@ -100,7 +127,7 @@ public final class ServerFieldScreen extends Screen {
     public boolean mouseClicked(double x,double y,int button) {
         if (list.mouseClicked(x,y,button)) return true;
         var entry = list.rowAt(x,y).map(row -> pages.entry(row.key()));
-        if (button==0 && entry.isPresent()) { input.setValue(entry.get().value()); return true; }
+        if (!readOnly && button==0 && entry.isPresent()) { input.setValue(entry.get().value()); return true; }
         return super.mouseClicked(x,y,button);
     }
     public boolean mouseScrolled(double x,double y,double dx,double dy) {

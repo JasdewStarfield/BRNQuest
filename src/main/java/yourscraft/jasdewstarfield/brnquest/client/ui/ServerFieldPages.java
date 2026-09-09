@@ -11,6 +11,8 @@ final class ServerFieldPages {
     private int offset;
     private int total;
     void reset() { entries.clear(); receivedPages.clear(); pending = ""; total = 0; }
+    /** Selection metadata can change without discarding the already displayed search pages. */
+    void cancelPending() { pending = ""; }
     String begin(int nextOffset) { offset = nextOffset; pending = UUID.randomUUID().toString(); return pending; }
     boolean waiting() { return !pending.isEmpty(); }
     int total() { return total; }

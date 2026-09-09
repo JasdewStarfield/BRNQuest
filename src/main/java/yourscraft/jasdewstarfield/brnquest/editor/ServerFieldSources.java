@@ -13,8 +13,12 @@ public final class ServerFieldSources {
     @ApiStatus(ApiStability.EXPERIMENTAL)
     public record Entry(String value, int count) {}
     @ApiStatus(ApiStability.EXPERIMENTAL)
-    public record Result(List<Entry> entries, int total, int selectedCount, String error, String current, String detail) {
+    public record Result(List<Entry> entries, int total, int selectedCount, String error, String current, String detail, String previewSource) {
         public Result { entries = List.copyOf(entries); }
+        /** Older providers need not offer a read-only member preview. */
+        public Result(List<Entry> entries, int total, int selectedCount, String error, String current, String detail) {
+            this(entries,total,selectedCount,error,current,detail,"");
+        }
         public Result(List<Entry> entries, int total, int selectedCount, String error, String current) {
             this(entries, total, selectedCount, error, current, "");
         }
@@ -22,11 +26,15 @@ public final class ServerFieldSources {
     @ApiStatus(ApiStability.EXPERIMENTAL)
     @FunctionalInterface public interface Source {
         Result query(ServerPlayer player, String filter, String selected);
+        /** Context is untrusted editor input, used only to resolve dependent choices. */
+        default Result queryPage(ServerPlayer player, String filter, String selected, int offset, Map<String,String> context) {
+            return queryPage(player,filter,selected,offset);
+        }
         /** Small existing sources can return their full collection; expensive sources override this page hook. */
         default Result queryPage(ServerPlayer player, String filter, String selected, int offset) {
             Result result = query(player, filter, selected);
             return new Result(result.entries().stream().skip(offset).limit(PAGE_SIZE).toList(), result.total(),
-                    result.selectedCount(), result.error(), result.current(), result.detail());
+                    result.selectedCount(), result.error(), result.current(), result.detail(), result.previewSource());
         }
     }
     private static final Map<ResourceLocation, Source> SOURCES = new java.util.concurrent.ConcurrentHashMap<>();
@@ -46,9 +54,12 @@ public final class ServerFieldSources {
         return query(player, source, filter, selected, 0);
     }
     public static Result query(ServerPlayer player, ResourceLocation source, String filter, String selected, int offset) {
+        return query(player,source,filter,selected,offset,Map.of());
+    }
+    public static Result query(ServerPlayer player, ResourceLocation source, String filter, String selected, int offset, Map<String,String> context) {
         if (offset < 0) throw new IllegalArgumentException("Negative field page offset");
         if (!player.hasPermissions(2)) return new Result(List.of(),0,0,"permission", "");
         var provider = SOURCES.get(source);
-        return provider == null ? new Result(List.of(),0,0,"unknown_source", "") : provider.queryPage(player, filter, selected, offset);
+        return provider == null ? new Result(List.of(),0,0,"unknown_source", "") : provider.queryPage(player, filter, selected, offset, Map.copyOf(context));
     }
 }

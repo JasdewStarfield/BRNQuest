@@ -35,7 +35,7 @@ public record AdvancementConfig(String selector, String criterion, boolean all) 
         fields.add(ConfigFieldDescriptor.field("advancement", ConfigValueType.TEXT).asRequired()
                 .withDefault("minecraft:story/root").withServerSource(ID).withLabel("screen.brnquest.advancement.selector")
                 .withHelp(task ? "screen.brnquest.advancement.task_hint" : "screen.brnquest.advancement.reward_hint"));
-        fields.add(ConfigFieldDescriptor.field("criterion", ConfigValueType.TEXT).withDefault("")
+        fields.add(ConfigFieldDescriptor.field("criterion", ConfigValueType.TEXT).withDefault("").withServerSource(AdvancementFieldSource.CRITERIA)
                 .withLabel("screen.brnquest.advancement.criterion").withHelp("screen.brnquest.advancement.criterion_hint"));
         if (task) fields.add(ConfigFieldDescriptor.enumeration("mode", List.of("any", "all")).withDefault("any")
                 .withLabel("screen.brnquest.advancement.mode").withValueLabels(Map.of(

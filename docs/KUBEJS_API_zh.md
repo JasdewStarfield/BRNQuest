@@ -145,25 +145,3 @@ if (result.changed) {
   console.info('Quest completed by integration')
 }
 ```
-
-## 开发验证
-
-纯核心回归：
-
-```powershell
-.\gradlew.bat runGameTestServer --no-configuration-cache --no-daemon --console=plain
-```
-
-真实 KubeJS/Rhino 服务端脚本烟雾验证：
-
-```powershell
-.\gradlew.bat runKubeJsSmokeServer --no-configuration-cache --no-daemon --console=plain
-```
-
-真实失败 reload 回滚验证：
-
-```powershell
-.\gradlew.bat runKubeJsReloadSmokeServer --no-configuration-cache --no-daemon --console=plain
-```
-
-第一个烟雾服务器使用独立 `run/kubejs-smoke` 目录，验证插件发现、`SERVER` 绑定、普通对象属性读取、非法输入结果和脚本零错误。第二个使用 `run/kubejs-reload-smoke`：先激活 type A 及引用它的任务书，再故意让第二次脚本在声明 type B 后失败，并校验日志仍报告原 revision 与 type A。KubeJS 的玩家同步要求真实客户端完成 payload 协商，因此它不与使用模拟玩家的常规 GameTest 放在同一进程中。

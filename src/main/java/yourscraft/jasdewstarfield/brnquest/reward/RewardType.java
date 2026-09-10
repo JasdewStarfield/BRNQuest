@@ -17,5 +17,9 @@ public interface RewardType<TConfig> {
     default List<ConfigFieldDescriptor> configFields() { return List.of(); }
     /** Optional advanced claim path. The handler owns attempt safety; core retains eligibility and the final ledger. */
     default java.util.Optional<RewardClaimHandler> claimHandler() { return java.util.Optional.empty(); }
+    /** Legacy extensions stay top-level only until they explicitly declare safe composition boundaries. */
+    default java.util.Optional<ComposableReward> composition() { return java.util.Optional.empty(); }
+    /** Interactive rewards require an explicit player claim; automatic triggers must skip them. */
+    default boolean requiresManualClaim(java.util.Map<String, String> config) { return false; }
     RewardResult execute(RewardContext context, TConfig config);
 }

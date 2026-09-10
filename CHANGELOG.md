@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+- 奖励表预览显示条目的物品名称与实际数量、经验点数/等级，保留自定义标题，嵌套条目同样生效。
+- Reward-table previews show item names and effective counts, XP points or levels, while preserving custom titles throughout nested tables.
+- 奖励表支持受控嵌套与多步自选，所有选择完成后才执行；递归 FTB 导入拒绝循环，协议升级为 18。单元测试临时目录默认位于工作区外。
+- Added controlled reward-table nesting and multi-step choices before effects, recursive FTB snapshots with cycle checks, and protocol 18. Unit tests now use a temporary directory outside the workspace.
+- 为奖励回执、草稿、世界内编辑及发布/部署/备份的关键文件操作补充失败跟踪：记录异常堆栈、路径状态、线程与耗时，奖励表重试恢复另记结果；读写和重试策略不变。
+- Added failure-only file I/O diagnostics for reward receipts, author drafts, world edits, publishing, deployment and backups, with exception stacks, path state, thread and timing. Existing persistence and retry policies are unchanged.
+- 文件故障日志补充活跃的同路径内部操作；新增 Windows 目录范围 ProcMon 捕获入口与 Handle/ACL 快照脚本，帮助区分并发、占用和权限线索。
+- File failures now include overlapping active internal operations. Added a directory-scoped Windows ProcMon capture workflow with Handle and ACL snapshots for further diagnosis.
+
+- 新增单层自选奖励表：服务端保存候选，玩家选中后明确确认；关闭/重登保留尝试，确认不改选、不重发。一键和自动领取跳过交互奖励，自动策略冲突拒绝发布；支持 FTB choice 导入。API experimental.14，网络协议 17；嵌套仍未开放。
+- Added single-layer choice reward tables with frozen candidates, explicit confirmation, resumable selection and replay protection. Automatic and bulk claims skip interactive rewards; conflicting policies fail validation. Includes FTB choice import. API experimental.14, protocol 17; nesting remains deferred.
+
+- 奖励表领取记录原子替换遇到短暂访问拒绝时有限重试同一份已落盘数据；持续失败仍阻断发奖，并记录完整异常用于诊断。
+- Reward table receipts now retry transient access-denied atomic replacements using the same forced snapshot. Persistent failures still block execution and include full exception diagnostics.
+
+- 奖励表新增单层 random：精确权重、必给项、1–64 次抽取、有/无放回与合法空结果；所有候选预检，服务端固定抽取和空结果，重复命中独立记录，恢复不重抽。编辑器新增模式/抽取设置；支持 FTB random/loot 独立快照导入。choice 与嵌套仍未开放，API experimental.13 / 协议 16 不变。
+- Added single-layer random reward tables with exact weights, guaranteed entries, replacement options and durable empty results. Draws are frozen before effects and never rerolled on resume. Includes editor controls and FTB random/loot snapshots; choice and nesting remain deferred.
+
+- 修复单人暂停界面使奖励表后续批次停滞、一直显示执行中的问题；保持世界暂停，通过服务端任务队列限量续跑并同步背包、经验及领取状态。只读状态查询的限流窗口改用单调时间。
+- Fixed reward table continuations stalling in paused single-player screens. Bounded server tasks now finish delivery without unpausing the world, with inventory/XP updates and pause-safe status polling.
+
+- 奖励表编辑复用类型选择器、平滑滚动列表与“更多操作”菜单；移除类型轮换和左右翻页按钮，统一属性页样式，并支持编辑奖励表显示标题。
+- Reward table editing now uses the shared type picker, scrolling lists and contextual actions, with matching property panels and an editable display title.
+
+- 新增单层 all 奖励表、条目表单、FTB all_table 快照导入、逐叶强制日志、失败停止及管理员确认/无副作用重试。组合奖励与配置子编辑器使用显式扩展接口（API experimental.13）；只读领取状态查询升级网络协议至 16。choice、嵌套仍未开放。
+- Added single-layer all reward tables, typed entry editing, FTB all_table snapshots, durable per-leaf receipts and explicit recovery. API experimental.13; network protocol 16.
+
 - 修复打开子屏幕时缩放窗口导致父界面背景尺寸停留在旧值的问题；共享背景绘制入口仅在尺寸变化时更新父界面，支持嵌套选择器。
 
 - 候选窗口条目悬浮显示原始 ID，列表仍显示名称；字段选择器与候选窗口恢复父界面叠加模糊背景，并继承父界面的暂停状态。

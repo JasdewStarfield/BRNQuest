@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.reward;
 
+import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import com.google.gson.Gson;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,17 +24,17 @@ public final class CommandRewardJournal {
         Path intent = path(key, ".intent.json");
         if (!Files.exists(intent)) return null;
         try {
-            Intent stored = JSON.fromJson(Files.readString(intent, StandardCharsets.UTF_8), Intent.class);
+            Intent stored = JSON.fromJson(FileIoTrace.readString(intent, StandardCharsets.UTF_8), Intent.class);
             if (stored == null || !key.equals(stored.key()) || stored.attempt() == null) throw new IOException("Invalid command intent");
             Path result = path(key, ".result.json");
-            Outcome outcome = Files.exists(result) ? JSON.fromJson(Files.readString(result, StandardCharsets.UTF_8), Outcome.class)
+            Outcome outcome = Files.exists(result) ? JSON.fromJson(FileIoTrace.readString(result, StandardCharsets.UTF_8), Outcome.class)
                     : new Outcome("UNKNOWN", 0, 0, "Execution may not have started or may have completed; never auto-replay");
             if (outcome == null || outcome.state() == null) throw new IOException("Invalid command outcome");
             return new Receipt(stored, outcome);
         } catch (RuntimeException error) { throw new IOException("Unreadable command receipt", error); }
     }
     public Intent begin(String key, String command) throws IOException {
-        Files.createDirectories(directory);
+        FileIoTrace.createDirectories(directory);
         Intent intent = new Intent(key, UUID.randomUUID().toString(), command, System.currentTimeMillis());
         // CREATE_NEW is the final duplicate guard; a torn file is treated as an error, never as absent.
         writeForced(path(key, ".intent.json"), JSON.toJson(intent));
@@ -44,8 +45,8 @@ public final class CommandRewardJournal {
         Path temporary = directory.resolve(target.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             writeForced(temporary, JSON.toJson(outcome));
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } finally { Files.deleteIfExists(temporary); }
+            FileIoTrace.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } finally { FileIoTrace.deleteIfExists(temporary); }
     }
     /** Administrative acknowledgement consumes an uncertain attempt; it never reruns its command. */
     public void acknowledge(String key, String attempt, String actor) throws IOException {
@@ -61,10 +62,13 @@ public final class CommandRewardJournal {
         } catch (java.security.NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
     private static void writeForced(Path path, String content) throws IOException {
-        try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
-            ByteBuffer bytes = StandardCharsets.UTF_8.encode(content);
-            while (bytes.hasRemaining()) channel.write(bytes);
-            channel.force(true);
-        }
+        FileIoTrace.run("forced-write reward/CommandRewardJournal.java", null, path, () -> {
+            try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW)) {
+                ByteBuffer bytes = StandardCharsets.UTF_8.encode(content);
+                while (bytes.hasRemaining()) channel.write(bytes);
+                channel.force(true);
+            }
+            return null;
+        });
     }
 }

@@ -7,6 +7,7 @@ import java.util.List;
 
 /** Commands must be prepared and journaled by the authoritative claim coordinator before execution. */
 public final class CommandReward implements RewardType<CommandRewardConfig> {
+    public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("command")); }
     public Codec<CommandRewardConfig> configCodec() { return CommandRewardConfig.CODEC; }
     public List<ConfigFieldDescriptor> configFields() {
         return List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.title"),

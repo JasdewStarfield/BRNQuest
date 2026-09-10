@@ -2,7 +2,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.12`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.14`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -87,3 +87,18 @@ ClientTaskPresentation 与 ClientRewardPresentation 新增默认 `icon(view)`，
 任务和奖励 presentation 新增 `resolvedOptions(view)` 默认入口，返回 `Optional<List<Component>>`。未提供表示维持原有行为；提供空列表表示有候选浏览入口但没有解析成员。共享只读窗口显示完整列表，类型负责解析成员和名称，不由 QuestScreen 判断具体类型。任务的默认 `hasCandidateMenu` 使用此入口；既有物品候选功能继续沿用原实现。
 
 地点分组/原生标签解析成员在登录和数据包同步时分包发送给普通玩家，网络协议升级为 15；没有放宽 OP 作者字段查询权限。客户端与服务端需同时更新。
+
+## experimental.12 → experimental.13
+
+`RewardType.composition()` 新增默认空 Optional；旧扩展仍可顶层领取，但不会自动作为奖励表叶子执行。`ComposableReward` 提供纯 `validateConfig`、无副作用 `prepare`、带 occurrence 身份的 `execute`、保守 `recover` 和适配器版本。`RewardLeafContext` 保留真实根上下文，将逻辑路径与 occurrence 独立传递，不伪造顶层 ID。
+
+客户端新增 `ClientConfigEditors.register(typeId, fieldKey, factory)`，共享界面只路由子配置编辑器；工厂拥有自己的配置解释和返回值。现有字段表单无需调整。示例 addon 通过公开接口 opt-in。
+
+奖励表只读状态查询使用新 payload，网络协议升级为 16；客户端与服务端须同步更新，任务书 schema 1 保持不变。
+## experimental.13 → experimental.14
+
+新增 `RewardType.requiresManualClaim(Map<String,String>)` 默认方法，默认为 false，已有扩展无需修改。交互式奖励返回 true 后，自动触发与一键领取会跳过该类型，自动领取策略在整书配置校验时报错；显式单项领取仍走原有资格与账本边界。方法必须只读取配置，不产生副作用。
+
+网络协议 17 新增自选奖励请求及展示分页包，客户端和服务端须一起更新。选择携带冻结尝试身份、节点 occurrence、状态版本和条目 ID；服务器重新校验执行者及当前根资格，不接受客户端提供的奖励效果。
+
+网络协议 18 为嵌套自选响应增加当前 occurrence 与版本，路径字段允许最长 1024 字节；客户端按服务端待选择节点继续下一步。API 仍为 experimental.14，本阶段没有新增公开组合接口。

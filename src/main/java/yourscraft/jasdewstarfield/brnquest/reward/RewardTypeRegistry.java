@@ -25,6 +25,7 @@ public final class RewardTypeRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward());
         register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementReward());
         register(RewardTypes.COMMAND, new CommandReward());
         register(RewardTypes.ITEM, new ItemReward());
@@ -32,6 +33,7 @@ public final class RewardTypeRegistry {
         register(RewardTypes.XP_LEVELS, new ExperienceReward(true));
         register(RewardTypes.CUSTOM, new RewardType<Map<String, String>>() {
             public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
+            public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("custom")); }
             public RewardResult execute(RewardContext context, Map<String, String> config) {
                 return RewardResult.success("Custom reward acknowledged");
             }
@@ -77,6 +79,7 @@ public final class RewardTypeRegistry {
     }
 
     private static final class ItemReward implements RewardType<ItemRewardConfig> {
+        public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("item")); }
         public Codec<ItemRewardConfig> configCodec() { return ItemRewardConfig.CODEC; }
 
         public List<ConfigFieldDescriptor> configFields() {
@@ -127,6 +130,7 @@ public final class RewardTypeRegistry {
 
     /** Experience rewards remain separate IDs because FTB stores points and levels separately. */
     private record ExperienceReward(boolean levels) implements RewardType<Map<String, String>> {
+        public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition(levels ? "xp_levels" : "xp")); }
         public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
         public List<ConfigFieldDescriptor> configFields() {
             return List.of(ConfigFieldDescriptor.field(levels ? "xp_levels" : "xp", ConfigValueType.INTEGER)

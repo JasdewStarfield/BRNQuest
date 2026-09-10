@@ -247,7 +247,7 @@ public final class AuthoringHandlerGameTests {
             this.helper = helper; this.player = player;
             book = ResourceLocation.parse("brnquest:mutation_handler_" + player.getUUID().toString().replace("-", ""));
             var created = new DraftService().createEmpty(player, book, "Mutation fixture");
-            check(helper, created.success(), created.code());
+            check(helper, created.success(), created.code() + ": " + created.message());
             var opened = EditSessionService.get().open(player, created.value());
             check(helper, opened.success(), opened.code());
             token = opened.value().sessionId(); revision = created.value().draftRevision();

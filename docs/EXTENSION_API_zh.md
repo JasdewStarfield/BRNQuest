@@ -1,6 +1,6 @@
 # BRNQuest 扩展入口
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.12` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.14` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -136,3 +136,14 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 `ClientTaskPresentation` 和 `ClientRewardPresentation` 可通过 `resolvedOptions(view)` 提供完整的已解析成员名称。使用本地化 Component，缺失名称时回退成员 ID，避免返回标签/组 ID 代替其内容。共享窗口使用已有平滑滚动列表，支持按名称搜索，无成员数截断。候选入口只读，在未解锁或已领取状态仍可查看；它不替代提交或领取接口。内置类型 tooltip 最多列三项，超出显示省略号。
 
 候选项可在名称 Component 的 `SHOW_TEXT` hover 元数据中携带原始 ID；共享窗口将其作为条目悬浮提示。未提供 hover 的旧扩展仍显示名称提示，方法签名与协议不变。内置类型始终携带原始 ID。
+
+### 可组合奖励（experimental.13）
+
+只有 `RewardType.composition()` 返回能力声明的类型可以作为表叶子。`validateConfig` 用于纯发布校验；`prepare` 检查资源、权限和数量并返回可持久化字符串映射，严禁产生副作用。`execute` 在强制 STARTED 记录之后调用，接收根上下文、稳定逻辑路径和唯一 occurrence。不要递归调用顶层领取 API，不要给叶子单独写正常领取账本。
+
+`PENDING` 暂停后续叶子；恢复调用 `recover`，默认按结果未知处理。只有可核实证据才能报告恢复成功；不能用默认重跑 execute 来实现 recover。适配器 `version()` 必须在准备数据或恢复语义不兼容时改变。内置 custom 只是 no-op acknowledgement，不是脚本执行器。
+
+客户端复杂字段使用 `ClientConfigEditors.register(typeId, fieldKey, factory)`；工厂返回子 Screen，只在确认时调用 Consumer。注册只能发生在客户端，避免专服加载客户端类。参考 `GuardedTagReward` 的 public-only 组合示例和 [奖励表使用说明](REWARD_TABLES_zh.md)。
+### 手动交互奖励（experimental.14）
+
+`RewardType.requiresManualClaim(config)` 是无副作用的静态策略声明，默认 false。返回 true 的类型必须由玩家显式单项领取；核心自动触发及 claim-all 跳过该类型，非手动策略在发布配置校验中被拒绝。此方法不会自动创建选择协议或 UI，具体交互仍由类型模块拥有。内置自选表使用此声明，现有扩展保持原行为。

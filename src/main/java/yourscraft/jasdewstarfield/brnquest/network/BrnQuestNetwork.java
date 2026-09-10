@@ -170,7 +170,8 @@ public final class BrnQuestNetwork {
         registrar.playToServer(ClaimRewardPayload.TYPE, ClaimRewardPayload.CODEC, (payload, context) -> {
             ResourceLocation id = ResourceLocation.tryParse(payload.rewardId());
             if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) {
-                BrnQuestApi.claimRewardResult(OperationContext.self(player), player, id.toString());
+                var result = BrnQuestApi.claimRewardResult(OperationContext.self(player), player, id.toString());
+                if (result.code().equals("TABLE_AWAITING_CHOICE")) RewardTableChoiceNetwork.open(player, id);
             }
         });
         registrar.playToServer(SelectQuestPayload.TYPE, SelectQuestPayload.CODEC, (payload, context) -> {
@@ -189,6 +190,7 @@ public final class BrnQuestNetwork {
         AuthoringNetwork.register(registrar);
         AdminProgressNetwork.register(registrar);
         ServerFieldNetwork.register(registrar);
+        RewardTableNetwork.register(registrar);
     }
 
     public static void syncAll(ServerPlayer player, boolean revisionMatches) {
@@ -274,7 +276,10 @@ public final class BrnQuestNetwork {
         PacketDistributor.sendToServer(new CompleteTaskPayload(revision, questId, taskId, encoded));
     }
     public static void toggleTracked(String revision, String questId) { PacketDistributor.sendToServer(new ToggleTrackedPayload(revision, questId)); }
-    public static void claimReward(String revision, String rewardId) { PacketDistributor.sendToServer(new ClaimRewardPayload(revision, rewardId)); }
+    public static void claimReward(String revision, String rewardId) {
+        yourscraft.jasdewstarfield.brnquest.client.ui.RewardTableChoiceScreen.expect(revision,rewardId);
+        PacketDistributor.sendToServer(new ClaimRewardPayload(revision, rewardId));
+    }
     public static void selectQuest(String revision, String questId) { PacketDistributor.sendToServer(new SelectQuestPayload(revision, questId)); }
 
     private static String currentRevision() { return QuestBookManager.get().active().map(s -> s.revision()).orElse(""); }

@@ -17,6 +17,110 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void nestedSharedReferencesAreSnapshotsButCyclesAreRejected() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));Files.createDirectories(temporary.resolve("reward_tables"));
+        Files.writeString(temporary.resolve("data.snbt"),"{version:13}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"),"{}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("reward_tables/aa.snbt"),"{id:'aa',rewards:[{type:'xp',xp:2}]}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/nested.snbt"),"""
+                {id:'1000000000000001',quests:[{id:'2000000000000001',rewards:[
+                {id:'3000000000000001',type:'choice',auto:'disabled',table_data:{rewards:[
+                {type:'all_table',table_id:'aa'},{type:'all_table',table_id:'aa'}]}}]}]}
+                """,StandardCharsets.UTF_8);
+        var result=new FtbV13Importer().importBook(temporary,"test","main");
+        assertFalse(result.report().hasErrors(),result.report().toJson());
+        var tree=yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(result.book().quests().getFirst().rewards().getFirst().config().get("table"));
+        assertTrue(tree.entries().stream().allMatch(e->e.has("table") && !e.getAsJsonObject("config").has("table")));
+        // A shared reference is legal; replacing it with a self-reference must stop instead of recursing forever.
+        Files.writeString(temporary.resolve("reward_tables/aa.snbt"),"{id:'aa',rewards:[{type:'all_table',table_id:'aa'}]}",StandardCharsets.UTF_8);
+        var cyclic=new FtbV13Importer().importBook(temporary,"test","main");
+        assertTrue(cyclic.report().hasErrors());assertTrue(cyclic.report().toJson().contains("cycle"));
+    }
+    @Test void choiceImportsWithoutRandomDrawRequirements() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/choice.snbt"), """
+                {id:"1000000000000001",quests:[{id:"2000000000000001",rewards:[
+                {id:"3000000000000001",type:"choice",auto:"disabled",table_data:{rewards:[
+                {type:"xp",xp:2,weight:0.0f},{type:"xp",xp:3,weight:0.0f}]}}]}]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        var reward = result.book().quests().getFirst().rewards().getFirst();
+        var tree = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(reward.config().get("table"));
+        assertEquals("choice",tree.mode()); assertEquals(2,tree.entries().size());
+        assertEquals("brnquest:reward_table",reward.typeId().toString());
+        assertTrue(reward.config().containsKey("table_data"));
+    }
+
+    @Test void randomAndLootMapFractionalWeightsAndDifferentEmptyPolicies() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/random.snbt"), """
+                {id:"1000000000000001",quests:[{id:"2000000000000001",rewards:[
+                {id:"3000000000000001",type:"random",table_data:{loot_size:2,empty_weight:2.0f,rewards:[
+                {type:"xp",xp:2,weight:0.0f},{type:"xp",xp:3,weight:0.25f}]}},
+                {id:"3000000000000002",type:"loot",table_data:{loot_size:2,empty_weight:2.0f,rewards:[
+                {type:"xp",xp:3,weight:0.25f}]}}]}]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        var rewards = result.book().quests().getFirst().rewards();
+        var random = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
+        var loot = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.get(1).config().get("table"));
+        assertEquals("brnquest:reward_table", rewards.get(1).typeId().toString());
+        assertEquals("random", random.mode()); assertEquals(2, random.rolls()); assertTrue(random.replacement());
+        assertEquals(0, random.emptyWeight().signum()); assertEquals(new java.math.BigDecimal("2"), loot.emptyWeight());
+        assertTrue(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.always(random.entries().getFirst()));
+        assertEquals(new java.math.BigDecimal("0.25"), yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.weight(random.entries().get(1)));
+        assertTrue(rewards.getFirst().config().containsKey("table_data"), "original source remains available");
+    }
+
+    @Test void degenerateFtbRandomPoolsAreDiagnosedInsteadOfInventingRewards() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        for (String data : List.of("{rewards:[{type:'xp',xp:1}]}",
+                "{loot_size:0,rewards:[{type:'xp',xp:1}]}", "{loot_size:1,rewards:[{type:'xp',xp:1,weight:0.0f}]}",
+                "{loot_size:1,rewards:[{type:'xp',xp:1,weight:'bad'}]}",
+                "{loot_size:1,rewards:[{type:'xp',xp:1,weight:3e38f},{type:'xp',xp:2,weight:3e38f}]}",
+                "{loot_size:1,rewards:[{type:'random',table_id:5L}]}")) {
+            Files.writeString(temporary.resolve("chapters/random.snbt"),
+                    "{id:'1000000000000001',quests:[{id:'2000000000000001',rewards:[{id:'3000000000000001',type:'random',table_data:"
+                            + data + "}]}]}", StandardCharsets.UTF_8);
+            var result = new FtbV13Importer().importBook(temporary, "test", "main");
+            assertTrue(result.report().hasErrors(), data);
+            assertTrue(result.report().toJson().contains("BQF-108"));
+            assertTrue(result.book().quests().getFirst().rewards().getFirst().config().containsKey("table_data"));
+        }
+    }
+
+    @Test void allTableExpandsAnIndependentSnapshotThroughSharedRewardConversion() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters")); Files.createDirectories(temporary.resolve("reward_tables"));
+        Files.writeString(temporary.resolve("data.snbt"),"{version:13}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"),"{}",StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("reward_tables/00000000000000AB.snbt"),"""
+                {id:"00000000000000AB",rewards:[{id:"0000000000000001",item:{id:"minecraft:bread",count:2},weight:0.0f},
+                {id:"0000000000000002",type:"command",command:"say imported",permission_level:2}]}
+                """,StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/tables.snbt"),"""
+                {id:"1000000000000001",quests:[{id:"2000000000000001",rewards:[
+                {id:"3000000000000001",type:"all_table",table_id:171L},
+                {id:"3000000000000002",type:"all_table",table_id:171L}]}]}
+                """,StandardCharsets.UTF_8);
+        var imported = new FtbV13Importer().importBook(temporary,"test","main");
+        assertFalse(imported.report().hasErrors(),imported.report().toJson());
+        var rewards = imported.book().quests().getFirst().rewards();
+        assertEquals("brnquest:reward_table",rewards.getFirst().typeId().toString());
+        var tree = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
+        assertEquals(2,tree.entries().size());
+        assertTrue(tree.entries().getFirst().get("always").getAsBoolean());
+        assertEquals("say imported",yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.config(tree.entries().get(1)).get("command"));
+        assertEquals(rewards.getFirst().config().get("table"),rewards.get(1).config().get("table"));
+        assertFalse(imported.book().legacyIds().containsKey("0000000000000001"),"child aliases never replace root IDs");
+    }
     @Test void importsObservationAndKillAliasesThroughNativeRoundTrip() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"),"{version:13}",StandardCharsets.UTF_8);

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -51,7 +52,7 @@ final class WorkspacePublishRepository {
                                 + " but disk has " + current.revision());
             }
             String encoded = NativeBookJson.encode(draft.book());
-            if (current.bookFile() != null && Files.readString(current.bookFile(), StandardCharsets.UTF_8).equals(encoded)) {
+            if (current.bookFile() != null && FileIoTrace.readString(current.bookFile(), StandardCharsets.UTF_8).equals(encoded)) {
                 return AuthorOperationResult.noChange("WORKSPACE_ALREADY_PUBLISHED",
                         "Workspace already contains this draft", basicResult(draft, current.revision(), null));
             }
@@ -65,21 +66,21 @@ final class WorkspacePublishRepository {
             boolean emptyScaffoldRemoved = false;
             boolean activated = false;
             try {
-                Files.createDirectories(parent);
+                FileIoTrace.createDirectories(parent);
                 if (current.packExists()) copyTree(root, staging);
                 else {
-                    Files.createDirectories(staging);
+                    FileIoTrace.createDirectories(staging);
                     writeForced(staging.resolve("pack.mcmeta"), PACK_METADATA);
                 }
                 Path stagedBook = bookPath(staging, draft.book().id());
-                Files.createDirectories(stagedBook.getParent());
-                Files.deleteIfExists(stagedBook);
+                FileIoTrace.createDirectories(stagedBook.getParent());
+                FileIoTrace.deleteIfExists(stagedBook);
                 writeForced(stagedBook, encoded);
                 verifyBook(stagedBook, draft);
                 transactionHook.checkpoint(TransactionStage.STAGING_WRITTEN);
 
                 if (current.packExists()) {
-                    Files.createDirectories(backup.getParent());
+                    FileIoTrace.createDirectories(backup.getParent());
                     move(root, backup);
                     previousMoved = true;
                     transactionHook.checkpoint(TransactionStage.BACKUP_MOVED);
@@ -105,7 +106,7 @@ final class WorkspacePublishRepository {
                 } else if (emptyScaffoldRemoved) {
                     try {
                         if (activated) safeDelete(root, parent);
-                        Files.createDirectories(root);
+                        FileIoTrace.createDirectories(root);
                     } catch (IOException restoreFailure) {
                         exception.addSuppressed(restoreFailure);
                     }
@@ -136,7 +137,7 @@ final class WorkspacePublishRepository {
         Path file = bookPath(root, bookId);
         if (!Files.isRegularFile(file)) return new WorkspaceState(true, "", null);
         var book = NativeBookJson.decode(JsonParser.parseString(
-                Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
+                FileIoTrace.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
         if (!book.id().equals(bookId)) throw new IOException("Workspace book path and content identify different books");
         return new WorkspaceState(true, DraftSnapshot.from(book, DraftOrigin.WORKSPACE,
                 yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot.of(book).revision()).draftRevision(), file);
@@ -157,7 +158,7 @@ final class WorkspacePublishRepository {
 
     private static void verifyBook(Path file, DraftSnapshot expected) throws IOException {
         var decoded = NativeBookJson.decode(JsonParser.parseString(
-                Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
+                FileIoTrace.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
         // Group and chapter lists are canonically sorted by the encoder. Comparing record
         // list order would reject an otherwise lossless publish when equal-order objects
         // were created in a different session order, so verify the canonical bytes instead.
@@ -171,10 +172,10 @@ final class WorkspacePublishRepository {
             for (Path path : paths.sorted().toList()) {
                 Path output = target.resolve(source.relativize(path)).normalize();
                 if (!output.startsWith(target)) throw new IOException("Workspace path escaped staging directory");
-                if (Files.isDirectory(path)) Files.createDirectories(output);
+                if (Files.isDirectory(path)) FileIoTrace.createDirectories(output);
                 else {
-                    Files.createDirectories(output.getParent());
-                    Files.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
+                    FileIoTrace.createDirectories(output.getParent());
+                    FileIoTrace.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
                 }
             }
         }
@@ -213,9 +214,9 @@ final class WorkspacePublishRepository {
 
     private static void moveOnce(Path source, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            FileIoTrace.move(source, target, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target);
+            FileIoTrace.move(source, target);
         }
     }
 
@@ -224,7 +225,7 @@ final class WorkspacePublishRepository {
         Path parent = allowedParent.toAbsolutePath().normalize();
         if (!resolved.startsWith(parent) || !Files.exists(resolved)) return;
         try (var paths = Files.walk(resolved)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) FileIoTrace.deleteIfExists(path);
         } catch (IOException ignored) {
             // A uniquely named staging directory is inert and can be inspected later.
         }

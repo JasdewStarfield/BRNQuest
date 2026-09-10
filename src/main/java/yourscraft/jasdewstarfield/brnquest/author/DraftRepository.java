@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -47,7 +48,7 @@ public final class DraftRepository {
         Path parent = target.getParent();
         Path staging = parent.resolve("." + target.getFileName() + ".staging-" + UUID.randomUUID());
         try {
-            Files.createDirectories(parent);
+            FileIoTrace.createDirectories(parent);
             writeDirectory(staging, draft);
             move(staging, target);
             return AuthorOperationResult.success("DRAFT_CREATED", "Draft created", draft);
@@ -155,13 +156,13 @@ public final class DraftRepository {
         Path backup = backupDirectory(backupsRoot, bookId, storedRevision(target));
         boolean backupMoved = false;
         try {
-            Files.createDirectories(parent);
+            FileIoTrace.createDirectories(parent);
             writeDirectory(staging, migrated);
             AuthorOperationResult<DraftSnapshot> staged = readDirectory(staging, bookId);
             if (!staged.success() || !staged.value().draftRevision().equals(migrated.draftRevision())) {
                 throw new IOException("Migrated draft failed verification");
             }
-            Files.createDirectories(backup.getParent());
+            FileIoTrace.createDirectories(backup.getParent());
             move(target, backup);
             backupMoved = true;
             move(staging, target);
@@ -236,8 +237,8 @@ public final class DraftRepository {
         String expectedManifest = draft.manifest().encode();
         Path target = draftDirectory(draftsRoot, draft.book().id());
         try {
-            if (Files.readString(target.resolve(BOOK_FILE), StandardCharsets.UTF_8).equals(expectedBook)
-                    && Files.readString(target.resolve(MANIFEST_FILE), StandardCharsets.UTF_8).equals(expectedManifest)) {
+            if (FileIoTrace.readString(target.resolve(BOOK_FILE), StandardCharsets.UTF_8).equals(expectedBook)
+                    && FileIoTrace.readString(target.resolve(MANIFEST_FILE), StandardCharsets.UTF_8).equals(expectedManifest)) {
                 return AuthorOperationResult.noChange("DRAFT_ALREADY_SAVED", "Draft files already match the session",
                         new DraftSaveResult(draft, disk.draftRevision(), null));
             }
@@ -251,14 +252,14 @@ public final class DraftRepository {
         Path backup = backupDirectory(backupsRoot, draft.book().id(), disk.draftRevision());
         boolean backupMoved = false;
         try {
-            Files.createDirectories(parent);
+            FileIoTrace.createDirectories(parent);
             writeDirectory(staging, draft);
             transactionHook.checkpoint(TransactionStage.STAGING_WRITTEN);
             AuthorOperationResult<DraftSnapshot> staged = readDirectory(staging, draft.book().id());
             if (!staged.success() || !staged.value().draftRevision().equals(draft.draftRevision())) {
                 throw new IOException("Staged draft failed verification");
             }
-            Files.createDirectories(backup.getParent());
+            FileIoTrace.createDirectories(backup.getParent());
             move(target, backup);
             backupMoved = true;
             transactionHook.checkpoint(TransactionStage.BACKUP_MOVED);
@@ -299,7 +300,7 @@ public final class DraftRepository {
         }
         try {
             var book = NativeBookJson.decode(JsonParser.parseString(
-                    Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
+                    FileIoTrace.readString(file, StandardCharsets.UTF_8)).getAsJsonObject());
             if (!book.id().equals(bookId)) {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "WORKSPACE_ID_MISMATCH",
                         "Workspace file contains " + book.id());
@@ -322,8 +323,8 @@ public final class DraftRepository {
 
     private static AuthorOperationResult<DraftSnapshot> readDirectory(Path directory, ResourceLocation bookId) {
         try {
-            String bookJson = Files.readString(directory.resolve(BOOK_FILE), StandardCharsets.UTF_8);
-            String manifestJson = Files.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
+            String bookJson = FileIoTrace.readString(directory.resolve(BOOK_FILE), StandardCharsets.UTF_8);
+            String manifestJson = FileIoTrace.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
             var book = NativeBookJson.decode(JsonParser.parseString(bookJson).getAsJsonObject());
             var manifest = DraftManifest.decode(JsonParser.parseString(manifestJson).getAsJsonObject());
             if (!book.id().equals(bookId) || !manifest.bookId().equals(bookId)) {
@@ -346,8 +347,8 @@ public final class DraftRepository {
     static AuthorOperationResult<DraftSnapshot> readDirectoryAllowCanonicalDrift(Path directory,
                                                                                   ResourceLocation bookId) {
         try {
-            String bookJson = Files.readString(directory.resolve(BOOK_FILE), StandardCharsets.UTF_8);
-            String manifestJson = Files.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
+            String bookJson = FileIoTrace.readString(directory.resolve(BOOK_FILE), StandardCharsets.UTF_8);
+            String manifestJson = FileIoTrace.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
             var book = NativeBookJson.decode(JsonParser.parseString(bookJson).getAsJsonObject());
             var manifest = DraftManifest.decode(JsonParser.parseString(manifestJson).getAsJsonObject());
             if (!book.id().equals(bookId) || !manifest.bookId().equals(bookId)) {
@@ -394,19 +395,22 @@ public final class DraftRepository {
     }
 
     private static void writeDirectory(Path directory, DraftSnapshot draft) throws IOException {
-        Files.createDirectories(directory);
+        FileIoTrace.createDirectories(directory);
         writeForced(directory.resolve(BOOK_FILE), NativeBookJson.encode(draft.book()));
         writeForced(directory.resolve(MANIFEST_FILE), draft.manifest().encode());
     }
 
     private static void writeForced(Path file, String content) throws IOException {
-        byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
-        try (var channel = java.nio.channels.FileChannel.open(file, StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE)) {
-            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(bytes);
-            while (buffer.hasRemaining()) channel.write(buffer);
-            channel.force(true);
-        }
+        FileIoTrace.run("forced-write author/DraftRepository.java", null, file, () -> {
+            byte[] bytes = content.getBytes(StandardCharsets.UTF_8);
+            try (var channel = java.nio.channels.FileChannel.open(file, StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE)) {
+                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) channel.write(buffer);
+                channel.force(true);
+            }
+            return null;
+        });
     }
 
     private static Path backupDirectory(Path backupsRoot, ResourceLocation bookId, String revision) {
@@ -420,7 +424,7 @@ public final class DraftRepository {
 
     private static String storedRevision(Path directory) {
         try {
-            String manifest = Files.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
+            String manifest = FileIoTrace.readString(directory.resolve(MANIFEST_FILE), StandardCharsets.UTF_8);
             return DraftManifest.decode(JsonParser.parseString(manifest).getAsJsonObject()).draftRevision();
         } catch (Exception ignored) {
             return "UNKNOWN";
@@ -442,9 +446,9 @@ public final class DraftRepository {
 
     private static void move(Path source, Path target) throws IOException {
         try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+            FileIoTrace.move(source, target, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target);
+            FileIoTrace.move(source, target);
         }
     }
 
@@ -453,7 +457,7 @@ public final class DraftRepository {
         Path resolved = target.toAbsolutePath().normalize();
         if (!resolved.startsWith(root) || !Files.exists(resolved)) return;
         try (var paths = Files.walk(resolved)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) FileIoTrace.deleteIfExists(path);
         } catch (IOException ignored) {
             // The original write error remains the useful failure; a uniquely named
             // staging directory is safe to inspect or clean on a later startup.

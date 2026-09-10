@@ -25,8 +25,12 @@ def kubeJsSmokeRequested = gradle.startParameter.taskNames.any {
 def includeKubeJs = providers.gradleProperty('includeKubeJs').isPresent() || kubeJsSmokeRequested
 def includeJei = !providers.gradleProperty('excludeJei').isPresent() && !kubeJsSmokeRequested
 
-// Keep automated server state separate from the client/server directory used for manual acceptance.
-def gameTestRunDirectory = layout.projectDirectory.dir('run/gametest')
+// Both unit fixtures and automated worlds stay outside workspace file watchers. User runClient worlds stay put.
+def isolatedTestRoot = providers.gradleProperty('brnquestTestTempDir').getOrElse(
+        new File(System.getenv('TEMP') ?: System.getProperty('java.io.tmpdir'), 'brnquest-file-io-outside').absolutePath)
+def gameTestRunDirectory = layout.dir(providers.provider {
+    new File(isolatedTestRoot, 'gametest-' + Integer.toHexString(projectDir.canonicalPath.hashCode()))
+}).get()
 def kubeJsSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-smoke')
 def kubeJsReloadSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-reload-smoke')
 def resetGameTestBrnQuestState = tasks.register('resetGameTestBrnQuestState', Delete) {
@@ -120,6 +124,7 @@ neoForge {
         gameTestServer {
             type = 'gameTestServer'
             gameDirectory = gameTestRunDirectory
+            systemProperty 'java.io.tmpdir', isolatedTestRoot
             // IDE and Gradle launches receive the same deterministic fixture and isolated workspace.
             taskBefore prepareGameTestFixture
             systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
@@ -284,6 +289,11 @@ dependencies {
 
 test {
     useJUnitPlatform()
+    // Keep short-lived test trees outside workspace watchers; allow CI to choose its own isolated root.
+    def testTemp = isolatedTestRoot
+    systemProperty 'java.io.tmpdir', testTemp
+    systemProperty 'junit.jupiter.tempdir.basedir', testTemp
+    doFirst { new File(testTemp).mkdirs() }
     // NeoForge tests use a transformed class loader without a conventional code source;
     // provide an explicit project root for the public-signature contract test.
     systemProperty 'brnquest.projectDir', projectDir.absolutePath

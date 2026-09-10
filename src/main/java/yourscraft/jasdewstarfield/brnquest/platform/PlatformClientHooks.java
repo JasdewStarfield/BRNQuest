@@ -36,6 +36,7 @@ public final class PlatformClientHooks {
     private static void layers(RegisterGuiLayersEvent event) { event.registerAbove(VanillaGuiLayers.CHAT, QuestHud.LAYER_ID, QuestHud::render); }
     private static void tick(ClientTickEvent.Post event) { ClientKeyRegistry.tick(); }
     private static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
+        yourscraft.jasdewstarfield.brnquest.client.ui.RewardTableClientState.clear();
         ClientEditorState.get().disconnected();
         yourscraft.jasdewstarfield.brnquest.client.ClientQuestState.get().disconnected();
     }

@@ -15,6 +15,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestTypedPropertyFormModelTest {
     @Test
+    void rewardTableTitleAndChildEditsPreserveEachOtherAndUnknownFields() {
+        var type = new yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward();
+        var model = new QuestTypedPropertyFormModel(type.configFields().size());
+        model.openExisting(schema(type.configFields(), Map.of("table", "original", "extension_data", "kept"), false),
+                "demo:table", "manual");
+        // Returning from the child editor must change only the tree field, not the outer display name.
+        model.setConfigValue(model.fieldIndex("title"), "启程奖励");
+        model.setConfigValue(model.fieldIndex("table"), "edited");
+        assertEquals(Map.of("title", "启程奖励", "table", "edited", "extension_data", "kept"), model.currentConfig());
+        model.openExisting(schema(type.configFields(), model.currentConfig(), false), "demo:table", "manual");
+        assertEquals("启程奖励", model.configValue(model.fieldIndex("title")));
+        model.setConfigValue(model.fieldIndex("title"), "");
+        assertFalse(model.currentConfig().containsKey("title"), "blank title restores the presentation fallback");
+        assertEquals("edited", model.currentConfig().get("table"));
+    }
+
+    @Test
     void existingDraftUsesStoredValuesAndPreservesUnknownConfig() {
         QuestTypedPropertyFormModel model = new QuestTypedPropertyFormModel(4);
         model.openExisting(schema(List.of(ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER)

@@ -987,7 +987,8 @@ public final class BrnQuestGameTests {
         var created = new DraftService().createEmpty(admin, book, "Stage 4 command acceptance");
         var opened = EditSessionService.get().open(admin, created.value());
         helper.assertTrue(created.success() && opened.success(),
-                "administrator must bootstrap the command-authored acceptance draft");
+                "administrator must bootstrap the command-authored acceptance draft: create=" + created.code() + " " + created.message()
+                        + "; open=" + opened.code() + " " + opened.message());
         String session = opened.value().sessionId().toString();
         String initialRevision = opened.value().session().draftRevision();
 

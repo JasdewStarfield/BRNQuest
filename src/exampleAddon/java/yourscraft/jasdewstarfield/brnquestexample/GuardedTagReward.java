@@ -41,6 +41,27 @@ final class GuardedTagReward implements RewardType<Map<String, String>> {
             return RewardClaimResult.success("Example tag granted");
         });
     }
+    /** The addon opts in through public API only; no coordinator or Screen needs to know its type ID. */
+    public Optional<ComposableReward> composition() {
+        return Optional.of(new ComposableReward() {
+            public Map<String,String> prepare(RewardLeafContext context) {
+                String tag = context.config().getOrDefault("tag", "").strip();
+                if (tag.isBlank() || tag.length() > 128) throw new IllegalArgumentException("Invalid example tag");
+                if (context.root().rewardContext().player().getTags().contains("brnquest_example_block"))
+                    throw new IllegalArgumentException("External condition blocks the composed reward");
+                return Map.of("tag", tag);
+            }
+            public RewardClaimResult execute(RewardLeafContext context, Map<String,String> prepared) {
+                var player = context.root().rewardContext().player();
+                return player.getTags().contains(prepared.get("tag")) || player.addTag(prepared.get("tag"))
+                        ? RewardClaimResult.success("Example tag granted") : RewardClaimResult.failure("UNKNOWN", "Tag could not be granted");
+            }
+            public RewardClaimResult recover(RewardLeafContext context, Map<String,String> prepared) {
+                return context.root().rewardContext().player().getTags().contains(prepared.get("tag"))
+                        ? RewardClaimResult.success("Existing tag confirms effect") : RewardClaimResult.failure("UNKNOWN", "Tag not observed; review before retry");
+            }
+        });
+    }
     public RewardResult execute(RewardContext context, Map<String, String> config) {
         return RewardResult.failure("Use the authoritative claim handler");
     }

@@ -13,6 +13,8 @@ public final class RewardTypeExecutor {
     private RewardTypeExecutor() {}
 
     public static Optional<String> configError(RewardType<?> type, RewardView reward) {
+        if (type.requiresManualClaim(reward.config()) && !reward.claimPolicy().equals("manual"))
+            return Optional.of("Interactive rewards require the manual claim policy");
         return decode(type, reward).error().map(error -> error.message());
     }
 

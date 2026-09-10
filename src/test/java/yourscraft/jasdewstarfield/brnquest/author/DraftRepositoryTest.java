@@ -109,7 +109,8 @@ class DraftRepositoryTest {
         DraftSnapshot staleManifest = DraftSnapshot.from(book, DraftOrigin.ACTIVE, "old-active");
         Path drafts = tempDirectory.resolve("drafts");
         Path workspace = tempDirectory.resolve("workspace");
-        assertTrue(repository.create(drafts, staleManifest).success());
+        var created = repository.create(drafts, staleManifest);
+        assertTrue(created.success(), created.code() + ": " + created.message());
         Path workspaceBook = workspace.resolve("data/test/brnquest/books/published.json");
         Files.createDirectories(workspaceBook.getParent());
         Files.writeString(workspaceBook, NativeBookJson.encode(book), StandardCharsets.UTF_8);

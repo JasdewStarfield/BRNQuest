@@ -2307,7 +2307,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         boolean known = typedEditorKind.known(value.typeId());
         EditorIcon icon = presentation.icon().orElseGet(() -> presentation.stack().isEmpty()
                 ? EditorIcon.glyph(Component.literal(presentation.symbol())) : EditorIcon.item(presentation.stack()));
-        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, presentation.typeName(),
+        // Named rewards remain distinguishable while editing a list containing several tables of the same type.
+        String rewardTitle = typedEditorKind == QuestTypedEntryKind.REWARD
+                ? quest.rewards().get(index).config().getOrDefault("title", "") : "";
+        Component rowTitle = rewardTitle.isBlank() ? presentation.typeName() : Component.literal(rewardTitle);
+        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, rowTitle,
                 typedRowSummary(quest, index, known), known ? 0xFF9FB0C2 : 0xFFFFA070), presentation.icon().isPresent() ? ItemStack.EMPTY : presentation.stack());
     }
 
@@ -2446,7 +2450,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (!descriptor.helpText().isBlank() && row.label().containsExclusive(mouseX, mouseY))
             hoveredDetailText = Component.translatable(descriptor.helpText());
         EditorTextField field = typedPropertySection.form().configField(index);
-        if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
+        if (ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).isPresent()) {
+            renderEditorTextButton(graphics, row.field(), Component.translatable("screen.brnquest.config.edit"),
+                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        } else if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
             var vector = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(row.field(), descriptor.serverSource().isPresent());
             for (int axis = 0; axis < 3; axis++) {
                 UiRect bounds = vector.axes().get(axis);
@@ -2590,6 +2597,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
                 case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());
+                case CUSTOM -> {
+                    var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
+                    prepareForTransientChildScreen();
+                    minecraft.setScreen(ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow()
+                            .create(this, typedPropertySection.form().configValue(intent.fieldIndex()),
+                                    value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value)));
+                }
                 case RAW -> openTypedPropertyRawEditor();
                 case OPTIONAL -> typedPropertySection.toggleOptional();
                 case TEAM_REWARD -> typedPropertySection.toggleTeamReward();

@@ -21,7 +21,7 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 
 ## Documentation
 
-Project design, implementation plans, provenance records, and acceptance evidence are maintained in the separate [BRNQuest-Docs repository](https://github.com/JasdewStarfield/BRNQuest-Docs). User-facing and extension-author documentation for this version remains alongside the source:
+The `docs/` directory contains only public user, administrator, and extension-author documentation. Internal architecture, implementation plans, developer test workflows, and acceptance evidence are maintained separately.
 
 - 整合包作者的任务工作区、草稿、部署、更新与恢复流程：[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)
 - 观察方块/实体与击杀目标：[`docs/ENCOUNTER_TASKS_zh.md`](docs/ENCOUNTER_TASKS_zh.md)
@@ -31,8 +31,8 @@ Project design, implementation plans, provenance records, and acceptance evidenc
 - Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
 - 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)
-- 客户端 Screen、Model/Frame/Intent 与组合组件边界：[`docs/CLIENT_UI_ARCHITECTURE_zh.md`](docs/CLIENT_UI_ARCHITECTURE_zh.md)
-- 作者网络的协议兼容面、请求/用例/响应职责：[`docs/AUTHORING_NETWORK_ARCHITECTURE_zh.md`](docs/AUTHORING_NETWORK_ARCHITECTURE_zh.md)
+- 奖励表配置、嵌套与领取恢复：[中文](docs/REWARD_TABLES_zh.md) / [English](docs/REWARD_TABLES.md)
+- 文件读写故障日志与问题反馈：[`docs/FILE_IO_DIAGNOSTICS_zh.md`](docs/FILE_IO_DIAGNOSTICS_zh.md)
 - KubeJS 服务端脚本全局 API：[`docs/KUBEJS_API_zh.md`](docs/KUBEJS_API_zh.md)
 - OPAC 队伍进度、奖励资格、存档升级与降级行为：[`docs/OPAC_INTEGRATION_zh.md`](docs/OPAC_INTEGRATION_zh.md)
 - API 版本及兼容策略：[`docs/API_VERSIONING_zh.md`](docs/API_VERSIONING_zh.md)
@@ -45,3 +45,5 @@ Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Sta
 Internal implementation plans, validation procedures, and historical acceptance reports are maintained in BRNQuest-Docs and are not part of the user documentation set shipped with the mod.
 
 - [原版进度目标与奖励 / Advancement tasks and rewards](docs/ADVANCEMENT_TYPES_zh.md)
+
+- 奖励表 / Reward tables：[中文](docs/REWARD_TABLES_zh.md) · [English](docs/REWARD_TABLES.md)

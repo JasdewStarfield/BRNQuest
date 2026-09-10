@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  */
 final class QuestTypedPropertySection {
     enum PreparationStatus { INVALID_ID, LOCAL_ISSUE, CONFIRM_RENAME, CLAIM_REQUIRED, READY }
-    enum Action { CANCEL, SUBMIT, CLAIM, SERVER_CURRENT, SERVER_FIELD, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
+    enum Action { CANCEL, SUBMIT, CLAIM, SERVER_CURRENT, SERVER_FIELD, CUSTOM, BOOLEAN, ENUM, ITEM, MATCHER, RAW, OPTIONAL, TEAM_REWARD }
 
     record FieldHit(int index, ConfigFieldDescriptor descriptor, UiRect bounds) {}
 
@@ -138,6 +138,8 @@ final class QuestTypedPropertySection {
         for (FieldHit field : frame.fields()) {
             if (!field.bounds().contains(x, y)) continue;
             ConfigValueType type = field.descriptor().valueType();
+            if (ClientConfigEditors.find(typeId, field.descriptor().key()).isPresent())
+                return Optional.of(new Intent(Action.CUSTOM, field.index(), field.bounds(), List.of()));
             if (type == ConfigValueType.INTEGER_VECTOR3) {
                 var row = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(field.bounds(), field.descriptor().serverSource().isPresent());
                 return row.current() != null && row.current().containsExclusive(x, y)

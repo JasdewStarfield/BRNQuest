@@ -127,8 +127,10 @@ public final class BrnQuestApi {
                     OperationResult.noChange("NO_REWARDS", "Quest has no rewards"));
         }
 
-        int changed = 0;
+        int changed = 0, interactive = 0;
         for (var reward : quest.orElseThrow().rewards()) {
+            var type = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId());
+            if (type != null && type.requiresManualClaim(reward.config())) { interactive++; continue; }
             OperationResult result = ProgressEngine.get().claim(player, reward.id());
             if (!result.success()) {
                 // Earlier rewards remain valid and ledgered; report the partial boundary explicitly.
@@ -138,7 +140,10 @@ public final class BrnQuestApi {
             }
             if (result.changed()) changed++;
         }
-        OperationResult result = changed == 0
+        OperationResult result = interactive > 0
+                ? (changed == 0 ? OperationResult.noChange("MANUAL_SELECTION_REQUIRED", "Skipped " + interactive + " interactive rewards; claim them individually")
+                : OperationResult.success("Claimed " + changed + " rewards; skipped " + interactive + " interactive rewards; claim them individually"))
+                : changed == 0
                 ? OperationResult.noChange("ALREADY_CLAIMED", "All rewards were already claimed")
                 : OperationResult.success("Claimed " + changed + " rewards");
         return audited(context, player, "claim_all", questId, result);

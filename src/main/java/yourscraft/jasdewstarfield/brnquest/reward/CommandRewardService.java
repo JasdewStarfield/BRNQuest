@@ -106,6 +106,11 @@ public final class CommandRewardService {
     }
 
     public static RewardClaimResult execute(ServerPlayer player, String key, Prepared prepared) {
+        return execute(player, key, prepared, () -> reconcile(player, key, prepared.rewardId(), prepared.config().feedback()));
+    }
+
+    /** The caller owns reconciliation; composed commands must never enter the top-level command scanner. */
+    public static RewardClaimResult execute(ServerPlayer player, String key, Prepared prepared, Runnable completion) {
         var journal = journal(player);
         int[] callbacks = {0, 0, 0};
         var source = prepared.source().withCallback((success, result) -> {
@@ -116,7 +121,7 @@ public final class CommandRewardService {
             } catch (IOException error) { BRNQuest.LOGGER.error("Command outcome could not be recorded for {}", key, error); }
             // Commands invoked inside another command context may run after performCommand returns.
             // Reconcile later, never recursively from the callback while the outer claim is still active.
-            player.server.tell(new net.minecraft.server.TickTask(player.server.getTickCount(), () -> reconcile(player, key, prepared.rewardId(), prepared.config().feedback())));
+            player.server.tell(new net.minecraft.server.TickTask(player.server.getTickCount(), completion));
         });
         try {
             // The Minecraft execution context supports /function and /execute; dispatcher.execute alone does not.

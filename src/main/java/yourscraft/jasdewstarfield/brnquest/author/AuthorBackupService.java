@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
@@ -97,11 +98,11 @@ public final class AuthorBackupService {
                 .resolve((before.isBlank() ? "EMPTY" : before) + "-" + UUID.randomUUID());
         boolean previousMoved = false;
         try {
-            Files.createDirectories(parent);
+            FileIoTrace.createDirectories(parent);
             copyTree(backup.path(), staging);
             validate(staging, backup.kind(), backup.bookId());
             if (Files.exists(target)) {
-                Files.createDirectories(overwritten.getParent());
+                FileIoTrace.createDirectories(overwritten.getParent());
                 move(target, overwritten);
                 previousMoved = true;
             }
@@ -166,7 +167,7 @@ public final class AuthorBackupService {
     private static ResourceLocation validate(Path path, BackupKind kind, ResourceLocation expectedBook) throws IOException {
         if (kind == BackupKind.DRAFT) {
             if (!Files.isRegularFile(path.resolve("draft.json"))) throw new IOException("Draft backup has no manifest");
-            String manifest = Files.readString(path.resolve("draft.json"), StandardCharsets.UTF_8);
+            String manifest = FileIoTrace.readString(path.resolve("draft.json"), StandardCharsets.UTF_8);
             var value = DraftManifest.decode(com.google.gson.JsonParser.parseString(manifest).getAsJsonObject());
             ResourceLocation bookId = expectedBook == null ? value.bookId() : expectedBook;
             // Legacy canonical drafts remain valid recovery points; reopening them
@@ -230,10 +231,10 @@ public final class AuthorBackupService {
                 if (Files.isSymbolicLink(path)) throw new IOException("Symbolic links are not allowed in backups");
                 Path output = target.resolve(source.relativize(path)).normalize();
                 if (!output.startsWith(target)) throw new IOException("Backup path escaped restore staging");
-                if (Files.isDirectory(path)) Files.createDirectories(output);
+                if (Files.isDirectory(path)) FileIoTrace.createDirectories(output);
                 else {
-                    Files.createDirectories(output.getParent());
-                    Files.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
+                    FileIoTrace.createDirectories(output.getParent());
+                    FileIoTrace.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
                 }
             }
         }
@@ -244,9 +245,9 @@ public final class AuthorBackupService {
         for (int attempt = 1; attempt <= MOVE_ATTEMPTS; attempt++) {
             try {
                 try {
-                    Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+                    FileIoTrace.move(source, target, StandardCopyOption.ATOMIC_MOVE);
                 } catch (AtomicMoveNotSupportedException ignored) {
-                    Files.move(source, target);
+                    FileIoTrace.move(source, target);
                 }
                 return;
             } catch (IOException exception) {
@@ -271,7 +272,7 @@ public final class AuthorBackupService {
         Path parent = allowedParent.toAbsolutePath().normalize();
         if (!resolved.startsWith(parent) || !Files.exists(resolved)) return;
         try (var paths = Files.walk(resolved)) {
-            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) Files.deleteIfExists(path);
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) FileIoTrace.deleteIfExists(path);
         } catch (IOException ignored) {
             // Preserve the primary restore error; the inert staging path remains inspectable.
         }

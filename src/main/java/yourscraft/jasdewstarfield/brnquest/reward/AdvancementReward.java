@@ -7,6 +7,7 @@ import java.util.*;
 
 /** Vanilla award supplies its own completion idempotence and native reward/function side effects. */
 public final class AdvancementReward implements RewardType<Map<String,String>> {
+    public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("advancement")); }
     private static final Set<RewardContext> IN_FLIGHT = new HashSet<>();
     public Optional<RewardClaimHandler> claimHandler() {
         return Optional.of(claim -> {

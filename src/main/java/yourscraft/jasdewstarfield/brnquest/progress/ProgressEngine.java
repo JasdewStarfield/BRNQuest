@@ -94,7 +94,7 @@ public final class ProgressEngine {
         for (QuestDefinition quest : snapshot.book().quests()) {
             QuestStatus status = progress(player).status(quest.id().toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
-                for (RewardDefinition reward : quest.rewards()) if (reward.policy().automatic()
+                for (RewardDefinition reward : quest.rewards()) if (automaticAllowed(reward)
                         && !rewardClaimed(player, reward)) claim(player, reward.id(), reward.policy().notifyPlayer());
             }
         }
@@ -565,6 +565,12 @@ public final class ProgressEngine {
         return current == QuestStatus.ACTIVE ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE;
     }
 
+    /** Interactive types are skipped by every automatic trigger, including restored completions. */
+    private static boolean automaticAllowed(RewardDefinition reward) {
+        var type = RewardTypeRegistry.get(reward.typeId());
+        return reward.policy().automatic() && type != null && !type.requiresManualClaim(reward.config());
+    }
+
     private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
         if (shared(player)) progress.completionMembers(quest.id().toString(),
@@ -577,7 +583,7 @@ public final class ProgressEngine {
                 quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
         // only the trigger differs.
-        quest.rewards().stream().filter(reward -> reward.policy().automatic())
+        quest.rewards().stream().filter(ProgressEngine::automaticAllowed)
                 .forEach(reward -> claim(player, reward.id(), reward.policy().notifyPlayer()));
         // A task-only reset preserves claims; completing it again must not reopen already claimed rewards.
         if (!quest.rewards().isEmpty() && rewardsResolved(quest, progress)) {

@@ -19,7 +19,7 @@ import java.util.*;
 public final class FtbV13Importer {
     // Mapping, diagnostics and conversion reports must recognize the same source aliases.
     private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
-            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill");
+            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill", "all_table", "random", "loot", "choice");
 
     private static String builtInPath(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
@@ -27,8 +27,10 @@ public final class FtbV13Importer {
     }
 
     private final SnbtReader reader = new SnbtReader();
+    private final Map<String, CompoundTag> rewardTables = new HashMap<>();
 
-    public FtbImportResult importBook(Path source, String namespace, String bookPath) {
+    public synchronized FtbImportResult importBook(Path source, String namespace, String bookPath) {
+        rewardTables.clear();
         DiagnosticReport report = new DiagnosticReport();
         ResourceLocation bookId = ResourceLocation.fromNamespaceAndPath(namespace, bookPath);
         List<ChapterGroupDefinition> groups = new ArrayList<>();
@@ -43,6 +45,16 @@ public final class FtbV13Importer {
         Map<String, String> fileExtensions = new TreeMap<>();
 
         try {
+            // Resolve table references before converting any chapter; each use expands into its own snapshot.
+            Path tables = source.resolve("reward_tables");
+            if (Files.isDirectory(tables)) try (var files = Files.list(tables)) {
+                for (Path path : files.filter(p -> p.toString().endsWith(".snbt")).sorted().toList()) {
+                    CompoundTag table = reader.read(path);
+                    String id = table.getString("id");
+                    if (id.isBlank()) id = path.getFileName().toString().replaceFirst("\\.snbt$", "");
+                    if (rewardTables.putIfAbsent(tableKey(id), table) != null) throw new IOException("Duplicate reward table: " + id);
+                }
+            }
             CompoundTag data = reader.read(source.resolve("data.snbt"));
             if (data.getInt("version") != 13) {
                 report.add(problem(Diagnostic.Severity.FATAL, "BQF-001", "data.snbt", "version", "",
@@ -343,6 +355,15 @@ public final class FtbV13Importer {
         List<RewardDefinition> result = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) {
             CompoundTag raw = list.getCompound(i);
+            result.add(readReward(raw, bookId, namespace, translations, aliases, file, quest, defaultAutoClaim, report, conversions));
+        }
+        return result;
+    }
+
+    /** Shared single-reward conversion used by roots and table entries. */
+    private RewardDefinition readReward(CompoundTag raw, ResourceLocation bookId, String namespace,
+            Map<String,String> translations, Map<String,ResourceLocation> aliases, String file, String quest,
+            String defaultAutoClaim, DiagnosticReport report, List<FtbFieldConversion> conversions) {
             String legacy = raw.getString("id");
             String type = raw.getString("type");
             validateCount(raw, file, "quests[" + quest + "].rewards[" + legacy + "]", legacy, report);
@@ -350,6 +371,12 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].rewards[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("auto", "team_reward"));
+            if (Set.of("all_table", "random", "loot", "choice").contains(builtInPath(type))) {
+                try { config.put("table", convertRewardTable(raw, bookId, namespace, translations, file, quest, report, conversions)); }
+                catch (RuntimeException error) {
+                    report.add(problem(Diagnostic.Severity.ERROR, "BQF-108", file, "rewards[" + legacy + "].table", legacy, error.getMessage()));
+                }
+            }
             advancementFields(mappedType, raw, config);
             if (mappedType.equals(yourscraft.jasdewstarfield.brnquest.reward.RewardTypes.COMMAND)) {
                 // FTB field values are semantic strings/booleans here, not their quoted SNBT representation.
@@ -380,10 +407,91 @@ public final class FtbV13Importer {
             String policy = rewardPolicy(ftbAuto, defaultAutoClaim);
             conversions.add(new FtbFieldConversion(file, "quests[" + quest + "].rewards[" + legacy + "]",
                     "auto", "claim_policy", FtbFieldConversion.Status.MAPPED, ftbAuto + " -> " + policy));
-            result.add(new RewardDefinition(bookId, remember(namespace, legacy, aliases), mappedType, config,
-                    policy, raw.getBoolean("team_reward")));
+            return new RewardDefinition(bookId, remember(namespace, legacy, aliases), mappedType, config,
+                    policy, raw.getBoolean("team_reward"));
+    }
+
+    // Active recursion stack rejects real cycles but permits independent copies of a shared source table.
+    private final Set<String> activeTableReferences = new HashSet<>();
+    private int tableDepth, tableNodes;
+    /** Recursive snapshots preserve source fields and reject cycles, unsupported leaves and degenerate draws. */
+    private String convertRewardTable(CompoundTag root, ResourceLocation book, String namespace,
+            Map<String,String> translations, String file, String quest, DiagnosticReport report, List<FtbFieldConversion> conversions) {
+        String reference = root.contains("table_id", Tag.TAG_ANY_NUMERIC)
+                ? Long.toUnsignedString(root.getLong("table_id"), 16) : root.getString("table_id");
+        CompoundTag table = rewardTables.get(tableKey(reference));
+        if (table == null && root.contains("table_data", Tag.TAG_COMPOUND)) table = root.getCompound("table_data");
+        if (table == null) throw new IllegalArgumentException("Missing reward table " + reference);
+        if(tableDepth==0)tableNodes=0;
+        String identity=reference.isBlank()?"inline:"+System.identityHashCode(table):tableKey(reference);
+        if(tableDepth>=8 || ++tableNodes>256 || !activeTableReferences.add(identity))
+            throw new IllegalArgumentException("Reward table cycle or depth/node budget at "+quest+"/"+reference);
+        tableDepth++;
+        try {
+        var document = new com.google.gson.JsonObject();
+        String mode = builtInPath(root.getString("type"));
+        boolean random = mode.equals("random") || mode.equals("loot");
+        document.addProperty("version", 1); document.addProperty("mode", random ? "random" : mode.equals("choice") ? "choice" : "all");
+        double totalWeight = 0;
+        if (random) {
+            // FTB readData uses getInt, so missing loot_size means zero; silently defaulting it would create rewards.
+            if (!table.contains("loot_size", Tag.TAG_ANY_NUMERIC) || table.getDouble("loot_size") != table.getInt("loot_size")
+                    || table.getInt("loot_size") < 1 || table.getInt("loot_size") > 64)
+                throw new IllegalArgumentException("Missing or invalid loot_size; author must choose rolls 1..64");
+            if (table.contains("empty_weight") && (!table.contains("empty_weight", Tag.TAG_ANY_NUMERIC)
+                    || !Float.isFinite(table.getFloat("empty_weight")) || table.getDouble("empty_weight") < 0))
+                throw new IllegalArgumentException("Invalid source empty_weight");
+            double empty = builtInPath(root.getString("type")).equals("loot") ? table.getFloat("empty_weight") : 0;
+            document.addProperty("rolls", table.getInt("loot_size")); document.addProperty("replacement", true);
+            document.addProperty("empty_weight", empty); totalWeight = empty;
+            conversions.add(new FtbFieldConversion(file, "rewards[" + root.getString("id") + "].table",
+                    "loot_size/empty_weight", "config.table.rolls/empty_weight", FtbFieldConversion.Status.MAPPED,
+                    "FTB random ignores empty_weight; loot includes it; draws use replacement"));
         }
-        return result;
+        document.addProperty("ftb.table_id", reference); document.addProperty("ftb.source", table.toString());
+        var entries = new com.google.gson.JsonArray();
+        ListTag rewards = table.getList("rewards", Tag.TAG_COMPOUND);
+        for (int i = 0; i < rewards.size(); i++) {
+            CompoundTag child = rewards.getCompound(i).copy();
+            String sourceId = child.getString("id");
+            String type = child.getString("type");
+            if (type.isBlank()) { type = "item"; child.putString("type", type); }
+            if(!Set.of("all_table","choice","random","loot").contains(builtInPath(type)) && ++tableNodes>256)throw new IllegalArgumentException("Reward table node budget at "+quest);
+            if (child.getBoolean("team_reward") || (!child.getString("auto").isBlank()
+                    && !Set.of("default", "disabled").contains(child.getString("auto"))))
+                throw new IllegalArgumentException("root/entry_" + i + ": child claim policy cannot be promoted to root");
+            // Child aliases stay local and cannot replace the top-level legacy ID map.
+            if (sourceId.isBlank()) child.putString("id", "entry_" + i);
+            var converted = readReward(child, book, namespace, translations, new HashMap<>(), file,
+                    quest + "/table/entry_" + i, "disabled", report, conversions);
+            var entry = new com.google.gson.JsonObject();
+            entry.addProperty("entry_id", "entry_" + i); entry.addProperty("type", converted.typeId().toString());
+            entry.addProperty("ftb.reward_id", sourceId);
+            var config = new com.google.gson.JsonObject(); converted.config().forEach(config::addProperty);
+            if(converted.typeId().toString().equals("brnquest:reward_table")) {
+                entry.add("table",yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(converted.config().get("table")).document());
+                config.remove("table");
+            }
+            entry.add("config", config);
+            if (child.contains("weight") && !child.contains("weight", Tag.TAG_ANY_NUMERIC))
+                throw new IllegalArgumentException("Non-numeric source weight at root/entry_" + i);
+            double weight = child.contains("weight") ? child.getFloat("weight") : 1;
+            if (!Double.isFinite(weight) || weight < 0) throw new IllegalArgumentException("Invalid source weight at root/entry_" + i);
+            // FTB accumulates floats: diagnose its overflow even when a double sum would still be finite.
+            totalWeight = (float) (totalWeight + weight);
+            entry.addProperty("weight", weight == 0 ? 1 : weight); entry.addProperty("always", weight == 0);
+            entries.add(entry);
+            conversions.add(new FtbFieldConversion(file, "rewards[" + root.getString("id") + "].table.entry_" + i,
+                    sourceId, "config.table.entries[" + i + "]", FtbFieldConversion.Status.MAPPED, "Independent table snapshot; zero weight becomes guaranteed"));
+        }
+        if (random && (!Double.isFinite(totalWeight) || totalWeight <= 0))
+            throw new IllegalArgumentException("FTB non-positive/overflowing total weight has degenerate semantics; author review required");
+        document.add("entries", entries);
+        return yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(document.toString()).encode();
+        } finally { tableDepth--;activeTableReferences.remove(identity); }
+    }
+    private static String tableKey(String value) {
+        return value.toLowerCase(Locale.ROOT).replaceFirst("^0+(?!$)", "");
     }
 
     /** Advancement identifiers and criteria are semantic strings, not quoted SNBT literals. */
@@ -507,6 +615,7 @@ public final class FtbV13Importer {
     private ResourceLocation typeId(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         String builtInPath = builtInPath(type);
+        if (Set.of("all_table", "random", "loot", "choice").contains(builtInPath)) return yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID;
         if (builtInPath.equals("observation")) return yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE;
         if (builtInPath.equals("kill")) return yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL;
         if (BUILT_IN_TYPES.contains(builtInPath)) {

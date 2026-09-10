@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.workspace;
 
+import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import net.minecraft.server.MinecraftServer;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine;
@@ -50,7 +51,7 @@ public final class WorkspaceDeploymentService {
         if (Files.exists(target) && !replace) return new DeploymentResult(Status.ALREADY_DEPLOYED, target, null, 0);
 
         Path datapacks = target.getParent();
-        Files.createDirectories(datapacks);
+        FileIoTrace.createDirectories(datapacks);
         // A unique sibling prevents concurrent or interrupted deployments from
         // confusing one another, while keeping the final move on one filesystem.
         Path staging = datapacks.resolve("." + WorkspacePaths.PACK_DIRECTORY + ".staging-" + UUID.randomUUID());
@@ -64,7 +65,7 @@ public final class WorkspaceDeploymentService {
             if (Files.exists(target)) {
                 // Keep backups outside datapacks so Minecraft cannot discover stale copies as packs.
                 Path backupRoot = datapacks.getParent().resolve("brnquest-backups");
-                Files.createDirectories(backupRoot);
+                FileIoTrace.createDirectories(backupRoot);
                 backup = availableBackupPath(backupRoot);
                 move(target, backup);
                 previousMoved = true;
@@ -155,10 +156,10 @@ public final class WorkspaceDeploymentService {
                 Path relative = source.relativize(path);
                 Path output = target.resolve(relative).normalize();
                 if (!output.startsWith(target)) throw new IOException("Workspace path escaped deployment target");
-                if (Files.isDirectory(path)) Files.createDirectories(output);
+                if (Files.isDirectory(path)) FileIoTrace.createDirectories(output);
                 else {
-                    Files.createDirectories(output.getParent());
-                    Files.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
+                    FileIoTrace.createDirectories(output.getParent());
+                    FileIoTrace.copy(path, output, StandardCopyOption.COPY_ATTRIBUTES);
                     count[0]++;
                 }
             }
@@ -190,8 +191,8 @@ public final class WorkspaceDeploymentService {
     }
 
     private static void moveOnce(Path source, Path target) throws IOException {
-        try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
+        try { FileIoTrace.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
+        catch (AtomicMoveNotSupportedException ignored) { FileIoTrace.move(source, target); }
     }
 
     private static void deleteTree(Path root) throws IOException {

@@ -59,7 +59,7 @@ public final class LiveEditGameTests {
             helper.assertTrue(!sessions.openLive(ordinary, bookId).success(), "ordinary players cannot enter live editing");
             // An existing advanced draft must remain untouched and must not become the live editor's source.
             var savedDraft = new DraftService().createEmpty(admin, bookId, "Unfinished advanced draft");
-            helper.assertTrue(savedDraft.success(), "independent advanced draft created");
+            helper.assertTrue(savedDraft.success(), "independent advanced draft created: " + savedDraft.code() + " " + savedDraft.message());
             var opened = sessions.openLive(admin, bookId);
             helper.assertTrue(opened.success(), "live session opens on published content");
             var token = opened.value().sessionId();

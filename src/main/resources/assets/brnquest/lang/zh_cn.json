@@ -1,4 +1,7 @@
 {
+  "screen.brnquest.type.reward.loot_table": "原生战利品表",
+  "screen.brnquest.loot_table.id": "战利品表 ID",
+  "screen.brnquest.loot_table.help": "按领取玩家、位置和幸运值在服务端抽取一次，预览不试抽。需要被击杀实体、伤害来源或工具的表不可使用；空结果也会消耗本次领取。",
   "screen.brnquest.choice.title": "选择一项奖励",
   "screen.brnquest.choice.hint": "先选中一项，再确认领取；关闭可稍后继续",
   "screen.brnquest.choice.more": "加载更多选项",

@@ -11,6 +11,11 @@ public interface ComposableReward {
     default void validateConfig(Map<String, String> config) {}
     /** Persistable prepared data. Validate resources, quantities and permissions here, without granting rewards. */
     Map<String, String> prepare(RewardLeafContext context) throws Exception;
+    /** Freeze one selected occurrence after validation; may draw random data, but must not grant effects.
+     * The coordinator persists this result and never calls it when resuming that occurrence. */
+    default Map<String, String> freeze(RewardLeafContext context) throws Exception {
+        return prepare(context);
+    }
     /** Execute once after a forced STARTED record; PENDING stops every later leaf. */
     RewardClaimResult execute(RewardLeafContext context, Map<String, String> prepared) throws Exception;
     /** Only durable external evidence may turn a started leaf into success after interruption. */

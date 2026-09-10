@@ -49,6 +49,13 @@ def prepareAdvancementGameTestFixture = tasks.register('prepareAdvancementGameTe
     into gameTestRunDirectory.dir('world/datapacks/brnquest_f3')
 }
 prepareGameTestFixture.configure { dependsOn prepareAdvancementGameTestFixture }
+// Native loot fixtures are copied only into the isolated automated world, never the distributed resources.
+def prepareLootGameTestFixture = tasks.register('prepareLootGameTestFixture', Copy) {
+    dependsOn resetGameTestBrnQuestState
+    from layout.projectDirectory.dir('src/test/resources/fixtures/loot_pack')
+    into gameTestRunDirectory.dir('world/datapacks/brnquest_f6')
+}
+prepareGameTestFixture.configure { dependsOn prepareLootGameTestFixture }
 
 def resetKubeJsSmokeState = tasks.register('resetKubeJsSmokeState', Delete) {
     delete kubeJsSmokeRunDirectory.dir('config/brnquest'), kubeJsSmokeRunDirectory.dir('world'),

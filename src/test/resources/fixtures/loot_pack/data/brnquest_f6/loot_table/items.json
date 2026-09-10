@@ -1,0 +1,6 @@
+{
+  "type": "minecraft:chest",
+  "pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:diamond",
+    "functions": [{"function": "minecraft:set_count", "count": 3},
+      {"function": "minecraft:set_components", "components": {"minecraft:custom_name": "\"Frozen diamond\""}}]}]}]
+}

@@ -1,6 +1,6 @@
 # Reward tables
 
-`brnquest:reward_table` supports nested `all`, `random` and `choice` tables: items, XP, XP levels, commands, advancements, built-in custom acknowledgement, and explicitly opted-in Java rewards. Unadapted scripts remain unavailable for composition.
+`brnquest:reward_table` supports nested `all`, `random` and `choice` tables: items, XP, XP levels, commands, advancements, native loot tables, built-in custom acknowledgement, and explicitly opted-in Java rewards. Unadapted scripts remain unavailable for composition.
 
 Add a reward table and optionally set its **Display title** in the outer properties; leave it blank for the default name. Open **Edit configuration**, click **Add entry**, and select a type from the list. Both entries and property forms scroll with the mouse wheel. Click an entry to edit it, or right-click / use **More actions** to change type, reorder, duplicate or delete. Copies receive fresh stable IDs; reordering preserves IDs. Changing type starts with the new type's defaults; cancelling keeps the original entry. Child confirmation changes only the parent table draft; cancelling the table discards changes. After confirming, submit the outer reward properties and book draft. Ordinary edits preserve unknown fields; unsupported tree versions remain read-only.
 
@@ -49,3 +49,5 @@ The entry type picker includes reward tables. Give each child its own title and 
 Repeated draws of a subtable create independent occurrences. Confirm each pending choice path in sequence: no effects run until every required choice is resolved. Closing/reconnecting never selects a default or rerolls. New attempts use journal version 2; existing version 1 attempts retain their recovery behavior. Do not delete old receipts.
 
 Limits are 8 table levels including the root, 256 configuration nodes, 1024 worst-case expanded leaves, 16384 expanded table/leaf nodes and the existing 2 MiB receipt budget. Exceeding a limit rejects the attempt without truncation. Repeated FTB references become independent snapshots; true cycles are rejected. Administrator status shows pending choice paths and leaf occurrences; acknowledgement/retry still targets one stopped leaf without replaying the package.
+
+See [native loot table rewards](LOOT_TABLE_REWARDS.md) for leaf configuration and context limits.

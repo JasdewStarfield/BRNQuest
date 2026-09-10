@@ -33,7 +33,7 @@ final class RewardTableCommands {
         try {
             var player = EntityArgument.getPlayer(command, "player");
             var reward = BrnQuestApi.getReward(StringArgumentType.getString(command, "reward")).orElseThrow();
-            if (!reward.typeId().equals(RewardTableReward.ID)) throw new IllegalArgumentException("Not a reward table");
+            if (!reward.typeId().equals(RewardTableReward.ID) && !reward.typeId().equals(LootTableReward.ID)) throw new IllegalArgumentException("Reward does not use the table coordinator");
             var quest = QuestBookManager.get().active().orElseThrow().book().quests().stream()
                     .filter(q -> q.rewards().stream().anyMatch(r -> r.id().equals(reward.id()))).findFirst().orElseThrow();
             var progress = ProgressEngine.get().progress(player);

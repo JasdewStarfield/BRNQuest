@@ -25,6 +25,8 @@ public final class RewardTypeRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(LootTableReward.ID, new LootTableReward());
+        LootTableReward.registerFieldSource();
         register(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward());
         register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementReward());
         register(RewardTypes.COMMAND, new CommandReward());
@@ -99,33 +101,13 @@ public final class RewardTypeRegistry {
                 int multiplier = Integer.parseInt(config.count.replaceAll("[^0-9-]", ""));
                 if (multiplier > 1) stack.setCount(stack.getCount() * multiplier);
                 if (stack.isEmpty()) return RewardResult.failure("Invalid item reward");
-                ItemStack delivered = stack.copy();
-                int before = matchingCount(player, delivered);
-                player.getInventory().add(stack);
-                int inserted = Math.max(0, matchingCount(player, delivered) - before);
-                int remainder = Math.max(0, delivered.getCount() - inserted);
-                // Creative inventories clear an uninserted remainder, and Inventory.add's
-                // boolean does not report a full fit. Reconstruct the remainder from the actual
-                // inventory delta so both survival and creative players receive every item.
-                if (remainder > 0) {
-                    // Reward overflow is a server delivery fallback, not a player toss. Bypass
-                    // the cancellable toss event so another mod cannot silently void the reward.
-                    player.drop(delivered.copyWithCount(remainder), false, false);
-                }
+                ItemRewardDelivery.deliver(player, stack);
                 return RewardResult.success("Item reward delivered");
             } catch (Exception exception) {
                 return RewardResult.failure(exception.getMessage());
             }
         }
 
-        private int matchingCount(net.minecraft.server.level.ServerPlayer player, ItemStack expected) {
-            int total = 0;
-            for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-                ItemStack candidate = player.getInventory().getItem(slot);
-                if (ItemStack.isSameItemSameComponents(candidate, expected)) total += candidate.getCount();
-            }
-            return total;
-        }
     }
 
     /** Experience rewards remain separate IDs because FTB stores points and levels separately. */

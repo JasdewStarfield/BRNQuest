@@ -20,6 +20,20 @@ public final class ClientRewardPresentationRegistry {
     private static volatile boolean frozen;
 
     static {
+        register(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID, new ClientRewardPresentation() {
+            public String symbol(RewardView reward) { return "▣"; }
+            public Component interactionHint(RewardPresentationContext context) {
+                if (!context.claimed() && !context.claimable()) return title(context);
+                return RewardTableClientState.hint(context.reward().id().toString(), context.claimed());
+            }
+            public Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.loot_table"); }
+            public Component title(RewardPresentationContext context) {
+                String title = context.reward().config().getOrDefault("title", "");
+                return title.isBlank() ? typeName(context.reward()).copy().append(" · ")
+                        .append(context.reward().config().getOrDefault("loot_table", "")) : Component.literal(title);
+            }
+            // A single loot-table reference has no candidate browser; rules belong to the editor field help.
+        });
         register(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "▤"; }
             public Component interactionHint(RewardPresentationContext context) {

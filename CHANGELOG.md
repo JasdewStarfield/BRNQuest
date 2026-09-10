@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 修复首次加载世界时奖励类型初始化晚于字段来源冻结、导致原生战利品选择器注册失败的问题。
+- Fixed first-world loading when reward types initialized after field sources had already frozen, preventing the native loot picker from registering.
+
+- 新增原生战利品表奖励：服务端表选择、领取上下文校验、组件完整的固定结果、空结果消耗及奖励表组合；API experimental.15 将随机结果固定与重复预检分离，协议仍为 18。
+- Added native loot-table rewards with server-backed selection, context validation, persisted item components, consumed empty results and reward-table composition. API experimental.15 separates frozen draws from repeatable validation; protocol remains 18.
+
 - 奖励表预览显示条目的物品名称与实际数量、经验点数/等级，保留自定义标题，嵌套条目同样生效。
 - Reward-table previews show item names and effective counts, XP points or levels, while preserving custom titles throughout nested tables.
 - 奖励表支持受控嵌套与多步自选，所有选择完成后才执行；递归 FTB 导入拒绝循环，协议升级为 18。单元测试临时目录默认位于工作区外。

@@ -1,4 +1,7 @@
 {
+  "screen.brnquest.type.reward.loot_table": "Native loot table",
+  "screen.brnquest.loot_table.id": "Loot table ID",
+  "screen.brnquest.loot_table.help": "Draw once on the server using the claiming player, position and luck. Preview does not draw. Tables requiring a victim, damage source or tool are unavailable. Empty results consume the claim.",
   "screen.brnquest.choice.title": "Choose one reward",
   "screen.brnquest.choice.hint": "Select an option, then confirm. Close to choose later.",
   "screen.brnquest.choice.more": "Load more options",

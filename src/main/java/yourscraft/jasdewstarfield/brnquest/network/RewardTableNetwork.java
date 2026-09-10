@@ -39,7 +39,7 @@ public final class RewardTableNetwork {
             if (snapshot == null || !snapshot.revision().equals(query.revision())) return;
             var id = ResourceLocation.tryParse(query.reward()); if (id == null) return;
             for (var quest : snapshot.book().quests()) for (var reward : quest.rewards()) {
-                if (!reward.id().equals(id) || !reward.typeId().equals(RewardTableReward.ID)) continue;
+                if (!reward.id().equals(id) || (!reward.typeId().equals(RewardTableReward.ID) && !reward.typeId().equals(LootTableReward.ID))) continue;
                 String state;
                 try {
                     var progress = yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine.get().progress(player);

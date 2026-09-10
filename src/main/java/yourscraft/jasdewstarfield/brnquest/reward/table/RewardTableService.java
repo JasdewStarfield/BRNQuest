@@ -37,10 +37,29 @@ public final class RewardTableService {
                 + (root.reward().teamReward() ? "shared" : root.player().getUUID());
     }
     public static RewardClaimResult claim(RewardClaimContext context) {
+        return claim(context, () -> RewardTableTree.parse(context.rewardContext().reward().config().get("table")));
+    }
+    /** A standalone composable reward uses the same real root identity and durable leaf coordinator. */
+    public static RewardClaimResult claimSingle(RewardClaimContext context) {
+        return claim(context, () -> {
+            var reward = context.rewardContext().reward();
+            var entry = new com.google.gson.JsonObject();
+            entry.addProperty("entry_id", "reward");
+            entry.addProperty("type", reward.typeId().toString());
+            var config = new com.google.gson.JsonObject();
+            reward.config().forEach(config::addProperty);
+            entry.add("config", config);
+            var entries = new com.google.gson.JsonArray(); entries.add(entry);
+            var table = new com.google.gson.JsonObject();
+            table.addProperty("version", 1); table.addProperty("mode", "all"); table.add("entries", entries);
+            return RewardTableTree.parse(table.toString());
+        });
+    }
+    private static RewardClaimResult claim(RewardClaimContext context, java.util.function.Supplier<RewardTableTree> tree) {
         String key = key(context);
         if (!IN_FLIGHT.add(key)) return RewardClaimResult.pending("TABLE_EXECUTING", "Reward table already executing");
         try {
-            var result = advance(context, key);
+            var result = advance(context, key, tree);
             if (result.state() == RewardClaimResult.State.FAILURE) context.rewardContext().player().displayClientMessage(
                     net.minecraft.network.chat.Component.literal(result.code() + ": " + result.message()), false);
             return result;
@@ -61,13 +80,13 @@ public final class RewardTableService {
                     player.experienceProgress, player.totalExperience, player.experienceLevel));
         }
     }
-    private static RewardClaimResult advance(RewardClaimContext context, String key) throws Exception {
+    private static RewardClaimResult advance(RewardClaimContext context, String key, java.util.function.Supplier<RewardTableTree> source) throws Exception {
         var player = context.rewardContext().player();
         var journal = journal(player);
         Attempt attempt = journal.read(key);
         if (attempt == null) {
             if (CONFIRMATION.get() != null) throw new IllegalArgumentException("Choice attempt no longer exists for this owner/cycle");
-            var tree = RewardTableTree.parse(context.rewardContext().reward().config().get("table"));
+            var tree = source.get();
             String id = UUID.randomUUID().toString();
             var snapshot = tree.document();
             preflight(snapshot, "root", context, id);
@@ -180,7 +199,11 @@ public final class RewardTableService {
             var config=type.normalizeConfig(RewardTableTree.config(entry));
             yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec.decode(type.configCodec(),config).getOrThrow();
             var normalized=new com.google.gson.JsonObject();config.forEach(normalized::addProperty);entry.add("config",normalized);
-            prepare(context,id,entry,path,path+"/preflight");
+            try {
+                // Validate all candidates without drawing loot for an unselected or repeatedly checked branch.
+                type.composition().orElseThrow().prepare(new RewardLeafContext(context,path,id+"/"+path+"/preflight",
+                        ResourceLocation.parse(entry.get("type").getAsString()),config));
+            } catch (Exception error) { throw new IllegalArgumentException(path+": "+error.getMessage(),error); }
         }
     }
     private static Leaf prepare(RewardClaimContext context,String id,com.google.gson.JsonObject entry,String path,String occurrence) {
@@ -189,7 +212,7 @@ public final class RewardTableService {
             var adapter=RewardTypeRegistry.get(typeId).composition().orElseThrow();
             var config=RewardTableTree.config(entry);
             var leafContext=new RewardLeafContext(context,path,id+"/"+occurrence,typeId,config);
-            var prepared=adapter.prepare(leafContext);
+            var prepared=adapter.freeze(leafContext);
             return new Leaf(path,leafContext.occurrenceId(),typeId.toString(),config,prepared,adapter.version(),
                     LeafState.NOT_STARTED,0,0,System.currentTimeMillis(),"Prepared without effects");
         } catch(Exception error) { throw new IllegalArgumentException(path+": "+error.getMessage(),error); }

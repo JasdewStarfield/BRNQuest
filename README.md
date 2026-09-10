@@ -32,6 +32,7 @@ The `docs/` directory contains only public user, administrator, and extension-au
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
 - 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)
 - 奖励表配置、嵌套与领取恢复：[中文](docs/REWARD_TABLES_zh.md) / [English](docs/REWARD_TABLES.md)
+- 原生战利品表、上下文与固定生成结果：[中文](docs/LOOT_TABLE_REWARDS_zh.md) / [English](docs/LOOT_TABLE_REWARDS.md)
 - 文件读写故障日志与问题反馈：[`docs/FILE_IO_DIAGNOSTICS_zh.md`](docs/FILE_IO_DIAGNOSTICS_zh.md)
 - KubeJS 服务端脚本全局 API：[`docs/KUBEJS_API_zh.md`](docs/KUBEJS_API_zh.md)
 - OPAC 队伍进度、奖励资格、存档升级与降级行为：[`docs/OPAC_INTEGRATION_zh.md`](docs/OPAC_INTEGRATION_zh.md)

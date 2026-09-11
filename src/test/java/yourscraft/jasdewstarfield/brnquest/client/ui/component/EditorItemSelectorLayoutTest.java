@@ -6,6 +6,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class EditorItemSelectorLayoutTest {
+    @Test void sharedSlotEdgesSelectOnlyTheNextSlot() {
+        EditorItemSelectorLayout layout = new EditorItemSelectorLayout(320, 240);
+        // Include the outer border, but never let adjacent slots both claim the same pixel.
+        assertEquals(9, layout.inventoryIndexAt(79, 100));
+        assertEquals(9, layout.inventoryIndexAt(96.99, 100));
+        assertEquals(10, layout.inventoryIndexAt(97, 100));
+        assertEquals(18, layout.inventoryIndexAt(79, 118));
+        assertEquals(-1, layout.inventoryIndexAt(241, 100));
+        assertEquals(-1, layout.inventoryIndexAt(79, 176));
+    }
+
     @Test void mapsVanillaMainInventoryAndHotbarOrder() {
         EditorItemSelectorLayout layout = new EditorItemSelectorLayout(320, 240);
 

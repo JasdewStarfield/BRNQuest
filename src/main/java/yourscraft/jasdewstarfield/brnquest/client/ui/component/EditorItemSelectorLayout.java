@@ -35,7 +35,7 @@ public record EditorItemSelectorLayout(int screenWidth, int screenHeight) {
 
     public int inventoryIndexAt(double mouseX, double mouseY) {
         for (int index = 0; index < 36; index++) {
-            if (inventorySlot(index).contains(mouseX, mouseY)) return index;
+            if (inventorySlot(index).containsExclusive(mouseX, mouseY)) return index;
         }
         return -1;
     }

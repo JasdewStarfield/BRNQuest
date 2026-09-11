@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow;
@@ -27,6 +28,8 @@ public final class EditorQuestBehaviorScreen extends Screen {
             "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon",
             "sequential_tasks", "repeatable", "ignore_reward_blocking");
 
+    // Shared input feedback follows the same rendered geometry as every form button.
+    private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final Consumer<QuestBehavior> consumer;
     private final List<Boolean> booleans = new ArrayList<>();
@@ -57,6 +60,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     @Override
     protected void init() {
+        buttons.begin(); buttons.clearFocus();
         if (visibleAfterTasks != null && parse(visibleAfterTasks) != null) visibleAfterTasksValue = parse(visibleAfterTasks);
         if (minimumDependencies != null && parse(minimumDependencies) != null) minimumDependenciesValue = parse(minimumDependencies);
         if (cooldownSeconds != null && parse(cooldownSeconds) != null) cooldownSecondsValue = parse(cooldownSeconds);
@@ -82,6 +86,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        buttons.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         graphics.pose().pushPose();
         // Match the other modal editor surfaces: authored items use raised render depth, so the modal must be higher.
@@ -94,7 +99,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
                 title, 0xFFFFFFFF, List.of(),
                 new EditorPropertyPanel.Footer(cancelBounds(), applyBounds(), Component.translatable("gui.done"),
                         valid(), EditorButton.Tone.PRIMARY),
-                (target, bounds, text, enabled, tone) -> EditorButton.renderInteractive(target, font, bounds,
+                (target, bounds, text, enabled, tone) -> buttons.render(target, font, bounds,
                         EditorButton.Definition.text(text, null), enabled, false, tone, mouseX, mouseY));
 
         UiRect viewport = viewport();
@@ -106,6 +111,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
                 contentHeight(), viewport.height(), elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
 
         hideNumberFields();
+        buttons.viewport(viewport, 0);
         graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
         for (int row = 0; row < ROW_COUNT; row++) {
             UiRect bounds = rowBounds(row);
@@ -118,6 +124,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
             else if (row == 11) renderNumber(graphics, cooldownSeconds, "repeat_cooldown_seconds", bounds, mouseX, mouseY, partialTick);
         }
         graphics.disableScissor();
+        buttons.viewport(null, 0);
         if (requirementDropdownOpen) renderRequirementDropdown(graphics, mouseX, mouseY);
         graphics.pose().popPose();
     }
@@ -127,7 +134,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
         EditorPropertyRow.label(graphics, font,
                 Component.translatable("screen.brnquest.editor.behavior." + BOOLEAN_KEYS.get(index)),
                 layout.label(), null);
-        EditorButton.renderInteractive(graphics, font, layout.field(), EditorButton.Definition.text(
+        buttons.render(graphics, font, layout.field(), EditorButton.Definition.text(
                         Component.translatable(booleans.get(index) ? "options.on" : "options.off"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
@@ -144,18 +151,20 @@ public final class EditorQuestBehaviorScreen extends Screen {
         EditorPropertyRow.label(graphics, font,
                 Component.translatable("screen.brnquest.editor.behavior.dependency_requirement"),
                 layout.label(), null);
-        EditorButton.renderInteractive(graphics, font, layout.field(), EditorButton.Definition.text(
+        buttons.render(graphics, font, layout.field(), EditorButton.Definition.text(
                         Component.literal(requirement.serializedName() + " ▾"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     private void renderRequirementDropdown(GuiGraphics graphics, int mouseX, int mouseY) {
+        // Only the foreground menu owns feedback while it covers form controls.
+        buttons.begin();
         UiRect menu = dropdownBounds();
         DependencyRequirement[] values = DependencyRequirement.values();
         for (int index = 0; index < values.length; index++) {
             UiRect option = new UiRect(menu.left(), menu.top() + index * 20,
                     menu.right(), menu.top() + (index + 1) * 20);
-            EditorButton.renderInteractive(graphics, font, option,
+            buttons.render(graphics, font, option,
                     EditorButton.Definition.text(Component.literal(values[index].serializedName()), null),
                     true, values[index] == requirement, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
@@ -169,6 +178,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        buttons.clicked(mouseX, mouseY, button);
         if (button == 0 && requirementDropdownOpen) {
             int option = dropdownOptionAt(mouseX, mouseY);
             if (option >= 0) {
@@ -177,6 +187,8 @@ public final class EditorQuestBehaviorScreen extends Screen {
                 return true;
             }
             requirementDropdownOpen = false;
+            // Dismissing the foreground menu must not activate a covered form button.
+            return true;
         }
         if (button == 0 && cancelBounds().contains(mouseX, mouseY)) { onClose(); return true; }
         if (button == 0 && applyBounds().contains(mouseX, mouseY) && valid()) { apply(); return true; }

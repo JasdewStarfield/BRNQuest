@@ -4,6 +4,16 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 public final class TransientScreenLifecycle {
     private boolean openingChild;
     public void prepareChild() { openingChild = true; }
+    /** Arm suspension before setScreen invokes the parent's removed callback, and clear failed transitions. */
+    public void openChild(Runnable transition) {
+        prepareChild();
+        try {
+            transition.run();
+        } catch (RuntimeException | Error failure) {
+            openingChild = false;
+            throw failure;
+        }
+    }
     public boolean consumeRemoval() {
         boolean suspended = openingChild;
         openingChild = false;

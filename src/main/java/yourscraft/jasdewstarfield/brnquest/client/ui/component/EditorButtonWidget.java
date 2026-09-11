@@ -11,6 +11,12 @@ public final class EditorButtonWidget extends Button {
         super(x, y, width, height, label, action, DEFAULT_NARRATION);
     }
 
+    @Override public void onPress() {
+        // The native Button input path already plays the click sound; do not play a second one here.
+        EditorButtonFeedback.pulse(new UiRect(getX(), getY(), getX()+getWidth(), getY()+getHeight()));
+        super.onPress();
+    }
+
     @Override protected void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // Only replace paint: the Screen still owns tab order and dispatches each activation once.
         EditorButton.render(graphics, Minecraft.getInstance().font,

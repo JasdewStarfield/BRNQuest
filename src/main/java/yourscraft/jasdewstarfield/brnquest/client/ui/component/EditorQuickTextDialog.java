@@ -26,7 +26,7 @@ public final class EditorQuickTextDialog {
         return new Layout(dialog, input, cancel, apply);
     }
 
-    public static void render(GuiGraphics graphics, Font font, QuestScreenLayout screenLayout,
+    public static void render(GuiGraphics graphics, Font font, QuestScreenLayout screenLayout, EditorButtonInput buttons,
                               Component title, Component issue, boolean applyEnabled,
                               int mouseX, int mouseY) {
         Layout layout = layout(screenLayout);
@@ -41,10 +41,10 @@ public final class EditorQuickTextDialog {
                             issue.getString(), layout.dialog().width() - 24)),
                     layout.dialog().left() + 12, layout.dialog().top() + 54, 0xFFFF8B8B, false);
         }
-        EditorButton.renderInteractive(graphics, font, layout.cancel(),
+        buttons.render(graphics, font, layout.cancel(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, layout.apply(),
+        buttons.render(graphics, font, layout.apply(),
                 EditorButton.Definition.text(Component.translatable("gui.done"), null),
                 applyEnabled, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }

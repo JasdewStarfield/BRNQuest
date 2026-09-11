@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
@@ -20,6 +21,20 @@ public final class TagChoiceScreen extends Screen {
     private static final int PANEL_HEIGHT = 178;
     private static final int ROW_HEIGHT = 18;
 
+    /** Tab focuses actions; activation reuses the pointer route and never moves real inventory stacks. */
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        if (key != 258 && list.navigate(key, (modifiers & 1) != 0)) { buttonInput.clearFocus(); return true; }
+        if (key == 258) list.clearFocus();
+        if ((key == 257 || key == 335) && list.focusedRow().isPresent()) {
+            selectionConsumer.accept(list.focusedRow().orElseThrow().key()); onClose(); return true;
+        }
+        if (buttonInput.keyPressed(key, (modifiers & 1) != 0, area -> {
+            mouseClicked(area.centerX(), area.centerY(), 0);
+            mouseReleased(area.centerX(), area.centerY(), 0);
+        })) return true;
+        return super.keyPressed(key, scan, modifiers);
+    }
+    private final EditorButtonInput buttonInput = new EditorButtonInput();
     private final Screen parent;
     private final ItemStack source;
     private final List<ResourceLocation> tags;
@@ -38,6 +53,7 @@ public final class TagChoiceScreen extends Screen {
 
     @Override
     protected void init() {
+        buttonInput.begin(); buttonInput.clearFocus();
         super.init();
         // New geometry after resize must be drawn before it becomes interactive.
         list.invalidate();
@@ -54,6 +70,7 @@ public final class TagChoiceScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        buttonInput.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
@@ -80,7 +97,7 @@ public final class TagChoiceScreen extends Screen {
             graphics.drawString(font, text, rect.left() + 5, rect.top() + 5, 0xFFFFFFFF, false);
         }, () -> {});
 
-        EditorButton.renderInteractive(graphics, font, cancelBounds(),
+        buttonInput.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -91,6 +108,7 @@ public final class TagChoiceScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        buttonInput.clicked(mouseX, mouseY, button);
         if (button == 0 && cancelBounds().contains(mouseX, mouseY)) {
             onClose();
             return true;

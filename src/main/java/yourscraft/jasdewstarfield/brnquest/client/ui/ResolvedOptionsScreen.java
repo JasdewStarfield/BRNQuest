@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListNavigationWidget;
 
 import net.minecraft.client.gui.GuiGraphics;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
@@ -17,6 +18,7 @@ final class ResolvedOptionsScreen extends Screen {
     private final Screen parent;
     private final Supplier<List<Component>> source;
     private final EditorListPanel<Integer> list = new EditorListPanel<>();
+    private EditorListNavigationWidget<Integer> navigation;
     private String filter = "";
     private long lastFrame;
     ResolvedOptionsScreen(Screen parent, Supplier<List<Component>> source) {
@@ -29,6 +31,7 @@ final class ResolvedOptionsScreen extends Screen {
         var search = new EditBox(font, left, 36, panelWidth, 20, Component.translatable("screen.brnquest.field.search"));
         search.setValue(filter); search.setHint(Component.translatable("screen.brnquest.field.search"));
         search.setResponder(value -> { filter = value; list.reset(); }); addRenderableWidget(search);
+        navigation = addRenderableWidget(new EditorListNavigationWidget<>(title, list, row -> {}));
         addRenderableWidget(new EditorButtonWidget(left, height-30, panelWidth, 20,
                 Component.translatable("gui.done"), button -> onClose()));
     }
@@ -45,7 +48,8 @@ final class ResolvedOptionsScreen extends Screen {
         graphics.drawCenteredString(font,title,width/2,16,0xFFFFFFFF);
         var members = source.get().stream().filter(value -> value.getString().toLowerCase(Locale.ROOT).contains(filter.toLowerCase(Locale.ROOT))).toList();
         long now = System.nanoTime(); double elapsed = lastFrame == 0 ? 0 : Math.min(.1,(now-lastFrame)/1_000_000_000.0); lastFrame=now;
-        list.advance(new UiRect(left,64,right-6,Math.max(64,height-36)),new UiRect(0,0,width,height),right-3,22,2,members.size(),i->i,elapsed,BrnQuestClientConfig.VALUES.smoothSpeed.get());
+        var frame = list.advance(new UiRect(left,64,right-6,Math.max(64,height-36)),new UiRect(0,0,width,height),right-3,22,2,members.size(),i->i,elapsed,BrnQuestClientConfig.VALUES.smoothSpeed.get());
+        navigation.update(frame);
         list.render(graphics,row->{
             // Read-only rows use an inset surface rather than the bevel of a selectable button.
             var rect=row.bounds(); graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),

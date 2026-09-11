@@ -96,6 +96,12 @@ public final class EditorButton {
                 : palette.disabledBackground();
         int foreground = state.enabled() ? palette.text() : palette.disabledText();
         GraystoneSurface.raised(graphics, bounds, background, state.enabled());
+        // Accepted mouse and keyboard activations share a brief inset pulse without moving the hitbox.
+        if (state.enabled() && EditorButtonFeedback.pressed(bounds)) {
+            graphics.fill(bounds.left()+2, bounds.top()+2, bounds.right()-2, bounds.bottom()-2, 0x40202018);
+            graphics.renderOutline(bounds.left()+1, bounds.top()+1,
+                    Math.max(0,bounds.width()-2), Math.max(0,bounds.height()-2), 0xFF252721);
+        }
 
         int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
         int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());

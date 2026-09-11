@@ -6,6 +6,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.editor.RawConfigText;
 
@@ -14,6 +15,8 @@ import java.util.function.Consumer;
 
 /** Full-screen raw string-map editor used only when a registered type has no field controls. */
 public final class EditorRawConfigScreen extends Screen {
+    // Shared input feedback follows the same rendered geometry as every form button.
+    private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final Map<String, String> initialConfig;
     private final Consumer<Map<String, String>> configConsumer;
@@ -30,6 +33,7 @@ public final class EditorRawConfigScreen extends Screen {
 
     @Override
     protected void init() {
+        buttons.begin(); buttons.clearFocus();
         super.init();
         UiRect bounds = editorBounds();
         editor = new MultiLineEditBox(font, bounds.left(), bounds.top(), bounds.width(), bounds.height(),
@@ -54,6 +58,7 @@ public final class EditorRawConfigScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        buttons.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         // Blur the completed editor before drawing the raw panel, matching the item selector lifecycle.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
@@ -67,10 +72,10 @@ public final class EditorRawConfigScreen extends Screen {
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(issue.getString(), panel.width() - 24)),
                     panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);
         }
-        EditorButton.renderInteractive(graphics, font, cancelBounds(),
+        buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, applyBounds(),
+        buttons.render(graphics, font, applyBounds(),
                 EditorButton.Definition.text(
                         Component.translatable("screen.brnquest.editor.raw_config.apply"), null),
                 true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
@@ -79,6 +84,7 @@ public final class EditorRawConfigScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        buttons.clicked(mouseX, mouseY, button);
         if (button == 0 && cancelBounds().contains(mouseX, mouseY)) {
             onClose();
             return true;

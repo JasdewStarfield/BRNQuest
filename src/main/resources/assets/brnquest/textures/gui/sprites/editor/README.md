@@ -40,3 +40,9 @@ Native item and advancement images are not baked into these sprites.
 
 资源包覆盖时保留上述路径。修改已启用的资源包后可用 F3+T 重载；修改项目源目录后，
 通常需要重新构建并安装 JAR（开发环境直接加载资源的情况除外）。物品和进度图像仍使用原生渲染。
+
+## Item slots / 物品槽
+
+slot/normal.png, hovered.png, selected.png and selected_hovered.png are 18×18 opaque RGBA sprites. The one-pixel inset border leaves 16×16 for native items. Each slot draws one sprite without tiling. Edit these files directly; preserve their dimensions.
+
+slot/ 下四张 PNG 分别为普通、悬停、选中和选中悬停：18×18，1 像素内凹边框，内部 16×16。选中使用黄铜边框，悬停提亮底色。可直接修改图片，请保留尺寸；共用到物品候选、作者目标槽和背包槽。

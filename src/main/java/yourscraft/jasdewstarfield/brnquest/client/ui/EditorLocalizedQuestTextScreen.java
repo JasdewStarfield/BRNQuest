@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
@@ -20,6 +21,8 @@ import java.util.function.Consumer;
 public final class EditorLocalizedQuestTextScreen extends Screen {
     public record Value(String locale, String title, String subtitle, String description) {}
 
+    // Shared input feedback follows the same rendered geometry as every form button.
+    private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final BookLocalization localization;
     private final QuestDefinition quest;
@@ -47,6 +50,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
 
     @Override
     protected void init() {
+        buttons.begin(); buttons.clearFocus();
         super.init();
         UiRect panel = panelBounds();
         titleEditor = new EditBox(font, panel.left() + 88, panel.top() + 46, panel.width() - 100, 20,
@@ -79,6 +83,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        buttons.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
@@ -87,11 +92,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.localized_text.locale"),
                 panel.left() + 12, panel.top() + 27, 0xFF9FB0C2, false);
-        EditorButton.renderInteractive(graphics, font, localeBounds(),
+        buttons.render(graphics, font, localeBounds(),
                 EditorButton.Definition.text(Component.literal(locales.get(localeIndex)),
                         Component.translatable("screen.brnquest.editor.localized_text.switch_locale")),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, addLocaleBounds(),
+        buttons.render(graphics, font, addLocaleBounds(),
                 EditorButton.Definition.text(Component.literal("+"),
                         Component.translatable("screen.brnquest.editor.localized_text.add_locale")),
                 true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
@@ -101,10 +106,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                 panel.left() + 12, panel.top() + 78, 0xFF9FB0C2, false);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.description"),
                 panel.left() + 12, panel.top() + 103, 0xFF9FB0C2, false);
-        EditorButton.renderInteractive(graphics, font, cancelBounds(),
+        buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null), true, false,
                 EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, applyBounds(),
+        buttons.render(graphics, font, applyBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.done"), null), true, false,
                 EditorButton.Tone.PRIMARY, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -112,6 +117,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        buttons.clicked(mouseX, mouseY, button);
         if (button == 0 && localeBounds().contains(mouseX, mouseY)) {
             localeIndex = (localeIndex + 1) % locales.size();
             localeEditor.setTextColor(0xFFFFFFFF);

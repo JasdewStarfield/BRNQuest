@@ -25,7 +25,7 @@ public final class EditorConfirmDialog {
         return new Layout(dialog, cancel, confirm);
     }
 
-    public static void render(GuiGraphics graphics, Font font, QuestScreenLayout screenLayout,
+    public static void render(GuiGraphics graphics, Font font, QuestScreenLayout screenLayout, EditorButtonInput buttons,
                               Component title, Component detail, int detailColor,
                               Component cancelLabel, Component confirmLabel,
                               int mouseX, int mouseY) {
@@ -40,10 +40,10 @@ public final class EditorConfirmDialog {
             graphics.drawCenteredString(font, Component.literal(visible), dialog.centerX(), dialog.top() + 23,
                     detailColor);
         }
-        EditorButton.renderInteractive(graphics, font, layout.cancel(),
+        buttons.render(graphics, font, layout.cancel(),
                 EditorButton.Definition.text(cancelLabel, null), true, false,
                 EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, layout.confirm(),
+        buttons.render(graphics, font, layout.confirm(),
                 EditorButton.Definition.text(confirmLabel, null), true, false,
                 EditorButton.Tone.DANGER, mouseX, mouseY);
     }

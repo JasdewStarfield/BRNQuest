@@ -16,6 +16,7 @@ final class RewardTypePickerScreen extends RewardEditorScreen {
     private final EditorPickerList<ResourceLocation> picker = new EditorPickerList<>();
     private final Consumer<ResourceLocation> select;
     private final List<ResourceLocation> types;
+    private boolean footerFocused;
 
     RewardTypePickerScreen(Screen parent, Consumer<ResourceLocation> select) {
         super(parent, Component.translatable("screen.brnquest.editor.typed.type_heading"));
@@ -24,7 +25,24 @@ final class RewardTypePickerScreen extends RewardEditorScreen {
                 id -> id.toString().equals("brnquest:reward_table") || RewardTypeRegistry.get(id).composition().isPresent(), QuestTypedEntryKind.REWARD.hiddenLegacyAlias());
     }
 
-    @Override protected void init() { super.init(); picker.invalidate(); }
+    @Override protected void init() { super.init(); picker.invalidate(); footerFocused = false; }
+
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        if (key == 258) {
+            footerFocused = !footerFocused;
+            if (footerFocused) { picker.clearFocus(); controls.focusNext(false); }
+            else { controls.clearFocus(); picker.navigate(264,false); }
+            return true;
+        }
+        if (key >= 262 && key <= 269) { footerFocused = false; controls.clearFocus(); }
+        if (footerFocused) return super.keyPressed(key, scan, modifiers);
+        if (picker.navigate(key, (modifiers & 1) != 0)) return true;
+        if (key == 257 || key == 335) {
+            picker.focusedRow().ifPresent(row -> select.accept(row.key()));
+            return true;
+        }
+        return super.keyPressed(key, scan, modifiers);
+    }
 
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         renderPanel(graphics, x, y, partial);

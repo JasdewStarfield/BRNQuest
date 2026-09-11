@@ -7,6 +7,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorItemSlot;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
@@ -32,6 +34,70 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     private static final int SLOT_SIZE = 18;
     private static final int COLUMNS = 9;
 
+    /** Tab focuses actions; activation reuses the pointer route and never moves real inventory stacks. */
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        // F6 switches the two item regions; Tab remains dedicated to fields and actions.
+        if (key == 295 && editing) {
+            setFocused(null); buttonInput.clearFocus();
+            inventoryKeyboard = inventoryKeyboard < 0 ? 0 : -1;
+            candidateKeyboard = inventoryKeyboard < 0 && !candidates().isEmpty() ? 0 : -1;
+            return true;
+        }
+        if (key == 258) inventoryKeyboard = -1;
+        if (inventoryKeyboard >= 0 && key >= 262 && key <= 269) {
+            int next = switch(key) {
+                case 262 -> inventoryKeyboard+(inventoryKeyboard%9<8?1:0);
+                case 263 -> inventoryKeyboard-(inventoryKeyboard%9>0?1:0);
+                case 264, 267 -> inventoryKeyboard+9;
+                case 265, 266 -> inventoryKeyboard-9;
+                case 268 -> 0;
+                default -> 35;
+            };
+            inventoryKeyboard = Math.max(0,Math.min(35,next)); return true;
+        }
+        if (inventoryKeyboard >= 0 && (key == 257 || key == 335 || key == 32)) {
+            UiRect area = inventorySlot(inventoryKeyboard < 27 ? inventoryKeyboard+9 : inventoryKeyboard-27);
+            mouseClicked(area.centerX(),area.centerY(),0); mouseReleased(area.centerX(),area.centerY(),0); return true;
+        }
+        if (key == 258 && tagMode && editing && tagField != null && !tagField.isFocused()
+                && buttonInput.atBoundary((modifiers & 1) != 0)) {
+            buttonInput.clearFocus(); candidateKeyboard = -1; setFocused(tagField); return true;
+        }
+        if (tagField != null && tagField.isFocused() && key != 258) return super.keyPressed(key, scan, modifiers);
+        if (key == 258) { setFocused(null); candidateKeyboard = -1; }
+        int count = candidates().size();
+        if (count > 0 && key >= 262 && key <= 269) {
+            int next = candidateKeyboard < 0 ? 0 : candidateKeyboard;
+            next = switch (key) {
+                case 262 -> next + (next % COLUMNS < COLUMNS-1 ? 1 : 0);
+                case 263 -> next - (next % COLUMNS > 0 ? 1 : 0);
+                case 264 -> candidateKeyboard < 0 ? 0 : next+COLUMNS;
+                case 265 -> candidateKeyboard < 0 ? 0 : next-COLUMNS;
+                case 266 -> next-COLUMNS*Math.max(1,candidateViewport().height()/SLOT_SIZE);
+                case 267 -> next+COLUMNS*Math.max(1,candidateViewport().height()/SLOT_SIZE);
+                case 268 -> 0;
+                default -> count-1;
+            };
+            candidateKeyboard = Math.max(0,Math.min(count-1,next)); buttonInput.clearFocus();
+            int top = candidateKeyboard/COLUMNS*SLOT_SIZE;
+            if (top < renderedScroll) candidateScroll.snap(top);
+            else if (top+SLOT_SIZE > renderedScroll+candidateViewport().height())
+                candidateScroll.snap(Math.max(0,top+SLOT_SIZE-candidateViewport().height()));
+            return true;
+        }
+        if ((key == 257 || key == 335) && candidateKeyboard >= 0 && candidateKeyboard < count) {
+            if (editing && !tagMode) selectedIndex = candidateKeyboard;
+            return true;
+        }
+        if (buttonInput.keyPressed(key, (modifiers & 1) != 0, area -> {
+            mouseClicked(area.centerX(), area.centerY(), 0);
+            mouseReleased(area.centerX(), area.centerY(), 0);
+        })) return true;
+        return super.keyPressed(key, scan, modifiers);
+    }
+    private final EditorButtonInput buttonInput = new EditorButtonInput();
+    private int candidateKeyboard = -1;
+    private int inventoryKeyboard = -1;
     private final Screen parent;
     private final boolean editing;
     private final Consumer<ItemChoiceMatcher.Spec> resultConsumer;
@@ -75,6 +141,8 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     @Override
     protected void init() {
+        buttonInput.begin(); buttonInput.clearFocus();
+        candidateKeyboard = -1; inventoryKeyboard = -1;
         if (tagField != null) tagValue = tagField.getValue();
         tagField = new EditBox(font, 0, 0, 10, 18,
                 Component.translatable("screen.brnquest.item_choice.tag"));
@@ -106,6 +174,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        buttonInput.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
@@ -131,10 +200,10 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         });
     }
     private void renderEditorChrome(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
-        EditorButton.renderInteractive(graphics, font, modeListBounds(),
+        buttonInput.render(graphics, font, modeListBounds(),
                 EditorButton.Definition.text(Component.translatable("screen.brnquest.item_choice.mode.list"), null),
                 true, !tagMode, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, modeTagBounds(),
+        buttonInput.render(graphics, font, modeTagBounds(),
                 EditorButton.Definition.text(Component.translatable("screen.brnquest.item_choice.mode.tag"), null),
                 true, tagMode, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
 
@@ -181,11 +250,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             UiRect slot = candidateSlot(index);
             if (slot.bottom() <= viewport.top() || slot.top() >= viewport.bottom()) continue;
             boolean selected = editing && !tagMode && index == selectedIndex;
-            int background = selected ? 0xFF6485A4
-                    : slot.intersection(viewport).containsExclusive(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
-            graphics.fill(slot.left(), slot.top(), slot.right(), slot.bottom(), background);
-            graphics.fill(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1, 0xFF171B22);
+            EditorItemSlot.render(graphics, slot, slot.intersection(viewport).containsExclusive(mouseX, mouseY), selected);
             graphics.renderItem(candidates.get(index), slot.left() + 1, slot.top() + 1);
+            if (index == candidateKeyboard) graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),0xFFE4D29A);
             int required = displayedRequiredCount(index);
             if (required > 1) {
                 ItemStack decoration = candidates.get(index).copyWithCount(required);
@@ -213,23 +280,23 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         for (int index = 0; index < 36; index++) {
             UiRect slot = inventorySlot(index);
             ItemStack stack = minecraft.player.getInventory().getItem(index);
-            int background = slot.containsExclusive(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
-            graphics.fill(slot.left(), slot.top(), slot.right(), slot.bottom(), background);
-            graphics.fill(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1, 0xFF171B22);
+            EditorItemSlot.render(graphics, slot, slot.containsExclusive(mouseX, mouseY), false);
             if (!stack.isEmpty()) graphics.renderItem(stack, slot.left() + 1, slot.top() + 1);
+            if (inventoryKeyboard >= 0 && index == (inventoryKeyboard < 27 ? inventoryKeyboard+9 : inventoryKeyboard-27))
+                graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),0xFFE4D29A);
         }
     }
 
     private void renderButtons(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
         if (editing) {
-            EditorButton.renderInteractive(graphics, font, cancelBounds(),
+            buttonInput.render(graphics, font, cancelBounds(),
                     EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                     true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-            EditorButton.renderInteractive(graphics, font, doneBounds(),
+            buttonInput.render(graphics, font, doneBounds(),
                     EditorButton.Definition.text(Component.translatable("gui.done"), null),
                     canFinish(), false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         } else {
-            EditorButton.renderInteractive(graphics, font, closeBounds(),
+            buttonInput.render(graphics, font, closeBounds(),
                     EditorButton.Definition.text(Component.translatable("gui.done"), null),
                     true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
@@ -237,13 +304,14 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     private void renderSmallButton(GuiGraphics graphics, UiRect bounds, String glyph,
                                    boolean enabled, int mouseX, int mouseY) {
-        EditorButton.renderInteractive(graphics, font, bounds,
+        buttonInput.render(graphics, font, bounds,
                 EditorButton.Definition.text(Component.literal(glyph), null),
                 enabled, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        buttonInput.clicked(mouseX, mouseY, button);
         if (!editing && closeBounds().contains(mouseX, mouseY)) {
             onClose();
             return true;

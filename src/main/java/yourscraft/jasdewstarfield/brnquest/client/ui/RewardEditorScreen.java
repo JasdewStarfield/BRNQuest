@@ -71,6 +71,26 @@ abstract class RewardEditorScreen extends Screen {
     }
 
     @Override protected void init() { controls.clear(); lastFrame = 0; }
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        if (key == 258) {
+            boolean backwards = (modifiers & 1) != 0;
+            if (children().isEmpty()) return controls.focusNext(backwards);
+            if (controls.focusedKey().isPresent() && getFocused() == null) {
+                if (!controls.atFocusBoundary(backwards)) return controls.focusNext(backwards);
+                controls.clearFocus();
+                return super.keyPressed(key, scan, modifiers);
+            }
+            // Insert the custom action group when native focus wraps past the last/first field.
+            var previous = getFocused();
+            boolean handled = super.keyPressed(key, scan, modifiers);
+            int before = children().indexOf(previous), after = children().indexOf(getFocused());
+            if (before >= 0 && after >= 0 && (backwards ? after >= before : after <= before)
+                    && controls.focusNext(backwards)) { setFocused(null); return true; }
+            return handled;
+        }
+        if ((key == 257 || key == 335 || key == 32) && getFocused() == null && controls.activateFocused()) return true;
+        return super.keyPressed(key, scan, modifiers);
+    }
     @Override public void renderBackground(GuiGraphics graphics, int x, int y, float partial) {}
     @Override public void tick() { parent.tick(); }
     @Override public boolean isPauseScreen() { return parent.isPauseScreen(); }

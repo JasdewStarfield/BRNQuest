@@ -83,6 +83,7 @@ public final class EditorActionGroup<K> {
             // Disabled controls still consume the click, preventing a row/background fallback action.
             if (placed.action().enabled()) {
                 focused = placed.action().key();
+                EditorButtonFeedback.activate(placed.bounds());
                 placed.action().onPress().accept(x, y);
             }
             return true;
@@ -105,6 +106,7 @@ public final class EditorActionGroup<K> {
         for (Placed<K> placed : focusable()) {
             if (!placed.action().key().equals(focused)) continue;
             UiRect visible = placed.visible();
+            EditorButtonFeedback.activate(placed.bounds());
             placed.action().onPress().accept((double) visible.centerX(), (double) visible.centerY());
             return true;
         }
@@ -117,6 +119,12 @@ public final class EditorActionGroup<K> {
     }
 
     public Optional<K> focusedKey() { return Optional.ofNullable(focused); }
+    public void clearFocus() { focused = null; }
+    public boolean atFocusBoundary(boolean backwards) {
+        var candidates = focusable();
+        return candidates.isEmpty() || java.util.Objects.equals(focused,
+                (backwards ? candidates.getFirst() : candidates.getLast()).action().key());
+    }
 
     public void clear() { actions = List.of(); focused = null; }
 

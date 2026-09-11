@@ -7,6 +7,39 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class EditorListPanelTest {
+    @Test void keyboardGridNavigationScrollsAndNeverActivatesAnUndisplayedRow() {
+        var panel = new EditorListPanel<Integer>();
+        var area = new UiRect(0,0,304,60);
+        panel.advanceGrid(area,area,305,30,2,2,4,11,i->i,0,12);
+        assertTrue(panel.navigate(264,false));
+        assertEquals(0,panel.focusedRow().orElseThrow().key());
+        panel.navigate(262,false);
+        assertEquals(1,panel.focusedRow().orElseThrow().key());
+        panel.navigate(264,false);
+        assertEquals(3,panel.focusedRow().orElseThrow().key());
+        panel.navigate(269,false);
+        assertTrue(panel.focusedRow().isEmpty());
+        var frame = panel.advanceGrid(area,area,305,30,2,2,4,11,i->i,0,12);
+        assertEquals(10,panel.focusedRow().orElseThrow().key());
+        assertEquals(120,frame.pixelScroll());
+        panel.navigate(268,false);
+        panel.advanceGrid(area,area,305,30,2,2,4,11,i->i,0,12);
+        assertEquals(0,panel.focusedRow().orElseThrow().key());
+    }
+
+    @Test void keyboardFocusIsDiscardedWhenSourceIdentityChanges() {
+        var panel = new EditorListPanel<String>();
+        var area = new UiRect(0,0,200,60);
+        panel.advance(area,area,201,30,0,2,i->"old"+i,0,12);
+        panel.navigate(264,false);
+        panel.advance(area,area,201,30,0,2,i->"new"+i,0,12);
+        assertFalse(panel.hasFocus());
+        panel.reset();
+        panel.advance(area,area,201,30,0,0,i->"unused",0,12);
+        assertFalse(panel.navigate(269,false));
+        assertTrue(panel.focusedRow().isEmpty());
+    }
+
     @Test void gridHitTestingRejectsGapsAndOddLastCell() {
         var panel = new EditorListPanel<Integer>();
         var bounds = new UiRect(0, 0, 304, 90);

@@ -68,6 +68,15 @@ class QuestEditorChromeTest {
         assertEquals(QuestEditorChrome.Action.UNDO, chrome.activateFocused(identity).orElseThrow().action());
     }
 
+    @Test void keyboardCannotActivateDisabledSave() {
+        var chrome = new QuestEditorChrome();
+        var identity = identity("r1", 900, 600);
+        chrome.advance(new QuestScreenLayout(900, 600, false, false), model(identity, false, false, false));
+        // Undo, redo, publish, save: a clean draft's save button must remain inert.
+        for (int i = 0; i < 4; i++) assertTrue(chrome.focusNext(identity, false));
+        assertTrue(chrome.activateFocused(identity).isEmpty());
+    }
+
     private static QuestScreenFrameIdentity identity(String revision, int width, int height) {
         return new QuestScreenFrameIdentity(BOOK, revision, true, width, height);
     }

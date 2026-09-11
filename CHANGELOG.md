@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- 修复打开行为编辑时意外退出编辑会话；任务主屏通过统一入口打开子窗口，保留编辑会话及未提交的表单内容。
+- Fixed behavior editing unexpectedly ending the editor session. Quest-screen child windows now share a session-preserving transition that retains pending form edits.
+
+- 基础属性、目标/奖励属性、行为、多语言和原始配置表单及确认/快捷文本对话框统一接入按钮输入反馈；滚动裁剪和前景菜单决定有效反馈范围。
+- Basic, task/reward, behavior, localized-text and raw-config forms, plus confirmation and quick-text dialogs, share button input feedback with clipped and foreground-aware hit areas.
+
+- 补齐主界面编辑入口和底部工具栏的按钮声音；键盘导航期间隐藏 Tooltip，鼠标移动或点击后恢复，避免旧鼠标位置与键盘焦点混淆。
+- Added click feedback to main-screen editor entries and the bottom toolbar. Tooltips stay hidden during keyboard navigation and resume on mouse movement or clicks, avoiding stale pointer hints beside keyboard focus.
+
+- 选择器补齐键盘焦点、方向键/翻页/首末项导航和 Enter 激活；物品候选编辑支持 F6 切换候选/背包区域，保留原生文本编辑及物品交互。共用按钮统一短按压反馈和点击声。
+- Added selector focus, directional/page/home/end navigation and Enter activation; item choice editors use F6 to switch candidate/inventory regions while retaining native text editing and item behavior. Shared buttons use consistent activation feedback and click sounds.
+
+- 物品候选与作者选择器共用深灰内凹 PNG 槽位、悬停提亮与黄铜选中框，保留原生物品与整格交互范围。
+- Item candidates and author selectors share inset gray PNG slots, hover highlights and brass selection borders, preserving native items and full-slot interactions.
+
+- 作者物品选择器使用灰石面板，并统一格子高亮、原生 Tooltip 与 JEI 查询的整格范围。
+- Author item selectors use graystone panels and consistent full-slot hover, native tooltip and JEI lookup bounds.
+
 - 服务端字段选择器统一灰石面板、按钮和候选行；只读预览保留不同的行样式。
 - Server field selectors share graystone panels, buttons and choice rows, with distinct read-only preview styling.
 

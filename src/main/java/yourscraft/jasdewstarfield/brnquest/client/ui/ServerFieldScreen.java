@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListNavigationWidget;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
@@ -25,6 +26,7 @@ public final class ServerFieldScreen extends Screen {
     private EditorButtonWidget useCurrent, preview;
     private final Map<String,String> context;
     private final boolean readOnly;
+    private EditorListNavigationWidget<Integer> navigation;
     private String filter = "";
     private String requestId = "";
     private int delay;
@@ -58,6 +60,10 @@ public final class ServerFieldScreen extends Screen {
         input.setEditable(!readOnly);
         search = new EditBox(font,left,72,220,20,Component.translatable("screen.brnquest.field.search"));
         search.setMaxLength(128); search.setValue(filter); search.setHint(Component.translatable("screen.brnquest.field.search")); search.setResponder(text -> { filter = text; pages.reset(); list.reset(); invalidateSelection(); delay = 6; }); addRenderableWidget(search);
+        navigation = addRenderableWidget(new EditorListNavigationWidget<>(title, list, row -> {
+            var entry = pages.entry(row.key());
+            if (!readOnly && entry != null) input.setValue(entry.value());
+        }));
         useCurrent = addRenderableWidget(new EditorButtonWidget(left+224,72,76,20,Component.translatable("screen.brnquest.field.current"), b -> { if (result == null || result.current().isBlank()) input.setValue(""); else { query(); currentRequest = requestId; } }));
         useCurrent.active = !readOnly;
         useCurrent.setMessage(Component.translatable(result != null && !result.current().isBlank() ? "screen.brnquest.field.current" : "screen.brnquest.field.clear"));
@@ -114,6 +120,7 @@ public final class ServerFieldScreen extends Screen {
         UiRect bounds = new UiRect(width/2-150, 128, width/2+144, Math.max(128,height-36));
         var frame = list.advance(bounds, new UiRect(0,0,width,height), width/2+147,20,2,pages.total(),i -> i,
                 elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
+        navigation.update(frame);
         list.render(graphics, row -> {
             var rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(x,y);

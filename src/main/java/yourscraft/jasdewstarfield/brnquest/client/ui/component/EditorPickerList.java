@@ -121,6 +121,9 @@ public final class EditorPickerList<K> {
         return entryAt(mouseX, mouseY).map(key -> presentation.apply(key).tooltip()).orElse(List.of());
     }
 
+    public boolean navigate(int key, boolean backwards) { return list.navigate(key, backwards); }
+    public void clearFocus() { list.clearFocus(); }
+    public Optional<EditorListPanel.Row<K>> focusedRow() { return list.focusedRow(); }
     public Optional<K> entryAt(double x, double y) { return list.rowAt(x, y).map(EditorListPanel.Row::key); }
     public boolean mouseClicked(double x, double y, int button) { return list.mouseClicked(x, y, button); }
     public boolean mouseScrolled(double x, double y, double delta, double step) { return list.mouseScrolled(x, y, delta, step); }

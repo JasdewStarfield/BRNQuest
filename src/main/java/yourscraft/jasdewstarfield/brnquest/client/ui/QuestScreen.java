@@ -14,6 +14,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorActionGroup;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryRow;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
@@ -202,6 +203,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
+    // Legacy form dispatch shares one rendered-button feedback adapter.
+    private final EditorButtonInput formButtons = new EditorButtonInput();
+    private QuestScreenFrameIdentity formButtonFrame;
+    private EditorOverlayHost.Kind formButtonOverlay;
     private RecipeLookupTarget hoveredRecipeLookupTarget;
     private ResourceLocation recoveryCopyBookId;
 
@@ -407,6 +412,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // before this frame reads either snapshot or selection, preventing a transient null task
         // from cancelling and restarting an otherwise unchanged auto-focus animation.
         reconcileModeSelection(ClientEditorState.get());
+        formButtons.begin();
+        formButtonFrame = currentFrameIdentity();
         // Tooltips are collected by content layers and rendered only after every opaque panel.
         hoveredDetailStack = ItemStack.EMPTY;
         hoveredDetailText = null;
@@ -448,6 +455,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             if (detailsDrawerVisible() && !structureFormOpen()) {
                 int visibleLeft = canvasRight();
+                formButtons.viewport(new UiRect(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight()), detailsDrawerOffsetX());
                 graphics.enableScissor(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight());
                 int detailMouseX = detailsPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE;
                 int detailMouseY = detailsPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE;
@@ -456,6 +464,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 renderDetails(graphics, detailMouseX, detailMouseY, motionFrameSeconds);
                 graphics.pose().popPose();
                 graphics.disableScissor();
+                formButtons.viewport(null, 0);
             }
             renderEditorChrome(graphics, snapshot.book(), mouseX, mouseY);
             if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
@@ -743,17 +752,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     openQuickTextEditor(quest, QuickTextKind.valueOf(intent.textArea()));
                 }
             }
-            case EDIT_PROPERTIES -> { if (ClientEditorState.get().editing()) openQuestEditor(quest); }
-            case EDIT_TASKS -> { if (ClientEditorState.get().editing()) openTypedEditor(quest, QuestTypedEntryKind.TASK); }
-            case EDIT_REWARDS -> { if (ClientEditorState.get().editing()) openTypedEditor(quest, QuestTypedEntryKind.REWARD); }
-            case EDIT_DEPENDENCIES -> { if (ClientEditorState.get().editing()) openDependencyEditor(quest); }
+            case EDIT_PROPERTIES -> { if (ClientEditorState.get().editing()) { openQuestEditor(quest); } }
+            case EDIT_TASKS -> { if (ClientEditorState.get().editing()) { openTypedEditor(quest, QuestTypedEntryKind.TASK); } }
+            case EDIT_REWARDS -> { if (ClientEditorState.get().editing()) { openTypedEditor(quest, QuestTypedEntryKind.REWARD); } }
+            case EDIT_DEPENDENCIES -> { if (ClientEditorState.get().editing()) { openDependencyEditor(quest); } }
             case OPEN_SUBMISSION_CHOICES -> {
                 TaskDefinition task = quest.tasks().stream()
                         .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
                 if (task != null) {
                     var presentation = ClientTaskPresentationRegistry.get(task.typeId());
                     var view = ApiViews.task(task);
-                    if (presentation.resolvedOptions(view).isPresent()) minecraft.setScreen(new ResolvedOptionsScreen(this,
+                    if (presentation.resolvedOptions(view).isPresent()) openChildScreen(new ResolvedOptionsScreen(this,
                             () -> presentation.resolvedOptions(view).orElse(List.of())));
                     else ItemChoiceMatcher.parseConfig(task.config()).result()
                             .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, true));
@@ -778,7 +787,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (reward != null) {
                     var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
                     var view = ApiViews.reward(reward);
-                    if (presentation.resolvedOptions(view).isPresent()) minecraft.setScreen(new ResolvedOptionsScreen(this,
+                    if (presentation.resolvedOptions(view).isPresent()) openChildScreen(new ResolvedOptionsScreen(this,
                             () -> presentation.resolvedOptions(view).orElse(List.of())));
                 }
             }
@@ -831,6 +840,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (java.util.Objects.equals(formButtonFrame, currentFrameIdentity())
+                && formButtonOverlay == editorOverlays.active()) formButtons.clicked(mouseX, mouseY, button);
         if (editorOverlays.mouseClicked(mouseX, mouseY, button)) return true;
         var snapshot = displaySnapshot();
         if (snapshot == null) return super.mouseClicked(mouseX, mouseY, button);
@@ -859,7 +870,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             if (button == 0 && questBehaviorEditorBounds != null
                     && questBehaviorEditorBounds.contains(mouseX, mouseY)) {
-                minecraft.setScreen(new EditorQuestBehaviorScreen(this, questEditorBehavior,
+                openChildScreen(new EditorQuestBehaviorScreen(this, questEditorBehavior,
                         value -> questEditorBehavior = value));
                 return true;
             }
@@ -1188,6 +1199,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             recoveryCopyBookId = recoveryCopyId(editor.bookId());
             editorOverlays.show(EditorOverlayHost.Kind.CONFLICT_RECOVERY);
         }
+        formButtonOverlay = editorOverlays.active();
+        if (formButtonOverlay != EditorOverlayHost.Kind.NONE) formButtons.begin();
         editorOverlays.render(graphics, mouseX, mouseY);
         graphics.pose().popPose();
     }
@@ -1196,7 +1209,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderEditorActionButton(GuiGraphics graphics, UiRect bounds, EditorButton.Definition definition,
                                           boolean enabled, EditorButton.Tone tone,
                                           int mouseX, int mouseY) {
-        boolean hovered = EditorButton.renderInteractive(graphics, font, bounds, definition, enabled,
+        boolean hovered = formButtons.render(graphics, font, bounds, definition, enabled,
                 false, tone, mouseX, mouseY);
         if (hovered && !definition.tooltip().isEmpty()) {
             hoveredComponentTooltip = definition.tooltip();
@@ -1556,6 +1569,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean handleOverlayKey(int key, int scan, int modifiers) {
+        // Overlay-owned navigation never falls through into the suspended editor or canvas.
+        EditorPickerList<?> keyboardPicker = editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER) ? typedTypePicker
+                : editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG) ? catalogPicker
+                : editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER) ? dependencyPicker : null;
+        if (keyboardPicker != null) {
+            if (keyboardPicker.navigate(key, (modifiers & 1) != 0)) return true;
+            if (key == 257 || key == 335) {
+                keyboardPicker.focusedRow().ifPresent(row -> {
+                    double x = row.visible().centerX(), y = row.visible().centerY();
+                    if (keyboardPicker == typedTypePicker) handleTypedTypePickerClick(x, y, 0);
+                    else if (keyboardPicker == dependencyPicker) handleDependencyPickerClick(x, y, 0);
+                    else if (displaySnapshot() != null) handleEditorChromeClick(x, y, 0, displaySnapshot().book());
+                });
+                return true;
+            }
+        }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT) && (key == 257 || key == 335)) {
             submitQuickTextEdit();
             return true;
@@ -1668,8 +1697,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (snapshot == null || minecraft == null || ClientEditorState.get().busy()) return;
         // This is the same suspended-parent transition as item and raw-config editors. Without
         // the token, Screen.removed() may close a clean server lease before Apply is dispatched.
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
+        openChildScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
                 minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value)));
     }
 
@@ -1685,7 +1713,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderQuickTextEditor(GuiGraphics graphics, int mouseX, int mouseY) {
         if (quickTextKind == QuickTextKind.NONE || quickTextField == null) return;
         Component fieldName = Component.translatable(quickTextKind.translationKey());
-        EditorQuickTextDialog.render(graphics, font, layout(),
+        EditorQuickTextDialog.render(graphics, font, layout(), formButtons,
                 Component.translatable("screen.brnquest.editor.quick_edit.heading", fieldName),
                 quickTextIssue, !ClientEditorState.get().busy(), mouseX, mouseY);
         quickTextField.show(EditorQuickTextDialog.layout(layout()).input(), !ClientEditorState.get().busy());
@@ -1967,7 +1995,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderDeleteConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        EditorConfirmDialog.render(graphics, font, layout(),
+        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
                 Component.translatable("screen.brnquest.editor.delete.warning"), Component.literal(deleteImpact),
                 0xFFFFC07A, Component.translatable("gui.cancel"),
                 Component.translatable("screen.brnquest.editor.delete.confirm"), mouseX, mouseY);
@@ -2610,15 +2638,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 case SERVER_FIELD -> {
                     var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
                     var field = typedPropertySection.form().configField(intent.fieldIndex());
-                    childLifecycle.prepareChild();
-                    minecraft.setScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value), typedPropertySection.form().currentConfig(), false, descriptor.labelKey().isBlank() ? Component.literal(descriptor.key()) : Component.translatable(descriptor.labelKey())));
+                    openChildScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value), typedPropertySection.form().currentConfig(), false, descriptor.labelKey().isBlank() ? Component.literal(descriptor.key()) : Component.translatable(descriptor.labelKey())));
                 }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
                 case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());
                 case CUSTOM -> {
                     var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
-                    prepareForTransientChildScreen();
-                    minecraft.setScreen(ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow()
+                    openChildScreen(ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow()
                             .create(this, typedPropertySection.form().configValue(intent.fieldIndex()),
                                     value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value)));
                 }
@@ -2681,8 +2707,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
         if (minecraft == null) return;
-        childLifecycle.prepareChild();
-        minecraft.setScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
+        openChildScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
     }
 
     /** Permission hiding is only a convenience; the server checks every request independently. */
@@ -2708,8 +2733,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openAdminProgress(ResourceLocation questId, ResourceLocation taskId) {
         if (!canManageProgress(questId, taskId)) return;
         var active = ClientQuestState.get().book().orElseThrow();
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
+        openChildScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
                 questId.toString(), taskId == null ? "" : taskId.toString()));
     }
 
@@ -2722,8 +2746,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                          : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_QUEST)
                 : (reset ? yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.RESET_TASK
                          : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_TASK);
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
+        openChildScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
                 questId.toString(), taskId == null ? "" : taskId.toString(), action));
     }
 
@@ -2735,24 +2758,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void openItemChoiceScreen(ItemChoiceMatcher.Spec initial, boolean editing,
                                       java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
         if (minecraft == null) return;
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
+        openChildScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
     }
 
     private void openGameplayItemChoiceScreen(QuestDefinition quest, TaskDefinition task,
                                                ItemChoiceMatcher.Spec spec, boolean candidatesOnly) {
         if (minecraft == null) return;
-        childLifecycle.prepareChild();
         boolean selectionRequired = !candidatesOnly && needsManualItemSelection(task, spec);
         boolean alreadySubmitted = ClientQuestState.get().taskProgress()
                 .getOrDefault(task.id().toString(), 0L) >= 1;
         ItemChoiceOpenMode mode = itemChoiceOpenMode(candidatesOnly, gameplayAllowed(),
                 selectionRequired, alreadySubmitted);
         if (mode == ItemChoiceOpenMode.VIEW_CANDIDATES) {
-            minecraft.setScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
+            openChildScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
             return;
         }
-        minecraft.setScreen(new ItemSubmissionScreen(this, spec, selectedSlots -> {
+        openChildScreen(new ItemSubmissionScreen(this, spec, selectedSlots -> {
             String taskId = task.id().toString();
             if (ClientQuestState.get().beginTaskSubmission(taskId)) {
                 BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), quest.id().toString(),
@@ -2780,8 +2801,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void openTypedPropertyRawEditor() {
         if (minecraft == null || !typedPropertyRawEditable()) return;
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new EditorRawConfigScreen(this, typedPropertySection.form().rawConfig(), config -> {
+        openChildScreen(new EditorRawConfigScreen(this, typedPropertySection.form().rawConfig(), config -> {
             typedPropertySection.form().replaceRawConfig(config);
             // A corrected local value supersedes old field diagnostics; the server will return
             // fresh Codec diagnostics when the containing property form is submitted.
@@ -3052,8 +3072,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Opens a real child Screen so JEI initializes ghost dragging before the first interaction. */
     private void openEditorItemSelector(java.util.function.Consumer<ItemStack> selectionConsumer) {
         if (minecraft == null) return;
-        childLifecycle.prepareChild();
-        minecraft.setScreen(new EditorItemSelectorScreen(this, selectionConsumer));
+        openChildScreen(new EditorItemSelectorScreen(this, selectionConsumer));
     }
 
     private void addSelectedItem(ResourceLocation typeId, ItemStack stack) {
@@ -3702,7 +3721,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         long references = displaySnapshot() == null || questEditorQuestId == null ? 0L
                 : displaySnapshot().book().quests().stream()
                 .filter(quest -> quest.dependencies().contains(questEditorQuestId)).count();
-        EditorConfirmDialog.render(graphics, font, layout(),
+        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
                 Component.translatable("screen.brnquest.editor.quest.rename.warning"),
                 Component.translatable("screen.brnquest.editor.quest.rename.impact", references), 0xFFFFC06A,
                 Component.translatable("gui.cancel"),
@@ -3861,7 +3880,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderDiscardConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        EditorConfirmDialog.render(graphics, font, layout(),
+        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
                 Component.translatable("screen.brnquest.editor.discard.warning"), null, 0,
                 Component.translatable("screen.brnquest.editor.discard.cancel"),
                 Component.translatable("screen.brnquest.editor.discard.confirm"), mouseX, mouseY);
@@ -4063,11 +4082,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return Optional.of(hoveredRecipeLookupTarget);
     }
 
+    private void openChildScreen(net.minecraft.client.gui.screens.Screen child) {
+        // All editor child windows suspend this parent; unsaved form fields and its lease stay alive.
+        java.util.Objects.requireNonNull(child, "child");
+        childLifecycle.openChild(() -> minecraft.setScreen(child));
+    }
+
     @Override
     public void prepareForTransientChildScreen() {
+        childLifecycle.prepareChild();
         // The matching ScreenEvent.Opening is raised before removed(), allowing a recipe viewer
         // to suspend this exact editor object without closing its server-authoritative lease.
-        childLifecycle.prepareChild();
     }
 
     /** Records only the visible pixels of an item icon; the last rendered layer wins hover priority. */

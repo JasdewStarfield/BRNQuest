@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonFeedback;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
@@ -135,6 +136,13 @@ final class QuestEditorChrome {
     }
 
     ClickResult click(QuestScreenFrameIdentity identity, double x, double y) {
+        ClickResult result = resolveClick(identity, x, y);
+        // Only accepted actions receive feedback; disabled and stale frames remain silent.
+        if (result.intent() != null) EditorButtonFeedback.activate(actionBounds(result.intent().action()));
+        return result;
+    }
+
+    private ClickResult resolveClick(QuestScreenFrameIdentity identity, double x, double y) {
         if (!accepts(identity)) return ClickResult.ignored();
         Model model = frame.model();
         Layout layout = frame.layout();
@@ -174,8 +182,22 @@ final class QuestEditorChrome {
     }
 
     Optional<Intent> activateFocused(QuestScreenFrameIdentity identity) {
-        return accepts(identity) && !frame.model().busy() && focused != null
-                ? Optional.of(new Intent(focused)) : Optional.empty();
+        if (!accepts(identity) || frame.model().busy() || focused == null) return Optional.empty();
+        UiRect bounds = actionBounds(focused);
+        // Keyboard activation shares the pointer's enabled-state guard and one sound dispatch.
+        return Optional.ofNullable(click(identity, bounds.centerX(), bounds.centerY()).intent());
+    }
+
+    private UiRect actionBounds(Action action) {
+        Layout layout = frame.layout();
+        return switch (action) {
+            case OPEN_CATALOG -> layout.title();
+            case EXIT, OPEN_LIVE -> layout.exit();
+            case SAVE, OPEN_ADVANCED -> layout.save();
+            case REVIEW_PUBLISH -> layout.publish();
+            case UNDO -> layout.undo();
+            case REDO -> layout.redo();
+        };
     }
 
     Optional<Component> focusedLabel(QuestScreenFrameIdentity identity) {

@@ -307,6 +307,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         });
         reconcileDragPreview();
         requestExpiredRepeatRecovery();
+        // Only a live selected quest may query execution status; previews/rendering remain read-only.
+        QuestDefinition selected = selectedQuest();
+        if (gameplayAllowed() && selected != null && isCompleted(status(selected))) {
+            selected.rewards().stream().filter(reward -> reward.typeId().equals(
+                    yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID)
+                    || reward.typeId().equals(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID))
+                    .forEach(reward -> RewardTableClientState.refresh(reward.id().toString()));
+        }
     }
 
     /**
@@ -810,7 +818,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         var rewardView = ApiViews.reward(reward);
         String itemSnbt = presentation.itemSnbt(rewardView);
         ItemStack parsedStack = itemSnbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), itemSnbt);
-        ItemStack stack = presentation.displayedItem(rewardView, parsedStack);
+        ItemStack stack = RewardEntryDetails.resolve(minecraft, rewardView, presentation, parsedStack).item();
         var context = new RewardPresentationContext(minecraft, rewardView, claimable, claimed, stack);
         QuestRewardCellWidget.Result cell = rewardCellWidget.render(graphics, font,
                 new QuestRewardCellWidget.Model(presentation, context),
@@ -2302,6 +2310,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private EditorEntryListPanel.Content typedRowContent(QuestDefinition quest, int index) {
+        if (typedEditorKind == QuestTypedEntryKind.REWARD) {
+            var reward = quest.rewards().get(index);
+            var view = ApiViews.reward(reward);
+            var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
+            String snbt = presentation.itemSnbt(view);
+            var details = RewardEntryDetails.resolve(minecraft, view, presentation,
+                    snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt));
+            return new EditorEntryListPanel.Content(new EditorEntryRow.Content(details.icon(), details.summary(),
+                    typedRowSummary(quest, index, typedEditorKind.known(reward.typeId())), 0xFF9FB0C2), details.lookupItem());
+        }
         QuestTypedEntryKind.Value value = typedEditorKind.value(quest, index);
         TypedRowPresentation presentation = typedRowPresentation(quest, index);
         boolean known = typedEditorKind.known(value.typeId());

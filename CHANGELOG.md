@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- 修复自选奖励页面遗漏原版进度目标，导致名称和图标无法解析的问题；显示数据仅补充受限的进度标识，不传递执行配置。
+- Fixed missing advancement names/icons in reward choices by including the bounded advancement selector in display data, without exposing execution configuration.
+
+- 物品奖励只保留原生 Tooltip，移除主屏格子边缘的额外提示；自选列表的物品整行使用同一原生 Tooltip，非物品保留统一提示。
+- Item rewards retain only native tooltips: removed the extra main-screen cell-edge hint and use the same native tooltip across item choice rows. Non-item rewards retain unified hints.
+
+- 统一奖励表预览、自选候选和作者侧边栏的物品/经验摘要：自定义标题保留实际数量与单位，作者奖励图标显示倍率后的数量；物品悬停保留原生组件说明。奖励状态查询移至主界面 tick，配置预览不发送查询。
+- Unified item/XP summaries across table previews, choice candidates and author sidebar rows: custom titles retain effective amounts and units, and author reward icons show multiplied counts. Native item tooltips are preserved; execution-status polling now runs in the live screen tick instead of preview rendering.
+
 - 修复首次加载世界时奖励类型初始化晚于字段来源冻结、导致原生战利品选择器注册失败的问题。
 - Fixed first-world loading when reward types initialized after field sources had already frozen, preventing the native loot picker from registering.
 

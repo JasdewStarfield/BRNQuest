@@ -100,7 +100,8 @@ public final class RewardTableChoiceNetwork {
             entry.addProperty("id", source.get("entry_id").getAsString());
             entry.addProperty("type", source.get("type").getAsString());
             var config = RewardTableTree.config(source); var display = new JsonObject();
-            for (String key : List.of("title", "item", "count", "xp", "xp_levels")) {
+            // The selector lets the client resolve native advancement names/icons without sending execution settings.
+            for (String key : List.of("title", "item", "count", "xp", "xp_levels", "advancement")) {
                 String value = config.getOrDefault(key, "");
                 if (!value.isBlank() && new JsonPrimitive(value).toString().getBytes(StandardCharsets.UTF_8).length <= (key.equals("item") ? 2048 : 256)) display.addProperty(key,value);
             }

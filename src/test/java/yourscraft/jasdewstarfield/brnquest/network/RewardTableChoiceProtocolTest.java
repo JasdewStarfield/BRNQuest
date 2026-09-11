@@ -29,6 +29,21 @@ class RewardTableChoiceProtocolTest {
         assertThrows(IllegalArgumentException.class,()->RewardTableChoiceNetwork.displayPage(entries,-1));
         assertThrows(IllegalArgumentException.class,()->RewardTableChoiceNetwork.displayPage(entries,255));
     }
+    @Test void advancementDisplayKeepsSelectorButNotExecutionConfiguration() {
+        var source = JsonParser.parseString("""
+                {"entry_id":"progress","type":"brnquest:advancement","config":{
+                  "advancement":"minecraft:story/mine_stone","criterion":"stone",
+                  "command":"must not be sent","permission_level":"4"}}
+                """).getAsJsonObject();
+        var display = JsonParser.parseString(RewardTableChoiceNetwork.displayPage(List.of(source), 0))
+                .getAsJsonArray().get(0).getAsJsonObject().getAsJsonObject("config");
+        assertEquals(Set.of("advancement"), display.keySet());
+        assertEquals("minecraft:story/mine_stone", display.get("advancement").getAsString());
+        source.getAsJsonObject("config").addProperty("advancement", "x".repeat(257));
+        assertFalse(JsonParser.parseString(RewardTableChoiceNetwork.displayPage(List.of(source), 0))
+                .getAsJsonArray().get(0).getAsJsonObject().getAsJsonObject("config").has("advancement"));
+    }
+
     @Test void boundedIdentityAndDisplayCodecsRoundTrip() {
         var request=new RewardTableChoiceNetwork.Request("revision","test:reward","attempt","root/choice/0",0,"e200",0);
         var buffer=Unpooled.buffer();

@@ -76,27 +76,20 @@ final class RewardTableEditorScreen extends RewardEditorScreen {
         controls.setActions(buttons);
         controls.render(graphics, font, x, y);
         if (menuLayout != null) EditorPopupMenu.render(graphics, font, menuLayout, menu, x, y);
+        else if (hover.item() != null) graphics.renderTooltip(font, hover.item().stack(), x, y);
         else if (!hover.tooltip().isEmpty()) graphics.renderComponentTooltip(font, hover.tooltip(), x, y);
     }
 
     private EditorEntryListPanel.Content content(JsonObject entry) {
         var type = ResourceLocation.parse(entry.get("type").getAsString());
         var values = RewardTableTree.config(entry);
-        var view = new RewardView(type, type, type, values, "manual", false);
-        var presentation = ClientRewardPresentationRegistry.get(type);
-        ItemStack stack = ItemStack.EMPTY;
-        try {
-            String snbt = presentation.itemSnbt(view);
-            if (!snbt.isBlank() && minecraft.level != null) stack = ItemStack.parseOptional(
-                    minecraft.level.registryAccess(), net.minecraft.nbt.TagParser.parseTag(snbt));
-        } catch (Exception ignored) { /* Invalid item drafts keep a usable type label. */ }
-        Component name = values.getOrDefault("title", "").isBlank()
-                ? (stack.isEmpty() ? presentation.typeName(view) : stack.getHoverName()) : Component.literal(values.get("title"));
-        EditorIcon icon = stack.isEmpty() ? EditorIcon.glyph(Component.literal(presentation.symbol(view))) : EditorIcon.item(stack);
-        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(icon, name,
+        var previewId = ResourceLocation.fromNamespaceAndPath("brnquest", "display_preview");
+        var view = new RewardView(previewId, previewId, type, values, "manual", false);
+        var details = RewardEntryDetails.resolve(minecraft, view);
+        return new EditorEntryListPanel.Content(new EditorEntryRow.Content(details.icon(), details.summary(),
                 mode().equals("random") ? Component.translatable(RewardTableTree.always(entry)
                         ? "screen.brnquest.reward_table.guaranteed" : "screen.brnquest.reward_table.weight_summary",
-                        RewardTableTree.weight(entry).toPlainString()) : presentation.typeName(view), 0xFF9FB0C2), stack);
+                        RewardTableTree.weight(entry).toPlainString()) : Component.empty(), 0xFF9FB0C2), details.lookupItem());
     }
 
     private void openMenu(String key, int x, int y) {

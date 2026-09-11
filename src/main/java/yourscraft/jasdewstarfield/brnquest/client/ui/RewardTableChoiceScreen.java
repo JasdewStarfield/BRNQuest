@@ -22,6 +22,7 @@ public final class RewardTableChoiceScreen extends Screen {
     private record Expected(String revision, String reward, Screen parent) {}
     private static Expected expected;
     private final Screen parent;
+    private final ResourceLocation bookId;
     private final String revision, reward, attempt;
     private final List<JsonObject> entries = new ArrayList<>();
     private final EditorListPanel<Integer> list = new EditorListPanel<>();
@@ -34,6 +35,9 @@ public final class RewardTableChoiceScreen extends Screen {
     private Button confirm, more;
     private RewardTableChoiceScreen(Expected source, String attempt) {
         super(Component.translatable("screen.brnquest.choice.title"));
+        // Capture display identity once: disconnects or later book switches must not change frozen candidates.
+        bookId = ClientQuestState.get().book().map(snapshot -> snapshot.book().id())
+                .orElse(ResourceLocation.fromNamespaceAndPath("brnquest", "display_preview"));
         parent = source.parent(); revision = source.revision(); reward = source.reward(); this.attempt = attempt;
     }
     /** Mark only explicit root clicks; delayed packets must not reopen a screen the player already left. */
@@ -112,33 +116,28 @@ public final class RewardTableChoiceScreen extends Screen {
         list.render(g,row->{
             var entry=entries.get(row.key()); var rect=row.bounds();
             g.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),selected.equals(entry.get("id").getAsString())?0xDD456780:0xAA263646);
-            var stack=stack(entry); if(!stack.isEmpty()) {
+            var details=RewardEntryDetails.resolve(minecraft,view(entry));
+            var stack=details.lookupItem(); if(details.decoration().isPresent()) {
+                details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
+            } else if(!stack.isEmpty()) {
                 g.renderItem(stack,rect.left()+5,rect.top()+7);
                 g.renderItemDecorations(font,stack,rect.left()+5,rect.top()+7);
             }
-            g.drawString(font,font.plainSubstrByWidth(label(entry).getString(),rect.width()-32),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
+            else details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
+            g.drawString(font,font.plainSubstrByWidth(details.summary().getString(),rect.width()-32),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
         },()->{});
-        list.rowAt(x,y).ifPresent(row -> g.renderTooltip(font,font.split(label(entries.get(row.key())),Math.max(80,width-40)),x,y));
+        list.rowAt(x,y).ifPresent(row -> {
+            var details = RewardEntryDetails.resolve(minecraft, view(entries.get(row.key())));
+            // An item candidate uses one native tooltip throughout the row, including its text and edges.
+            if (!details.lookupItem().isEmpty()) g.renderTooltip(font,details.lookupItem(),x,y);
+            else g.renderTooltip(font,font.split(details.summary(),Math.max(80,width-40)),x,y);
+        });
     }
     private RewardView view(JsonObject entry) {
         var type=ResourceLocation.parse(entry.get("type").getAsString());
         Map<String,String> config=new LinkedHashMap<>(); entry.getAsJsonObject("config").entrySet().forEach(e->config.put(e.getKey(),e.getValue().getAsString()));
-        return new RewardView(type,type,type,config,"manual",false);
-    }
-    private ItemStack stack(JsonObject entry) {
-        try { var view=view(entry); String snbt=ClientRewardPresentationRegistry.get(view.typeId()).itemSnbt(view);
-            if(!snbt.isBlank() && minecraft.level!=null) return ClientRewardPresentationRegistry.get(view.typeId()).displayedItem(view,
-                    ItemStack.parseOptional(minecraft.level.registryAccess(),net.minecraft.nbt.TagParser.parseTag(snbt)));
-        } catch(Exception ignored) { /* Display-only data may omit an oversized icon; the option stays selectable. */ }
-        return ItemStack.EMPTY;
-    }
-    private Component label(JsonObject entry) {
-        var view=view(entry); String title=view.config().getOrDefault("title","");
-        if(!title.isBlank()) return Component.literal(title);
-        var stack=stack(entry); if(!stack.isEmpty()) return stack.getHoverName().copy().append(" × "+stack.getCount());
-        var label=ClientRewardPresentationRegistry.get(view.typeId()).typeName(view);
-        String amount=view.config().getOrDefault("xp",view.config().getOrDefault("xp_levels",""));
-        return amount.isBlank()?label:label.copy().append(" × "+amount);
+        // Keep the real root identity, but use only the frozen page configuration for content.
+        return new RewardView(bookId,ResourceLocation.parse(reward),type,config,"manual",false);
     }
     public boolean mouseClicked(double x,double y,int button) {
         if(list.mouseClicked(x,y,button)) return true;

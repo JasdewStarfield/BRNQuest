@@ -145,34 +145,7 @@ public final class ClientRewardPresentationRegistry {
 
     /** Reuse reward presentation and stack multipliers; inspecting a table never prepares or grants a reward. */
     private static Component previewEntry(RewardView reward) {
-        var presentation = get(reward.typeId());
-        var minecraft = net.minecraft.client.Minecraft.getInstance();
-        ItemStack stack = ItemStack.EMPTY;
-        try {
-            String snbt = presentation.itemSnbt(reward);
-            if (!snbt.isBlank() && minecraft.level != null) {
-                stack = presentation.displayedItem(reward, ItemStack.parseOptional(minecraft.level.registryAccess(),
-                        net.minecraft.nbt.TagParser.parseTag(snbt)));
-            }
-        } catch (Exception ignored) {
-            // A missing registry entry or malformed display stack must not hide the remaining table entries.
-        }
-        Component detail;
-        if (!stack.isEmpty()) {
-            detail = stack.getHoverName().copy().append(" × " + stack.getCount());
-        } else if (reward.typeId().equals(RewardTypes.XP) || reward.typeId().equals(RewardTypes.XP_LEVELS)) {
-            String key = reward.typeId().equals(RewardTypes.XP) ? "xp" : "xp_levels";
-            detail = presentation.typeName(reward).copy().append(" × " + reward.config().getOrDefault(key, "0"));
-        } else {
-            detail = presentation.title(new RewardPresentationContext(minecraft, reward, false, false, stack));
-            if (detail.equals(Component.translatable("screen.brnquest.reward.unknown"))) {
-                detail = presentation.typeName(reward);
-            }
-        }
-        // Keep an author's label while still exposing the actual item and quantity underneath that label.
-        String title = reward.config().getOrDefault("title", "");
-        return title.isBlank() || detail.getString().equals(title) ? detail
-                : Component.literal(title).append(" · ").append(detail);
+        return RewardEntryDetails.resolve(net.minecraft.client.Minecraft.getInstance(), reward).summary();
     }
 
 }

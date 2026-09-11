@@ -127,7 +127,12 @@ final class QuestDetailRows {
             // Item tooltip and recipe lookup now stop together at the icon's exclusive edges.
             hoveredLookup = lookup;
         } else if ((icon.isPresent() || stack.isEmpty()) && visibleCell != null && visibleCell.containsExclusive(mouseX, mouseY)) {
-            hoveredText = presentation.interactionHint(context);
+            // Real items keep only the native tooltip; do not expose a competing hint at the cell edge.
+            var details = RewardEntryDetails.fromDisplayed(context.minecraft(), rewardView, presentation, stack);
+            var hint = presentation.interactionHint(context);
+            hoveredText = details.summary();
+            if (hint.getString().contains(hoveredText.getString())) hoveredText = hint;
+            else if (!hint.equals(presentation.title(context))) hoveredText = hoveredText.copy().append("\n").append(hint);
         }
         UiRect candidates = presentation.resolvedOptions(rewardView).isPresent()
                 ? visiblePart(new UiRect(x+25,y+4,x+39,y+20),viewport) : null;

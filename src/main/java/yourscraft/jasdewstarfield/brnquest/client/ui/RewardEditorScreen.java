@@ -63,7 +63,7 @@ abstract class RewardEditorScreen extends Screen {
         super.renderBackground(graphics, x, y, partial);
         graphics.fill(0, 0, width, height, 0x70151820);
         var p = panel();
-        graphics.fill(p.left(), p.top(), p.right(), p.bottom(), 0xF0202632);
+        GraystoneSurface.raised(graphics, p, 0xFF30332E, true);
         graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(title.getString(), p.width() - 24)),
                 p.centerX(), p.top() + 10, -1);
         graphics.drawString(font, font.plainSubstrByWidth(issue, p.width() - 24),

@@ -62,9 +62,9 @@ public final class EditorButton {
      * Screens may still provide a custom palette when a specialized surface needs one.
      */
     public enum Tone {
-        NEUTRAL(new Palette(0xFF343D49, 0xFF414C5A, 0xFF2A323E,
+        NEUTRAL(new Palette(0xFF575B51, 0xFF6B7064, 0xFF383B35,
                 0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
-        PRIMARY(new Palette(0xFF385A72, 0xFF47718E, 0xFF2A323E,
+        PRIMARY(new Palette(0xFF68634A, 0xFF807957, 0xFF383B35,
                 0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
         SUCCESS(new Palette(0xFF3E735A, 0xFF4B8A6C, 0xFF2A323E,
                 0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
@@ -95,7 +95,7 @@ public final class EditorButton {
                 ? state.hovered() ? palette.hoveredBackground() : palette.background()
                 : palette.disabledBackground();
         int foreground = state.enabled() ? palette.text() : palette.disabledText();
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), background);
+        GraystoneSurface.raised(graphics, bounds, background, state.enabled());
 
         int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
         int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());

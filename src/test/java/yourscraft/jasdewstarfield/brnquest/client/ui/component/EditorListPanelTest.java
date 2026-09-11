@@ -7,6 +7,39 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class EditorListPanelTest {
+    @Test void gridHitTestingRejectsGapsAndOddLastCell() {
+        var panel = new EditorListPanel<Integer>();
+        var bounds = new UiRect(0, 0, 304, 90);
+        var frame = panel.advanceGrid(bounds, bounds, 305, 30, 2, 2, 4, 5, i -> i, 0, 12);
+        assertEquals(90, frame.contentHeight());
+        assertEquals(0, panel.rowAt(10, 10).orElseThrow().key());
+        assertEquals(1, panel.rowAt(160, 10).orElseThrow().key());
+        assertEquals(2, panel.rowAt(10, 40).orElseThrow().key());
+        assertTrue(panel.rowAt(151, 10).isEmpty(), "Column gutter must not select either type");
+        assertTrue(panel.rowAt(10, 29).isEmpty(), "Row gutter must not select a type");
+        assertTrue(panel.rowAt(160, 70).isEmpty(), "Odd last entry has no right-hand candidate");
+    }
+
+    @Test void gridRemainsVirtualizedAndLastEntrySurvivesColumnChange() {
+        var panel = new EditorListPanel<Integer>();
+        var bounds = new UiRect(0, 0, 304, 60);
+        AtomicInteger calls = new AtomicInteger();
+        var frame = panel.advanceGrid(bounds, bounds, 305, 30, 2, 2, 4, 10001,
+                i -> { calls.incrementAndGet(); return i; }, 0, 12);
+        assertEquals(4, calls.get());
+        panel.mouseScrolled(10, 10, -100000, 30);
+        frame = panel.advanceGrid(bounds, bounds, 305, 30, 2, 2, 4, 10001, i -> i, 0.1, 1000);
+        assertEquals(10000, panel.rowAt(10, 40).orElseThrow().key());
+        assertTrue(frame.rows().size() <= 4);
+        var narrow = new UiRect(0, 0, 180, 60);
+        panel.advanceGrid(narrow, narrow, 181, 30, 2, 1, 4, 10001, i -> i, 0, 12);
+        panel.mouseScrolled(10, 10, -100000, 30);
+        panel.advanceGrid(narrow, narrow, 181, 30, 2, 1, 4, 10001, i -> i, 0.1, 1000);
+        assertEquals(10000, panel.rowAt(10, 40).orElseThrow().key());
+        assertEquals(1, EditorPickerList.iconColumns(283));
+        assertEquals(2, EditorPickerList.iconColumns(284));
+    }
+
     private static final UiRect SCREEN = new UiRect(0, 0, 400, 300);
     private static final UiRect BOUNDS = new UiRect(10, 40, 210, 135);
 

@@ -33,25 +33,40 @@ public final class EditorListPanel<K> {
     /** Calculates only visible rows; key lookup and expensive row presentation are never eager for the whole list. */
     public Frame<K> advance(UiRect bounds, UiRect screenClip, int trackX, int rowHeight, int rowGap,
                             int count, IntFunction<K> keyAt, double seconds, double speed) {
-        if (rowHeight <= 0 || rowGap < 0 || rowGap >= rowHeight || count < 0) {
+        return advanceGrid(bounds, screenClip, trackX, rowHeight, rowGap, 1, 0, count, keyAt, seconds, speed);
+    }
+
+    /** Row-major grid sharing the same visible-cell geometry for paint, clicks and tooltips. */
+    public Frame<K> advanceGrid(UiRect bounds, UiRect screenClip, int trackX, int rowHeight, int rowGap,
+                            int columns, int columnGap, int count, IntFunction<K> keyAt, double seconds, double speed) {
+        if (rowHeight <= 0 || rowGap < 0 || rowGap >= rowHeight || count < 0 || columns < 1 || columnGap < 0) {
             throw new IllegalArgumentException("Invalid list metrics");
         }
         // Vertical clipping changes usable scroll height, not just drawing: keep the last row reachable.
         UiRect clipped = bounds.intersection(screenClip);
         bounds = new UiRect(bounds.left(), clipped.top(), bounds.right(), clipped.bottom());
-        int contentHeight = Math.multiplyExact(count, rowHeight);
+        int rowCount = count / columns + (count % columns == 0 ? 0 : 1);
+        int contentHeight = Math.multiplyExact(rowCount, rowHeight);
         int offset = (int) Math.round(scroll.advanceFrame(contentHeight, bounds.height(), seconds, speed));
         UiRect viewport = bounds.intersection(screenClip);
         UiRect track = new UiRect(trackX, bounds.top(), trackX + 3, bounds.bottom()).intersection(screenClip);
         List<Row<K>> rows = new ArrayList<>();
         if (viewport.width() > 0 && viewport.height() > 0) {
             int first = Math.max(0, (viewport.top() - bounds.top() + offset) / rowHeight);
-            for (int i = first; i < count; i++) {
-                int y = bounds.top() + i * rowHeight - offset;
+            int availableWidth = Math.max(0, bounds.width() - (columns - 1) * columnGap);
+            for (int rowIndex = first; rowIndex < rowCount; rowIndex++) {
+                int y = bounds.top() + rowIndex * rowHeight - offset;
                 if (y >= viewport.bottom()) break;
-                UiRect row = new UiRect(bounds.left(), y, bounds.right(), y + rowHeight - rowGap);
-                UiRect visible = row.intersection(viewport);
-                if (visible.height() > 0) rows.add(new Row<>(keyAt.apply(i), i, row, visible));
+                for (int col = 0; col < columns; col++) {
+                    int i = rowIndex * columns + col;
+                    if (i >= count) break; // An odd last row has no phantom clickable cell.
+                    int left = bounds.left() + availableWidth * col / columns + col * columnGap;
+                    int right = bounds.left() + availableWidth * (col + 1) / columns + col * columnGap;
+                    UiRect row = new UiRect(left, y, right, y + rowHeight - rowGap);
+                    UiRect visible = row.intersection(viewport);
+                    if (visible.height() > 0 && visible.width() > 0)
+                        rows.add(new Row<>(keyAt.apply(i), i, row, visible));
+                }
             }
         }
         frame = new Frame<>(bounds, viewport, track, contentHeight, offset, rows);

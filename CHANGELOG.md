@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- 类型选择器在宽窗口使用双列、窄窗口回退单列；类型图标增加随 PNG 轮廓变化的像素阴影。
+- Type pickers use two columns in wide windows and one in narrow windows, with a pixel shadow following each PNG icon silhouette.
+
+- 修复类型选择与灰石面板因九宫格小块平铺产生的大量绘制提交，改为固定数量网格拉伸，并保留 PNG 资源包覆盖。
+- Fixed excessive draw submissions from tiny tiled graystone GUI sprites by stretching a bounded nine-slice mesh, retaining PNG resource-pack overrides.
+
+- 类型图标与灰石边框改用可编辑 PNG GUI 素材，支持资源包覆盖；九宫格边框保留原有尺寸与状态色。
+- Type icons and graystone surfaces now use editable PNG GUI sprites with resource-pack overrides; nine-slice borders retain existing geometry and state colors.
+
+- 任务/奖励类型选择加入像素图标，重复操作说明移至 Tooltip；共用编辑按钮与奖励编辑面板采用灰石明暗边框，保留现有布局和输入行为。
+- Added pixel icons to task/reward type pickers and moved repetitive instructions into tooltips. Shared editor buttons and reward panels now use graystone bevels while retaining their existing layout and input behavior.
+
 - 修复自选奖励页面遗漏原版进度目标，导致名称和图标无法解析的问题；显示数据仅补充受限的进度标识，不传递执行配置。
 - Fixed missing advancement names/icons in reward choices by including the bounded advancement selector in display data, without exposing execution configuration.
 

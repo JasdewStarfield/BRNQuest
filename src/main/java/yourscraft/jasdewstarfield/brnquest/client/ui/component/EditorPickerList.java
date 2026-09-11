@@ -16,6 +16,10 @@ import java.util.function.IntFunction;
 public final class EditorPickerList<K> {
     public static final int SEARCH_HEIGHT = 18;
     public static final int ROW_HEIGHT = 30;
+    private static final int COLUMN_GAP = 4;
+
+    /** Each column reserves room for the icon and a useful localized name; narrow windows stay single-column. */
+    public static int iconColumns(int width) { return width >= 284 ? 2 : 1; }
     public enum Tone { NORMAL, WARNING, DISABLED }
 
     public record Entry(Component primary, Component secondary, Tone tone,
@@ -49,12 +53,33 @@ public final class EditorPickerList<K> {
     }
 
     /** Only visible choices are presented; returned hover text is drawn by the host above all panels. */
+    public EditorListPanel.Frame<K> advanceIconChoices(UiRect bounds, UiRect screenClip, int count,
+            IntFunction<K> keyAt, double seconds, double speed) {
+        this.bounds = bounds.intersection(screenClip);
+        UiRect rows = rowsBounds(this.bounds);
+        return list.advanceGrid(rows, this.bounds, this.bounds.right() - 4, ROW_HEIGHT, 2,
+                iconColumns(rows.width()), COLUMN_GAP, count, keyAt, seconds, speed);
+    }
+
+    /** Only visible choices are presented; returned hover text is drawn by the host above all panels. */
     public List<Component> render(GuiGraphics graphics, Font font, Component searchText, boolean showingHint,
                                    Function<K, Entry> presentation, Component emptyText, int mouseX, int mouseY) {
+        return renderChoices(graphics, font, searchText, showingHint, presentation, null, emptyText, mouseX, mouseY);
+    }
+
+    /** Type pickers opt into icon rows without changing legacy entries or other selector layouts. */
+    public List<Component> renderIconChoices(GuiGraphics graphics, Font font, Component searchText,
+            Function<K, Entry> presentation, Function<K, EditorIcon> icons, Component emptyText, int mouseX, int mouseY) {
+        return renderChoices(graphics, font, searchText, false, presentation, icons, emptyText, mouseX, mouseY);
+    }
+
+    private List<Component> renderChoices(GuiGraphics graphics, Font font, Component searchText, boolean showingHint,
+            Function<K, Entry> presentation, Function<K, EditorIcon> icons, Component emptyText, int mouseX, int mouseY) {
         if (bounds == null || bounds.width() == 0 || bounds.height() == 0) return List.of();
         graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
         try {
-            graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFA202832);
+            if (icons != null) GraystoneSurface.raised(graphics, bounds, 0xFF383B35, true);
+            else graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFA202832);
             graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2,
                     Math.min(bounds.bottom(), bounds.top() + SEARCH_HEIGHT), 0xFF151A22);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
@@ -67,13 +92,23 @@ public final class EditorPickerList<K> {
             Entry entry = presentation.apply(row.key());
             UiRect rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(mouseX, mouseY);
-            graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(),
+            if (icons != null) GraystoneSurface.raised(graphics, rect,
+                    entry.selected() ? 0xFF68634A : hovered ? 0xFF5C6056 : 0xFF454940, entry.tone() != Tone.DISABLED);
+            else graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(),
                     entry.selected() ? 0xFF385A72 : hovered ? 0xE0343D49 : 0xA02A323E);
             int primaryColor = switch (entry.tone()) {
                 case NORMAL -> 0xFFFFFFFF;
                 case WARNING -> 0xFFFFA070;
                 case DISABLED -> 0xFF7F8B99;
             };
+            if (icons != null) {
+                int inset = rect.width() >= 36 ? 28 : 4;
+                if (inset == 28) icons.apply(row.key()).render(graphics, font,
+                        new UiRect(rect.left()+6, rect.top()+7, rect.left()+22, rect.top()+23), primaryColor);
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
+                        Math.max(0, rect.width()-inset-4))), rect.left()+inset, rect.top()+11, primaryColor, false);
+                return;
+            }
             int textWidth = Math.max(0, rect.width() - 8);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 4, primaryColor, false);

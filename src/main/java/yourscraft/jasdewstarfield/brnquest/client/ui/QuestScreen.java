@@ -2966,15 +2966,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         List<ResourceLocation> candidates = typedTypePickerFrame.entries().stream()
                 .map(QuestTypePickerModel.Entry::typeId).toList();
         UiRect bounds = typedTypePickerBounds();
-        typedTypePicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
+        typedTypePicker.advanceIconChoices(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
                 candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());
-        List<Component> tooltip = typedTypePicker.render(graphics, font,
-                Component.translatable("screen.brnquest.editor.typed.type_heading"), false,
+        List<Component> tooltip = typedTypePicker.renderIconChoices(graphics, font,
+                Component.translatable("screen.brnquest.editor.typed.type_heading"),
                 type -> new EditorPickerList.Entry(typedTypeDisplayName(type),
                         Component.translatable(typePickerHint(typedTypePickerFrame, type)),
-                        EditorPickerList.Tone.NORMAL, false, List.of(Component.translatable(
+                        EditorPickerList.Tone.NORMAL, false, List.of(typedTypeDisplayName(type),
+                                Component.translatable(typePickerHint(typedTypePickerFrame, type)), Component.translatable(
                                 "screen.brnquest.editor.typed.type_id", type.toString()))),
-                null, mouseX, mouseY);
+                QuestTypeIcons::forType, null, mouseX, mouseY);
         if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
                 Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);

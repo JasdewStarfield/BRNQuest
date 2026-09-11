@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 可选项浏览的完成按钮改用共用灰石控件；统一物品候选和背包格子的高亮、原生 Tooltip 与 JEI 提示范围，修复边缘和滚动偏移不一致。
+- Options browsers use the shared graystone Done button; item candidate and inventory slots share hover, native tooltip and JEI hit areas, including edges and rounded scroll offsets.
+
+- 可选项浏览、物品候选及标签选择沿用统一灰石面板；标签行悬停显示完整标识，保留原生输入与物品交互。
+- Options browsers, item candidates and tag choices share graystone panels; tag rows expose full identifiers on hover while preserving native inputs and item interactions.
+
 - 类型选择器在宽窗口使用双列、窄窗口回退单列；类型图标增加随 PNG 轮廓变化的像素阴影。
 - Type pickers use two columns in wide windows and one in narrow windows, with a pixel shadow following each PNG icon silhouette.
 

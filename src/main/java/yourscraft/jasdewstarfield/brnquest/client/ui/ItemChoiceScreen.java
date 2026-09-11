@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
@@ -109,7 +110,8 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
         UiRect panel = panelBounds();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xF0202632);
+        // Keep the native item slots, ingredient hitboxes and parent lifecycle inside the shared skin.
+        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 7, 0xFFFFFFFF);
 
         if (editing) renderEditorChrome(graphics, panel, mouseX, mouseY);
@@ -120,19 +122,14 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         updateTagFieldGeometry();
         super.render(graphics, mouseX, mouseY, partialTick);
 
-        ItemStack hovered = candidateAt(mouseX, mouseY)
-                .filter(index -> itemBounds(candidateSlot(index)).contains(mouseX, mouseY))
-                .map(index -> candidates().get(index)).orElse(ItemStack.EMPTY);
-        if (hovered.isEmpty() && editing) {
-            int inventoryIndex = inventoryIndexAt(mouseX, mouseY);
-            if (inventoryIndex >= 0 && itemBounds(inventorySlot(inventoryIndex)).contains(mouseX, mouseY)
-                    && minecraft != null && minecraft.player != null) {
-                hovered = minecraft.player.getInventory().getItem(inventoryIndex);
-            }
-        }
-        if (!hovered.isEmpty()) graphics.renderTooltip(font, hovered, mouseX, mouseY);
+        // Native Tooltip and optional recipe hints must resolve the exact same clipped slot.
+        recipeLookupTargetAt(mouseX, mouseY).ifPresent(target -> {
+            // Lookup ingredients normalize count to one; native tooltips retain the original stack for other mods.
+            ItemStack hovered = candidateAt(mouseX, mouseY).map(index -> candidates().get(index))
+                    .orElseGet(() -> inventoryStackAt(mouseX, mouseY));
+            graphics.renderTooltip(font, hovered, mouseX, mouseY);
+        });
     }
-
     private void renderEditorChrome(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
         EditorButton.renderInteractive(graphics, font, modeListBounds(),
                 EditorButton.Definition.text(Component.translatable("screen.brnquest.item_choice.mode.list"), null),
@@ -185,7 +182,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             if (slot.bottom() <= viewport.top() || slot.top() >= viewport.bottom()) continue;
             boolean selected = editing && !tagMode && index == selectedIndex;
             int background = selected ? 0xFF6485A4
-                    : slot.contains(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
+                    : slot.intersection(viewport).containsExclusive(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
             graphics.fill(slot.left(), slot.top(), slot.right(), slot.bottom(), background);
             graphics.fill(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1, 0xFF171B22);
             graphics.renderItem(candidates.get(index), slot.left() + 1, slot.top() + 1);
@@ -216,7 +213,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         for (int index = 0; index < 36; index++) {
             UiRect slot = inventorySlot(index);
             ItemStack stack = minecraft.player.getInventory().getItem(index);
-            int background = slot.contains(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
+            int background = slot.containsExclusive(mouseX, mouseY) ? 0xFF69788A : 0xFF3A414B;
             graphics.fill(slot.left(), slot.top(), slot.right(), slot.bottom(), background);
             graphics.fill(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1, 0xFF171B22);
             if (!stack.isEmpty()) graphics.renderItem(stack, slot.left() + 1, slot.top() + 1);
@@ -413,16 +410,16 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         Optional<Integer> candidate = candidateAt(mouseX, mouseY);
         if (candidate.isPresent()) {
             UiRect slot = candidateSlot(candidate.get());
-            UiRect item = itemBounds(slot);
+            UiRect item = slot.intersection(candidateViewport());
             ItemStack stack = candidates().get(candidate.get());
-            return item.contains(mouseX, mouseY) ? Optional.of(new RecipeLookupTarget(stack, item)) : Optional.empty();
+            return item.containsExclusive(mouseX, mouseY) ? Optional.of(new RecipeLookupTarget(stack, item)) : Optional.empty();
         }
         if (editing) {
             int inventoryIndex = inventoryIndexAt(mouseX, mouseY);
             if (inventoryIndex >= 0 && minecraft != null && minecraft.player != null) {
                 ItemStack stack = minecraft.player.getInventory().getItem(inventoryIndex);
-                UiRect item = itemBounds(inventorySlot(inventoryIndex));
-                if (!stack.isEmpty() && item.contains(mouseX, mouseY)) {
+                UiRect item = inventorySlot(inventoryIndex);
+                if (!stack.isEmpty() && item.containsExclusive(mouseX, mouseY)) {
                     return Optional.of(new RecipeLookupTarget(stack, item));
                 }
             }
@@ -476,12 +473,16 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     }
 
     private Optional<Integer> candidateAt(double mouseX, double mouseY) {
-        UiRect viewport = candidateViewport();
-        if (!viewport.contains(mouseX, mouseY)) return Optional.empty();
+        return candidateIndexAt(candidateViewport(), candidates().size(), renderedScroll, mouseX, mouseY);
+    }
+
+    /** Whole-slot hit testing uses the same rounded scroll offset as candidateSlot rendering. */
+    static Optional<Integer> candidateIndexAt(UiRect viewport, int count, double scroll, double mouseX, double mouseY) {
+        if (!viewport.containsExclusive(mouseX, mouseY)) return Optional.empty();
         int column = (int) ((mouseX - viewport.left()) / SLOT_SIZE);
-        int row = (int) ((mouseY - viewport.top() + renderedScroll) / SLOT_SIZE);
+        int row = (int) ((mouseY - viewport.top() + Math.round(scroll)) / SLOT_SIZE);
         int index = row * COLUMNS + column;
-        return column >= 0 && column < COLUMNS && index >= 0 && index < candidates().size()
+        return column >= 0 && column < COLUMNS && index >= 0 && index < count
                 ? Optional.of(index) : Optional.empty();
     }
 
@@ -527,7 +528,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     }
 
     private int inventoryIndexAt(double mouseX, double mouseY) {
-        for (int index = 0; index < 36; index++) if (inventorySlot(index).contains(mouseX, mouseY)) return index;
+        for (int index = 0; index < 36; index++) if (inventorySlot(index).containsExclusive(mouseX, mouseY)) return index;
         return -1;
     }
 
@@ -595,7 +596,4 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         return new UiRect(left, top, left + SLOT_SIZE, top + SLOT_SIZE);
     }
 
-    private static UiRect itemBounds(UiRect slot) {
-        return new UiRect(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1);
-    }
 }

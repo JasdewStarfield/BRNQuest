@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
@@ -57,7 +58,7 @@ public final class TagChoiceScreen extends Screen {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, 0x70151820);
         UiRect panel = panel();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xF0202632);
+        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         graphics.renderItem(source, panel.left() + 8, panel.top() + 24);
         Component hint = Component.translatable("screen.brnquest.tag_choice.hint", tags.size());
@@ -73,8 +74,8 @@ public final class TagChoiceScreen extends Screen {
                 elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
         list.render(graphics, row -> {
             UiRect rect = row.bounds();
-            int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF56697C : 0xFF2A313C;
-            graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), background);
+            int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF5C6056 : 0xFF454940;
+            GraystoneSurface.raised(graphics, rect, background, true);
             String text = font.plainSubstrByWidth(row.key().toString(), Math.max(0, rect.width() - 10));
             graphics.drawString(font, text, rect.left() + 5, rect.top() + 5, 0xFFFFFFFF, false);
         }, () -> {});
@@ -83,6 +84,9 @@ public final class TagChoiceScreen extends Screen {
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
+        // The visible tag may be shortened; its full identity stays readable above the completed panel.
+        list.rowAt(mouseX, mouseY).ifPresent(row -> graphics.renderComponentTooltip(font,
+                List.of(Component.literal(row.key().toString())), mouseX, mouseY));
     }
 
     @Override

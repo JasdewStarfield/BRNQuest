@@ -1,5 +1,8 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
+
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.Screen;
@@ -19,7 +22,7 @@ public final class ServerFieldScreen extends Screen {
     private final Consumer<String> commit;
     private String value;
     private EditBox input, search;
-    private Button useCurrent, preview;
+    private EditorButtonWidget useCurrent, preview;
     private final Map<String,String> context;
     private final boolean readOnly;
     private String filter = "";
@@ -55,16 +58,16 @@ public final class ServerFieldScreen extends Screen {
         input.setEditable(!readOnly);
         search = new EditBox(font,left,72,220,20,Component.translatable("screen.brnquest.field.search"));
         search.setMaxLength(128); search.setValue(filter); search.setHint(Component.translatable("screen.brnquest.field.search")); search.setResponder(text -> { filter = text; pages.reset(); list.reset(); invalidateSelection(); delay = 6; }); addRenderableWidget(search);
-        useCurrent = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.field.current"), b -> { if (result == null || result.current().isBlank()) input.setValue(""); else { query(); currentRequest = requestId; } }).bounds(left+224,72,76,20).build());
+        useCurrent = addRenderableWidget(new EditorButtonWidget(left+224,72,76,20,Component.translatable("screen.brnquest.field.current"), b -> { if (result == null || result.current().isBlank()) input.setValue(""); else { query(); currentRequest = requestId; } }));
         useCurrent.active = !readOnly;
         useCurrent.setMessage(Component.translatable(result != null && !result.current().isBlank() ? "screen.brnquest.field.current" : "screen.brnquest.field.clear"));
-        preview = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.field.preview"), b -> {
+        preview = addRenderableWidget(new EditorButtonWidget(left+224,112,76,14,Component.translatable("screen.brnquest.field.preview"), b -> {
             if (result != null && !result.previewSource().isBlank())
                 minecraft.setScreen(new ServerFieldScreen(this,result.previewSource(),value,ignored -> {},context,true));
-        }).bounds(left+224,112,76,14).build());
+        }));
         preview.visible = !readOnly && result != null && !result.previewSource().isBlank();
-        addRenderableWidget(Button.builder(Component.translatable("gui.done"), b -> { if (!readOnly) commit.accept(input.getValue()); onClose(); }).bounds(left,height-30,146,20).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(left+154,height-30,146,20).build());
+        addRenderableWidget(new EditorButtonWidget(left,height-30,146,20,Component.translatable("gui.done"), b -> { if (!readOnly) commit.accept(input.getValue()); onClose(); }));
+        addRenderableWidget(new EditorButtonWidget(left+154,height-30,146,20,Component.translatable("gui.cancel"), b -> onClose()));
         query();
     }
     /** Discard old selection metadata immediately, before the delayed replacement query. */
@@ -100,6 +103,8 @@ public final class ServerFieldScreen extends Screen {
         ChildScreenBackground.render(parent, graphics, width, height, partial);
         super.renderBackground(graphics,x,y,partial);
         graphics.fill(0,0,width,height,0x70151820);
+        // Skin the existing form; query IDs, pagination and native input focus remain unchanged.
+        GraystoneSurface.raised(graphics, new UiRect(width/2-154,8,width/2+154,Math.max(8,height-6)),0xFF30332E,true);
         super.render(graphics,x,y,partial);
         graphics.drawCenteredString(font,title,width/2,16,0xFFFFFFFF);
         graphics.drawString(font,Component.translatable("screen.brnquest.field.status",result == null ? 0 : result.total(),result == null ? 0 : result.selectedCount()),width/2-150,100,0xFFCCCCCC,false);
@@ -112,7 +117,9 @@ public final class ServerFieldScreen extends Screen {
         list.render(graphics, row -> {
             var rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(x,y);
-            graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? 0xDD385A72 : 0xAA263646);
+            // Read-only previews remain flat; selectable values use the shared bounded bevel.
+            if (readOnly) graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? 0xFF454940 : 0xFF252822);
+            else GraystoneSurface.raised(graphics,rect,hovered ? 0xFF5C6056 : 0xFF454940,true);
             var entry = pages.entry(row.key());
             String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+(readOnly ? "" : " ("+entry.count()+")");
             graphics.drawString(font,font.plainSubstrByWidth(label,rect.width()-6),

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 服务端字段选择器统一灰石面板、按钮和候选行；只读预览保留不同的行样式。
+- Server field selectors share graystone panels, buttons and choice rows, with distinct read-only preview styling.
+
 - 可选项浏览的完成按钮改用共用灰石控件；统一物品候选和背包格子的高亮、原生 Tooltip 与 JEI 提示范围，修复边缘和滚动偏移不一致。
 - Options browsers use the shared graystone Done button; item candidate and inventory slots share hover, native tooltip and JEI hit areas, including edges and rounded scroll offsets.
 

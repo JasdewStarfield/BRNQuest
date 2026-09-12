@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+- 优化灰石界面层次：对照早期原型采用浅灰凸边顶栏、深色底栏与导航，并增加边栏接缝，底栏按钮留出分隔线与焦点边框空间；详情分组使用紧凑图标标题和细线；任务节点增加对比轮廓，网格进一步弱化。
+- Refined graystone hierarchy with a prototype-inspired light beveled header, dark footer/navigation and drawer seams, footer button clearance for separators and focus outlines, compact icon-and-rule detail headings, contrasting quest-node rims and subtler grid lines.
+
+- 统一主界面栏位、属性与依赖面板、右键菜单、选择列表、管理/多语言/原始配置及确认/冲突弹窗的灰石配色；共用中性色板、滚动条与灰石窗框，保留状态语义颜色和原生物品 Tooltip。
+- Unified graystone colors across main-screen chrome, property/dependency panels, menus, pickers, admin/localization/raw-config screens and confirmation/recovery dialogs. Shared neutral colors, scrollbars and graystone frames retain semantic status colors and native item tooltips.
+
+- 表单待应用状态仅在内容相对打开时发生变化后显示；恢复原值后回到未修改状态，打开表单及默认值初始化不再误报。
+- Pending form status now reflects changes from the initialized form; restoring original values clears it, and opening a form or loading defaults no longer reports changes.
+
+- 移除章节/任务图标选择及目标/奖励配置按钮上无效的 JEI 快捷键提示，保留按钮操作说明与真正物品区域的查询功能。
+- Removed inactive JEI shortcut hints from chapter/quest icon pickers and task/reward configuration buttons, retaining action tooltips and recipe lookup on actual item surfaces.
+
+- 作者属性按标识、外观、配置与完成行为分区，长表单可独立滚动；奖励表保留可读路径和类型摘要，子窗口明确应用到上层或取消。
+- Author properties group identity, appearance, configuration and completion settings with independent scrolling. Reward tables show readable paths and type summaries; child forms explicitly apply to their parent or cancel.
+- 保存状态区分待应用的本地表单与服务端草稿；发布审阅显示对象名称、图标和字段前后值，完整 ID、诊断与原始值可在详情中查看，保留版本校验与发布备份流程。
+- Save status distinguishes local forms awaiting Apply from server drafts. Publish review shows names, icons and before/after values, with full IDs, diagnostics and raw values in details, preserving revision checks and publish backups.
+- 嵌套选择器和编辑窗口隔离父窗口渲染深度，避免背景物品图标穿透。
+- Nested selectors and editor windows isolate parent render depth to prevent background item icons bleeding through.
+
+- 章节组折叠状态随章节和视角按服务器/任务书记忆，关闭再打开界面后恢复（本次游戏运行期间）。
+- Group folding is remembered with chapter/camera state per server and book when reopening the screen during the same game process.
+
+- 编辑模式支持章节拖拽插入排序与跨组移动，实时虚影/插入线及边缘滚动；点击章节组可展开或收起列表。
+- Edit mode supports chapter drag insertion and cross-group moves with ghost previews, insertion markers and edge scrolling. Group headings expand or collapse their chapter lists.
+
+- 章节清空图标按钮归入图标行；稳定 ID 明确以只读文本展示，悬停可查看完整值。
+- Chapter icon clearing is grouped with the icon selector; stable IDs display as read-only text with full values on hover.
+
+- 章节属性支持搜索并选择所属分组，完成后移动到目标分组末尾，取消保留原分组。
+- Chapter properties support searchable group selection, appending the chapter to its new group on apply and retaining the original group on cancel.
+
 - 修复章节属性窗口被画布图标穿透的问题，改用灰石窗口背景；章节与任务属性复用物品/贴图选择组件。
 - Chapter properties now render above canvas icons with a graystone dialog surface; chapter and quest properties share the item/texture selector component.
 

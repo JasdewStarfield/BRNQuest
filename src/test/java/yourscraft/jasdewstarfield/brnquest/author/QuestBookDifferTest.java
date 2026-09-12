@@ -73,4 +73,32 @@ class QuestBookDifferTest {
     }
 
     private static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath("test", path); }
+    @Test void removedObjectsRetainStructuredNamesAndUnknownConfiguration() {
+        var original = book("quest", "Readable quest", 0, List.of(),
+                new TaskDefinition(id("task"), id("task"), id("custom"),
+                        Map.of("title", "External task", "addon_unknown", "{opaque:true}"), false));
+        var diff = QuestBookDiffer.diff(original, null);
+        var quest = diff.entries().stream().filter(e -> e.objectKind() == SemanticDiffEntry.ObjectKind.QUEST).findFirst().orElseThrow();
+        assertEquals("Readable quest", JsonParser.parseString(quest.before()).getAsJsonObject().get("title").getAsString());
+        var task = diff.entries().stream().filter(e -> e.objectKind() == SemanticDiffEntry.ObjectKind.TASK).findFirst().orElseThrow();
+        assertEquals("{opaque:true}", JsonParser.parseString(task.before()).getAsJsonObject().getAsJsonObject("config").get("addon_unknown").getAsString());
+        var chapter = diff.entries().stream().filter(e -> e.objectKind() == SemanticDiffEntry.ObjectKind.CHAPTER).findFirst().orElseThrow();
+        assertEquals("Chapter", JsonParser.parseString(chapter.before()).getAsJsonObject().get("title").getAsString());
+    }
+
+    @Test void behaviorChangesShowExplicitBeforeAndAfterPerField() {
+        var before = book("quest", "Quest", 0, List.of(),
+                new TaskDefinition(id("task"), id("task"), id("checkmark"), Map.of(), false));
+        var json = JsonParser.parseString(NativeBookJson.encode(before)).getAsJsonObject();
+        var behavior = new com.google.gson.JsonObject();
+        behavior.addProperty("repeatable", true);
+        json.getAsJsonArray("chapters").get(0).getAsJsonObject().getAsJsonArray("quests").get(0)
+                .getAsJsonObject().add("behavior", behavior);
+        var diff = QuestBookDiffer.diff(before, NativeBookJson.decode(json));
+        var change = diff.entries().stream().filter(e -> e.path().equals("behavior.repeatable")).findFirst().orElseThrow();
+        assertEquals("false", change.before());
+        assertEquals("true", change.after());
+        assertFalse(diff.entries().stream().anyMatch(e -> e.path().equals("behavior")));
+    }
+
 }

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -82,11 +83,11 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
 
         EditorItemSelectorLayout layout = layout();
         UiRect panel = layout.panel();
-        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
+        GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
 
         ItemChoiceMatcher.MatchPlan plan = currentPlan();
@@ -96,7 +97,7 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
                 spec.requiredEntries(), spec.entries().size());
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                         instruction.getString(), layout.targetSlot().left() - panel.left() - 12)),
-                panel.left() + 7, panel.top() + 31, 0xFF9FB0C2, false);
+                panel.left() + 7, panel.top() + 31, GraystonePalette.SECONDARY, false);
         renderTarget(graphics, layout.targetSlot(), plan.representative());
 
         Component summary = selectedSlots.isEmpty()
@@ -106,7 +107,7 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
                         : "screen.brnquest.item_submission.selected_invalid", selectedSlots.size());
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), panel.width() - 14)),
                 panel.left() + 7, panel.top() + 50,
-                canSubmit ? 0xFF80D49B : selectedSlots.isEmpty() ? 0xFF9FB0C2 : 0xFFFFC16A, false);
+                canSubmit ? 0xFF80D49B : selectedSlots.isEmpty() ? GraystonePalette.SECONDARY : 0xFFFFC16A, false);
 
         if (minecraft != null && minecraft.player != null) {
             for (int slotIndex = 0; slotIndex < 36; slotIndex++) {
@@ -123,7 +124,7 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
                 graphics, font, amount, panel.left() + 7, panel.top() + 20, panel.width() - 14, 0xFFB7C5A7, 0.75F);
         if (inventoryFocused) {
             var focused = layout.inventorySlot(focusedInventoryIndex);
-            graphics.renderOutline(focused.left(), focused.top(), focused.width(), focused.height(), 0xFFE4D29A);
+            graphics.renderOutline(focused.left(), focused.top(), focused.width(), focused.height(), GraystonePalette.ACCENT);
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);

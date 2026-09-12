@@ -88,6 +88,13 @@ public final class DraftEditService {
                 book -> DraftBookEditor.moveChapterOrder(book, chapterId, targetIndex));
     }
 
+    /** Cross-group dragging is one revision-checked edit, not a pair of partially applied updates. */
+    public AuthorOperationResult<DraftEditResult> moveChapterToGroup(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation chapterId, ResourceLocation groupId, int index) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.moveChapterToGroup(book, chapterId, groupId, index));
+    }
+
     public AuthorOperationResult<DraftEditResult> removeChapter(ServerPlayer player, UUID sessionId,
                                                                  ResourceLocation bookId, String revision,
                                                                  ResourceLocation chapterId) {

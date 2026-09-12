@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -47,7 +48,7 @@ final class QuestTypedEntryListSection {
         graphics.pose().translate(-layout.drawerOffset(), 0, 0);
         try {
             graphics.fill(layout.panel().left(), layout.panel().top(), layout.panel().right(), layout.panel().bottom(),
-                    0xFF202632);
+                    GraystonePalette.PANEL);
             graphics.drawString(font, model.heading(), layout.list().left(), layout.panel().top() + 8,
                     0xFFFFFFFF, false);
             if (model.message() != null) {

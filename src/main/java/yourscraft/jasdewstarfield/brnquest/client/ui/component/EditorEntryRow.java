@@ -30,7 +30,7 @@ public final class EditorEntryRow {
 
     public static void render(GuiGraphics graphics, Font font, Layout layout, Content content) {
         UiRect bounds = layout.bounds();
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xA02A323E);
+        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), GraystonePalette.ROW);
         if (content.icon() != null && layout.icon().width() > 0) {
             content.icon().render(graphics, font, layout.icon(), 0xFFFFFFFF);
         }

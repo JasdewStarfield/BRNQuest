@@ -11,6 +11,19 @@ class QuestScreenSessionStateTest {
         QuestScreenSessionState.clearForTest();
     }
 
+    @Test void foldedGroupsAreCopiedAndIsolatedByServerAndBook() {
+        var book = ResourceLocation.parse("test:book");
+        var group = ResourceLocation.parse("test:group");
+        var groups = new java.util.HashSet<ResourceLocation>(); groups.add(group);
+        QuestScreenSessionState.save("a", book, null, 0, 0, 1, false, groups);
+        groups.clear();
+        var restored = QuestScreenSessionState.load("a", book);
+        assertEquals(java.util.Set.of(group), restored.foldedGroups());
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () -> restored.foldedGroups().clear());
+        assertEquals(java.util.Set.of(), QuestScreenSessionState.load("b", book).foldedGroups());
+        assertEquals(java.util.Set.of(), QuestScreenSessionState.load("a", ResourceLocation.parse("test:other")).foldedGroups());
+    }
+
     @Test void firstScreenStartsWithCollapsedNavigation() {
         assertEquals(true, QuestScreenSessionState.Snapshot.defaults().navigationCollapsed());
     }

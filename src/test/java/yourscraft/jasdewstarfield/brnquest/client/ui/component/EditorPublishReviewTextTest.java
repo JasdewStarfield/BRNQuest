@@ -5,6 +5,7 @@ import net.minecraft.network.chat.contents.TranslatableContents;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class EditorPublishReviewTextTest {
@@ -34,4 +35,12 @@ class EditorPublishReviewTextTest {
         TranslatableContents contents = assertInstanceOf(TranslatableContents.class, component.getContents());
         assertEquals(expected, contents.getKey());
     }
+    @Test void compactSummaryRetainsTitlesAndAcceptsOldScalarPayloads() {
+        assertEquals("Named reward", EditorPublishReviewText.storedTitle("{\"config\":{\"title\":\"Named reward\"}}"));
+        assertEquals("Named reward", EditorPublishReviewText.compactValue("{\"config\":{\"title\":\"Named reward\"}}"));
+        assertEquals("old scalar", EditorPublishReviewText.compactValue("old scalar"));
+        assertEquals("", EditorPublishReviewText.storedTitle("LegacyRecord[id=test:q]"));
+        assertTrue(EditorPublishReviewText.compactValue("x".repeat(200)).length() <= 100);
+    }
+
 }

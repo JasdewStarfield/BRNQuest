@@ -62,16 +62,16 @@ public final class EditorButton {
      * Screens may still provide a custom palette when a specialized surface needs one.
      */
     public enum Tone {
-        NEUTRAL(new Palette(0xFF575B51, 0xFF6B7064, 0xFF383B35,
-                0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
-        PRIMARY(new Palette(0xFF68634A, 0xFF807957, 0xFF383B35,
-                0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
-        SUCCESS(new Palette(0xFF3E735A, 0xFF4B8A6C, 0xFF2A323E,
-                0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
-        WARNING(new Palette(0xFFA06432, 0xFFB2743A, 0xFF2A323E,
-                0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF)),
-        DANGER(new Palette(0xFF723E46, 0xFF8B4B56, 0xFF2A323E,
-                0xFFFFFFFF, 0xFF8793A1, 0xFFFFFFFF));
+        NEUTRAL(new Palette(0xFF575B51, 0xFF6B7064, GraystonePalette.ROW,
+                0xFFFFFFFF, GraystonePalette.DISABLED, 0xFFFFFFFF)),
+        PRIMARY(new Palette(GraystonePalette.SELECTED, 0xFF807957, GraystonePalette.ROW,
+                0xFFFFFFFF, GraystonePalette.DISABLED, 0xFFFFFFFF)),
+        SUCCESS(new Palette(0xFF3E735A, 0xFF4B8A6C, GraystonePalette.ROW,
+                0xFFFFFFFF, GraystonePalette.DISABLED, 0xFFFFFFFF)),
+        WARNING(new Palette(0xFFA06432, 0xFFB2743A, GraystonePalette.ROW,
+                0xFFFFFFFF, GraystonePalette.DISABLED, 0xFFFFFFFF)),
+        DANGER(new Palette(0xFF723E46, 0xFF8B4B56, GraystonePalette.ROW,
+                0xFFFFFFFF, GraystonePalette.DISABLED, 0xFFFFFFFF));
 
         private final Palette palette;
 

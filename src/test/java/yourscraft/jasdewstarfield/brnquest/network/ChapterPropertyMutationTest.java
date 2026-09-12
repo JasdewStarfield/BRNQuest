@@ -29,4 +29,23 @@ class ChapterPropertyMutationTest {
             assertEquals(chapter.order(), updated.order());
         }
     }
+    @Test void changingGroupKeepsStableChapterIdentityAndOwnedData() {
+        var bookId = ResourceLocation.parse("test:book");
+        var chapterId = ResourceLocation.parse("test:chapter");
+        var oldGroup = ResourceLocation.parse("test:old");
+        var newGroup = ResourceLocation.parse("test:new");
+        var chapter = new ChapterDefinition(bookId, chapterId, oldGroup, "Chapter", "", 2,
+                List.of(), Map.of("addon:opaque", "keep"));
+        var book = new QuestBookDefinition(bookId, 1, "Book", List.of(
+                new ChapterGroupDefinition(bookId, oldGroup, "Old", 0),
+                new ChapterGroupDefinition(bookId, newGroup, "New", 1)), List.of(chapter), Map.of());
+        var replacement = AuthoringMutationHandler.chapterReplacement(book, chapterId, newGroup, "Chapter", 0, Map.of());
+        var result = yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor.updateChapter(book, chapterId, replacement);
+        assertTrue(result.success());
+        assertEquals(chapterId, replacement.id());
+        assertEquals(newGroup, replacement.groupId());
+        assertEquals(chapter.extensions(), replacement.extensions());
+        assertEquals(chapter.quests(), replacement.quests());
+        assertEquals(oldGroup, chapter.groupId()); // The original snapshot remains immutable.
+    }
 }

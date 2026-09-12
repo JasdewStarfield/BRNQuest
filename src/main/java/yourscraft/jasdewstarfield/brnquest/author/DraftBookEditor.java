@@ -144,6 +144,30 @@ public final class DraftBookEditor {
         return changed(withChapters(book, normalized), chapterId);
     }
 
+    /** Inserts into a group atomically, normalizing both lists so one undo restores the complete move. */
+    public static AuthorOperationResult<DraftChange> moveChapterToGroup(QuestBookDefinition book,
+            ResourceLocation chapterId, ResourceLocation groupId, int targetIndex) {
+        ChapterDefinition source = chapter(book, chapterId);
+        if (source == null) return notFound("CHAPTER_NOT_FOUND", chapterId);
+        if (book.chapterGroups().stream().noneMatch(group -> group.id().equals(groupId)))
+            return notFound("GROUP_NOT_FOUND", groupId);
+        if (source.groupId().equals(groupId)) return moveChapterOrder(book, chapterId, targetIndex);
+        var order = java.util.Comparator.comparingInt(ChapterDefinition::order).thenComparing(c -> c.id().toString());
+        var oldSiblings = book.chapters().stream().filter(c -> c.groupId().equals(source.groupId()) && !c.id().equals(chapterId))
+                .sorted(order).toList();
+        var newSiblings = new ArrayList<>(book.chapters().stream().filter(c -> c.groupId().equals(groupId)).sorted(order).toList());
+        newSiblings.add(Math.max(0, Math.min(targetIndex, newSiblings.size())), source);
+        var replacements = new java.util.HashMap<ResourceLocation, ChapterDefinition>();
+        for (var siblings : List.of(oldSiblings, newSiblings)) {
+            for (int index = 0; index < siblings.size(); index++) {
+                var c = siblings.get(index);
+                replacements.put(c.id(), new ChapterDefinition(c.bookId(), c.id(),
+                        siblings == newSiblings ? groupId : source.groupId(), c.title(), c.icon(), index, c.quests(), c.extensions()));
+            }
+        }
+        return changed(withChapters(book, book.chapters().stream().map(c -> replacements.getOrDefault(c.id(), c)).toList()), chapterId);
+    }
+
     public static AuthorOperationResult<DraftChange> removeChapter(QuestBookDefinition book, ResourceLocation chapterId) {
         ChapterDefinition old = chapter(book, chapterId);
         if (old == null) return notFound("CHAPTER_NOT_FOUND", chapterId);

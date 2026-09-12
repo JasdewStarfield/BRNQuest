@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -200,8 +201,8 @@ final class QuestCanvasRenderer {
         int drawRight = (int) Math.ceil(bounds.right()) + 1;
         int drawTop = (int) Math.floor(bounds.top()) - 1;
         int drawBottom = (int) Math.ceil(bounds.bottom()) + 1;
-        for (int x = firstX; x <= drawRight; x += grid) graphics.fill(x, drawTop, x + 1, drawBottom, 0x243C4655);
-        for (int y = firstY; y <= drawBottom; y += grid) graphics.fill(drawLeft, y, drawRight, y + 1, 0x243C4655);
+        for (int x = firstX; x <= drawRight; x += grid) graphics.fill(x, drawTop, x + 1, drawBottom, GraystonePalette.GRID);
+        for (int y = firstY; y <= drawBottom; y += grid) graphics.fill(drawLeft, y, drawRight, y + 1, GraystonePalette.GRID);
     }
 
     /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
@@ -209,7 +210,7 @@ final class QuestCanvasRenderer {
         int x1 = dependency.parent().graphX(), y1 = dependency.parent().graphY();
         int x2 = dependency.child().graphX(), y2 = dependency.child().graphY();
         int radius = NODE_BASE_SIZE / 2;
-        int color = 0xC0798799;
+        int color = GraystonePalette.EDGE;
         if (Math.abs(x2 - x1) < radius * 2) {
             int direction = y2 >= y1 ? 1 : -1;
             int startY = y1 + direction * radius;
@@ -232,8 +233,10 @@ final class QuestCanvasRenderer {
         NodeModel model = node.model();
         int x = node.graphX(), y = node.graphY(), size = node.visualSize();
         if (model.tracked()) fillNodeShape(graphics, model.appearance().shape(), x, y, size + 7, 0xFF57C7F2);
+        // A contrasting rim separates every node from the canvas; the outer seam separates it from edges.
+        fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? 6 : 4), GraystonePalette.SEAM);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? 4 : 2),
-                model.selected() ? 0xFFE4D29A : 0xFF22251F);
+                model.selected() ? GraystonePalette.ACCENT : GraystonePalette.NODE_RIM);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size, model.fillColor());
         renderQuestVisual(graphics, font, model, x, y, size);
         ResourceLocation badge = statusBadge(model.status());
@@ -277,9 +280,9 @@ final class QuestCanvasRenderer {
         int radius = NODE_BASE_SIZE / 2 + 3;
         if (!QuestViewportMath.intersectsViewport(x, y, radius,
                 bounds.left(), bounds.right(), bounds.top(), bounds.bottom())) return;
-        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 6, 0x9091C9F4);
-        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 2, 0xB0202632);
-        graphics.drawCenteredString(font, Component.literal("◇"), x, y - 4, 0xD091C9F4);
+        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 6, 0x90E4D29A);
+        fillChamfer(graphics, x, y, NODE_BASE_SIZE + 2, 0xB030332E);
+        graphics.drawCenteredString(font, Component.literal("◇"), x, y - 4, 0xD0E4D29A);
     }
 
     private static void renderQuestVisual(GuiGraphics graphics, Font font, NodeModel node, int x, int y, int size) {

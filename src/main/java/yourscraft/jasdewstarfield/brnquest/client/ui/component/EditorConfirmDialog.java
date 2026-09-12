@@ -32,7 +32,7 @@ public final class EditorConfirmDialog {
         Layout layout = layout(screenLayout);
         UiRect dialog = layout.dialog();
         graphics.fill(0, 0, screenLayout.width(), screenLayout.height(), 0x88000000);
-        graphics.fill(dialog.left(), dialog.top(), dialog.right(), dialog.bottom(), 0xFF202832);
+        GraystoneSurface.raised(graphics, dialog, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, dialog.centerX(), dialog.top() + (detail == null ? 12 : 9),
                 0xFFFFFFFF);
         if (detail != null) {

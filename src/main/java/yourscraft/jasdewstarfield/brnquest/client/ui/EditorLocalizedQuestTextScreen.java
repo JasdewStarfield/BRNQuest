@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
@@ -86,12 +87,12 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         buttons.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panelBounds();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xF0202632);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.localized_text.locale"),
-                panel.left() + 12, panel.top() + 27, 0xFF9FB0C2, false);
+                panel.left() + 12, panel.top() + 27, GraystonePalette.SECONDARY, false);
         buttons.render(graphics, font, localeBounds(),
                 EditorButton.Definition.text(Component.literal(locales.get(localeIndex)),
                         Component.translatable("screen.brnquest.editor.localized_text.switch_locale")),
@@ -101,11 +102,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                         Component.translatable("screen.brnquest.editor.localized_text.add_locale")),
                 true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.title"),
-                panel.left() + 12, panel.top() + 52, 0xFF9FB0C2, false);
+                panel.left() + 12, panel.top() + 52, GraystonePalette.SECONDARY, false);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.subtitle"),
-                panel.left() + 12, panel.top() + 78, 0xFF9FB0C2, false);
+                panel.left() + 12, panel.top() + 78, GraystonePalette.SECONDARY, false);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.description"),
-                panel.left() + 12, panel.top() + 103, 0xFF9FB0C2, false);
+                panel.left() + 12, panel.top() + 103, GraystonePalette.SECONDARY, false);
         buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null), true, false,
                 EditorButton.Tone.NEUTRAL, mouseX, mouseY);

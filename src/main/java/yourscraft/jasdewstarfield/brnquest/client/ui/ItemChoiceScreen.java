@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -177,10 +178,10 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         buttonInput.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panelBounds();
         // Keep the native item slots, ingredient hitboxes and parent lifecycle inside the shared skin.
-        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
+        GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 7, 0xFFFFFFFF);
 
         if (editing) renderEditorChrome(graphics, panel, mouseX, mouseY);
@@ -209,9 +210,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
         if (tagMode) {
             graphics.drawString(font, Component.translatable("screen.brnquest.item_choice.tag"),
-                    panel.left() + 7, panel.top() + 49, 0xFF9FB0C2, false);
+                    panel.left() + 7, panel.top() + 49, GraystonePalette.SECONDARY, false);
             graphics.drawString(font, Component.literal("×" + tagRequiredCount),
-                    panel.right() - 104, panel.top() + 49, 0xFF9FB0C2, false);
+                    panel.right() - 104, panel.top() + 49, GraystonePalette.SECONDARY, false);
             renderSmallButton(graphics, decrementBounds(), "−", tagRequiredCount > 1, mouseX, mouseY);
             renderSmallButton(graphics, incrementBounds(), "+", tagRequiredCount < Integer.MAX_VALUE, mouseX, mouseY);
         } else {
@@ -221,7 +222,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             int requirementWidth = Math.max(1, decrementBounds().left() - panel.left() - 11);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                     requirement.getString(), requirementWidth)), panel.left() + 7, panel.top() + 49,
-                    0xFF9FB0C2, false);
+                    GraystonePalette.SECONDARY, false);
             renderSmallButton(graphics, decrementBounds(), "−", selectedIndex >= 0 && selectedCount > 1,
                     mouseX, mouseY);
             renderSmallButton(graphics, incrementBounds(), "+",
@@ -252,7 +253,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             boolean selected = editing && !tagMode && index == selectedIndex;
             EditorItemSlot.render(graphics, slot, slot.intersection(viewport).containsExclusive(mouseX, mouseY), selected);
             graphics.renderItem(candidates.get(index), slot.left() + 1, slot.top() + 1);
-            if (index == candidateKeyboard) graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),0xFFE4D29A);
+            if (index == candidateKeyboard) graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),GraystonePalette.ACCENT);
             int required = displayedRequiredCount(index);
             if (required > 1) {
                 ItemStack decoration = candidates.get(index).copyWithCount(required);
@@ -263,7 +264,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         Component summary = message != null ? message : candidates.isEmpty()
                 ? Component.translatable("screen.brnquest.item_choice.empty")
                 : Component.translatable("screen.brnquest.item_choice.accepted_count", candidates.size());
-        int summaryColor = message != null || candidates.isEmpty() ? 0xFFFFA070 : 0xFF9FB0C2;
+        int summaryColor = message != null || candidates.isEmpty() ? 0xFFFFA070 : GraystonePalette.SECONDARY;
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), viewport.width())),
                 viewport.left(), viewport.bottom() + 3, summaryColor, false);
     }
@@ -275,7 +276,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         int inventoryLeft = panel.centerX() - COLUMNS * SLOT_SIZE / 2;
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                         hint.getString(), COLUMNS * SLOT_SIZE)),
-                inventoryLeft, inventoryTop() - 11, 0xFF9FB0C2, false);
+                inventoryLeft, inventoryTop() - 11, GraystonePalette.SECONDARY, false);
         if (minecraft == null || minecraft.player == null) return;
         for (int index = 0; index < 36; index++) {
             UiRect slot = inventorySlot(index);
@@ -283,7 +284,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             EditorItemSlot.render(graphics, slot, slot.containsExclusive(mouseX, mouseY), false);
             if (!stack.isEmpty()) graphics.renderItem(stack, slot.left() + 1, slot.top() + 1);
             if (inventoryKeyboard >= 0 && index == (inventoryKeyboard < 27 ? inventoryKeyboard+9 : inventoryKeyboard-27))
-                graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),0xFFE4D29A);
+                graphics.renderOutline(slot.left(),slot.top(),slot.width(),slot.height(),GraystonePalette.ACCENT);
         }
     }
 

@@ -38,7 +38,7 @@ public final class EditorEntryListPanel<K, A> {
             RecipeLookupTarget.clipped(content.lookupItem(), layout.icon(), row.visible())
                     .filter(target -> target.contains(mouseX, mouseY)).ifPresent(target -> hovered[0] = target);
             placed.addAll(EditorActionGroup.trailing(layout.actions(), row.visible(), 18, 2, rowActions));
-        }, () -> graphics.drawCenteredString(font, empty, bounds.centerX(), frame.viewport().top() + 8, 0xFF9AA6B5));
+        }, () -> graphics.drawCenteredString(font, empty, bounds.centerX(), frame.viewport().top() + 8, GraystonePalette.MUTED));
         placed.addAll(footer);
         actions.setActions(placed);
         return new Hover(hovered[0], actions.render(graphics, font, mouseX, mouseY));

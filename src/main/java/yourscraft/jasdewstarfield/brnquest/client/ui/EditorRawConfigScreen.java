@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -62,12 +63,12 @@ public final class EditorRawConfigScreen extends Screen {
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         // Blur the completed editor before drawing the raw panel, matching the item selector lifecycle.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panelBounds();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xF0202632);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.raw_config.help"),
-                panel.left() + 12, panel.top() + 25, 0xFF9FB0C2, false);
+                panel.left() + 12, panel.top() + 25, GraystonePalette.SECONDARY, false);
         if (issue != null) {
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(issue.getString(), panel.width() - 24)),
                     panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -52,15 +53,35 @@ final class RewardLeafEditorScreen extends RewardEditorScreen {
         choiceLayout = null;
     }
 
+    @Override protected UiRect body() {
+        var bounds = super.body();
+        return new UiRect(bounds.left(), bounds.top() + 14, bounds.right(), bounds.bottom());
+    }
+
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         renderPanel(graphics, x, y, partial);
         var bounds = body();
+        // A leaf stays visibly attached to its owning table while its edits are still local.
+        if (parent instanceof RewardTableEditorScreen table)
+            graphics.drawString(font, font.plainSubstrByWidth(table.breadcrumb() + " / " + title.getString(), bounds.width()),
+                    bounds.left(), bounds.top() - 13, GraystonePalette.SECONDARY, false);
         var fields = form.schema().fields();
         var buttons = new ArrayList<>(footer(true, this::apply));
         var issues = form.localIssues();
+        var help = new ArrayList<Component>();
         form.hide();
+        // Display order is independent of schema indices, preserving extension fields and unknown config.
+        var displayRows = new ArrayList<Integer>();
+        if (form.schema().rawFallback()) displayRows.add(0);
+        else {
+            for (boolean required : List.of(true, false)) {
+                var indices = java.util.stream.IntStream.range(0, fields.size())
+                        .filter(i -> fields.get(i).required() == required).boxed().toList();
+                if (!indices.isEmpty()) { displayRows.add(required ? -1 : -2); displayRows.addAll(indices); }
+            }
+        }
         list.advance(bounds, bounds, bounds.right() + 3, 28, 2,
-                form.schema().rawFallback() ? 1 : fields.size(), i -> i, frameSeconds(), scrollSpeed());
+                displayRows.size(), displayRows::get, frameSeconds(), scrollSpeed());
         list.render(graphics, row -> {
             int index = row.key();
             if (form.schema().rawFallback()) {
@@ -69,11 +90,21 @@ final class RewardLeafEditorScreen extends RewardEditorScreen {
                                 new EditorRawConfigScreen(this, form.rawConfig(), form::replaceRawConfig))).action(), row.bounds(), row.visible()));
                 return;
             }
+            if (index < 0) {
+                EditorPropertyPanel.section(font, "screen.brnquest.editor.section." + (index == -1 ? "required" : "optional"))
+                        .render(graphics, row.bounds().left(), row.bounds().top(), row.bounds().width());
+                return;
+            }
             var field = fields.get(index);
             var layout = EditorPropertyFormLayout.row(row.bounds().left(), row.bounds().top() + 3,
                     row.bounds().width(), Math.min(150, row.bounds().width() / 3));
             Component label = field.labelKey().isBlank() ? Component.literal(field.key()) : Component.translatable(field.labelKey());
             EditorPropertyRow.label(graphics, font, label, layout.label(), issues.get(field.key()));
+            if (row.visible().containsExclusive(x, y) && layout.label().containsExclusive(x, y)) {
+                help.add(label);
+                if (!field.helpText().isBlank()) help.add(Component.translatable(field.helpText()));
+                if (issues.containsKey(field.key())) help.add(Component.literal(issues.get(field.key())));
+            }
             if (selector(field)) {
                 String value = form.configValue(index);
                 Component text = field.valueType() == ConfigValueType.ITEM_STACK
@@ -90,6 +121,7 @@ final class RewardLeafEditorScreen extends RewardEditorScreen {
         controls.setActions(buttons);
         controls.render(graphics, font, x, y);
         if (choiceLayout != null) EditorPopupMenu.render(graphics, font, choiceLayout, choices, x, y);
+        else if (!help.isEmpty()) graphics.renderComponentTooltip(font, help, x, y);
     }
 
     private Component valueLabel(ConfigFieldDescriptor field, String value) {

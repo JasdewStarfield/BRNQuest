@@ -10,7 +10,7 @@ public final class EditorTextField extends EditBox {
         super(font, 0, 0, 10, 18, narration);
         setMaxLength(maximumLength);
         setTextColor(0xFFFFFFFF);
-        setTextColorUneditable(0xFFB7C5D8);
+        setTextColorUneditable(GraystonePalette.SECONDARY);
         setBordered(true);
         hide();
     }

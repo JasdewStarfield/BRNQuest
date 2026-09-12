@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -253,7 +254,7 @@ final class QuestDetailRows {
         return switch (state) {
             case READY, PENDING -> 0xFFF2C96D;
             case SUBMITTED -> 0xFF8BE2A0;
-            case HISTORICAL -> 0xFFABB7C6;
+            case HISTORICAL -> GraystonePalette.SECONDARY;
             case UNMET -> 0xFFFFFFFF;
         };
     }
@@ -262,7 +263,7 @@ final class QuestDetailRows {
         return switch (state) {
             case READY, PENDING -> 0xFFE6B55B;
             case SUBMITTED -> 0xFF72D88D;
-            case UNMET, HISTORICAL -> 0xFFABB7C6;
+            case UNMET, HISTORICAL -> GraystonePalette.SECONDARY;
         };
     }
 

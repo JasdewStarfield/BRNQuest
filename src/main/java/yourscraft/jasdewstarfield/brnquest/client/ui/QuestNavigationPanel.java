@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -50,10 +51,27 @@ final class QuestNavigationPanel {
     private QuestBookDefinition book;
     private List<QuestPresentation.NavigationEntry> entries = List.of();
     private Frame frame;
+    private final java.util.Set<ResourceLocation> folded = new java.util.HashSet<>();
+    private ResourceLocation foldedBookId;
+    private ResourceLocation pressedChapter;
+    private QuestScreenFrameIdentity pressIdentity;
+    private double pressX, pressY;
+    private boolean dragging;
+    record Drop(ResourceLocation chapter, ResourceLocation group, int index, int lineY) {}
     private double drawnScroll;
     private int contentHeight;
 
-    void invalidate() { frame = null; }
+    java.util.Set<ResourceLocation> foldedGroups() { return java.util.Set.copyOf(folded); }
+
+    /** Restore before the first render of a book; do not let refresh erase the restored preferences. */
+    void restoreFoldedGroups(ResourceLocation bookId, java.util.Set<ResourceLocation> groups) {
+        foldedBookId = bookId;
+        folded.clear(); folded.addAll(groups);
+        if (book != null && book.id().equals(bookId)) rebuildEntries();
+        invalidate();
+    }
+
+    void invalidate() { frame = null; cancelDrag(); }
     void resetScroll() { scroll.snap(0); }
 
     RenderResult render(GuiGraphics graphics, Font font, Model model, Layout layout,
@@ -66,7 +84,11 @@ final class QuestNavigationPanel {
             graphics.pose().pushPose();
             graphics.pose().translate(layout.offset(), 0, 0);
             try {
-                graphics.fill(0, layout.top(), layout.width() + 4, layout.bottom(), 0xF02C2F29);
+                graphics.fill(0, layout.top(), layout.width() + 4, layout.bottom(), GraystonePalette.NAVIGATION);
+                if (dragging && mouseX >= 0 && mouseX < layout.visibleRight()) {
+                    if (mouseY < layout.top() + 16) mouseScrolled(1, 180 * seconds);
+                    else if (mouseY > layout.listBottom() - 16) mouseScrolled(-1, 180 * seconds);
+                }
                 drawnScroll = scroll.frameAndRender(graphics, layout.width() + 2, layout.top(), layout.listBottom(),
                         contentHeight, Math.max(1, layout.listBottom() - layout.top()), seconds, speed);
                 graphics.enableScissor(Math.max(0, layout.offset()), layout.top(),
@@ -76,9 +98,9 @@ final class QuestNavigationPanel {
                     if (entry.group() != null) {
                         graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xFF252821);
                         EditorTextRenderer.drawFittedString(graphics, font,
-                                Component.literal("▾ " + BookText.structureTitle(
+                                Component.literal((folded.contains(entry.group().id()) ? "▸ " : "▾ ") + BookText.structureTitle(
                                         model.book(), "chapter_group", entry.group().id(), locale, entry.group().title())),
-                                4, y + 2, layout.width() - 8, 0xFFB7C5D8, 0.75F);
+                                4, y + 2, layout.width() - 8, GraystonePalette.SECONDARY, 0.75F);
                         y += GROUP_HEIGHT;
                     } else {
                         ChapterDefinition chapter = entry.chapter();
@@ -90,13 +112,29 @@ final class QuestNavigationPanel {
                         graphics.fill(4, y, layout.width(), y + CHAPTER_HEIGHT, color);
                         // A narrow brass marker keeps selection recognizable beyond a background color change.
                         if (model.selected() != null && chapter.id().equals(model.selected().id()))
-                            graphics.fill(4, y + 1, 6, y + CHAPTER_HEIGHT - 1, 0xFFE4D29A);
+                            graphics.fill(4, y + 1, 6, y + CHAPTER_HEIGHT - 1, GraystonePalette.ACCENT);
                         drawIcon.accept(chapter, new UiRect(9, y + 2, 25, y + 18));
                         EditorTextRenderer.drawFittedString(graphics, font, Component.literal(
                                 BookText.structureTitle(
                                         model.book(), "chapter", chapter.id(), locale, chapter.title())),
                                 30, y + 6, Math.max(1, layout.width() - 34), 0xFFFFFFFF, 0.75F);
                         y += CHAPTER_HEIGHT;
+                    }
+                }
+                if (dragging) {
+                    Drop drop = dropAt(mouseX, mouseY);
+                    if (drop != null) {
+                        graphics.pose().pushPose();
+                        graphics.pose().translate(0, 0, 350);
+                        // The insertion line and translucent row use the exact destination returned on release.
+                        graphics.fill(4, drop.lineY() - 1, layout.width(), drop.lineY() + 1, GraystonePalette.ACCENT);
+                        int ghostY = Math.max(layout.top(), Math.min(mouseY + 8, layout.listBottom() - CHAPTER_HEIGHT));
+                        graphics.fill(8, ghostY, layout.width() - 4, ghostY + CHAPTER_HEIGHT, 0xB062604A);
+                        var source = book.chapters().stream().filter(c -> c.id().equals(pressedChapter)).findFirst().orElse(null);
+                        if (source != null) EditorTextRenderer.drawFittedString(graphics, font,
+                                Component.literal(BookText.structureTitle(book, "chapter", source.id(), locale, source.title())),
+                                12, ghostY + 6, layout.width() - 20, 0xFFD8CEAF, 0.75F);
+                        graphics.pose().popPose();
                     }
                 }
                 graphics.disableScissor();
@@ -110,7 +148,7 @@ final class QuestNavigationPanel {
         graphics.fill(layout.visibleRight(), layout.top(), layout.visibleRight() + layout.handleWidth(),
                 layout.bottom(), 0xFF292C25);
         graphics.drawCenteredString(font, layout.collapsed() ? "›" : "‹",
-                layout.visibleRight() + layout.handleWidth() / 2, layout.centerY() - 4, 0xFFB7C5D8);
+                layout.visibleRight() + layout.handleWidth() / 2, layout.centerY() - 4, GraystonePalette.SECONDARY);
         // Resolve hover from the same clipped, translated list geometry used for chapter selection.
         if (layout.offset() == 0 && !layout.collapsed() && mouseX >= 0 && mouseX < layout.visibleRight()
                 && mouseY >= layout.top() && mouseY < layout.listBottom()) {
@@ -122,11 +160,12 @@ final class QuestNavigationPanel {
                 tooltip = List.of(Component.literal(title));
             }
         }
-        return new RenderResult(tooltip);
+        return new RenderResult(dragging ? List.of() : tooltip);
     }
 
     /** Builds the immutable input frame independently so geometry tests do not need a rendering runtime. */
     Layout advance(Model model, Layout layout) {
+        if (pressIdentity != null && !pressIdentity.equals(model.identity())) cancelDrag();
         refresh(model.book());
         frame = new Frame(model.identity(), layout, model.editing(), model.canAddChapter(), entries);
         return layout;
@@ -160,10 +199,77 @@ final class QuestNavigationPanel {
                     ? Action.OPEN_GROUP_CONTEXT : Action.OPEN_CHAPTER_CONTEXT,
                     entry.group() != null ? entry.group().id() : entry.chapter().id(), (int) x, (int) y));
         }
+        if (button == 0 && entry != null && entry.group() != null) {
+            if (!folded.add(entry.group().id())) folded.remove(entry.group().id());
+            rebuildEntries();
+            frame = null;
+            return ClickResult.consumed(null);
+        }
         if (entry != null && entry.chapter() != null) {
+            if (button == 0 && frame.editing()) {
+                pressedChapter = entry.chapter().id(); pressIdentity = identity;
+                pressX = x; pressY = y; dragging = false;
+            }
             return ClickResult.consumed(new Intent(Action.SELECT_CHAPTER, entry.chapter().id(), (int) x, (int) y));
         }
         return ClickResult.consumed(null);
+    }
+
+    boolean drag(QuestScreenFrameIdentity identity, double x, double y, int button) {
+        if (pressedChapter == null || button != 0) return false;
+        if (!accepts(identity) || !identity.equals(pressIdentity)) { cancelDrag(); return true; }
+        if (Math.hypot(x - pressX, y - pressY) >= 4) dragging = true;
+        return true;
+    }
+
+    boolean hasDrag() { return pressedChapter != null; }
+    boolean cancelDrag() {
+        boolean active = pressedChapter != null;
+        pressedChapter = null; pressIdentity = null; dragging = false;
+        return active;
+    }
+
+    Drop release(QuestScreenFrameIdentity identity, double x, double y) {
+        Drop result = dragging && accepts(identity) && identity.equals(pressIdentity) ? dropAt(x, y) : null;
+        cancelDrag();
+        return result;
+    }
+
+    /** Indices exclude the moving chapter; group headings expose start/end even when folded or empty. */
+    private Drop dropAt(double x, double y) {
+        if (frame == null || pressedChapter == null) return null;
+        var layout = frame.layout();
+        if (x < 0 || x >= layout.width() || y < layout.top() || y >= layout.listBottom()) return null;
+        int rowY = layout.top() - (int) Math.round(drawnScroll);
+        Drop last = null;
+        for (var entry : entries) {
+            if (entry.group() != null) {
+                var group = entry.group().id();
+                int count = (int) book.chapters().stream().filter(c -> c.groupId().equals(group) && !c.id().equals(pressedChapter)).count();
+                if (y < rowY + GROUP_HEIGHT) {
+                    boolean start = y < rowY + GROUP_HEIGHT / 2.0;
+                    int visibleCount = (int) entries.stream().filter(e -> e.chapter() != null && e.chapter().groupId().equals(group)).count();
+                    return new Drop(pressedChapter, group, start ? 0 : count,
+                            rowY + GROUP_HEIGHT + (start ? 0 : visibleCount * CHAPTER_HEIGHT));
+                }
+                last = new Drop(pressedChapter, group, count, rowY + GROUP_HEIGHT);
+                rowY += GROUP_HEIGHT;
+            } else {
+                var chapter = entry.chapter();
+                var siblings = QuestPresentation.orderedChapters(book).stream()
+                        .filter(c -> c.groupId().equals(chapter.groupId()) && !c.id().equals(pressedChapter)).toList();
+                int index = 0;
+                while (index < siblings.size() && !siblings.get(index).id().equals(chapter.id())) index++;
+                if (y < rowY + CHAPTER_HEIGHT && chapter.id().equals(pressedChapter)) return null;
+                if (y < rowY + CHAPTER_HEIGHT) {
+                    boolean after = y >= rowY + CHAPTER_HEIGHT / 2.0;
+                    return new Drop(pressedChapter, chapter.groupId(), index + (after ? 1 : 0), rowY + (after ? CHAPTER_HEIGHT : 0));
+                }
+                rowY += CHAPTER_HEIGHT;
+                last = new Drop(pressedChapter, chapter.groupId(), siblings.size(), rowY);
+            }
+        }
+        return last;
     }
 
     void mouseScrolled(double amount, double step) {
@@ -186,8 +292,15 @@ final class QuestNavigationPanel {
 
     private void refresh(QuestBookDefinition next) {
         if (book == next) return;
+        if (!next.id().equals(foldedBookId)) { folded.clear(); foldedBookId = next.id(); }
         book = next;
-        entries = QuestPresentation.navigation(next);
+        rebuildEntries();
+        frame = null;
+    }
+
+    private void rebuildEntries() {
+        entries = QuestPresentation.navigation(book).stream()
+                .filter(entry -> entry.group() != null || !folded.contains(entry.chapter().groupId())).toList();
         contentHeight = entries.stream().mapToInt(entry -> entry.group() != null
                 ? GROUP_HEIGHT : CHAPTER_HEIGHT).sum();
         frame = null;

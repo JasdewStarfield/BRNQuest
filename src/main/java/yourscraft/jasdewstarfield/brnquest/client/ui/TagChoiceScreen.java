@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -73,14 +74,14 @@ public final class TagChoiceScreen extends Screen {
         buttonInput.begin();
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panel();
-        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
+        GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         graphics.renderItem(source, panel.left() + 8, panel.top() + 24);
         Component hint = Component.translatable("screen.brnquest.tag_choice.hint", tags.size());
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(hint.getString(), panel.width() - 38)),
-                panel.left() + 31, panel.top() + 28, 0xFF9FB0C2, false);
+                panel.left() + 31, panel.top() + 28, GraystonePalette.SECONDARY, false);
 
         UiRect viewport = viewport();
         long now = System.nanoTime();
@@ -91,7 +92,7 @@ public final class TagChoiceScreen extends Screen {
                 elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
         list.render(graphics, row -> {
             UiRect rect = row.bounds();
-            int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF5C6056 : 0xFF454940;
+            int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF5C6056 : GraystonePalette.HOVER;
             GraystoneSurface.raised(graphics, rect, background, true);
             String text = font.plainSubstrByWidth(row.key().toString(), Math.max(0, rect.width() - 10));
             graphics.drawString(font, text, rect.left() + 5, rect.top() + 5, 0xFFFFFFFF, false);

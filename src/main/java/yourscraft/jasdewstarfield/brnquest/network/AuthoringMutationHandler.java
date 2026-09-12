@@ -62,8 +62,10 @@ final class AuthoringMutationHandler {
                 case UPDATE_CHAPTER -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
                                 wire.title(), wire.targetIndex(), wire.config()));
-                case MOVE_CHAPTER -> editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), wire.targetIndex());
+                case MOVE_CHAPTER -> wire.config().containsKey("group")
+                        ? editor.moveChapterToGroup(player, sessionId, bookId, wire.draftRevision(),
+                                requireId(targetId), requireId(ResourceLocation.tryParse(wire.config().get("group"))), wire.targetIndex())
+                        : editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(), requireId(targetId), wire.targetIndex());
                 case DELETE_CHAPTER -> editor.removeChapterWithContents(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
                 case ADD_QUEST -> editor.addQuest(player, sessionId, bookId, wire.draftRevision(),

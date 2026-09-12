@@ -59,4 +59,16 @@ class QuestPublishReviewSectionTest {
         return new EditorPublishReviewModel(allowed, "draft-r1", "draft-r2",
                 1, 0, false, List.of(diagnostic), List.of());
     }
+    @Test void secondaryDetailsDoNotPublishOrDismissTheReview() {
+        var section = new QuestPublishReviewSection();
+        section.open(review(false));
+        var list = EditorPublishReviewPanel.layout(screen).list();
+        var result = section.click(screen, list.right() - 10, list.top() + 10, 0);
+        assertEquals(QuestPublishReviewSection.Action.DETAILS, result.intent().action());
+        assertTrue(section.active());
+        assertTrue(section.detailLines().stream().anyMatch(line -> line.getString().contains("brnquest:test_quest")));
+        section.close();
+        assertTrue(section.detailLines().isEmpty());
+    }
+
 }

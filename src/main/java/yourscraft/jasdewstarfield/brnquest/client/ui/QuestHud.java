@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -47,10 +48,10 @@ public final class QuestHud {
         int width = Math.min(320, Math.max(1, graphics.guiWidth() - 16));
         int left = graphics.guiWidth() - width - 8;
         graphics.fill(left, 10, left + width, 34 + count * 18, 0xDC252821);
-        graphics.fill(left, 10, left + 2, 34 + count * 18, 0xFFE4D29A);
+        graphics.fill(left, 10, left + 2, 34 + count * 18, GraystonePalette.ACCENT);
         graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/tracked"), left + 6, 15, 10, 10);
         EditorTextRenderer.drawFittedString(graphics, minecraft.font, Component.literal(title),
-                left + 21, 16, Math.max(1, width - 29), 0xFFE4D29A, 0.75F);
+                left + 21, 16, Math.max(1, width - 29), GraystonePalette.ACCENT, 0.75F);
         for (int index = 0; index < count; index++) {
             TaskDefinition task = quest.tasks().get(index);
             var presentation = ClientTaskPresentationRegistry.get(task.typeId());
@@ -62,7 +63,7 @@ public final class QuestHud {
             else if (!context.displayedItem().isEmpty()) graphics.renderItem(context.displayedItem(), left + 6,y);
             else ClientTaskPresentationRegistry.typeIcon(task.typeId()).render(graphics, minecraft.font,
                     new UiRect(left + 6,y,left + 22,y + 16),0xFFFFFFFF);
-            int color = done ? 0xFF80D49B : 0xFFD8DEE8;
+            int color = done ? 0xFF80D49B : GraystonePalette.TEXT;
             EditorTextRenderer.drawFittedString(graphics,minecraft.font,presentation.objectiveTitle(context),
                     left + 27,y,Math.max(1,width - 35),color,0.75F);
             EditorTextRenderer.drawFittedString(graphics,minecraft.font,presentation.progressText(context,done),

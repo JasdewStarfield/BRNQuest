@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -147,9 +148,9 @@ public final class AdminProgressScreen extends Screen {
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.pose().pushPose();
         graphics.pose().translate(0, 0, 500);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panel(), viewport = viewport();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xFF202632);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, quickSelf ? text(action.reset() ? "self_reset" : "self_force") : title,
                 panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         if (page == Page.PLAYERS) {
@@ -170,7 +171,7 @@ public final class AdminProgressScreen extends Screen {
                     row.visible().containsExclusive(mouseX, mouseY) ? mouseX : -1, mouseY),
                     () -> {
                         if (!busy) graphics.drawString(font, text("no_players"), viewport.left() + 4,
-                                viewport.top() + 5, 0xFF9FB0C2, false);
+                                viewport.top() + 5, GraystonePalette.SECONDARY, false);
                     });
         } else {
             // The text page keeps its own scroll model, but its thumb must also respect a tiny viewport.
@@ -179,7 +180,7 @@ public final class AdminProgressScreen extends Screen {
                     contentHeight, viewport.height(), elapsed, BrnQuestClientConfig.VALUES.smoothSpeed.get());
             for (int index = 0; index < lines.size(); index++) {
                 graphics.drawString(font, lines.get(index), viewport.left() + 4,
-                        viewport.top() + index * 12 - (int) Math.round(offset), 0xFFE0E6EE, false);
+                        viewport.top() + index * 12 - (int) Math.round(offset), GraystonePalette.TEXT, false);
             }
             graphics.disableScissor();
         }
@@ -187,7 +188,7 @@ public final class AdminProgressScreen extends Screen {
             var statusLines = MixedTextLayout.split(font, message, panel.width() - 18);
             for (int index = 0; index < Math.min(2, statusLines.size()); index++) graphics.drawString(font,
                     statusLines.get(index), panel.left() + 9, panel.bottom() - 51 + index * 10,
-                    failed ? 0xFFFF9393 : 0xFF9FB0C2, false);
+                    failed ? 0xFFFF9393 : GraystonePalette.SECONDARY, false);
         }
         List<String> labels = buttons();
         for (int index = 0; index < labels.size(); index++) {

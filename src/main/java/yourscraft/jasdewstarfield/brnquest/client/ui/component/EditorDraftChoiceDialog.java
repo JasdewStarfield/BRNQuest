@@ -34,14 +34,14 @@ public final class EditorDraftChoiceDialog {
         Layout layout = layout(screenLayout, existingDraft);
         UiRect dialog = layout.dialog();
         graphics.fill(0, 0, screenLayout.width(), screenLayout.height(), 0x88000000);
-        graphics.fill(dialog.left(), dialog.top(), dialog.right(), dialog.bottom(), 0xFF202832);
+        GraystoneSurface.raised(graphics, dialog, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.draft_choice.title"),
                 dialog.centerX(), dialog.top() + 9, 0xFFFFFFFF);
         Component detail = Component.translatable(existingDraft
                 ? "screen.brnquest.editor.draft_choice.existing_detail"
                 : "screen.brnquest.editor.draft_choice.new_detail");
         graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(detail.getString(),
-                dialog.width() - 20)), dialog.centerX(), dialog.top() + 27, 0xFFB7C5D8);
+                dialog.width() - 20)), dialog.centerX(), dialog.top() + 27, GraystonePalette.SECONDARY);
         if (existingDraft && draftTitle != null) {
             String visible = font.plainSubstrByWidth(draftTitle.getString(), dialog.width() - 36);
             graphics.drawCenteredString(font, Component.literal(visible), dialog.centerX(), dialog.top() + 43,

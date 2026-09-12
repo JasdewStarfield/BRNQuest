@@ -16,8 +16,8 @@ public final class EditorScrollbar {
         int travel = trackHeight - thumbHeight;
         int maxScroll = contentHeight - viewportHeight;
         int thumbTop = top + (int) Math.round(travel * (scroll / maxScroll));
-        graphics.fill(x, top, x + 3, bottom, 0x66343D49);
-        graphics.fill(x, thumbTop, x + 3, thumbTop + thumbHeight, 0xFF7C8CA0);
+        graphics.fill(x, top, x + 3, bottom, GraystonePalette.TRACK);
+        graphics.fill(x, thumbTop, x + 3, thumbTop + thumbHeight, GraystonePalette.THUMB);
     }
 
     public static double scrollFromTrack(double mouseY, int top, int bottom,

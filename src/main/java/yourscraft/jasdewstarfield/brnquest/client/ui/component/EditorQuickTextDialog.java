@@ -31,8 +31,7 @@ public final class EditorQuickTextDialog {
                               int mouseX, int mouseY) {
         Layout layout = layout(screenLayout);
         graphics.fill(0, 0, screenLayout.width(), screenLayout.height(), 0x99000000);
-        graphics.fill(layout.dialog().left(), layout.dialog().top(),
-                layout.dialog().right(), layout.dialog().bottom(), 0xFF202832);
+        GraystoneSurface.raised(graphics, layout.dialog(), GraystonePalette.PANEL, true);
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                         title.getString(), layout.dialog().width() - 24)),
                 layout.dialog().left() + 12, layout.dialog().top() + 11, 0xFFFFFFFF, false);

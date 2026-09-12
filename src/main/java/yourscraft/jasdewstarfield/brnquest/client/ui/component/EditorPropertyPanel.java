@@ -35,6 +35,14 @@ public final class EditorPropertyPanel {
                 Component.translatable(label), issue, field, enabled);
     }
 
+    /** A lightweight section row shares the form's scroll and clipping instead of creating another panel. */
+    public static RowContent section(Font font, String key) {
+        return (g, x, y, w) -> {
+            g.fill(x, y + 17, x + w, y + 18, 0xFF535647);
+            g.drawString(font, Component.translatable(key), x, y + 4, GraystonePalette.ACCENT, false);
+        };
+    }
+
     public static RowContent readOnly(Font font, String label, Component value, int labelWidth) {
         return (graphics, left, top, width) -> EditorPropertyRow.readOnly(graphics, font,
                 EditorPropertyFormLayout.row(left, top, width, labelWidth), Component.translatable(label), value);
@@ -42,19 +50,19 @@ public final class EditorPropertyPanel {
 
     public static void render(GuiGraphics graphics, Font font, Layout layout, Component heading,
                               int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
-        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, false, 0xFF202632, false);
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, false, GraystonePalette.PANEL, false);
     }
 
-    /** Modal forms retain their centered heading and panel color while sharing the row composition. */
+    /** Centered forms use the common graystone panel while retaining their existing geometry. */
     public static void renderCentered(GuiGraphics graphics, Font font, Layout layout, Component heading,
                                       int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
-        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, 0xFF202832, false);
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, GraystonePalette.PANEL, true);
     }
 
     /** New modal forms share the PNG graystone surface without changing older panel layouts. */
     public static void renderGraystone(GuiGraphics graphics, Font font, Layout layout, Component heading,
                                       int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
-        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, 0xFF30332E, true);
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, GraystonePalette.PANEL, true);
     }
 
     private static void render(GuiGraphics graphics, Font font, Layout layout, Component heading,

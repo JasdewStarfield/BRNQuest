@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -61,7 +62,7 @@ final class QuestDetailsPanel {
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_subtitle").getString()
                     : model.subtitle();
             y = EditorTextRenderer.drawWrapped(graphics, font, subtitle, contentLeft, y, contentWidth,
-                    model.subtitle().isBlank() ? 0xFF718096 : 0xFFB7C5D8);
+                    model.subtitle().isBlank() ? GraystonePalette.DISABLED : GraystonePalette.SECONDARY);
             if (editing) addTextArea(textAreas, layout.content(), "SUBTITLE", contentLeft, subtitleTop, contentWidth, y);
             y += 4;
         }
@@ -82,7 +83,7 @@ final class QuestDetailsPanel {
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
             int pinX = contentLeft + contentWidth - font.width(pin) - 18;
-            graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : 0xFFB7C5D8, false);
+            graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : GraystonePalette.SECONDARY, false);
             if (mouseX >= pinX - 2 && mouseX <= pinX + font.width(pin) + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
                 hint = Component.translatable(status == QuestStatus.ACTIVE
                         ? "screen.brnquest.untrack" : "screen.brnquest.track");
@@ -114,7 +115,7 @@ final class QuestDetailsPanel {
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_description").getString()
                     : model.description();
             y = EditorTextRenderer.drawWrapped(graphics, font, description, contentLeft, y, contentWidth,
-                    model.description().isBlank() ? 0xFF718096 : 0xFFE1E6EE);
+                    model.description().isBlank() ? GraystonePalette.DISABLED : GraystonePalette.TEXT);
             if (editing) addTextArea(textAreas, layout.content(), "DESCRIPTION",
                     contentLeft, descriptionTop, contentWidth, y);
             y += 8;
@@ -133,7 +134,7 @@ final class QuestDetailsPanel {
 
         y = renderSection(graphics, font, "screen.brnquest.requirements", "checkmark", contentLeft, y, contentWidth, 0xFFBFC7AC);
         if (quest.tasks().isEmpty()) {
-            graphics.drawString(font, Component.translatable("screen.brnquest.no_requirements"), contentLeft, y, 0xFF9AA6B5, false);
+            graphics.drawString(font, Component.translatable("screen.brnquest.no_requirements"), contentLeft, y, GraystonePalette.MUTED, false);
             y += 18;
         } else {
             for (TaskDefinition task : quest.tasks()) y = rows.task(task, contentLeft, y, contentWidth);
@@ -171,12 +172,13 @@ final class QuestDetailsPanel {
     /** Compact section landmarks reuse existing sprites without introducing item interaction semantics. */
     private static int renderSection(GuiGraphics graphics, Font font, String title, String icon,
                                      int x, int y, int width, int color) {
-        graphics.fill(x, y, x + width, y + 20, 0xFF35382F);
+        // A small icon and rule match property-form sections without adding another filled card.
+        graphics.fill(x, y + 18, x + width, y + 19, GraystonePalette.LIP);
         (icon.equals("checkmark") ? TASK_SECTION_ICON : REWARD_SECTION_ICON)
-                .render(graphics, font, new UiRect(x + 2, y + 2, x + 18, y + 18), color);
+                .render(graphics, font, new UiRect(x, y, x + 16, y + 16), color);
         EditorTextRenderer.drawFittedString(graphics, font, Component.translatable(title),
-                x + 23, y + 6, Math.max(1, width - 25), color, 0.75F);
-        return y + 24;
+                x + 21, y + 4, Math.max(1, width - 23), color, 0.75F);
+        return y + 22;
     }
 
     private static void addTextArea(Map<String, UiRect> areas, UiRect viewport, String key,

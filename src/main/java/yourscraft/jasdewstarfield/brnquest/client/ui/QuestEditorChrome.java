@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -65,17 +66,27 @@ final class QuestEditorChrome {
                         int mouseX, int mouseY) {
         Layout layout = advance(screen, model);
         graphics.fill(layout.topToolbar().left(), layout.topToolbar().top(),
-                layout.topToolbar().right(), layout.topToolbar().bottom(), 0xF0202632);
+                layout.topToolbar().right(), layout.topToolbar().bottom(), GraystonePalette.HEADER);
         graphics.fill(layout.bottomToolbar().left(), layout.bottomToolbar().top(),
-                layout.bottomToolbar().right(), layout.bottomToolbar().bottom(), 0xF0202632);
-        graphics.fill(layout.title().left(), layout.title().top(), layout.title().right(), layout.title().bottom(),
-                0xE0202632);
+                layout.bottomToolbar().right(), layout.bottomToolbar().bottom(), GraystonePalette.FOOTER);
+        // A light beveled header and dark footer recover the prototype's hierarchy without moving controls.
+        var top = layout.topToolbar();
+        var bottom = layout.bottomToolbar();
+        graphics.fill(top.left(), top.top(), top.right(), top.top()+1, GraystonePalette.HEADER_LIGHT);
+        graphics.fill(top.left(), top.top(), top.left()+1, top.bottom()-1, GraystonePalette.HEADER_LIGHT);
+        graphics.fill(top.right()-1, top.top()+1, top.right(), top.bottom()-1, GraystonePalette.HEADER_DARK);
+        graphics.fill(top.left(), top.bottom()-2, top.right(), top.bottom()-1, GraystonePalette.HEADER_DARK);
+        graphics.fill(top.left(), top.bottom()-1, top.right(), top.bottom(), GraystonePalette.SEAM);
+        graphics.fill(bottom.left(), bottom.top(), bottom.right(), bottom.top()+1, GraystonePalette.SEAM);
+        graphics.fill(bottom.left(), bottom.top()+1, bottom.right(), bottom.top()+2, GraystonePalette.LIP);
         String title = model.title().isBlank() ? model.bookId().toString() : model.title();
         String suffix = model.allowed() ? " ▾" : "";
         String visibleTitle = font.plainSubstrByWidth(title,
                 Math.max(1, layout.title().width() - 16 - font.width(suffix)));
-        graphics.drawCenteredString(font, Component.literal(visibleTitle + suffix), layout.title().centerX(),
-                layout.title().top() + 4, 0xFFFFFFFF);
+        // Dark lettering on light stone stays crisp without the default dark text shadow.
+        String titleText = visibleTitle + suffix;
+        graphics.drawString(font, titleText, layout.title().centerX() - font.width(titleText) / 2,
+                layout.title().top() + 4, GraystonePalette.HEADER_TEXT, false);
 
         List<Component> tooltip = List.of();
         if (model.allowed() || model.hasLease() || model.busy()) {
@@ -125,9 +136,9 @@ final class QuestEditorChrome {
             UiRect visibleStatus = new UiRect(layout.status().left(), layout.status().top(),
                     layout.status().left() + statusWidth, layout.status().bottom());
             graphics.fill(visibleStatus.left(), visibleStatus.top(), visibleStatus.right(),
-                    visibleStatus.bottom(), 0xE0202632);
+                    visibleStatus.bottom(), GraystonePalette.FOOTER);
             graphics.drawString(font, Component.literal(statusText), visibleStatus.left() + 5,
-                    visibleStatus.top() + 4, model.error() ? 0xFFFF8B8B : 0xFFB7C5D8, false);
+                    visibleStatus.top() + 4, model.error() ? 0xFFFF8B8B : GraystonePalette.SECONDARY, false);
             if (model.error() && visibleStatus.contains(mouseX, mouseY)) tooltip = model.errorTooltip();
         }
         Component hoveredDetail = layout.title().contains(mouseX, mouseY)
@@ -210,7 +221,9 @@ final class QuestEditorChrome {
     static Layout layout(QuestScreenLayout screen, boolean live, boolean hasLease, boolean allowed) {
         int chromeHeight = QuestScreenLayout.EDITOR_CONTROL_HEIGHT;
         int right = screen.width() - 4;
-        UiRect exit = new UiRect(right - EXIT_WIDTH, screen.height() - chromeHeight - 4, right, screen.height() - 4);
+        // Reserve the two-pixel footer seam plus one pixel for the keyboard focus outline.
+        int buttonTop = screen.bottomToolbar().top() + 3;
+        UiRect exit = new UiRect(right - EXIT_WIDTH, buttonTop, right, buttonTop + chromeHeight);
         UiRect save = new UiRect(exit.left() - SAVE_WIDTH - 4, exit.top(), exit.left() - 4, exit.bottom());
         UiRect publish = new UiRect(save.left() - PUBLISH_WIDTH - 4, save.top(), save.left() - 4, save.bottom());
         UiRect historyAnchor = live ? exit : publish;
@@ -222,6 +235,7 @@ final class QuestEditorChrome {
         UiRect title = new UiRect(center - titleWidth / 2, 4, center + (titleWidth + 1) / 2, 4 + chromeHeight);
         UiRect leading = hasLease ? undo : allowed ? save : exit;
         int maximumWidth = screen.bottomStatusMaximumWidth(leading.left());
+        // Status text shares the button baseline and stays below the footer seam.
         UiRect status = new UiRect(4, exit.top(), 4 + maximumWidth, exit.bottom());
         return new Layout(screen.topToolbar(), screen.bottomToolbar(), title, exit, save, publish, redo, undo, status);
     }

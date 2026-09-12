@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -53,7 +54,7 @@ abstract class RewardEditorScreen extends Screen {
         return List.of(button("cancel", Component.translatable("gui.cancel"),
                         new UiRect(p.left() + 12, p.bottom() - 30, middle - 3, p.bottom() - 10),
                         true, EditorButton.Tone.NEUTRAL, this::onClose),
-                button("apply", Component.translatable("gui.done"),
+                button("apply", Component.translatable("screen.brnquest.editor.scope.apply_parent"),
                         new UiRect(middle + 3, p.bottom() - 30, p.right() - 12, p.bottom() - 10),
                         enabled, EditorButton.Tone.PRIMARY, apply));
     }
@@ -61,13 +62,13 @@ abstract class RewardEditorScreen extends Screen {
     protected void renderPanel(GuiGraphics graphics, int x, int y, float partial) {
         ChildScreenBackground.render(parent, graphics, width, height, partial);
         super.renderBackground(graphics, x, y, partial);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         var p = panel();
-        GraystoneSurface.raised(graphics, p, 0xFF30332E, true);
+        GraystoneSurface.raised(graphics, p, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(title.getString(), p.width() - 24)),
                 p.centerX(), p.top() + 10, -1);
-        graphics.drawString(font, font.plainSubstrByWidth(issue, p.width() - 24),
-                p.left() + 12, p.bottom() - 44, 0xFFFF7070, false);
+        graphics.drawString(font, font.plainSubstrByWidth(issue.isBlank() ? Component.translatable("screen.brnquest.editor.scope.child").getString() : issue, p.width() - 24),
+                p.left() + 12, p.bottom() - 44, issue.isBlank() ? GraystonePalette.SECONDARY : 0xFFFF7070, false);
     }
 
     @Override protected void init() { controls.clear(); lastFrame = 0; }

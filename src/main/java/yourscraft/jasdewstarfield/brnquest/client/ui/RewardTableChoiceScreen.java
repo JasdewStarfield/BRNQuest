@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import com.google.gson.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -109,14 +110,14 @@ public final class RewardTableChoiceScreen extends Screen implements RecipeLooku
     public void render(GuiGraphics g,int x,int y,float partial) {
         if (parent != null) ChildScreenBackground.render(parent,g,width,height,partial);
         super.renderBackground(g,x,y,partial);
-        g.fill(0,0,width,height,0x70151820);
+        g.fill(0,0,width,height,GraystonePalette.BACKDROP);
         boolean current = ClientQuestState.get().revision().equals(revision);
         confirm.active = current && !waiting && !selected.isEmpty();
         more.visible = entries.size()<total; more.active=current && !waiting;
         super.render(g,x,y,partial);
         g.drawCenteredString(font,title,width/2,14,0xFFFFFFFF);
         g.drawCenteredString(font,Component.translatable(error.isEmpty() ? "screen.brnquest.choice.hint" : error),width/2,32,
-                error.isEmpty()?0xFFBFCBDC:0xFFFF9999);
+                error.isEmpty()?GraystonePalette.SECONDARY:0xFFFF9999);
         g.drawCenteredString(font,Component.translatable(waiting ? "screen.brnquest.choice.waiting" : "screen.brnquest.choice.loaded", entries.size(), total),width/2,46,0xFFB7C5A7);
         int left=Math.max(12,width/2-180), right=left+Math.min(360,width-24);
         long now=System.nanoTime(); double elapsed=lastFrame==0?0:Math.min(.1,(now-lastFrame)/1_000_000_000.0); lastFrame=now;

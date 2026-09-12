@@ -118,21 +118,21 @@ public final class EditorPopupMenu {
 
     private static void renderLevel(GuiGraphics graphics, Font font, UiRect bounds, List<Entry> entries,
                                     int mouseX, int mouseY, boolean showSubmenuArrow) {
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFA202832);
+        GraystoneSurface.raised(graphics, bounds, GraystonePalette.PANEL, true);
         for (int index = 0; index < entries.size(); index++) {
             int top = bounds.top() + index * ROW_HEIGHT;
             Entry entry = entries.get(index);
             UiRect row = new UiRect(bounds.left() + 1, top + 1, bounds.right() - 1, top + ROW_HEIGHT - 1);
             graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
-                    row.contains(mouseX, mouseY) ? 0xFF3B4A5B : 0xE02A323E);
+                    row.contains(mouseX, mouseY) ? GraystonePalette.HOVER : GraystonePalette.ROW);
             int reserved = showSubmenuArrow && entry.submenu() ? font.width("›") + 10 : 8;
             String label = font.plainSubstrByWidth(entry.label().getString(),
                     Math.max(1, row.width() - reserved));
             graphics.drawString(font, label, bounds.left() + 6, top + 5,
-                    !entry.enabled() ? 0xFF7F8996 : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF, false);
+                    !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF, false);
             if (showSubmenuArrow && entry.submenu()) {
                 graphics.drawString(font, "›", bounds.right() - font.width("›") - 5, top + 5,
-                        0xFFB7C5D8, false);
+                        GraystonePalette.SECONDARY, false);
             }
         }
     }

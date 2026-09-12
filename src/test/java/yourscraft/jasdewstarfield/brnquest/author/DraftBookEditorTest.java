@@ -10,6 +10,23 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 class DraftBookEditorTest {
+    @Test void crossGroupInsertionNormalizesBothListsAndPreservesContents() {
+        var book = emptyBook();
+        book = value(DraftBookEditor.addGroup(book, new ChapterGroupDefinition(id("book"), id("a"), "A", 0)));
+        book = value(DraftBookEditor.addGroup(book, new ChapterGroupDefinition(id("book"), id("b"), "B", 1)));
+        for (String name : List.of("one", "two", "three"))
+            book = value(DraftBookEditor.addChapter(book, new ChapterDefinition(id("book"), id(name),
+                    id(name.equals("one") ? "a" : "b"), name, "", name.equals("three") ? 1 : 0, List.of(), Map.of("addon", "keep"))));
+        var moved = value(DraftBookEditor.moveChapterToGroup(book, id("one"), id("b"), 1));
+        var ordered = moved.chapters().stream().filter(c -> c.groupId().equals(id("b")))
+                .sorted(java.util.Comparator.comparingInt(ChapterDefinition::order)).toList();
+        assertEquals(List.of(id("two"), id("one"), id("three")), ordered.stream().map(ChapterDefinition::id).toList());
+        assertEquals(List.of(0, 1, 2), ordered.stream().map(ChapterDefinition::order).toList());
+        assertEquals("keep", ordered.get(1).extensions().get("addon"));
+        assertFalse(DraftBookEditor.moveChapterToGroup(book, id("one"), id("missing"), 0).success());
+        assertEquals(id("a"), book.chapters().get(0).groupId());
+    }
+
     @Test void typeNormalizationRunsOnCreateUpdateAndCopyWithoutDroppingOpaqueFields() {
         var book = bookWithDependency();
         var reward = new RewardDefinition(id("book"), id("normalized_command"),

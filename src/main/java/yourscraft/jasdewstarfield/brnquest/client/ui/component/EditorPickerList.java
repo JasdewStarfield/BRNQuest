@@ -78,13 +78,12 @@ public final class EditorPickerList<K> {
         if (bounds == null || bounds.width() == 0 || bounds.height() == 0) return List.of();
         graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
         try {
-            if (icons != null) GraystoneSurface.raised(graphics, bounds, 0xFF383B35, true);
-            else graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFA202832);
+            GraystoneSurface.raised(graphics, bounds, GraystonePalette.PANEL, true);
             graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2,
-                    Math.min(bounds.bottom(), bounds.top() + SEARCH_HEIGHT), 0xFF151A22);
+                    Math.min(bounds.bottom(), bounds.top() + SEARCH_HEIGHT), GraystonePalette.INSET);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                             searchText.getString(), Math.max(0, bounds.width() - 12))),
-                    bounds.left() + 6, bounds.top() + 6, showingHint ? 0xFF7F8B99 : 0xFFFFFFFF, false);
+                    bounds.left() + 6, bounds.top() + 6, showingHint ? GraystonePalette.DISABLED : 0xFFFFFFFF, false);
         } finally {
             graphics.disableScissor();
         }
@@ -92,14 +91,13 @@ public final class EditorPickerList<K> {
             Entry entry = presentation.apply(row.key());
             UiRect rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(mouseX, mouseY);
-            if (icons != null) GraystoneSurface.raised(graphics, rect,
-                    entry.selected() ? 0xFF68634A : hovered ? 0xFF5C6056 : 0xFF454940, entry.tone() != Tone.DISABLED);
-            else graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(),
-                    entry.selected() ? 0xFF385A72 : hovered ? 0xE0343D49 : 0xA02A323E);
+            GraystoneSurface.raised(graphics, rect,
+                    entry.selected() ? GraystonePalette.SELECTED : hovered ? 0xFF5C6056 : GraystonePalette.HOVER, entry.tone() != Tone.DISABLED);
+
             int primaryColor = switch (entry.tone()) {
                 case NORMAL -> 0xFFFFFFFF;
                 case WARNING -> 0xFFFFA070;
-                case DISABLED -> 0xFF7F8B99;
+                case DISABLED -> GraystonePalette.DISABLED;
             };
             if (icons != null) {
                 int inset = rect.width() >= 36 ? 28 : 4;
@@ -113,10 +111,10 @@ public final class EditorPickerList<K> {
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 4, primaryColor, false);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.secondary().getString(), textWidth)),
-                    rect.left() + 4, rect.top() + 16, 0xFF9FB0C2, false);
+                    rect.left() + 4, rect.top() + 16, GraystonePalette.SECONDARY, false);
         }, () -> {
             if (emptyText != null) graphics.drawCenteredString(font, emptyText,
-                    bounds.centerX(), rowsBounds(bounds).top() + 7, 0xFF9AA6B5);
+                    bounds.centerX(), rowsBounds(bounds).top() + 7, GraystonePalette.MUTED);
         });
         return entryAt(mouseX, mouseY).map(key -> presentation.apply(key).tooltip()).orElse(List.of());
     }

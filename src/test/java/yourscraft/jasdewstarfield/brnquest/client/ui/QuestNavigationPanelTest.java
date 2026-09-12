@@ -19,6 +19,49 @@ class QuestNavigationPanelTest {
     private static final QuestNavigationPanel.Layout OPEN =
             new QuestNavigationPanel.Layout(132, 20, 580, 560, 132, 0, 10, 300, false);
 
+    @Test void restoredFoldsSurviveFirstFrameAndCanBeExpanded() {
+        var panel = new QuestNavigationPanel();
+        panel.restoreFoldedGroups(BOOK_ID, java.util.Set.of(GROUP));
+        var model = new QuestNavigationPanel.Model(identity("r1", 800), book(), null, false, false);
+        panel.advance(model, OPEN);
+        assertEquals(java.util.Set.of(GROUP), panel.foldedGroups());
+        assertNull(panel.click(model.identity(), 20, 37, 0).intent());
+        panel.click(model.identity(), 20, 25, 0);
+        panel.advance(model, OPEN);
+        assertEquals(CHAPTER, panel.click(model.identity(), 20, 37, 0).intent().targetId());
+    }
+
+    @Test void foldingHidesChaptersAndExpandingRestoresThem() {
+        var panel = new QuestNavigationPanel();
+        var book = book(); var identity = identity("r1", 800);
+        var model = new QuestNavigationPanel.Model(identity, book, null, true, true);
+        panel.advance(model, OPEN);
+        assertNull(panel.click(identity, 20, 25, 0).intent());
+        panel.advance(model, OPEN);
+        assertNull(panel.click(identity, 20, 37, 0).intent());
+        panel.click(identity, 20, 25, 0);
+        panel.advance(model, OPEN);
+        assertEquals(CHAPTER, panel.click(identity, 20, 37, 0).intent().targetId());
+    }
+
+    @Test void dragTargetsEmptyGroupsAndRejectsOutsideOrStaleDrops() {
+        var panel = new QuestNavigationPanel();
+        var original = book(); var other = id("other");
+        var groups = new java.util.ArrayList<>(original.chapterGroups());
+        groups.add(new ChapterGroupDefinition(BOOK_ID, other, "Empty", 99));
+        var book = new QuestBookDefinition(BOOK_ID, 1, "Book", groups, original.chapters(), Map.of());
+        var identity = identity("r1", 800);
+        panel.advance(new QuestNavigationPanel.Model(identity, book, null, true, true), OPEN);
+        panel.click(identity, 20, 37, 0);
+        panel.drag(identity, 20, 57, 0);
+        var drop = panel.release(identity, 20, 57);
+        assertNotNull(drop); assertEquals(other, drop.group()); assertEquals(0, drop.index());
+        panel.click(identity, 20, 37, 0); panel.drag(identity, 20, 57, 0);
+        assertNull(panel.release(identity, 300, 57));
+        panel.click(identity, 20, 37, 0); panel.drag(identity, 20, 57, 0);
+        assertNull(panel.release(identity("r2", 800), 20, 57));
+    }
+
     @Test void chapterAndRightClickContextUseTheRenderedOrderedEntries() {
         QuestNavigationPanel panel = new QuestNavigationPanel();
         QuestBookDefinition book = book();

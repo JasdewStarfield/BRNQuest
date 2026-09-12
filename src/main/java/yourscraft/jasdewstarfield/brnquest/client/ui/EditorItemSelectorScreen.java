@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -100,20 +101,20 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
         // Blur and dim the completed parent framebuffer before drawing selector content. JEI draws
         // from ScreenEvent.Render.Post afterwards, so its ingredient list remains the final layer.
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         EditorItemSelectorLayout layout = layout();
         UiRect panel = layout.panel();
-        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
+        GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         Component targetLabel = Component.translatable("screen.brnquest.editor.item_selector.target");
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(targetLabel.getString(),
                         layout.targetSlot().left() - panel.left() - 12)),
-                panel.left() + 7, panel.top() + 32, 0xFF9FB0C2, false);
+                panel.left() + 7, panel.top() + 32, GraystonePalette.SECONDARY, false);
         renderSlot(graphics, layout.targetSlot(), selected, mouseX, mouseY, true);
         Component inventoryLabel = Component.translatable("screen.brnquest.editor.item_selector.inventory");
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                         inventoryLabel.getString(), panel.width() - 14)),
-                panel.left() + 7, panel.top() + 52, 0xFF9FB0C2, false);
+                panel.left() + 7, panel.top() + 52, GraystonePalette.SECONDARY, false);
 
         if (minecraft != null && minecraft.player != null) {
             for (int index = 0; index < 36; index++) {
@@ -132,7 +133,7 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
         super.render(graphics, mouseX, mouseY, partialTick);
         if (keyboardSlot >= 0) {
             UiRect area = keyboardSlotBounds();
-            graphics.renderOutline(area.left(),area.top(),area.width(),area.height(),0xFFE4D29A);
+            graphics.renderOutline(area.left(),area.top(),area.width(),area.height(),GraystonePalette.ACCENT);
         }
         // Carried ingredients and item Tooltip are the selector's final content layer. JEI's
         // Render.Post overlay intentionally remains above them when the optional mod is present.

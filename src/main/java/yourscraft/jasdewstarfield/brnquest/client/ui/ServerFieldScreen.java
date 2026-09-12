@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListNavigationWidget;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 
@@ -108,9 +109,9 @@ public final class ServerFieldScreen extends Screen {
     public void render(GuiGraphics graphics, int x, int y, float partial) {
         ChildScreenBackground.render(parent, graphics, width, height, partial);
         super.renderBackground(graphics,x,y,partial);
-        graphics.fill(0,0,width,height,0x70151820);
+        graphics.fill(0,0,width,height,GraystonePalette.BACKDROP);
         // Skin the existing form; query IDs, pagination and native input focus remain unchanged.
-        GraystoneSurface.raised(graphics, new UiRect(width/2-154,8,width/2+154,Math.max(8,height-6)),0xFF30332E,true);
+        GraystoneSurface.raised(graphics, new UiRect(width/2-154,8,width/2+154,Math.max(8,height-6)),GraystonePalette.PANEL,true);
         super.render(graphics,x,y,partial);
         graphics.drawCenteredString(font,title,width/2,16,0xFFFFFFFF);
         graphics.drawString(font,Component.translatable("screen.brnquest.field.status",result == null ? 0 : result.total(),result == null ? 0 : result.selectedCount()),width/2-150,100,0xFFCCCCCC,false);
@@ -125,8 +126,8 @@ public final class ServerFieldScreen extends Screen {
             var rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(x,y);
             // Read-only previews remain flat; selectable values use the shared bounded bevel.
-            if (readOnly) graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? 0xFF454940 : 0xFF252822);
-            else GraystoneSurface.raised(graphics,rect,hovered ? 0xFF5C6056 : 0xFF454940,true);
+            if (readOnly) graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),hovered ? GraystonePalette.HOVER : 0xFF252822);
+            else GraystoneSurface.raised(graphics,rect,hovered ? 0xFF5C6056 : GraystonePalette.HOVER,true);
             var entry = pages.entry(row.key());
             String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+(readOnly ? "" : " ("+entry.count()+")");
             graphics.drawString(font,font.plainSubstrByWidth(label,rect.width()-6),

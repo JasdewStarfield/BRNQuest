@@ -12,7 +12,7 @@ public final class EditorPropertyRow {
         boolean invalid = issue != null && !issue.isBlank();
         String text = (invalid ? "! " : "") + label.getString();
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(text, Math.max(0, bounds.width() - 4))),
-                bounds.left(), bounds.top() + 5, invalid ? 0xFFFF7070 : 0xFF9FB0C2, false);
+                bounds.left(), bounds.top() + 5, invalid ? 0xFFFF7070 : GraystonePalette.SECONDARY, false);
     }
 
     public static void text(GuiGraphics graphics, Font font, EditorPropertyFormLayout.Row row,

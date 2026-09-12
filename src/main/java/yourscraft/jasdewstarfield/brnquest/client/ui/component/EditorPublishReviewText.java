@@ -22,6 +22,52 @@ public final class EditorPublishReviewText {
         return Component.translatable(PREFIX + "detail", change.objectId(), path, value);
     }
 
+    /** Compact first-level values; the exact serialized values remain available in secondary details. */
+    public static Component readableDetail(EditorPublishReviewModel.Change change) {
+        String before = fieldValue(change.path(), change.before()), after = fieldValue(change.path(), change.after());
+        String values = before.isBlank() ? "+ " + after : after.isBlank() ? "− " + before : before + " → " + after;
+        return change.path().isBlank() ? Component.literal(values)
+                : readablePath(change.path()).copy().append(": " + values);
+    }
+
+    private static Component readablePath(String value) {
+        String key = value.startsWith("behavior.") ? "screen.brnquest.editor.behavior." + value.substring(9)
+                : value.startsWith("appearance.") ? "screen.brnquest.editor.quest." + value.substring(11)
+                : value.startsWith("config.") ? "screen.brnquest.editor.config." + value.substring(7) : "";
+        return !key.isBlank() && net.minecraft.client.resources.language.I18n.exists(key) ? Component.translatable(key) : path(value);
+    }
+
+    private static String fieldValue(String path, String raw) {
+        String category = path.equals("claim_policy") ? "claim" : path.equals("appearance.shape") ? "shape"
+                : path.equals("behavior.dependency_requirement") ? "dependency" : "";
+        String key = "screen.brnquest.editor.value." + category + "." + raw.replace("\"", "").toLowerCase(java.util.Locale.ROOT);
+        return !category.isBlank() && net.minecraft.client.resources.language.I18n.exists(key)
+                ? Component.translatable(key).getString() : compactValue(raw);
+    }
+
+    public static String storedTitle(String raw) {
+        try {
+            var value = com.google.gson.JsonParser.parseString(raw).getAsJsonObject();
+            if (value.has("title") && value.get("title").isJsonPrimitive()) return value.get("title").getAsString();
+            if (value.has("config")) return storedTitle(value.get("config").toString());
+        } catch (RuntimeException ignored) { /* Older review payloads remain usable without JSON summaries. */ }
+        return "";
+    }
+
+    public static String compactValue(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        String title = storedTitle(raw);
+        if (!title.isBlank()) return title;
+        if (raw.equals("true") || raw.equals("false"))
+            return Component.translatable(Boolean.parseBoolean(raw) ? "options.on" : "options.off").getString();
+        try {
+            var json = com.google.gson.JsonParser.parseString(raw);
+            if (json.isJsonObject()) return Component.translatable(PREFIX + "fields", json.getAsJsonObject().size()).getString();
+            if (json.isJsonArray()) return Component.translatable(PREFIX + "entries", json.getAsJsonArray().size()).getString();
+        } catch (RuntimeException ignored) { /* Scalar protocol values are already readable. */ }
+        return raw.length() > 100 ? raw.substring(0, 97) + "…" : raw;
+    }
+
     public static List<Component> valueTooltip(EditorPublishReviewModel.Change change) {
         if (change.before().isBlank()) {
             return List.of(Component.translatable(PREFIX + "value.added", change.after()));

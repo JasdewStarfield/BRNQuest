@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import com.google.gson.*;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -53,7 +54,7 @@ final class RewardTableEditorScreen extends RewardEditorScreen {
 
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         renderPanel(graphics, x, y, partial);
-        graphics.drawString(font,font.plainSubstrByWidth(breadcrumb(),body().width()),body().left(),body().top()-13,0xFF9FB0C2,false);
+        graphics.drawString(font,font.plainSubstrByWidth(breadcrumb(),body().width()),body().left(),body().top()-13,GraystonePalette.SECONDARY,false);
         var bounds = entriesBounds();
         var hover = list.render(graphics, font, bounds, bounds, bounds.right() + 3,
                 32, entries.size(), i -> id(entries.get(i)), frameSeconds(), scrollSpeed(),
@@ -89,7 +90,7 @@ final class RewardTableEditorScreen extends RewardEditorScreen {
         return new EditorEntryListPanel.Content(new EditorEntryRow.Content(details.icon(), details.summary(),
                 mode().equals("random") ? Component.translatable(RewardTableTree.always(entry)
                         ? "screen.brnquest.reward_table.guaranteed" : "screen.brnquest.reward_table.weight_summary",
-                        RewardTableTree.weight(entry).toPlainString()) : Component.empty(), 0xFF9FB0C2), details.lookupItem());
+                        RewardTableTree.weight(entry).toPlainString()) : ClientRewardPresentationRegistry.get(type).typeName(view), GraystonePalette.SECONDARY), details.lookupItem());
     }
 
     private void openMenu(String key, int x, int y) {
@@ -174,17 +175,17 @@ final class RewardTableEditorScreen extends RewardEditorScreen {
     @Override protected UiRect body() {
         var b=super.body();return new UiRect(b.left(),b.top()+14,b.right(),b.bottom());
     }
-    private String breadcrumb() {
+    String breadcrumb() {
         var labels=new ArrayList<String>();Screen screen=parent;
         while(screen instanceof RewardEditorScreen editor) {
             if(screen instanceof RewardTableEditorScreen table) {
                 String key=table.editingEntry;
                 var values=key!=null && table.index(key)>=0?RewardTableTree.config(table.find(key)):Map.<String,String>of();
-                labels.add(values.getOrDefault("title","").isBlank()?(key==null?"+":key):values.get("title"));
+                labels.add(values.getOrDefault("title","").isBlank()?Component.translatable("screen.brnquest.reward_table.entry_number", key == null ? table.entries.size() + 1 : table.index(key) + 1).getString():values.get("title"));
             }
             screen=editor.parent;
         }
-        Collections.reverse(labels);return "root"+(labels.isEmpty()?"":" / "+String.join(" / ",labels));
+        Collections.reverse(labels);return Component.translatable("screen.brnquest.reward_table.root").getString()+(labels.isEmpty()?"":" / "+String.join(" / ",labels));
     }
     private void apply() {
         try {

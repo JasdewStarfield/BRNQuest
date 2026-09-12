@@ -122,8 +122,8 @@ public final class QuestBookDiffer {
                 oldValue.appearance().iconScale(), newValue.appearance().iconScale());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.min_width",
                 oldValue.appearance().minWidth(), newValue.appearance().minWidth());
-        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "behavior",
-                oldValue.behavior(), newValue.behavior());
+        mapProperties(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "behavior.",
+                behaviorValues(oldValue.behavior()), behaviorValues(newValue.behavior()));
         mapProperties(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "extensions.",
                 oldValue.extensions(), newValue.extensions());
         if (!oldValue.chapterId().equals(newValue.chapterId())) add(entries, SemanticDiffEntry.Kind.MOVED,
@@ -279,5 +279,35 @@ public final class QuestBookDiffer {
         entries.add(new SemanticDiffEntry(kind, objectKind, id, path, before, after));
     }
 
-    private static String summary(Object value) { return Objects.toString(value, ""); }
+    /** A behavior edit produces one row per changed field, rather than an opaque record dump. */
+    private static Map<String, String> behaviorValues(QuestBehavior behavior) {
+        var result = new TreeMap<String, String>();
+        result.put("hide_until_dependencies_visible", Boolean.toString(behavior.hideUntilDependenciesVisible()));
+        result.put("hide_until_dependencies_complete", Boolean.toString(behavior.hideUntilDependenciesComplete()));
+        result.put("invisible_until_complete", Boolean.toString(behavior.invisibleUntilComplete()));
+        result.put("visible_after_tasks", Integer.toString(behavior.visibleAfterTasks()));
+        result.put("hide_details_until_startable", Boolean.toString(behavior.hideDetailsUntilStartable()));
+        result.put("hide_text_until_complete", Boolean.toString(behavior.hideTextUntilComplete()));
+        result.put("hide_lock_icon", Boolean.toString(behavior.hideLockIcon()));
+        result.put("dependency_requirement", behavior.dependencyRequirement().serializedName());
+        result.put("minimum_required_dependencies", Integer.toString(behavior.minimumRequiredDependencies()));
+        result.put("sequential_tasks", Boolean.toString(behavior.sequentialTasks()));
+        result.put("repeatable", Boolean.toString(behavior.repeatable()));
+        result.put("repeat_cooldown_seconds", Integer.toString(behavior.repeatCooldownSeconds()));
+        result.put("ignore_reward_blocking", Boolean.toString(behavior.ignoreRewardBlocking()));
+        return result;
+    }
+
+    /** Use the public data codecs so removed entries retain names and readable field values in review. */
+    private static String summary(Object value) {
+        var ops = com.mojang.serialization.JsonOps.INSTANCE;
+        return switch (value) {
+            case ChapterGroupDefinition v -> com.google.gson.JsonParser.parseString(NativeBookJson.encode(new QuestBookDefinition(v.bookId(), 1, "", List.of(v), List.of(), Map.of()))).getAsJsonObject().getAsJsonArray("chapter_groups").get(0).toString();
+            case ChapterDefinition v -> com.google.gson.JsonParser.parseString(NativeBookJson.encode(new QuestBookDefinition(v.bookId(), 1, "", List.of(), List.of(v), Map.of()))).getAsJsonObject().getAsJsonArray("chapters").get(0).toString();
+            case QuestDefinition v -> QuestDefinition.CODEC.encodeStart(ops, v).getOrThrow().toString();
+            case TaskDefinition v -> TaskDefinition.CODEC.encodeStart(ops, v).getOrThrow().toString();
+            case RewardDefinition v -> RewardDefinition.CODEC.encodeStart(ops, v).getOrThrow().toString();
+            default -> Objects.toString(value, "");
+        };
+    }
 }

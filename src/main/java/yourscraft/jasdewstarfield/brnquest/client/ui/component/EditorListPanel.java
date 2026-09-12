@@ -104,7 +104,7 @@ public final class EditorListPanel<K> {
             for (Row<K> row : frame.rows()) {
                 rowRenderer.accept(row);
                 if (row.index() == focusedIndex) graphics.renderOutline(row.bounds().left(), row.bounds().top(),
-                        row.bounds().width(), row.bounds().height(), 0xFFE4D29A);
+                        row.bounds().width(), row.bounds().height(), GraystonePalette.ACCENT);
             }
         } finally {
             graphics.disableScissor();

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -91,13 +92,13 @@ public final class EditorQuestBehaviorScreen extends Screen {
         graphics.pose().pushPose();
         // Match the other modal editor surfaces: authored items use raised render depth, so the modal must be higher.
         graphics.pose().translate(0, 0, 500);
-        graphics.fill(0, 0, width, height, 0x70151820);
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         UiRect panel = panel();
-        EditorPropertyPanel.renderCentered(graphics, font,
+        EditorPropertyPanel.renderGraystone(graphics, font,
                 new EditorPropertyPanel.Layout(panel, panel.left() + 12, panel.width() - 24,
                         panel.top() + 9, panel.top() + 30, ROW_HEIGHT),
                 title, 0xFFFFFFFF, List.of(),
-                new EditorPropertyPanel.Footer(cancelBounds(), applyBounds(), Component.translatable("gui.done"),
+                new EditorPropertyPanel.Footer(cancelBounds(), applyBounds(), Component.translatable("screen.brnquest.editor.scope.apply_parent"),
                         valid(), EditorButton.Tone.PRIMARY),
                 (target, bounds, text, enabled, tone) -> buttons.render(target, font, bounds,
                         EditorButton.Definition.text(text, null), enabled, false, tone, mouseX, mouseY));
@@ -113,6 +114,14 @@ public final class EditorQuestBehaviorScreen extends Screen {
         hideNumberFields();
         buttons.viewport(viewport, 0);
         graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+        // Section headings belong to the same scroll content as their fields.
+        int[] starts = {0, 7, 9};
+        String[] sections = {"visibility", "dependencies", "completion"};
+        for (int i = 0; i < starts.length; i++) {
+            var bounds = rowBounds(starts[i]);
+            graphics.drawString(font, Component.translatable("screen.brnquest.editor.section." + sections[i]),
+                    bounds.left(), bounds.top() - 16, GraystonePalette.ACCENT, false);
+        }
         for (int row = 0; row < ROW_COUNT; row++) {
             UiRect bounds = rowBounds(row);
             if (bounds.bottom() <= viewport.top() || bounds.top() >= viewport.bottom()) continue;
@@ -152,7 +161,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
                 Component.translatable("screen.brnquest.editor.behavior.dependency_requirement"),
                 layout.label(), null);
         buttons.render(graphics, font, layout.field(), EditorButton.Definition.text(
-                        Component.literal(requirement.serializedName() + " ▾"), null),
+                        Component.translatable("screen.brnquest.editor.value.dependency." + requirement.serializedName()).append(" ▾"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
@@ -165,7 +174,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
             UiRect option = new UiRect(menu.left(), menu.top() + index * 20,
                     menu.right(), menu.top() + (index + 1) * 20);
             buttons.render(graphics, font, option,
-                    EditorButton.Definition.text(Component.literal(values[index].serializedName()), null),
+                    EditorButton.Definition.text(Component.translatable("screen.brnquest.editor.value.dependency." + values[index].serializedName()), null),
                     true, values[index] == requirement, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
     }
@@ -196,7 +205,10 @@ public final class EditorQuestBehaviorScreen extends Screen {
         if (button == 0 && scroll.handleTrackClick(mouseX, mouseY, viewport.right() + 2,
                 viewport.top(), viewport.bottom(), contentHeight(), viewport.height())) return true;
         if (button == 0 && viewport.contains(mouseX, mouseY)) {
-            int row = scroll.rowAt(mouseY, viewport.top(), viewport.bottom(), ROW_HEIGHT, ROW_COUNT);
+            int row = -1;
+            for (int candidate = 0; candidate < ROW_COUNT; candidate++) {
+                if (rowBounds(candidate).contains(mouseX, mouseY)) { row = candidate; break; }
+            }
             if (row >= 0) {
                 int booleanIndex = booleanIndexAtRow(row);
                 if (booleanIndex >= 0 && propertyRow(rowBounds(row)).field().contains(mouseX, mouseY)) {
@@ -284,7 +296,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     private UiRect rowBounds(int row) {
         UiRect viewport = viewport();
-        int top = viewport.top() + row * ROW_HEIGHT - (int) Math.round(renderedScroll);
+        int top = viewport.top() + row * ROW_HEIGHT + 18 * (1 + (row >= 7 ? 1 : 0) + (row >= 9 ? 1 : 0)) - (int) Math.round(renderedScroll);
         return new UiRect(viewport.left(), top, viewport.right(), top + EditorPropertyFormLayout.FIELD_HEIGHT);
     }
 
@@ -293,7 +305,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
         return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), labelWidth);
     }
 
-    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT; }
+    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT + 54; }
     private UiRect cancelBounds() { UiRect p=panel(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
     private UiRect applyBounds() { UiRect p=panel(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
 }

@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.15` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.16` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -149,3 +149,17 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 ### 手动交互奖励（experimental.14）
 
 `RewardType.requiresManualClaim(config)` 是无副作用的静态策略声明，默认 false。返回 true 的类型必须由玩家显式单项领取；核心自动触发及 claim-all 跳过该类型，非手动策略在发布配置校验中被拒绝。此方法不会自动创建选择协议或 UI，具体交互仍由类型模块拥有。内置自选表使用此声明，现有扩展保持原行为。
+# 类型选择器图标
+
+客户端 `ClientTaskPresentation` 与 `ClientRewardPresentation` 可覆盖默认 `typeIcon()`，返回 `Optional<EditorIcon>`。此方法没有实例参数，不应依赖任务配置；已配置条目的 `icon(view)` 保持独立。
+
+也可在现有客户端注册时提供静态图标：
+
+```java
+ClientTaskPresentationRegistry.register(typeId, presentation,
+    EditorIcon.sprite(ResourceLocation.parse("myaddon:quest_types/example")));
+```
+
+对应资源为 `assets/myaddon/textures/gui/sprites/quest_types/example.png`，建议 16×16 透明 PNG；资源包可替换该文件。奖励使用 `ClientRewardPresentationRegistry` 的同名重载。注册时机、重复注册及冻结规则与原接口相同，必须在客户端入口注册。
+
+解析顺序为 presentation 的非空 `typeIcon()`、注册时的图标、通用回退。旧二参数注册无需修改；未知外部类型不会借用同名内置图标。图标仅作装饰，不自动提供物品 Tooltip、JEI 查询或提交语义。sprite 渲染继续使用 GUI atlas 和公共像素阴影，资源重载时重新取得 sprite；不要在 typeIcon() 中逐帧读取文件。图标资源缺失时使用游戏图集的 missing sprite，通用回退针对未提供图标的类型。

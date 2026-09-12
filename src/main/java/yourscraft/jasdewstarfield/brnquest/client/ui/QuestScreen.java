@@ -2995,7 +2995,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         EditorPickerList.Tone.NORMAL, false, List.of(typedTypeDisplayName(type),
                                 Component.translatable(typePickerHint(typedTypePickerFrame, type)), Component.translatable(
                                 "screen.brnquest.editor.typed.type_id", type.toString()))),
-                QuestTypeIcons::forType, null, mouseX, mouseY);
+                type -> typedEditorKind == QuestTypedEntryKind.TASK
+                        ? ClientTaskPresentationRegistry.typeIcon(type) : ClientRewardPresentationRegistry.typeIcon(type),
+                null, mouseX, mouseY);
         if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
         renderEditorIconButton(graphics, typedTypePickerCloseBounds(), Component.literal("×"),
                 Component.translatable("screen.brnquest.editor.action.close"), true, false, mouseX, mouseY);

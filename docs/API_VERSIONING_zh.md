@@ -1,12 +1,17 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.15 → experimental.16
+
+- 新增客户端 presentation 默认 typeIcon()、注册图标重载及注册表 typeIcon(id) 查询；新增 EditorIcon.sprite。已有方法保持签名，旧实现默认返回空图标并走兼容回退。
+- 类型选择器按任务/奖励注册表分别解析，不需要伪造实例。内置资源映射仅作为内置注册元数据，不限制附属命名空间。
+
 ## experimental.14 → experimental.15
 
 `ComposableReward.freeze(context)` 是新增默认方法，默认调用 `prepare`，已有适配器保持源码/二进制兼容。`prepare` 继续用于重复的无副作用预检；`freeze` 只为首次到达的实际执行 occurrence 固定随机数据，禁止交付副作用。协调器在执行前强制保存返回值，恢复及重复确认不得再次调用 `freeze`。新方法支持原生战利品表，网络字段未变，协议保持 18。
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.15`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.16`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

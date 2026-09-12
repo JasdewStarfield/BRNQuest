@@ -12,6 +12,11 @@ import java.util.List;
 /** Client-only presentation contract paired with a server task type by full ID. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public interface ClientTaskPresentation {
+    /** Type-picker icon without a task/reward instance; empty keeps registration metadata or the generic fallback. */
+    default java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> typeIcon() {
+        return java.util.Optional.empty();
+    }
+
     /** Decorative icon only: no item tooltip, count overlay, ingredient lookup or submission semantics. */
     default java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon(TaskView view) {
         return java.util.Optional.empty();

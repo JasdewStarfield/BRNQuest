@@ -52,7 +52,7 @@ final class RewardTypePickerScreen extends RewardEditorScreen {
                 Component.translatable("screen.brnquest.editor.typed.click_to_configure"),
                 EditorPickerList.Tone.NORMAL, false, List.of(ClientRewardPresentationRegistry.get(type).typeName(new RewardView(type,type,type,Map.of(),"manual",false)),
                         Component.translatable("screen.brnquest.editor.typed.click_to_configure"), Component.literal(type.toString()))),
-                QuestTypeIcons::forType,
+                ClientRewardPresentationRegistry::typeIcon,
                 Component.translatable("screen.brnquest.editor.typed.empty"), x, y);
         var p = panel();
         controls.setActions(List.of(button("cancel", Component.translatable("gui.cancel"),

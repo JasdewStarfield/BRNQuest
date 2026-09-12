@@ -5,6 +5,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class QuestTypeIconsTest {
+    @Test void registeredKillEntityUsesExistingKillAsset() {
+        assertEquals(ResourceLocation.parse("brnquest:editor/type/kill"), QuestTypeIcons.sprite(
+                yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL));
+        assertEquals(ResourceLocation.parse("brnquest:editor/type/custom"),
+                QuestTypeIcons.sprite(ResourceLocation.parse("example:kill_entity")));
+    }
     @Test void reviewedBuiltinGlyphsFitTheirPixelSlotsAndKeepDistinctSemantics() throws Exception {
         for (String type : new String[]{"checkmark","item","item_choice","xp","xp_levels","command","location","observe",
                 "kill","advancement","biome","structure","dimension","custom","reward_table","loot_table"}) {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 类型选择器支持任务/奖励展示接口的 typeIcon() 及带图标的注册重载，内置图标使用相同注册路径；提供 EditorIcon.sprite 供附属使用 PNG，兼容旧展示接口。
+- Type pickers now resolve task/reward typeIcon() and optional registration icons through the same registry path as built-ins. EditorIcon.sprite supports addon PNG assets while preserving legacy presentation compatibility.
+
+- 修复击杀实体类型图标错误回退到自定义图标；正确引用现有 kill.png。
+- Fixed the kill-entity type icon falling back to the custom icon; it now uses the existing kill.png.
+
 - 修复打开行为编辑时意外退出编辑会话；任务主屏通过统一入口打开子窗口，保留编辑会话及未提交的表单内容。
 - Fixed behavior editing unexpectedly ending the editor session. Quest-screen child windows now share a session-preserving transition that retains pending form edits.
 

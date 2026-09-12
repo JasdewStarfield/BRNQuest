@@ -27,6 +27,10 @@ final class ExampleClientHooks {
     }
 
     private static final class MarkerPresentation implements ClientTaskPresentation {
+        // Type choices have no configured TaskView yet; expose static artwork separately.
+        public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> typeIcon() {
+            return java.util.Optional.of(yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon.glyph(Component.literal("M")));
+        }
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
         public String symbol(TaskView task) { return "M"; }
         public Component typeName(TaskView task) {
@@ -51,6 +55,9 @@ final class ExampleClientHooks {
     }
 
     private static final class ExperiencePresentation implements ClientRewardPresentation {
+        public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> typeIcon() {
+            return java.util.Optional.of(yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon.glyph(Component.literal("XP")));
+        }
         public String symbol(RewardView reward) { return "✦"; }
         public Component typeName(RewardView reward) {
             return Component.translatable("screen.brnquest_example.reward.experience");

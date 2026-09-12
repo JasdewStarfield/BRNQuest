@@ -17,10 +17,11 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ClientRewardPresentationRegistry {
     private static final Map<ResourceLocation, ClientRewardPresentation> PRESENTATIONS = new ConcurrentHashMap<>();
     private static final ClientRewardPresentation FALLBACK = new ClientRewardPresentation() {};
+    private static final Map<ResourceLocation, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> TYPE_ICONS = new ConcurrentHashMap<>();
     private static volatile boolean frozen;
 
     static {
-        register(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID, new ClientRewardPresentation() {
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "▣"; }
             public Component interactionHint(RewardPresentationContext context) {
                 if (!context.claimed() && !context.claimable()) return title(context);
@@ -34,7 +35,7 @@ public final class ClientRewardPresentationRegistry {
             }
             // A single loot-table reference has no candidate browser; rules belong to the editor field help.
         });
-        register(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new ClientRewardPresentation() {
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "▤"; }
             public Component interactionHint(RewardPresentationContext context) {
                 if (!context.claimed() && !context.claimable()) return ClientRewardPresentation.super.interactionHint(context);
@@ -52,8 +53,8 @@ public final class ClientRewardPresentationRegistry {
                 } catch (RuntimeException error) { return java.util.Optional.of(java.util.List.of(Component.literal("Invalid reward table"))); }
             }
         });
-        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Reward());
-        register(RewardTypes.COMMAND, new ClientRewardPresentation() {
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Reward());
+        registerBuiltin(RewardTypes.COMMAND, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return ">_"; }
             public Component title(RewardPresentationContext context) {
                 String title = context.reward().config().getOrDefault("title", "");
@@ -63,7 +64,7 @@ public final class ClientRewardPresentationRegistry {
                 return Component.translatable("screen.brnquest.type.reward.command");
             }
         });
-        register(RewardTypes.ITEM, new ClientRewardPresentation() {
+        registerBuiltin(RewardTypes.ITEM, new ClientRewardPresentation() {
             public String itemSnbt(RewardView reward) { return reward.config().getOrDefault("item", ""); }
             public ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {
                 if (parsedItem == null || parsedItem.isEmpty()) return ItemStack.EMPTY;
@@ -76,14 +77,14 @@ public final class ClientRewardPresentationRegistry {
             }
 
         });
-        register(RewardTypes.CUSTOM, new ClientRewardPresentation() {
+        registerBuiltin(RewardTypes.CUSTOM, new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "◆"; }
             public Component typeName(RewardView reward) {
                 return Component.translatable("screen.brnquest.type.reward.custom");
             }
         });
-        register(RewardTypes.XP, experience(false));
-        register(RewardTypes.XP_LEVELS, experience(true));
+        registerBuiltin(RewardTypes.XP, experience(false));
+        registerBuiltin(RewardTypes.XP_LEVELS, experience(true));
     }
 
     private ClientRewardPresentationRegistry() {}
@@ -95,6 +96,22 @@ public final class ClientRewardPresentationRegistry {
         }
     }
 
+    /** Optional registration metadata uses the same lifecycle and duplicate checks as presentations. */
+    public static synchronized void register(ResourceLocation id, ClientRewardPresentation presentation,
+            yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon icon) {
+        Objects.requireNonNull(icon);
+        register(id, presentation);
+        TYPE_ICONS.put(id, icon);
+    }
+
+    private static void registerBuiltin(ResourceLocation id, ClientRewardPresentation presentation) {
+        register(id, presentation, QuestTypeIcons.forType(id));
+    }
+
+    /** No synthetic instance/config is required to render a type choice. */
+    public static yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon typeIcon(ResourceLocation id) {
+        return get(id).typeIcon().orElseGet(() -> TYPE_ICONS.getOrDefault(id, QuestTypeIcons.fallback()));
+    }
     public static ClientRewardPresentation get(ResourceLocation id) {
         return PRESENTATIONS.getOrDefault(id, FALLBACK);
     }

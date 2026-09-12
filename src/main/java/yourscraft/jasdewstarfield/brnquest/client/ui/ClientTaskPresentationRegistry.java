@@ -21,18 +21,19 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class ClientTaskPresentationRegistry {
     private static final Map<ResourceLocation, ClientTaskPresentation> PRESENTATIONS = new ConcurrentHashMap<>();
     private static final ClientTaskPresentation FALLBACK = new ClientTaskPresentation() {};
+    private static final Map<ResourceLocation, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> TYPE_ICONS = new ConcurrentHashMap<>();
     private static volatile boolean frozen;
 
     static {
-        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE,new EncounterPresentation(true));
-        register(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL,new EncounterPresentation(false));
-        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Task());
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.OBSERVE,new EncounterPresentation(true));
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL,new EncounterPresentation(false));
+        registerBuiltin(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Task());
         for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
-            register(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTaskPresentation(kind));
-        register(TaskTypes.CHECKMARK, new CheckmarkPresentation());
-        register(TaskTypes.ITEM, new ItemChoicePresentation());
-        register(TaskTypes.ITEM_CHOICE, new ItemChoicePresentation());
-        register(TaskTypes.XP, new ClientTaskPresentation() {
+            registerBuiltin(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTaskPresentation(kind));
+        registerBuiltin(TaskTypes.CHECKMARK, new CheckmarkPresentation());
+        registerBuiltin(TaskTypes.ITEM, new ItemChoicePresentation());
+        registerBuiltin(TaskTypes.ITEM_CHOICE, new ItemChoicePresentation());
+        registerBuiltin(TaskTypes.XP, new ClientTaskPresentation() {
             public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
             public String symbol(TaskView task) { return "✦"; }
             public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.xp"); }
@@ -48,7 +49,7 @@ public final class ClientTaskPresentationRegistry {
                         context.task().config().getOrDefault("value", "1"));
             }
         });
-        register(TaskTypes.CUSTOM, new ClientTaskPresentation() {
+        registerBuiltin(TaskTypes.CUSTOM, new ClientTaskPresentation() {
             public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
             public String symbol(TaskView task) { return "◆"; }
             public Component typeName(TaskView task) {
@@ -67,6 +68,22 @@ public final class ClientTaskPresentationRegistry {
         }
     }
 
+    /** Optional registration metadata uses the same lifecycle and duplicate checks as presentations. */
+    public static synchronized void register(ResourceLocation id, ClientTaskPresentation presentation,
+            yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon icon) {
+        Objects.requireNonNull(icon);
+        register(id, presentation);
+        TYPE_ICONS.put(id, icon);
+    }
+
+    private static void registerBuiltin(ResourceLocation id, ClientTaskPresentation presentation) {
+        register(id, presentation, QuestTypeIcons.forType(id));
+    }
+
+    /** No synthetic instance/config is required to render a type choice. */
+    public static yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon typeIcon(ResourceLocation id) {
+        return get(id).typeIcon().orElseGet(() -> TYPE_ICONS.getOrDefault(id, QuestTypeIcons.fallback()));
+    }
     public static ClientTaskPresentation get(ResourceLocation id) {
         return PRESENTATIONS.getOrDefault(id, FALLBACK);
     }

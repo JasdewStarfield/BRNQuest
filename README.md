@@ -21,6 +21,8 @@ The development run configurations are `runClient`, `runServer`, `runGameTestSer
 
 ## Documentation
 
+- 任务界面、键盘操作与编辑生效层次 / Quest UI, keyboard controls and editing: [中文](docs/QUEST_UI_zh.md) / [English](docs/QUEST_UI.md)
+
 The `docs/` directory contains only public user, administrator, and extension-author documentation. Internal architecture, implementation plans, developer test workflows, and acceptance evidence are maintained separately.
 
 - 整合包作者的任务工作区、草稿、部署、更新与恢复流程：[`docs/WORKSPACE_zh.md`](docs/WORKSPACE_zh.md)

@@ -127,13 +127,8 @@ public final class RewardTableChoiceScreen extends Screen implements RecipeLooku
             var entry=entries.get(row.key()); var rect=row.bounds();
             g.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),selected.equals(entry.get("id").getAsString())?0xFF62604A:0xFF363A32);
             var details=details(row.key());
-            var stack=details.lookupItem(); if(details.decoration().isPresent()) {
-                details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
-            } else if(!stack.isEmpty()) {
-                g.renderItem(stack,rect.left()+5,rect.top()+7);
-                g.renderItemDecorations(font,stack,rect.left()+5,rect.top()+7);
-            }
-            else details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
+            // Shared details own decoration precedence and stack counts in every reward entry surface.
+            details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
             g.drawString(font,font.plainSubstrByWidth(details.summary().getString(),rect.width()-32),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
         },()->{});
         list.rowAt(x,y).ifPresent(row -> {

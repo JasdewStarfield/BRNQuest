@@ -2511,13 +2511,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case PUBLISHING -> Component.translatable("screen.brnquest.editor.draft.publishing");
             case REVIEWING -> Component.translatable("screen.brnquest.editor.publish.reviewing");
             case EDITING -> {
-                long seconds = editor.remainingLeaseTicks() / 20L;
-                String time = "%d:%02d".formatted(seconds / 60L, seconds % 60L);
+                // The open editor renews its lease automatically; show the author's save state only.
                 if ("PUBLISH_APPLY_COMPLETE".equals(editor.statusCode())) {
-                    yield Component.translatable("screen.brnquest.editor.status.published", time);
+                    yield Component.translatable("screen.brnquest.editor.status.published");
                 }
                 yield Component.translatable(editor.dirty() ? "screen.brnquest.editor.status.dirty"
-                        : "screen.brnquest.editor.status.saved", time);
+                        : "screen.brnquest.editor.status.saved");
             }
             case CLOSING -> Component.translatable("screen.brnquest.editor.session.closing");
             case ERROR -> editor.allowed() ? EditorDiagnosticPresentation.operationError(editor.statusCode()) : null;

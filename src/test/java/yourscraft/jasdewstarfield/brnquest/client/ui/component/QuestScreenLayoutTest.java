@@ -7,6 +7,23 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestScreenLayoutTest {
+    @Test void acceptanceSizesKeepCanvasAndToolbarsInsideTheScreen() {
+        // Exercise GUI-scaled dimensions and both drawers, including the smallest acceptance sample.
+        for (int[] size : new int[][]{{320, 240}, {480, 270}, {640, 360}, {960, 540}}) {
+            for (boolean collapsed : new boolean[]{false, true}) {
+                for (boolean details : new boolean[]{false, true}) {
+                    var layout = new QuestScreenLayout(size[0], size[1], collapsed, details);
+                    assertTrue(layout.canvasLeft() >= 0);
+                    assertTrue(layout.canvasLeft() < layout.canvasRight());
+                    assertTrue(layout.canvasRight() <= size[0]);
+                    assertEquals(layout.topToolbar().bottom(), layout.content().top());
+                    assertEquals(layout.content().bottom(), layout.bottomToolbar().top());
+                    assertEquals(size[1], layout.bottomToolbar().bottom());
+                }
+            }
+        }
+    }
+
     @Test void toolbarsRemainFixedWhenSidePanelsChange() {
         QuestScreenLayout expanded = new QuestScreenLayout(1920, 1080, false, false);
         QuestScreenLayout drawersOpen = new QuestScreenLayout(1920, 1080, true, true);

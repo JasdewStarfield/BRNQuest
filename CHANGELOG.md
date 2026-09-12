@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 高级草稿状态栏移除自动续租倒计时，明确显示“高级草稿编辑模式”，与普通实时编辑区分。
+- Advanced draft status text omits the automatically renewed lease countdown and explicitly identifies advanced draft editing separately from live editing.
+
+- 自选奖励图标复用统一详情绘制，保留物品数量与装饰图标优先级；新增中英文任务界面与编辑操作说明。
+- Reward choices reuse shared detail icon rendering, preserving item counts and decorative icon precedence. Added Chinese and English quest UI and editing guides.
+
 - 优化灰石界面层次：对照早期原型采用浅灰凸边顶栏、深色底栏与导航，并增加边栏接缝，底栏按钮留出分隔线与焦点边框空间；详情分组使用紧凑图标标题和细线；任务节点增加对比轮廓，网格进一步弱化。
 - Refined graystone hierarchy with a prototype-inspired light beveled header, dark footer/navigation and drawer seams, footer button clearance for separators and focus outlines, compact icon-and-rule detail headings, contrasting quest-node rims and subtler grid lines.
 

@@ -18,13 +18,16 @@ import yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableChoice;
 import java.util.*;
 
 /** Explicit selection and confirmation, with suspended attempts on close and a shared scrolling list. */
-public final class RewardTableChoiceScreen extends Screen {
+public final class RewardTableChoiceScreen extends Screen implements RecipeLookupSource {
     private record Expected(String revision, String reward, Screen parent) {}
     private static Expected expected;
     private final Screen parent;
     private final ResourceLocation bookId;
     private final String revision, reward, attempt;
     private final List<JsonObject> entries = new ArrayList<>();
+    private final Map<Integer, RewardEntryDetails> detailsCache = new HashMap<>();
+    private String displayLocale = "";
+    private Object displayLevel;
     private final EditorListPanel<Integer> list = new EditorListPanel<>();
     private String selected = "", error = "";
     private int total;
@@ -58,6 +61,13 @@ public final class RewardTableChoiceScreen extends Screen {
                 screen = new RewardTableChoiceScreen(expected,page.attempt()); expected = null;
                 minecraft.setScreen(screen);
             }
+            if (screen.occurrence.equals(page.occurrence()) && page.version() < screen.version) return;
+            // Duplicate or out-of-order pages must not unlock a newer request's waiting state.
+            if (page.state().equals("AWAITING_CHOICE")) {
+                if (!screen.occurrence.equals(page.occurrence()) && page.offset() != 0) return;
+                if (screen.occurrence.equals(page.occurrence()) && page.offset() != screen.entries.size()
+                        && !(page.offset() == 0 && screen.selectionSent)) return;
+            }
             screen.waiting = false;
             if (page.state().equals("CONFIRMED")) { screen.onClose(); return; }
             if (!page.state().equals("AWAITING_CHOICE")) {
@@ -65,29 +75,28 @@ public final class RewardTableChoiceScreen extends Screen {
             }
             if(!screen.occurrence.equals(page.occurrence())) {
                 if(page.offset()!=0)return;
-                screen.entries.clear();screen.selected="";screen.selectionSent=false;screen.error="";
+                screen.entries.clear();screen.detailsCache.clear();screen.selected="";screen.selectionSent=false;screen.error="";
                 screen.occurrence=page.occurrence();screen.version=page.version();
             } else if(page.offset()==0 && screen.selectionSent) {
-                screen.entries.clear();screen.selected="";screen.selectionSent=false;
+                screen.entries.clear();screen.detailsCache.clear();screen.selected="";screen.selectionSent=false;
             }
             if (page.offset() != screen.entries.size()) return;
             var values = JsonParser.parseString(page.entries()).getAsJsonArray();
             values.forEach(value -> screen.entries.add(value.getAsJsonObject()));
+            screen.version = page.version();
             screen.total = page.total(); screen.list.invalidate();
         });
     }
     protected void init() {
         list.invalidate(); lastFrame = 0;
         int left = Math.max(12,width/2-180), w = Math.min(360,width-24);
-        more = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.choice.more"), b -> request("",entries.size()))
-                .bounds(left,height-58,w,20).build());
-        addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.choice.later"), b -> onClose())
-                .bounds(left,height-30,w/2-3,20).build());
-        confirm = addRenderableWidget(Button.builder(Component.translatable("screen.brnquest.choice.confirm"), b -> request(selected,0))
-                .bounds(left+w/2+3,height-30,w/2-3,20).build());
+        more = addRenderableWidget(new EditorButtonWidget(left,height-58,w,20,Component.translatable("screen.brnquest.choice.more"), b -> request("",entries.size())));
+        addRenderableWidget(new EditorButtonWidget(left,height-30,w/2-3,20,Component.translatable("screen.brnquest.choice.later"), b -> onClose()));
+        confirm = addRenderableWidget(new EditorButtonWidget(left+w/2+3,height-30,w/2-3,20,Component.translatable("screen.brnquest.choice.confirm"), b -> request(selected,0)));
     }
     private void request(String entry, int offset) {
-        if (waiting) return;
+        if (waiting || !ClientQuestState.get().revision().equals(revision)) return;
+        if (!entry.isEmpty() && entries.stream().noneMatch(value -> entry.equals(value.get("id").getAsString()))) return;
         waiting = true; sentAt = System.nanoTime(); error = "";
         if (!entry.isEmpty()) selectionSent = true; // Timeout retries keep the same decision; changing it requires reopening.
         PacketDistributor.sendToServer(new RewardTableChoiceNetwork.Request(revision,reward,attempt,occurrence,version,entry,offset));
@@ -108,15 +117,15 @@ public final class RewardTableChoiceScreen extends Screen {
         g.drawCenteredString(font,title,width/2,14,0xFFFFFFFF);
         g.drawCenteredString(font,Component.translatable(error.isEmpty() ? "screen.brnquest.choice.hint" : error),width/2,32,
                 error.isEmpty()?0xFFBFCBDC:0xFFFF9999);
-        g.drawCenteredString(font,font.plainSubstrByWidth(occurrence,width-24),width/2,46,0xFF9FB0C2);
+        g.drawCenteredString(font,Component.translatable(waiting ? "screen.brnquest.choice.waiting" : "screen.brnquest.choice.loaded", entries.size(), total),width/2,46,0xFFB7C5A7);
         int left=Math.max(12,width/2-180), right=left+Math.min(360,width-24);
         long now=System.nanoTime(); double elapsed=lastFrame==0?0:Math.min(.1,(now-lastFrame)/1_000_000_000.0); lastFrame=now;
         list.advance(new UiRect(left,60,right-6,Math.max(60,height-64)),new UiRect(0,0,width,height),right-3,32,2,
                 entries.size(),i->i,elapsed,BrnQuestClientConfig.VALUES.smoothSpeed.get());
         list.render(g,row->{
             var entry=entries.get(row.key()); var rect=row.bounds();
-            g.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),selected.equals(entry.get("id").getAsString())?0xDD456780:0xAA263646);
-            var details=RewardEntryDetails.resolve(minecraft,view(entry));
+            g.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),selected.equals(entry.get("id").getAsString())?0xFF62604A:0xFF363A32);
+            var details=details(row.key());
             var stack=details.lookupItem(); if(details.decoration().isPresent()) {
                 details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
             } else if(!stack.isEmpty()) {
@@ -127,11 +136,31 @@ public final class RewardTableChoiceScreen extends Screen {
             g.drawString(font,font.plainSubstrByWidth(details.summary().getString(),rect.width()-32),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
         },()->{});
         list.rowAt(x,y).ifPresent(row -> {
-            var details = RewardEntryDetails.resolve(minecraft, view(entries.get(row.key())));
+            var details = details(row.key());
             // An item candidate uses one native tooltip throughout the row, including its text and edges.
             if (!details.lookupItem().isEmpty()) g.renderTooltip(font,details.lookupItem(),x,y);
             else g.renderTooltip(font,font.split(details.summary(),Math.max(80,width-40)),x,y);
         });
+    }
+    /** Frozen candidate content is decoded once per row; locale/world changes invalidate display-only values. */
+    private RewardEntryDetails details(int index) {
+        String locale = minecraft.getLanguageManager().getSelected();
+        if (displayLevel != minecraft.level || !displayLocale.equals(locale)) {
+            detailsCache.clear(); displayLevel = minecraft.level; displayLocale = locale;
+        }
+        return detailsCache.computeIfAbsent(index, key -> RewardEntryDetails.resolve(minecraft, view(entries.get(key))));
+    }
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        // Tab remains native button navigation; arrows browse rows and Enter selects without claiming.
+        if (key == 258) list.clearFocus();
+        if (key >= 262 && key <= 269 && !waiting && !selectionSent && list.navigate(key, hasShiftDown())) {
+            setFocused(null); return true;
+        }
+        if ((key == 257 || key == 335) && getFocused() == null && !waiting && !selectionSent) {
+            var row = list.focusedRow();
+            if (row.isPresent()) { selected = entries.get(row.get().key()).get("id").getAsString(); return true; }
+        }
+        return super.keyPressed(key, scan, modifiers);
     }
     private RewardView view(JsonObject entry) {
         var type=ResourceLocation.parse(entry.get("type").getAsString());
@@ -148,6 +177,11 @@ public final class RewardTableChoiceScreen extends Screen {
     public boolean mouseScrolled(double x,double y,double dx,double dy) {
         return list.mouseScrolled(x,y,dy,BrnQuestClientConfig.VALUES.scrollStep.get()) || super.mouseScrolled(x,y,dx,dy);
     }
-    public void onClose() { expected=null; minecraft.setScreen(parent); }
+    @Override public Optional<RecipeLookupTarget> recipeLookupTargetAt(double x, double y) {
+        // Native item help spans the visible row, so optional JEI lookup must use that same area.
+        return list.rowAt(x, y).flatMap(row -> RecipeLookupTarget.clipped(
+                details(row.key()).lookupItem(), row.bounds(), row.visible()));
+    }
+    public void onClose() { ClientQuestState.get().finishRewardChoice(reward); expected=null; minecraft.setScreen(parent); }
     public boolean isPauseScreen() { return parent!=null && parent.isPauseScreen(); }
 }

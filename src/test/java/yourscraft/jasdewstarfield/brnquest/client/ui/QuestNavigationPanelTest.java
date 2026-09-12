@@ -64,6 +64,19 @@ class QuestNavigationPanelTest {
                 panel.click(identity, moving.visibleRight() + 2, 300, 0).intent().action());
     }
 
+    @Test void iconSizedRowsKeepAdjacentChapterHitBoundariesDistinct() {
+        var first = book().chapters().getFirst();
+        var second = new ChapterDefinition(BOOK_ID, id("second"), GROUP, "Second", "", 1, List.of());
+        var book = new QuestBookDefinition(BOOK_ID, 1, "Book", book().chapterGroups(), List.of(first, second), Map.of());
+        var panel = new QuestNavigationPanel();
+        var identity = identity("r1", 800);
+        panel.advance(new QuestNavigationPanel.Model(identity, book, first, false, false), OPEN);
+        // Both the icon's lower pixels and the exact next-row boundary must resolve to the displayed chapter.
+        int boundary = OPEN.top() + QuestNavigationPanel.GROUP_HEIGHT + QuestNavigationPanel.CHAPTER_HEIGHT;
+        assertEquals(CHAPTER, panel.click(identity, 15, boundary - 1, 0).intent().targetId());
+        assertEquals(second.id(), panel.click(identity, 15, boundary, 0).intent().targetId());
+    }
+
     private static QuestBookDefinition book() {
         ChapterGroupDefinition group = new ChapterGroupDefinition(BOOK_ID, GROUP, "Group", 0);
         ChapterDefinition chapter = new ChapterDefinition(BOOK_ID, CHAPTER, GROUP,

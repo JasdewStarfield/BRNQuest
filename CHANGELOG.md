@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- 已领取奖励复用完成状态 PNG 角标，替代绿色字体对勾，保留物品数量与原生 Tooltip。
+- Claimed rewards reuse the completion PNG badge instead of a green font checkmark, preserving item counts and native tooltips.
+
+- 玩家物品提交页统一灰石槽位与按钮，显示预计扣除数量并在确认时重新校验；目标、完成和领取补充待响应防连点及手动超时重试，旧任务书版本进度不再覆盖当前状态。
+- Gameplay item submission uses shared graystone slots and buttons, previews planned consumption, and revalidates on confirmation. Task, completion and claim actions guard duplicate clicks with manual timeout recovery; stale book revisions cannot replace current progress.
+- 奖励自选页统一按钮、等待与加载提示，支持键盘选择和原生物品 Tooltip/JEI 整行查询，缓存冻结候选；HUD 共用目标名称、图标和进度，并缓存物品解析及遵守隐藏文本设置。
+- Reward choices use shared buttons, waiting/loading hints, keyboard selection and matching native tooltip/JEI row targets with cached frozen candidates. The HUD shares objective names, icons and progress, caches item parsing, and respects hidden text.
+
+- 任务左下角状态角标改用独立 PNG，向外偏移并提高渲染层级，避免物品图标遮挡。
+- Lower-left quest status badges now use editable PNG sprites, offset outward and rendered above item icons.
+
+- 章节显示配置的物品/纹理图标与书本回退；画布补充跟踪、完成和不可用标记，详情目标/奖励沿用灰石配色并支持注册类型图标，截断目标名称可悬停查看。
+- Chapters display configured item/texture icons with a book fallback. Canvas nodes gain tracked, completed and blocked markers; objective/reward details use graystone colors and registered type icons, with hover text for truncated objective names.
+
+- 章节导航采用灰石配色与黄铜选中标记，悬停可读完整标题；详情目标/奖励加入图标分区，状态与可完成提示分行以减轻窄屏拥挤。
+- Chapter navigation uses graystone colors, brass selection markers and full-title hover hints. Detail sections gain icon headings, with status and completion hints on separate lines for narrow layouts.
+
 - 类型选择器支持任务/奖励展示接口的 typeIcon() 及带图标的注册重载，内置图标使用相同注册路径；提供 EditorIcon.sprite 供附属使用 PNG，兼容旧展示接口。
 - Type pickers now resolve task/reward typeIcon() and optional registration icons through the same registry path as built-ins. EditorIcon.sprite supports addon PNG assets while preserving legacy presentation compatibility.
 

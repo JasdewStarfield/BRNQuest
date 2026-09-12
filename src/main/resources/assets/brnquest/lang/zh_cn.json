@@ -1,4 +1,8 @@
 {
+  "screen.brnquest.item_submission.planned": "预计扣除：%s 个物品",
+  "screen.brnquest.choice.waiting": "等待服务器响应…",
+  "screen.brnquest.choice.loaded": "已加载 %s / %s 个选项",
+  "screen.brnquest.claim.retry": "尚未收到确认，可点击重试。",
   "screen.brnquest.type.reward.loot_table": "原生战利品表",
   "screen.brnquest.loot_table.id": "战利品表 ID",
   "screen.brnquest.loot_table.help": "按领取玩家、位置和幸运值在服务端抽取一次，预览不试抽。需要被击杀实体、伤害来源或工具的表不可使用；空结果也会消耗本次领取。",
@@ -71,6 +75,7 @@
   "screen.brnquest.task.unknown": "未知目标",
   "screen.brnquest.reward.unknown": "未知奖励",
   "screen.brnquest.status.locked": "未解锁",
+  "screen.brnquest.status.unavailable": "不可用",
   "screen.brnquest.status.available": "可用",
   "screen.brnquest.status.active": "正在追踪",
   "screen.brnquest.status.completed": "已完成",

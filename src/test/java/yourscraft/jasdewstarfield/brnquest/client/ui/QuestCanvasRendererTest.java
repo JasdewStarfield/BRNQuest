@@ -16,6 +16,33 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestCanvasRendererTest {
+    @Test
+    void statusBadgeSitsOutsideLowerLeftCornerAtDifferentNodeSizes() {
+        // Only two pixels overlap the node on each axis; larger nodes retain the same corner attachment.
+        for (int size : List.of(18, 36, 72)) {
+            UiRect badge = QuestCanvasRenderer.statusBadgeBounds(100, 100, size);
+            assertEquals(10, badge.width());
+            assertEquals(10, badge.height());
+            assertEquals(100 - size / 2 + 2, badge.right());
+            assertEquals(100 + size / 2 - 2, badge.top());
+        }
+    }
+
+    @Test
+    void stateBadgesDistinguishTrackingCompletionAndBlockedStatesWithoutMarkingPreview() {
+        // Preview has no player state; available nodes also need no extra corner decoration.
+        assertNull(QuestCanvasRenderer.statusBadge(null));
+        assertNull(QuestCanvasRenderer.statusBadge(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.AVAILABLE));
+        assertEquals(ResourceLocation.parse("brnquest:quest/status/tracked"), QuestCanvasRenderer.statusBadge(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.ACTIVE));
+        for (var status : List.of(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.COMPLETED,
+                yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.REWARD_CLAIMED)) {
+            assertEquals(ResourceLocation.parse("brnquest:quest/status/completed"), QuestCanvasRenderer.statusBadge(status));
+        }
+        for (var status : List.of(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.LOCKED,
+                yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.UNAVAILABLE)) {
+            assertEquals(ResourceLocation.parse("brnquest:quest/status/blocked"), QuestCanvasRenderer.statusBadge(status));
+        }
+    }
     private static final ResourceLocation BOOK = id("book");
     private static final ResourceLocation CHAPTER = id("chapter");
     private static final QuestScreenFrameIdentity IDENTITY =

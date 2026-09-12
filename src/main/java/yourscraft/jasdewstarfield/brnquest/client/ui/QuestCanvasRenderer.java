@@ -21,6 +21,10 @@ import java.util.Map;
 final class QuestCanvasRenderer {
     static final int NODE_BASE_SIZE = 18;
     private static final int ATTENTION_PING_SIZE = 10;
+    private static final int STATUS_BADGE_SIZE = 10;
+    private static final ResourceLocation TRACKED_BADGE = ResourceLocation.parse("brnquest:quest/status/tracked");
+    private static final ResourceLocation COMPLETED_BADGE = ResourceLocation.parse("brnquest:quest/status/completed");
+    private static final ResourceLocation BLOCKED_BADGE = ResourceLocation.parse("brnquest:quest/status/blocked");
     private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             BRNQuest.MOD_ID, "textures/gui/reward_ping.png");
     private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
@@ -38,7 +42,16 @@ final class QuestCanvasRenderer {
                      int fillColor, boolean selected, boolean tracked, boolean pickedUp,
                      boolean attentionTask, boolean pendingReward,
                      QuestPresentation.QuestVisual visual, ItemStack item,
-                     List<Component> tooltip, List<ResourceLocation> dependencies) {
+                     List<Component> tooltip, List<ResourceLocation> dependencies,
+                     yourscraft.jasdewstarfield.brnquest.progress.QuestStatus status) {
+        NodeModel(ResourceLocation id, QuestAppearance appearance, DraftBookEditor.Position position,
+                  DraftBookEditor.Position snapPosition, int fillColor, boolean selected, boolean tracked,
+                  boolean pickedUp, boolean attentionTask, boolean pendingReward,
+                  QuestPresentation.QuestVisual visual, ItemStack item, List<Component> tooltip,
+                  List<ResourceLocation> dependencies) {
+            this(id, appearance, position, snapPosition, fillColor, selected, tracked, pickedUp,
+                    attentionTask, pendingReward, visual, item, tooltip, dependencies, null);
+        }
         NodeModel {
             appearance = appearance == null ? QuestAppearance.DEFAULT : appearance;
             item = item == null ? ItemStack.EMPTY : item.copy();
@@ -220,11 +233,40 @@ final class QuestCanvasRenderer {
         int x = node.graphX(), y = node.graphY(), size = node.visualSize();
         if (model.tracked()) fillNodeShape(graphics, model.appearance().shape(), x, y, size + 7, 0xFF57C7F2);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? 4 : 2),
-                model.selected() ? 0xFF91C9F4 : 0xFF222936);
+                model.selected() ? 0xFFE4D29A : 0xFF22251F);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size, model.fillColor());
         renderQuestVisual(graphics, font, model, x, y, size);
+        ResourceLocation badge = statusBadge(model.status());
+        if (badge != null) {
+            // Native item models write depth above the base GUI. Lift the entire badge above them,
+            // and anchor mostly outside the lower-left corner without enlarging the node's hitbox.
+            UiRect bounds = statusBadgeBounds(x, y, size);
+            graphics.pose().pushPose();
+            try {
+                graphics.pose().translate(0, 0, 300);
+                graphics.blitSprite(badge, bounds.left(), bounds.top(), bounds.width(), bounds.height());
+            } finally {
+                graphics.pose().popPose();
+            }
+        }
         if (model.attentionTask()) renderAttentionPing(graphics, SUBMITTABLE_PING_TEXTURE, x, y, size, pingOffsetY);
         if (model.pendingReward()) renderAttentionPing(graphics, REWARD_PING_TEXTURE, x, y, size, pingOffsetY);
+    }
+
+    static UiRect statusBadgeBounds(int x, int y, int size) {
+        int left = x - size / 2 - STATUS_BADGE_SIZE + 2;
+        int top = y + size / 2 - 2;
+        return new UiRect(left, top, left + STATUS_BADGE_SIZE, top + STATUS_BADGE_SIZE);
+    }
+
+    static ResourceLocation statusBadge(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus status) {
+        if (status == null) return null;
+        return switch (status) {
+            case LOCKED, UNAVAILABLE -> BLOCKED_BADGE;
+            case ACTIVE -> TRACKED_BADGE;
+            case COMPLETED, REWARD_CLAIMED -> COMPLETED_BADGE;
+            case AVAILABLE -> null;
+        };
     }
 
     private static void renderSnapGhost(GuiGraphics graphics, Font font, NodeFrame node, GraphBounds bounds) {

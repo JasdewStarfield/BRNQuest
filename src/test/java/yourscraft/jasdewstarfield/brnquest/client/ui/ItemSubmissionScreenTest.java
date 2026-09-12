@@ -12,6 +12,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ItemSubmissionScreenTest {
+    @Test void lookupUsesTheWholeSlotWithExclusiveRightAndBottomEdges() {
+        var stack = new ItemStack(Items.STONE);
+        var slot = new UiRect(10,20,28,38);
+        assertTrue(ItemSubmissionScreen.recipeLookupTargetAt(stack,slot,10,20).isPresent());
+        assertTrue(ItemSubmissionScreen.recipeLookupTargetAt(stack,slot,27.9,37.9).isPresent());
+        assertTrue(ItemSubmissionScreen.recipeLookupTargetAt(stack,slot,28,30).isEmpty());
+        assertTrue(ItemSubmissionScreen.recipeLookupTargetAt(stack,slot,15,38).isEmpty());
+    }
     private static final UiRect ITEM_BOUNDS = new UiRect(10, 20, 26, 36);
 
     @Test void emptyInventorySlotDoesNotCreateAJeiLookupTarget() {

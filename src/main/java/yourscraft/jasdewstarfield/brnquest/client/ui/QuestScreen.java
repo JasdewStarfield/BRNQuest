@@ -478,17 +478,36 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderNavigation(GuiGraphics graphics, QuestBookDefinition book, ChapterDefinition selectedChapter,
                                   int mouseX, int mouseY, double motionFrameSeconds) {
+        var navigationLayout = new QuestNavigationPanel.Layout(navigationWidth(), topToolbarHeight(), height - bottomToolbarHeight(),
+                navigationListBottom(), navigationHandleLeft(), navigationDrawerOffsetX(),
+                navigationHandleWidth(), contentCenterY(), navigationCollapsed);
         QuestNavigationPanel.RenderResult result = navigationPanel.render(graphics, font,
                 new QuestNavigationPanel.Model(currentFrameIdentity(), book, selectedChapter,
                         ClientEditorState.get().editing(), defaultGroupId(book) != null),
-                new QuestNavigationPanel.Layout(navigationWidth(), topToolbarHeight(), height - bottomToolbarHeight(),
-                        navigationListBottom(), navigationHandleLeft(), navigationDrawerOffsetX(),
-                        navigationHandleWidth(), contentCenterY(), navigationCollapsed),
+                navigationLayout,
                 motionFrameSeconds, scrollSmoothSpeed(),
                 navigationPanelAcceptsPointer(mouseX) ? mouseX : Integer.MIN_VALUE,
                 navigationPanelAcceptsPointer(mouseX) ? mouseY : Integer.MIN_VALUE,
-                minecraft.getLanguageManager().getSelected());
+                minecraft.getLanguageManager().getSelected(),
+                (chapter, bounds) -> renderChapterIcon(graphics, chapter, bounds));
+        // Register only the stationary, visible footer; moving drawers reject actions as well as feedback.
+        if (ClientEditorState.get().editing() && !navigationCollapsed && navigationDrawerOffsetX() == 0) {
+            formButtons.register(navigationLayout.groupButton(), true);
+            formButtons.register(navigationLayout.chapterButton(), defaultGroupId(book) != null);
+        }
         if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
+    }
+
+    /** Chapter icons share the existing cached item parser; decorative icons never become JEI targets. */
+    private void renderChapterIcon(GuiGraphics graphics, ChapterDefinition chapter, UiRect bounds) {
+        var texture = yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.textureId(chapter.icon());
+        if (texture.isPresent()) {
+            graphics.blit(texture.orElseThrow(), bounds.left(), bounds.top(), 0, 0, 16, 16, 16, 16);
+            return;
+        }
+        ItemStack stack = item(chapter.id(), chapter.icon());
+        graphics.renderItem(stack.isEmpty() ? new ItemStack(net.minecraft.world.item.Items.BOOK) : stack,
+                bounds.left(), bounds.top());
     }
 
     /** Applies navigation intents after resolving their stable IDs against the current book snapshot. */
@@ -554,6 +573,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
                 String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
                 if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
+                if (allowGameplay) tooltip.add(Component.translatable("screen.brnquest.status."
+                        + status.name().toLowerCase(java.util.Locale.ROOT)).withStyle(ChatFormatting.GRAY));
                 DraftBookEditor.Position preview = canvasController.preview(quest.id());
                 nodes.add(new QuestCanvasRenderer.NodeModel(quest.id(), quest.appearance(),
                         preview == null ? new DraftBookEditor.Position(quest.x(), quest.y()) : preview,
@@ -564,7 +585,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         allowGameplay && questHasAttentionTask(quest, status),
                         allowGameplay && QuestPresentation.hasPendingReward(
                                 quest, status, ClientQuestState.get().claimed()),
-                        visual, stack, tooltip, quest.dependencies()));
+                        visual, stack, tooltip, quest.dependencies(),
+                        allowGameplay && !(status == QuestStatus.LOCKED && quest.behavior().hideLockIcon()) ? status : null));
             }
         }
         QuestCanvasRenderer.RenderResult result = canvasRenderer.render(graphics, font,
@@ -630,6 +652,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         Component statusText = !gameplayAllowed() ? Component.translatable("screen.brnquest.editor.preview")
                 : cooldownText != null ? cooldownText
                 : Component.translatable(QuestPresentation.statusTranslationKey(quest, status, ClientQuestState.get().claimed()));
+        if (gameplayAllowed() && ClientQuestState.get().questCompletionPending(quest.id().toString()))
+            statusText = Component.translatable("screen.brnquest.choice.waiting");
         UiRect content = new UiRect(left + 10, detailContentTop(), left + 10 + detailsWidth() - 24, detailContentBottom());
         UiRect clip = new UiRect(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
                 Math.min(width, width - 10 + detailsDrawerOffsetX()), detailContentBottom());
@@ -716,6 +740,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_ITEM_SLOT_SELECTION -> QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION;
         };
         detailsInteraction.task(task.id(), row.action(), row.candidates(), rowAction);
+        // Candidate help uses the shared feedback adapter; semantic dispatch still belongs to the detail frame.
+        if (row.candidates() != null) formButtons.register(row.candidates(), true);
         acceptTaskRowHover(row);
         return row.nextY();
     }
@@ -770,7 +796,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case COMPLETE_QUEST -> {
                 QuestStatus status = status(quest);
-                if (gameplayAllowed() && canSubmit(quest, status)) {
+                if (gameplayAllowed() && canSubmit(quest, status)
+                        && ClientQuestState.get().beginQuestCompletion(quest.id().toString())) {
                     BrnQuestNetwork.completeCheckmark(ClientQuestState.get().revision(), quest.id().toString());
                 }
             }
@@ -795,7 +822,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 RewardDefinition reward = quest.rewards().stream()
                         .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
                 if (reward != null && gameplayAllowed() && isCompleted(status(quest))
-                        && !ClientQuestState.get().claimed().contains(reward.id().toString())) {
+                        && !ClientQuestState.get().claimed().contains(reward.id().toString())
+                        && ClientQuestState.get().beginRewardClaim(reward.id().toString())) {
                     BrnQuestNetwork.claimReward(ClientQuestState.get().revision(), reward.id().toString());
                 }
             }
@@ -822,7 +850,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderReward(GuiGraphics graphics, RewardDefinition reward, int x, int y, QuestStatus status, int mouseX, int mouseY) {
         boolean claimed = ClientQuestState.get().claimed().contains(reward.id().toString());
-        boolean claimable = gameplayAllowed() && isCompleted(status) && !claimed;
+        boolean claimable = gameplayAllowed() && isCompleted(status) && !claimed
+                && !ClientQuestState.get().rewardClaimPending(reward.id().toString());
         ClientRewardPresentation presentation = ClientRewardPresentationRegistry.get(reward.typeId());
         var rewardView = ApiViews.reward(reward);
         String itemSnbt = presentation.itemSnbt(rewardView);
@@ -835,7 +864,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         mouseX, mouseY, attentionPingOffsetY));
         detailsInteraction.reward(reward.id(), cell.action());
         detailsInteraction.rewardOptions(reward.id(), cell.candidates());
+        if (cell.candidates() != null) formButtons.register(cell.candidates(), true);
         acceptRewardCellHover(cell);
+        // Request state belongs to the screen coordinator, not the stateless reward renderer.
+        boolean waiting = ClientQuestState.get().rewardClaimPending(reward.id().toString());
+        if (waiting) {
+            graphics.pose().pushPose();
+            graphics.pose().translate(0, 0, 300);
+            graphics.drawString(font, "…", x, y - 2, 0xFFE4D29A, false);
+            graphics.pose().popPose();
+        }
+        UiRect visibleCell = new UiRect(x, y, x + 24, y + 24).intersection(detailRecipeLookupViewport());
+        if (cell.lookup() == null && visibleCell.containsExclusive(mouseX, mouseY)) {
+            if (waiting) hoveredDetailText = Component.translatable("screen.brnquest.choice.waiting");
+            else if (!claimed && ClientQuestState.get().rewardClaimTimedOut(reward.id().toString()))
+                hoveredDetailText = Component.translatable("screen.brnquest.claim.retry");
+        }
     }
 
     @Override
@@ -2773,10 +2817,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             openChildScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
             return;
         }
+        String submissionRevision = ClientQuestState.get().revision();
         openChildScreen(new ItemSubmissionScreen(this, spec, selectedSlots -> {
+            // Never apply a selection captured from an older book to the newly displayed revision.
+            if (!submissionRevision.equals(ClientQuestState.get().revision())) return;
             String taskId = task.id().toString();
             if (ClientQuestState.get().beginTaskSubmission(taskId)) {
-                BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), quest.id().toString(),
+                BrnQuestNetwork.completeTask(submissionRevision, quest.id().toString(),
                         taskId, selectedSlots);
             }
         }));
@@ -3942,6 +3989,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
+        if (ClientQuestState.get().questCompletionPending(quest.id().toString())) return false;
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return false;
         return quest.tasks().stream().filter(task -> !task.optional()).allMatch(task ->
                 ClientTaskPresentationRegistry.get(task.typeId()).acceptsQuestCompletionIntent(ApiViews.task(task))

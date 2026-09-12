@@ -18,6 +18,31 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ClientQuestStateTest {
+    @Test void oldRevisionProgressCannotReplaceCurrentBookStateOrReleaseTaskWait() {
+        var state = ClientQuestState.get();
+        var current = snapshot("current");
+        String json = NativeBookJson.encode(current.book());
+        state.begin(current.revision(), 1, json.getBytes(StandardCharsets.UTF_8).length);
+        assertTrue(state.acceptChunk(current.revision(), 0, json));
+        assertTrue(state.beginTaskSubmission("test:task"));
+        state.progress("{\"revision\":\"obsolete\",\"quests\":{},\"tasks\":{\"test:task\":99},\"claimed\":[]}");
+        assertTrue(state.isTaskSubmissionPending("test:task"));
+        assertFalse(state.taskProgress().containsKey("test:task"));
+    }
+    @Test void unrelatedProgressCannotAcknowledgeRewardAndDisconnectClearsWaits() {
+        var state = ClientQuestState.get();
+        assertTrue(state.beginRewardClaim("test:reward"));
+        state.progress("{\"quests\":{},\"tasks\":{},\"claimed\":[]}");
+        assertTrue(state.rewardClaimPending("test:reward"));
+        assertFalse(state.beginRewardClaim("test:reward"));
+        state.progress("{\"quests\":{},\"tasks\":{},\"claimed\":[\"test:reward\"]}");
+        assertFalse(state.rewardClaimPending("test:reward"));
+        state.beginRewardClaim("test:other");
+        state.beginQuestCompletion("test:quest");
+        state.disconnected();
+        assertFalse(state.rewardClaimPending("test:other"));
+        assertFalse(state.questCompletionPending("test:quest"));
+    }
     @AfterEach void resetSingleton() {
         ClientQuestState.get().resetForTest();
     }

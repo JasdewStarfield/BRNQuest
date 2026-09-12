@@ -12,6 +12,10 @@ import java.util.Map;
 
 /** Detail section composition. The caller supplies row renderers; this panel owns text flow and scrolling. */
 final class QuestDetailsPanel {
+    private static final EditorIcon TASK_SECTION_ICON = EditorIcon.sprite(
+            net.minecraft.resources.ResourceLocation.parse("brnquest:editor/type/checkmark"));
+    private static final EditorIcon REWARD_SECTION_ICON = EditorIcon.sprite(
+            net.minecraft.resources.ResourceLocation.parse("brnquest:editor/type/reward_table"));
     record Layout(UiRect content, UiRect clip, int trackX) {}
     record Model(QuestDefinition quest, String title, String subtitle, String description,
                  QuestStatus status, Component statusText,
@@ -64,9 +68,11 @@ final class QuestDetailsPanel {
 
         boolean ready = model.ready();
         Component statusText = model.statusText();
-        graphics.drawString(font, statusText, contentLeft, y, model.statusColor(), false);
+        // Reserve the trailing tracking control and wrap status independently of completion actions.
+        int statusBottom = EditorTextRenderer.drawWrapped(graphics, font, statusText.getString(),
+                contentLeft, y, Math.max(1, contentWidth - 28), model.statusColor());
         int statusTop = y;
-        int statusWidth = font.width(statusText);
+        int statusWidth = Math.min(font.width(statusText), Math.max(1, contentWidth - 28));
         if (model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()) {
             // Cyan underline and info glyph advertise that the locked reason is inspectable.
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
@@ -92,12 +98,15 @@ final class QuestDetailsPanel {
         UiRect completeAction = null;
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && ready) {
             Component readyText = Component.translatable("screen.brnquest.ready");
-            int readyX = contentLeft + font.width(statusText) + 6;
-            graphics.drawString(font, readyText, readyX, y, 0xFF72D88D, false);
-            completeAction = visiblePart(new UiRect(readyX, y, readyX + font.width(readyText),
-                    y + font.lineHeight), layout.content());
+            int readyX = contentLeft;
+            y = statusBottom + 5;
+            int readyBottom = EditorTextRenderer.drawWrapped(graphics, font, readyText.getString(), readyX, y,
+                    contentWidth, 0xFF72D88D);
+            completeAction = visiblePart(new UiRect(readyX, y, readyX + Math.min(contentWidth, font.width(readyText)),
+                    readyBottom), layout.content());
+            y = readyBottom - font.lineHeight;
         }
-        y += 16;
+        y = Math.max(y + font.lineHeight, statusBottom) + 8;
 
         if (editing || !model.description().isBlank()) {
             int descriptionTop = y;
@@ -122,8 +131,7 @@ final class QuestDetailsPanel {
             }
         }
 
-        graphics.drawString(font, Component.translatable("screen.brnquest.requirements"), contentLeft, y, 0xFF8FB8E2, false);
-        y += 13;
+        y = renderSection(graphics, font, "screen.brnquest.requirements", "checkmark", contentLeft, y, contentWidth, 0xFFBFC7AC);
         if (quest.tasks().isEmpty()) {
             graphics.drawString(font, Component.translatable("screen.brnquest.no_requirements"), contentLeft, y, 0xFF9AA6B5, false);
             y += 18;
@@ -135,8 +143,7 @@ final class QuestDetailsPanel {
                 .filter(reward -> reward.policy().visible() || editing).toList();
         if (!visibleRewards.isEmpty()) {
             y += 4;
-            graphics.drawString(font, Component.translatable("screen.brnquest.rewards"), contentLeft, y, 0xFFE6B55B, false);
-            y += 13;
+            y = renderSection(graphics, font, "screen.brnquest.rewards", "reward_table", contentLeft, y, contentWidth, 0xFFE6C77B);
             // Candidate buttons reserve their own horizontal space without enlarging every reward.
             int rewardX = contentLeft;
             for (RewardDefinition reward : visibleRewards) {
@@ -159,6 +166,17 @@ final class QuestDetailsPanel {
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();
         return new Result(Map.copyOf(textAreas), completeAction, trackAction, hint, locked);
+    }
+
+    /** Compact section landmarks reuse existing sprites without introducing item interaction semantics. */
+    private static int renderSection(GuiGraphics graphics, Font font, String title, String icon,
+                                     int x, int y, int width, int color) {
+        graphics.fill(x, y, x + width, y + 20, 0xFF35382F);
+        (icon.equals("checkmark") ? TASK_SECTION_ICON : REWARD_SECTION_ICON)
+                .render(graphics, font, new UiRect(x + 2, y + 2, x + 18, y + 18), color);
+        EditorTextRenderer.drawFittedString(graphics, font, Component.translatable(title),
+                x + 23, y + 6, Math.max(1, width - 25), color, 0.75F);
+        return y + 24;
     }
 
     private static void addTextArea(Map<String, UiRect> areas, UiRect viewport, String key,

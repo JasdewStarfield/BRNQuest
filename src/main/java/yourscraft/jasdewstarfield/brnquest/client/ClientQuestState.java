@@ -28,7 +28,17 @@ public final class ClientQuestState {
     private boolean visibilityAuthoritative;
     private Map<String, Integer> completionCycles = Map.of();
     private Map<String, Long> nextAvailable = Map.of();
-    private final Set<String> pendingTaskSubmissions = new HashSet<>();
+    private final ClientActionWait pendingTaskSubmissions = new ClientActionWait();
+    private final ClientActionWait rewardWait = new ClientActionWait();
+    private final ClientActionWait completionWait = new ClientActionWait();
+
+    public boolean beginQuestCompletion(String id) { return completionWait.begin(id, System.nanoTime()); }
+    public boolean questCompletionPending(String id) { return completionWait.pending(id, System.nanoTime()); }
+
+    public boolean beginRewardClaim(String id) { return rewardWait.begin(id, System.nanoTime()); }
+    public boolean rewardClaimPending(String id) { return rewardWait.pending(id, System.nanoTime()); }
+    public boolean rewardClaimTimedOut(String id) { return rewardWait.expired(id, System.nanoTime()); }
+    public void finishRewardChoice(String id) { rewardWait.finish(id); }
     private ResourceLocation selected;
     private String bookSyncFailure = "";
     private String advertisedRevision = "";
@@ -67,9 +77,9 @@ public final class ClientQuestState {
     public String revision() { return book == null ? "" : book.revision(); }
 
     /** Returns false when the same task row already has an unanswered submission in flight. */
-    public boolean beginTaskSubmission(String taskId) { return pendingTaskSubmissions.add(taskId); }
+    public boolean beginTaskSubmission(String taskId) { return pendingTaskSubmissions.begin(taskId, System.nanoTime()); }
 
-    public boolean isTaskSubmissionPending(String taskId) { return pendingTaskSubmissions.contains(taskId); }
+    public boolean isTaskSubmissionPending(String taskId) { return pendingTaskSubmissions.pending(taskId, System.nanoTime()); }
 
     public String bookSyncFailure() { return bookSyncFailure; }
 
@@ -130,6 +140,11 @@ public final class ClientQuestState {
                 return false;
             }
             // The previous snapshot remains authoritative until the complete candidate passes every check.
+            if (book == null || !book.revision().equals(candidate.revision())) {
+                rewardWait.clear();
+                completionWait.clear();
+                pendingTaskSubmissions.clear();
+            }
             book = candidate;
             lastAppliedRevision = candidate.revision();
             clearBookTransfer();
@@ -164,9 +179,16 @@ public final class ClientQuestState {
     public void progress(String json) {
         if (json.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
         BrnQuestNetwork.ProgressWire wire = GSON.fromJson(json, BrnQuestNetwork.ProgressWire.class);
+        // Progress already carries a revision. A delayed prior-book snapshot cannot replace live state or unlock input.
+        if (wire == null || (book != null && !book.revision().equals(wire.revision()))) return;
         statuses = wire.quests() == null ? Map.of() : Map.copyOf(wire.quests());
+        statuses.forEach((id, status) -> {
+            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) completionWait.finish(id);
+        });
         taskProgress = wire.tasks() == null ? Map.of() : Map.copyOf(wire.tasks());
         claimed = wire.claimed() == null ? Set.of() : Set.copyOf(wire.claimed());
+        // An unrelated progress refresh is not a receipt for an unanswered reward request.
+        claimed.forEach(rewardWait::finish);
         visible = wire.visible() == null ? Set.of() : Set.copyOf(wire.visible());
         visibilityAuthoritative = wire.visible() != null;
         completionCycles = wire.cycles() == null ? Map.of() : Map.copyOf(wire.cycles());
@@ -182,6 +204,8 @@ public final class ClientQuestState {
 
     /** Connection-scoped caches must not expose the previous server's book or diagnostics after reconnecting. */
     public synchronized void disconnected() {
+        rewardWait.clear();
+        completionWait.clear();
         book = null;
         statuses = Map.of();
         taskProgress = Map.of();

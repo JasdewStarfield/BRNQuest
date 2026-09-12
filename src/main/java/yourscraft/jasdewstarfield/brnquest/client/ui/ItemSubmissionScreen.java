@@ -5,6 +5,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorItemSlot;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorItemSelectorLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
@@ -25,6 +28,37 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
     private final ItemChoiceMatcher.Spec spec;
     private final Consumer<List<Integer>> submissionConsumer;
     private final LinkedHashSet<Integer> selectedSlots = new LinkedHashSet<>();
+    private final String sourceRevision = yourscraft.jasdewstarfield.brnquest.client.ClientQuestState.get().revision();
+    private EditorButtonWidget submit;
+    private boolean sent;
+    private boolean inventoryFocused;
+    private int focusedInventoryIndex = 9;
+
+    @Override protected void init() {
+        var layout = layout();
+        var cancel = layout.cancelButton();
+        var done = layout.doneButton();
+        addRenderableWidget(new EditorButtonWidget(cancel.left(), cancel.top(), cancel.width(), cancel.height(),
+                Component.translatable("gui.cancel"), button -> onClose()));
+        submit = addRenderableWidget(new EditorButtonWidget(done.left(), done.top(), done.width(), done.height(),
+                Component.translatable("screen.brnquest.item_choice.submit"), button -> {
+            // Revalidate live inventory at activation; resizing or a second click cannot resend this selection.
+            if (!canSubmit()) return;
+            sent = true;
+            submissionConsumer.accept(List.copyOf(selectedSlots));
+            onClose();
+        }));
+        submit.active = canSubmit();
+    }
+
+    private boolean canSubmit() {
+        return canSubmit(currentPlan());
+    }
+
+    private boolean canSubmit(ItemChoiceMatcher.MatchPlan plan) {
+        return !sent && sourceRevision.equals(yourscraft.jasdewstarfield.brnquest.client.ClientQuestState.get().revision())
+                && !selectedSlots.isEmpty() && plan.selectionValid();
+    }
 
     public ItemSubmissionScreen(Screen parent, ItemChoiceMatcher.Spec spec,
                                 Consumer<List<Integer>> submissionConsumer) {
@@ -52,17 +86,18 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
 
         EditorItemSelectorLayout layout = layout();
         UiRect panel = layout.panel();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), 0xF0202632);
+        GraystoneSurface.raised(graphics, panel, 0xFF30332E, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
 
         ItemChoiceMatcher.MatchPlan plan = currentPlan();
-        boolean canSubmit = !selectedSlots.isEmpty() && plan.selectionValid();
+        boolean canSubmit = canSubmit(plan);
+        submit.active = canSubmit;
         Component instruction = Component.translatable("screen.brnquest.item_submission.instruction",
                 spec.requiredEntries(), spec.entries().size());
         graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                         instruction.getString(), layout.targetSlot().left() - panel.left() - 12)),
                 panel.left() + 7, panel.top() + 31, 0xFF9FB0C2, false);
-        renderTarget(graphics, layout.targetSlot());
+        renderTarget(graphics, layout.targetSlot(), plan.representative());
 
         Component summary = selectedSlots.isEmpty()
                 ? Component.translatable("screen.brnquest.item_submission.select_hint")
@@ -80,34 +115,33 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
             }
         }
 
-        EditorButton.renderInteractive(graphics, font, layout.cancelButton(),
-                EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
-                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        EditorButton.renderInteractive(graphics, font, layout.doneButton(),
-                EditorButton.Definition.text(Component.translatable("screen.brnquest.item_choice.submit"), null),
-                canSubmit, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
+        // Show the computed removal count, not the sum of the selected inventory stacks.
+        int removalCount = plan.candidates().stream().filter(ItemChoiceMatcher.Candidate::selected)
+                .flatMap(candidate -> candidate.removals().stream()).mapToInt(ItemChoiceMatcher.Removal::count).sum();
+        Component amount = Component.translatable("screen.brnquest.item_submission.planned", canSubmit ? removalCount : 0);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer.drawFittedString(
+                graphics, font, amount, panel.left() + 7, panel.top() + 20, panel.width() - 14, 0xFFB7C5A7, 0.75F);
+        if (inventoryFocused) {
+            var focused = layout.inventorySlot(focusedInventoryIndex);
+            graphics.renderOutline(focused.left(), focused.top(), focused.width(), focused.height(), 0xFFE4D29A);
+        }
 
         super.render(graphics, mouseX, mouseY, partialTick);
         ItemStack hovered = hoveredStack(layout, mouseX, mouseY);
         if (!hovered.isEmpty()) graphics.renderTooltip(font, hovered, mouseX, mouseY);
     }
 
-    private void renderTarget(GuiGraphics graphics, UiRect bounds) {
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), 0xFF59616D);
-        graphics.fill(bounds.left() + 1, bounds.top() + 1, bounds.right() - 1, bounds.bottom() - 1, 0xFF171B22);
+    private void renderTarget(GuiGraphics graphics, UiRect bounds, ItemStack representative) {
+        EditorItemSlot.render(graphics, bounds, false, false);
         if (minecraft == null || minecraft.level == null) return;
-        List<ItemStack> accepted = ItemChoiceMatcher.displayedCandidates(minecraft.level.registryAccess(), spec);
-        if (!accepted.isEmpty()) graphics.renderItem(accepted.getFirst(), bounds.left() + 1, bounds.top() + 1);
+        if (!representative.isEmpty()) graphics.renderItem(representative, bounds.left() + 1, bounds.top() + 1);
     }
 
     private void renderInventorySlot(GuiGraphics graphics, UiRect bounds, int slotIndex, ItemStack stack,
                                      int mouseX, int mouseY) {
         boolean accepted = accepts(stack);
         boolean selected = selectedSlots.contains(slotIndex);
-        int border = selected ? 0xFF79B7E5 : accepted && bounds.contains(mouseX, mouseY)
-                ? 0xFF69788A : 0xFF3A414B;
-        graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), border);
-        graphics.fill(bounds.left() + 1, bounds.top() + 1, bounds.right() - 1, bounds.bottom() - 1, 0xFF171B22);
+        EditorItemSlot.render(graphics, bounds, accepted && bounds.containsExclusive(mouseX, mouseY), selected);
         if (!stack.isEmpty()) {
             graphics.renderItem(stack, bounds.left() + 1, bounds.top() + 1);
             graphics.renderItemDecorations(font, stack, bounds.left() + 1, bounds.top() + 1);
@@ -125,17 +159,8 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        inventoryFocused = false;
         EditorItemSelectorLayout layout = layout();
-        if (button == 0 && layout.cancelButton().contains(mouseX, mouseY)) {
-            onClose();
-            return true;
-        }
-        if (button == 0 && layout.doneButton().contains(mouseX, mouseY)
-                && !selectedSlots.isEmpty() && currentPlan().selectionValid()) {
-            submissionConsumer.accept(List.copyOf(selectedSlots));
-            onClose();
-            return true;
-        }
         int slot = layout.inventoryIndexAt(mouseX, mouseY);
         if (button == 0 && slot >= 0 && minecraft != null && minecraft.player != null) {
             ItemStack stack = minecraft.player.getInventory().getItem(slot);
@@ -145,6 +170,28 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        // F6 moves between native footer buttons and the vanilla-ordered inventory grid.
+        if (key == 295) { inventoryFocused = !inventoryFocused; if (inventoryFocused) setFocused(null); return true; }
+        if (key == 258) inventoryFocused = false;
+        if (inventoryFocused) {
+            int visual = focusedInventoryIndex < 9 ? focusedInventoryIndex + 27 : focusedInventoryIndex - 9;
+            int step = switch (key) { case 262 -> 1; case 263 -> -1; case 264 -> 9; case 265 -> -9; default -> 0; };
+            if (step != 0) {
+                visual = Math.max(0, Math.min(35, visual + step));
+                focusedInventoryIndex = visual >= 27 ? visual - 27 : visual + 9;
+                return true;
+            }
+            if (key == 257 || key == 335 || key == 32) {
+                if (minecraft != null && minecraft.player != null && accepts(minecraft.player.getInventory().getItem(focusedInventoryIndex))) {
+                    if (!selectedSlots.remove(focusedInventoryIndex)) selectedSlots.add(focusedInventoryIndex);
+                }
+                return true;
+            }
+        }
+        return super.keyPressed(key, scan, modifiers);
     }
 
     @Override
@@ -167,15 +214,18 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
     }
 
     private ItemStack hoveredStack(EditorItemSelectorLayout layout, double mouseX, double mouseY) {
+        if (layout.targetSlot().containsExclusive(mouseX, mouseY)) return currentPlan().representative();
         int slot = layout.inventoryIndexAt(mouseX, mouseY);
         if (slot < 0 || minecraft == null || minecraft.player == null
-                || !itemBounds(layout.inventorySlot(slot)).contains(mouseX, mouseY)) return ItemStack.EMPTY;
+                || !itemBounds(layout.inventorySlot(slot)).containsExclusive(mouseX, mouseY)) return ItemStack.EMPTY;
         return minecraft.player.getInventory().getItem(slot);
     }
 
     @Override
     public Optional<RecipeLookupTarget> recipeLookupTargetAt(double mouseX, double mouseY) {
         EditorItemSelectorLayout layout = layout();
+        if (layout.targetSlot().containsExclusive(mouseX, mouseY))
+            return recipeLookupTargetAt(currentPlan().representative(), layout.targetSlot(), mouseX, mouseY);
         int slot = layout.inventoryIndexAt(mouseX, mouseY);
         if (slot < 0 || minecraft == null || minecraft.player == null) return Optional.empty();
         ItemStack stack = minecraft.player.getInventory().getItem(slot);
@@ -185,7 +235,7 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
     /** JEI queries every clicked slot before the Screen handles it, including empty inventory slots. */
     static Optional<RecipeLookupTarget> recipeLookupTargetAt(ItemStack stack, UiRect bounds,
                                                               double mouseX, double mouseY) {
-        if (stack == null || stack.isEmpty() || bounds == null || !bounds.contains(mouseX, mouseY)) {
+        if (stack == null || stack.isEmpty() || bounds == null || !bounds.containsExclusive(mouseX, mouseY)) {
             return Optional.empty();
         }
         return Optional.of(new RecipeLookupTarget(stack, bounds));
@@ -201,6 +251,6 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
     }
 
     private static UiRect itemBounds(UiRect slot) {
-        return new UiRect(slot.left() + 1, slot.top() + 1, slot.right() - 1, slot.bottom() - 1);
+        return slot;
     }
 }

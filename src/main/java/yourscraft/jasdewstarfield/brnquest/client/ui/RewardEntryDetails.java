@@ -59,7 +59,14 @@ record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon
         String title = view.config().getOrDefault("title", "");
         Component summary = title.isBlank() || detail.getString().equals(title) ? detail
                 : Component.literal(title).append(" · ").append(detail);
-        return new RewardEntryDetails(summary, stack, presentation.icon(view), presentation.symbol(view));
+        var decoration = presentation.icon(view);
+        // Frozen choices and table previews use the same registered fallback as live detail cells.
+        // Keep real items queryable, and retain legacy symbols when no addon icon was registered.
+        if (decoration.isEmpty() && stack.isEmpty()) {
+            var typeIcon = ClientRewardPresentationRegistry.typeIcon(view.typeId());
+            if (typeIcon != QuestTypeIcons.fallback()) decoration = Optional.of(typeIcon);
+        }
+        return new RewardEntryDetails(summary, stack, decoration, presentation.symbol(view));
     }
 
     /** Decorative icons never acquire item lookup semantics even when a presentation also supplies a stack. */

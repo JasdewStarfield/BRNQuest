@@ -1,4 +1,8 @@
 {
+  "screen.brnquest.item_submission.planned": "Planned consumption: %s items",
+  "screen.brnquest.choice.waiting": "Waiting for server…",
+  "screen.brnquest.choice.loaded": "Loaded %s / %s choices",
+  "screen.brnquest.claim.retry": "No confirmation received. Click to retry.",
   "screen.brnquest.type.reward.loot_table": "Native loot table",
   "screen.brnquest.loot_table.id": "Loot table ID",
   "screen.brnquest.loot_table.help": "Draw once on the server using the claiming player, position and luck. Preview does not draw. Tables requiring a victim, damage source or tool are unavailable. Empty results consume the claim.",
@@ -71,6 +75,7 @@
   "screen.brnquest.task.unknown": "Unknown objective",
   "screen.brnquest.reward.unknown": "Unknown reward",
   "screen.brnquest.status.locked": "Locked",
+  "screen.brnquest.status.unavailable": "Unavailable",
   "screen.brnquest.status.available": "Available",
   "screen.brnquest.status.active": "Tracked",
   "screen.brnquest.status.completed": "Completed",

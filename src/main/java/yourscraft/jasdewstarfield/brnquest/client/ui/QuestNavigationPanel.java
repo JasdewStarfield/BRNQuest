@@ -18,7 +18,7 @@ import java.util.List;
 /** Grouped navigation owns ordering, scrolling, rendered hit geometry and protocol-free intents. */
 final class QuestNavigationPanel {
     static final int GROUP_HEIGHT = 13;
-    static final int CHAPTER_HEIGHT = 15;
+    static final int CHAPTER_HEIGHT = 20;
 
     enum Action { TOGGLE_DRAWER, ADD_GROUP, ADD_CHAPTER, OPEN_GROUP_CONTEXT, OPEN_CHAPTER_CONTEXT, SELECT_CHAPTER }
     record Intent(Action action, ResourceLocation targetId, int pointerX, int pointerY) {}
@@ -57,7 +57,8 @@ final class QuestNavigationPanel {
     void resetScroll() { scroll.snap(0); }
 
     RenderResult render(GuiGraphics graphics, Font font, Model model, Layout layout,
-                        double seconds, double speed, int mouseX, int mouseY, String locale) {
+                        double seconds, double speed, int mouseX, int mouseY, String locale,
+                        java.util.function.BiConsumer<ChapterDefinition, UiRect> drawIcon) {
         advance(model, layout);
         List<Component> tooltip = List.of();
         if (layout.visibleRight() > 0) {
@@ -65,7 +66,7 @@ final class QuestNavigationPanel {
             graphics.pose().pushPose();
             graphics.pose().translate(layout.offset(), 0, 0);
             try {
-                graphics.fill(0, layout.top(), layout.width() + 4, layout.bottom(), 0xB8181E27);
+                graphics.fill(0, layout.top(), layout.width() + 4, layout.bottom(), 0xF02C2F29);
                 drawnScroll = scroll.frameAndRender(graphics, layout.width() + 2, layout.top(), layout.listBottom(),
                         contentHeight, Math.max(1, layout.listBottom() - layout.top()), seconds, speed);
                 graphics.enableScissor(Math.max(0, layout.offset()), layout.top(),
@@ -73,7 +74,7 @@ final class QuestNavigationPanel {
                 int y = layout.top() - (int) Math.round(drawnScroll);
                 for (var entry : entries) {
                     if (entry.group() != null) {
-                        graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xE01B222C);
+                        graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xFF252821);
                         EditorTextRenderer.drawFittedString(graphics, font,
                                 Component.literal("▾ " + BookText.structureTitle(
                                         model.book(), "chapter_group", entry.group().id(), locale, entry.group().title())),
@@ -81,13 +82,20 @@ final class QuestNavigationPanel {
                         y += GROUP_HEIGHT;
                     } else {
                         ChapterDefinition chapter = entry.chapter();
+                        if (y + CHAPTER_HEIGHT <= layout.top() || y >= layout.listBottom()) {
+                            y += CHAPTER_HEIGHT; continue;
+                        }
                         int color = model.selected() != null && chapter.id().equals(model.selected().id())
-                                ? 0xFF4A6A88 : 0xE0262D38;
+                                ? 0xFF62604A : 0xFF363A32;
                         graphics.fill(4, y, layout.width(), y + CHAPTER_HEIGHT, color);
+                        // A narrow brass marker keeps selection recognizable beyond a background color change.
+                        if (model.selected() != null && chapter.id().equals(model.selected().id()))
+                            graphics.fill(4, y + 1, 6, y + CHAPTER_HEIGHT - 1, 0xFFE4D29A);
+                        drawIcon.accept(chapter, new UiRect(9, y + 2, 25, y + 18));
                         EditorTextRenderer.drawFittedString(graphics, font, Component.literal(
                                 BookText.structureTitle(
                                         model.book(), "chapter", chapter.id(), locale, chapter.title())),
-                                9, y + 3, layout.width() - 13, 0xFFFFFFFF, 0.75F);
+                                30, y + 6, Math.max(1, layout.width() - 34), 0xFFFFFFFF, 0.75F);
                         y += CHAPTER_HEIGHT;
                     }
                 }
@@ -100,9 +108,20 @@ final class QuestNavigationPanel {
             }
         }
         graphics.fill(layout.visibleRight(), layout.top(), layout.visibleRight() + layout.handleWidth(),
-                layout.bottom(), 0xD01B222C);
+                layout.bottom(), 0xFF292C25);
         graphics.drawCenteredString(font, layout.collapsed() ? "›" : "‹",
                 layout.visibleRight() + layout.handleWidth() / 2, layout.centerY() - 4, 0xFFB7C5D8);
+        // Resolve hover from the same clipped, translated list geometry used for chapter selection.
+        if (layout.offset() == 0 && !layout.collapsed() && mouseX >= 0 && mouseX < layout.visibleRight()
+                && mouseY >= layout.top() && mouseY < layout.listBottom()) {
+            var hovered = entryAt(mouseX, mouseY);
+            if (hovered != null) {
+                String title = hovered.group() != null
+                        ? BookText.structureTitle(model.book(), "chapter_group", hovered.group().id(), locale, hovered.group().title())
+                        : BookText.structureTitle(model.book(), "chapter", hovered.chapter().id(), locale, hovered.chapter().title());
+                tooltip = List.of(Component.literal(title));
+            }
+        }
         return new RenderResult(tooltip);
     }
 

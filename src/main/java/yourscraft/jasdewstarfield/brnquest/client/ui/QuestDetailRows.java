@@ -17,6 +17,7 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
  */
 final class QuestDetailRows {
     private static final int ATTENTION_PING_SIZE = 10;
+    private static final ResourceLocation CLAIMED_BADGE = ResourceLocation.parse("brnquest:quest/status/completed");
     private static final ResourceLocation SUBMITTABLE_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
             "brnquest", "textures/gui/submitable_ping.png");
     private static final ResourceLocation REWARD_PING_TEXTURE = ResourceLocation.fromNamespaceAndPath(
@@ -31,6 +32,11 @@ final class QuestDetailRows {
         boolean locallySatisfied = presentation.satisfied(presentationContext);
         graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
         var icon = presentation.icon(taskView);
+        // Explicit type metadata fills missing visuals, while legacy addons retain their own symbol fallback.
+        if (icon.isEmpty() && stack.isEmpty()) {
+            var typeIcon = ClientTaskPresentationRegistry.typeIcon(taskView.typeId());
+            if (typeIcon != QuestTypeIcons.fallback()) icon = java.util.Optional.of(typeIcon);
+        }
         if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+3,y+4,x+19,y+20),0xFFFFFFFF);
         else if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
         else graphics.drawCenteredString(font, presentation.symbol(taskView), x + 11, y + 8, 0xFFFFFFFF);
@@ -49,7 +55,7 @@ final class QuestDetailRows {
         if (candidateBounds != null) {
             graphics.fill(candidateBounds.left(), candidateBounds.top(), candidateBounds.right(),
                     candidateBounds.bottom(), visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)
-                            ? 0xFF526C84 : 0xFF394858);
+                            ? 0xFF62664F : 0xFF484C3E);
             graphics.drawCenteredString(font, Component.literal("…"), candidateBounds.centerX(),
                     candidateBounds.top() + 4, 0xFFFFFFFF);
 
@@ -82,6 +88,9 @@ final class QuestDetailRows {
         } else if (visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)) {
             hoveredText = Component.translatable(presentation.resolvedOptions(taskView).isPresent()
                     ? "screen.brnquest.options.title" : "screen.brnquest.item_choice.view_candidates");
+        } else if (rowHovered && font.width(title) * 0.75F > Math.max(1, width - textInset)) {
+            // Truncation must never hide the full objective name behind an action-only hint.
+            hoveredText = title.copy().append("\n").append(progress);
         } else if (interactive && rowHovered) {
             // The item and semantic qualifier keep their more specific help; the remaining row
             // communicates that the complete actionable row submits this objective.
@@ -102,6 +111,12 @@ final class QuestDetailRows {
         boolean claimed = context.claimed();
         boolean claimable = context.claimable();
         var icon = presentation.icon(rewardView);
+        if (icon.isEmpty() && stack.isEmpty()) {
+            var typeIcon = ClientRewardPresentationRegistry.typeIcon(rewardView.typeId());
+            if (typeIcon != QuestTypeIcons.fallback()) icon = java.util.Optional.of(typeIcon);
+        }
+        // Reward cells retain compact quantity overlays while sharing the graystone inset surface.
+        graphics.fill(x, y, x + 24, y + 24, claimed ? 0xFF30372F : claimable ? 0xFF514D36 : 0xFF34382F);
         if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+4,y+4,x+20,y+20),0xFFFFFFFF);
         else if (!stack.isEmpty()) {
             graphics.renderItem(stack, x + 4, y + 4);
@@ -114,7 +129,7 @@ final class QuestDetailRows {
             renderAttentionPing(graphics, REWARD_PING_TEXTURE, x + 18, y - 2, pingOffset);
         }
         // Keep the claimed marker above the icon; the bottom-right corner belongs to vanilla count text.
-        if (claimed) renderClaimedRewardCheck(graphics, font, x + 17, y - 2);
+        if (claimed) renderClaimedRewardCheck(graphics, x + 17, y - 2);
         UiRect visibleCell = visiblePart(new UiRect(x, y, x + 24, y + 24), viewport);
         UiRect clickable = null;
         Component hoveredText = null;
@@ -138,7 +153,7 @@ final class QuestDetailRows {
                 ? visiblePart(new UiRect(x+25,y+4,x+39,y+20),viewport) : null;
         if (candidates != null) {
             boolean hovered = candidates.containsExclusive(mouseX,mouseY);
-            graphics.fill(candidates.left(),candidates.top(),candidates.right(),candidates.bottom(),hovered ? 0xFF526C84 : 0xFF394858);
+            graphics.fill(candidates.left(),candidates.top(),candidates.right(),candidates.bottom(),hovered ? 0xFF62664F : 0xFF484C3E);
             graphics.drawCenteredString(font,Component.literal("…"),x+32,y+8,0xFFFFFFFF);
             if (hovered) { hoveredLookup = null; hoveredText = Component.translatable("screen.brnquest.options.title"); }
         }
@@ -228,9 +243,9 @@ final class QuestDetailRows {
 
     private static int taskRowBackground(TaskDisplayState state) {
         return switch (state) {
-            case READY, PENDING -> 0x665F512D;
-            case SUBMITTED -> 0x663B6749;
-            case UNMET, HISTORICAL -> 0x66343D49;
+            case READY, PENDING -> 0xFF494536;
+            case SUBMITTED -> 0xFF303F32;
+            case UNMET, HISTORICAL -> 0xFF34382F;
         };
     }
 
@@ -251,10 +266,14 @@ final class QuestDetailRows {
         };
     }
 
-    private static void renderClaimedRewardCheck(GuiGraphics graphics, Font font, int x, int y) {
+    private static void renderClaimedRewardCheck(GuiGraphics graphics, int x, int y) {
         graphics.pose().pushPose();
-        graphics.pose().translate(0, 0, 300);
-        graphics.drawString(font, "✓", x, y, 0xFF8BE2A0, true);
-        graphics.pose().popPose();
+        try {
+            // Reuse the editable completion badge above native item depth, away from count overlays.
+            graphics.pose().translate(0, 0, 300);
+            graphics.blitSprite(CLAIMED_BADGE, x, y, 10, 10);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 }

@@ -23,8 +23,15 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.DoubleValue drawerSmoothSpeed;
         public final ModConfigSpec.DoubleValue focusSmoothSpeed;
         public final ModConfigSpec.BooleanValue autoFocusSelectedQuest;
+        public final ModConfigSpec.BooleanValue snapToGrid;
 
         private Values(ModConfigSpec.Builder builder) {
+            // Author preference only: toggling this must never create a book revision.
+            builder.comment("Quest editor preferences").push("editor");
+            snapToGrid = builder.comment("Snap dragged quest nodes to the grid. Applies to the next drag.")
+                    .define("snapToGrid", true);
+            builder.pop();
+
             builder.comment("Quest screen scrolling settings").push("scrolling");
             scrollStep = builder
                     .comment("Pixels added to the target for one mouse-wheel notch.")

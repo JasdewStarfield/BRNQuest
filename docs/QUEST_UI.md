@@ -26,3 +26,7 @@ Distinguish local forms from the two editing modes:
 Pickers support Tab focus navigation, arrow-key browsing and Enter activation. Reward selection and confirmation are separate actions. Item choice editing uses F6 to switch between candidates and inventory; submission uses F6 for buttons/inventory and Space to select a slot. Esc returns or cancels the current level. Mouse tooltips hide during keyboard navigation and return when the pointer moves.
 
 See also [reward tables](REWARD_TABLES.md), [workspace and recovery (Chinese)](WORKSPACE_zh.md), and [extension presentation (Chinese)](EXTENSION_API_zh.md).
+
+Use the gear at the top right to open BRNQuest client settings, including grid snapping, scrolling, animation speeds and automatic centering. It is available while browsing and editing, without author permission. The native settings page saves changes when you return; they apply without restarting. With its default file watcher enabled, NeoForge also reloads external changes to `brnquest-client.toml`. A drag already in progress retains its initial snap setting.
+
+In either editing mode, the grid icon at the top left toggles snapping directly. Highlighted means On; a slash means Off. Its tooltip shows only the current state. Preferences do not change book revisions or undo history.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 主界面右上角齿轮接入完整客户端配置，浏览与编辑均可使用，修改无需重启生效；编辑顶栏网格图标快捷切换吸附，简短 Tooltip 显示当前状态。自由拖动保留多选相对位置；设置页中的编辑会话继续续租。
+- Added a top-right gear for all client settings while browsing or editing, with changes applied without restart. The editor grid shortcut toggles snapping with a concise state tooltip; free dragging preserves selection offsets, and author leases stay renewed while settings are open.
+
 - 高级草稿状态栏移除自动续租倒计时，明确显示“高级草稿编辑模式”，与普通实时编辑区分。
 - Advanced draft status text omits the automatically renewed lease countdown and explicitly identifies advanced draft editing separately from live editing.
 

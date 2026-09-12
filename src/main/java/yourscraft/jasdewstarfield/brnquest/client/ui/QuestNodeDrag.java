@@ -14,6 +14,7 @@ final class QuestNodeDrag {
     private final Map<ResourceLocation, Position> snapped = new LinkedHashMap<>();
     private Map<ResourceLocation, Position> origins = Map.of();
     private boolean active;
+    private boolean snapToGrid;
     private boolean pickedUp;
     private boolean moved;
     private long started;
@@ -33,7 +34,7 @@ final class QuestNodeDrag {
     void clearPreview() { preview.clear(); }
 
     void begin(Map<ResourceLocation, Position> positions, ResourceLocation anchor,
-               double graphX, double graphY, double screenX, double screenY, long now) {
+               double graphX, double graphY, double screenX, double screenY, long now, boolean snapToGrid) {
         if (positions.isEmpty()) return;
         // Preserve the authored selection order so one release always serializes the same delta list.
         origins = Collections.unmodifiableMap(new LinkedHashMap<>(positions));
@@ -41,6 +42,8 @@ final class QuestNodeDrag {
         preview.putAll(origins);
         snapped.clear();
         this.anchor = anchor;
+        // Capture the preference once so a config reload cannot change an in-progress gesture.
+        this.snapToGrid = snapToGrid;
         startX = graphX;
         startY = graphY;
         pressX = screenX;
@@ -69,11 +72,16 @@ final class QuestNodeDrag {
         snapped.clear();
         Position point = origins.get(anchor);
         if (!moved || point == null) return;
-        double sx = QuestViewportMath.snappedGroupDelta(point.x(), dx);
-        double sy = QuestViewportMath.snappedGroupDelta(point.y(), dy);
+        double sx = snapToGrid ? QuestViewportMath.snappedGroupDelta(point.x(), dx) : dx;
+        double sy = snapToGrid ? QuestViewportMath.snappedGroupDelta(point.y(), dy) : dy;
         origins.forEach((id, origin) -> snapped.put(id, new Position(
                 QuestViewportMath.limitDraggedPrecision(origin.x() + sx),
                 QuestViewportMath.limitDraggedPrecision(origin.y() + sy))));
+        // Free movement displays the exact bounded coordinates that release will submit.
+        if (!snapToGrid) {
+            preview.clear();
+            preview.putAll(snapped);
+        }
     }
 
     /** Empty/no-op releases never create a revision; repeated release cannot duplicate a mutation. */

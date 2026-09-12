@@ -34,7 +34,16 @@ public final class PlatformClientHooks {
     }
     private static void keys(RegisterKeyMappingsEvent event) { event.register(ClientKeyRegistry.create()); }
     private static void layers(RegisterGuiLayersEvent event) { event.registerAbove(VanillaGuiLayers.CHAT, QuestHud.LAYER_ID, QuestHud::render); }
-    private static void tick(ClientTickEvent.Post event) { ClientKeyRegistry.tick(); }
+    private static void tick(ClientTickEvent.Post event) {
+        ClientKeyRegistry.tick();
+        // Native configuration pages have their own nested screens; keep the suspended author's
+        // lease alive independently of which child is visible, exactly once per client tick.
+        ClientEditorState editor = ClientEditorState.get();
+        editor.tick();
+        editor.pollRenewRequest().ifPresent(request ->
+                yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork.renewSession(
+                        request.sessionId(), request.draftRevision()));
+    }
     private static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
         yourscraft.jasdewstarfield.brnquest.client.ui.RewardTableClientState.clear();
         ClientEditorState.get().disconnected();

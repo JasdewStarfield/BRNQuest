@@ -35,7 +35,7 @@ class QuestCanvasControllerTest {
         QuestCanvasController.ClickResult stale = controller.mouseClicked(frame,
                 input(false, revision("rev-2")), 100, 100, 0, false, 0);
         QuestCanvasController.ClickResult staleChapter = controller.mouseClicked(frame,
-                new QuestCanvasController.InputModel(IDENTITY, id("other_chapter"), false, positions()),
+                new QuestCanvasController.InputModel(IDENTITY, id("other_chapter"), false, true, positions()),
                 100, 100, 0, false, 0);
 
         assertTrue(click.consumed());
@@ -143,6 +143,26 @@ class QuestCanvasControllerTest {
         assertEquals(17.4 / 1.1, controller.storedViewport().centerX(), 0.02);
     }
 
+    @Test
+    void freeDragUsesClickPreferenceAndStillRejectsStaleRelease() {
+        var controller = controller();
+        var frame = frame(IDENTITY, positions());
+        var free = new QuestCanvasController.InputModel(IDENTITY, CHAPTER, true, false, positions());
+        controller.mouseClicked(frame, free, 100, 100, 0, false, 0);
+        controller.mouseDragged(frame, IDENTITY, 117, 100, 0, 300_000_000L);
+        var release = controller.mouseReleased(frame, IDENTITY, 0);
+        assertEquals(0.5, release.intent().positions().get(A).x(), 0.000001);
+        controller.reconcile(id -> null, true);
+        controller.mouseClicked(frame, free, 100, 100, 0, false, 400_000_000L);
+        controller.mouseDragged(frame, IDENTITY, 117, 100, 0, 700_000_000L);
+        assertNull(controller.mouseReleased(frame, revision("rev-2"), 0).intent());
+        assertNull(controller.preview(A));
+        // The following gesture samples the enabled preference and returns to whole-grid snapping.
+        controller.mouseClicked(frame, input(true, IDENTITY), 100, 100, 0, false, 800_000_000L);
+        controller.mouseDragged(frame, IDENTITY, 117, 100, 0, 1_100_000_000L);
+        assertEquals(1, controller.mouseReleased(frame, IDENTITY, 0).intent().positions().get(A).x(), 0.000001);
+    }
+
     private static QuestCanvasController controller() {
         QuestCanvasController controller = new QuestCanvasController();
         controller.resetCamera(0, 0, 1);
@@ -155,7 +175,7 @@ class QuestCanvasControllerTest {
     }
 
     private static QuestCanvasController.InputModel input(boolean editing, QuestScreenFrameIdentity identity) {
-        return new QuestCanvasController.InputModel(identity, CHAPTER, editing, positions());
+        return new QuestCanvasController.InputModel(identity, CHAPTER, editing, true, positions());
     }
 
     private static QuestCanvasRenderer.Frame frame(QuestScreenFrameIdentity identity,

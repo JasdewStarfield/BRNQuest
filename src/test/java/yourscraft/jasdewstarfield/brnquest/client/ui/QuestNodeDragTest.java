@@ -11,10 +11,11 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuestNodeDragTest {
     private static final ResourceLocation A = ResourceLocation.parse("test:a");
     private static final ResourceLocation B = ResourceLocation.parse("test:b");
-    private QuestNodeDrag begin() {
+    private QuestNodeDrag begin() { return begin(true); }
+    private QuestNodeDrag begin(boolean snapToGrid) {
         var drag = new QuestNodeDrag();
         drag.rememberSelection(Set.of(B));
-        drag.begin(Map.of(A, new Position(1.25, 0), B, new Position(4.375, 2)), A, 0, 0, 50, 50, 0);
+        drag.begin(Map.of(A, new Position(1.25, 0), B, new Position(4.375, 2)), A, 0, 0, 50, 50, 0, snapToGrid);
         return drag;
     }
     @Test void shortPressIsNotAMove() {
@@ -68,6 +69,32 @@ class QuestNodeDragTest {
         drag.reconcile(id -> null, false);
         assertNotNull(drag.preview(A));
         drag.reconcile(move::get, false);
+        assertNull(drag.preview(A));
+    }
+    @Test void freeMovementUsesTheSameBoundedPreviewAndReleaseForEverySelectedNode() {
+        var drag = begin(false);
+        drag.update(1.123456 * QuestViewportMath.GRID_SCALE, -0.234567 * QuestViewportMath.GRID_SCALE,
+                90, 40, 300_000_000);
+        var expected = new Position(2.373, -0.235);
+        assertEquals(expected, drag.preview(A));
+        assertEquals(expected, drag.snapPreview(A));
+        var move = drag.releaseMove();
+        assertEquals(expected, move.get(A));
+        assertEquals(3.125, move.get(B).x() - move.get(A).x(), 0.000001);
+        assertEquals(2, move.get(B).y() - move.get(A).y(), 0.000001);
+        assertTrue(drag.releaseMove().isEmpty());
+        drag.reconcile(id -> null, true);
+        assertNull(drag.preview(A), "Rejected free moves must clear the pending preview too");
+    }
+    @Test void freeMovementCanReturnToOriginOrBeCancelled() {
+        var drag = begin(false);
+        drag.update(20, -10, 70, 40, 300_000_000);
+        drag.update(0, 0, 50, 50, 350_000_000);
+        assertTrue(drag.releaseMove().isEmpty());
+        drag = begin(false);
+        drag.update(20, -10, 70, 40, 300_000_000);
+        drag.cancel();
+        assertTrue(drag.releaseMove().isEmpty());
         assertNull(drag.preview(A));
     }
 }

@@ -36,7 +36,7 @@ final class QuestCanvasController {
         }
     }
 
-    record InputModel(QuestScreenFrameIdentity identity, ResourceLocation chapterId, boolean editing,
+    record InputModel(QuestScreenFrameIdentity identity, ResourceLocation chapterId, boolean editing, boolean snapToGrid,
                       Map<ResourceLocation, DraftBookEditor.Position> chapterPositions) {
         InputModel {
             chapterPositions = Collections.unmodifiableMap(new LinkedHashMap<>(chapterPositions));
@@ -175,7 +175,7 @@ final class QuestCanvasController {
                         selectOnly(hit);
                     }
                     beginNodeDrag(hit, frame.camera().graphX(x), frame.camera().graphY(y), x, y,
-                            model.chapterPositions(), model.identity(), nowNanos);
+                            model.chapterPositions(), model.identity(), nowNanos, model.snapToGrid());
                     return new ClickResult(true, null);
                 }
             } else if (button == 0) {
@@ -304,12 +304,12 @@ final class QuestCanvasController {
 
     private void beginNodeDrag(ResourceLocation anchor, double graphX, double graphY, double screenX, double screenY,
                                Map<ResourceLocation, DraftBookEditor.Position> positions,
-                               QuestScreenFrameIdentity identity, long nowNanos) {
+                               QuestScreenFrameIdentity identity, long nowNanos, boolean snapToGrid) {
         Map<ResourceLocation, DraftBookEditor.Position> origins = new LinkedHashMap<>();
         positions.forEach((id, position) -> {
             if (selection.contains(id)) origins.put(id, position);
         });
-        nodeDrag.begin(origins, anchor, graphX, graphY, screenX, screenY, nowNanos);
+        nodeDrag.begin(origins, anchor, graphX, graphY, screenX, screenY, nowNanos, snapToGrid);
         if (nodeDrag.active()) {
             panning = false;
             gestureIdentity = identity;

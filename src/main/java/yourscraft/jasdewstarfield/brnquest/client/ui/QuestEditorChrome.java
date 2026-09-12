@@ -11,6 +11,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
 import java.util.List;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import java.util.Optional;
 
 /**
@@ -23,7 +24,7 @@ final class QuestEditorChrome {
     private static final int PUBLISH_WIDTH = 92;
     private static final int HISTORY_WIDTH = 48;
 
-    enum Action { OPEN_CATALOG, OPEN_LIVE, OPEN_ADVANCED, SAVE, REVIEW_PUBLISH, UNDO, REDO, EXIT }
+    enum Action { OPEN_CATALOG, OPEN_LIVE, OPEN_ADVANCED, SAVE, REVIEW_PUBLISH, UNDO, REDO, TOGGLE_GRID_SNAP, OPEN_CLIENT_SETTINGS, EXIT }
 
     record Intent(Action action) {}
 
@@ -31,7 +32,7 @@ final class QuestEditorChrome {
                  boolean allowed, boolean editing, boolean hasLease, boolean live, boolean busy, boolean dirty,
                  boolean canUndo, boolean canRedo, int undoSteps, int redoSteps,
                  boolean publishSurfaceReady, boolean historySurfaceReady,
-                 Component status, boolean error, List<Component> errorTooltip) {
+                 Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid) {
         Model {
             title = title == null ? "" : title;
             errorTooltip = errorTooltip == null ? List.of() : List.copyOf(errorTooltip);
@@ -39,7 +40,7 @@ final class QuestEditorChrome {
     }
 
     record Layout(UiRect topToolbar, UiRect bottomToolbar, UiRect title, UiRect exit,
-                  UiRect save, UiRect publish, UiRect redo, UiRect undo, UiRect status) {}
+                  UiRect save, UiRect publish, UiRect redo, UiRect undo, UiRect status, UiRect shortcuts, UiRect settings) {}
 
     record RenderResult(Component hoveredDetail, List<Component> tooltip) {
         RenderResult { tooltip = tooltip == null ? List.of() : List.copyOf(tooltip); }
@@ -130,6 +131,24 @@ final class QuestEditorChrome {
                     mouseX, mouseY, tooltip);
         }
 
+        // Compact shortcuts share one ordered strip; full configuration stays in the context menu.
+        if (model.editing()) {
+            Component snapLabel = snapLabel(model);
+            tooltip = renderButton(graphics, font, shortcutBounds(layout, 0),
+                    EditorButton.Definition.iconOnly(snapLabel,
+                            snapLabel,
+                            gridIcon(model.snapToGrid())),
+                    !model.busy(), Action.TOGGLE_GRID_SNAP,
+                    model.snapToGrid() ? EditorButton.Tone.PRIMARY : EditorButton.Tone.NEUTRAL,
+                    mouseX, mouseY, tooltip);
+        }
+
+        Component settingsLabel = Component.translatable("screen.brnquest.client_settings");
+        tooltip = renderButton(graphics, font, layout.settings(),
+                EditorButton.Definition.iconOnly(settingsLabel, settingsLabel, gearIcon()),
+                !model.busy(), Action.OPEN_CLIENT_SETTINGS, EditorButton.Tone.NEUTRAL,
+                mouseX, mouseY, tooltip);
+
         if (model.status() != null && layout.status().width() > 0) {
             String statusText = font.plainSubstrByWidth(model.status().getString(), layout.status().width() - 10);
             int statusWidth = Math.min(layout.status().width(), font.width(statusText) + 10);
@@ -157,6 +176,12 @@ final class QuestEditorChrome {
         if (!accepts(identity)) return ClickResult.ignored();
         Model model = frame.model();
         Layout layout = frame.layout();
+        if (layout.settings().contains(x, y)) {
+            return ClickResult.consumed(model.busy() ? null : new Intent(Action.OPEN_CLIENT_SETTINGS));
+        }
+        if (model.editing() && shortcutBounds(layout, 0).contains(x, y)) {
+            return ClickResult.consumed(model.busy() ? null : new Intent(Action.TOGGLE_GRID_SNAP));
+        }
         if (model.allowed() && layout.title().contains(x, y)) {
             return ClickResult.consumed(model.busy() ? null : new Intent(Action.OPEN_CATALOG));
         }
@@ -208,11 +233,13 @@ final class QuestEditorChrome {
             case REVIEW_PUBLISH -> layout.publish();
             case UNDO -> layout.undo();
             case REDO -> layout.redo();
+            case TOGGLE_GRID_SNAP -> shortcutBounds(layout, 0);
+            case OPEN_CLIENT_SETTINGS -> layout.settings();
         };
     }
 
     Optional<Component> focusedLabel(QuestScreenFrameIdentity identity) {
-        return accepts(identity) && focused != null ? Optional.of(Component.translatable(actionKey(focused)))
+        return accepts(identity) && focused != null ? Optional.of(focused == Action.TOGGLE_GRID_SNAP ? snapLabel(frame.model()) : Component.translatable(actionKey(focused)))
                 : Optional.empty();
     }
 
@@ -230,20 +257,71 @@ final class QuestEditorChrome {
         UiRect redo = new UiRect(historyAnchor.left() - HISTORY_WIDTH - 4, historyAnchor.top(),
                 historyAnchor.left() - 4, historyAnchor.bottom());
         UiRect undo = new UiRect(redo.left() - HISTORY_WIDTH - 4, redo.top(), redo.left() - 4, redo.bottom());
-        int titleWidth = Math.min(260, Math.max(40, screen.width() - 8));
+        // Reserve equal margins so the centered title never overlaps the expandable shortcut strip.
+        int titleWidth = Math.min(260, Math.max(0, screen.width() - 96));
         int center = screen.width() / 2;
         UiRect title = new UiRect(center - titleWidth / 2, 4, center + (titleWidth + 1) / 2, 4 + chromeHeight);
         UiRect leading = hasLease ? undo : allowed ? save : exit;
         int maximumWidth = screen.bottomStatusMaximumWidth(leading.left());
         // Status text shares the button baseline and stays below the footer seam.
         UiRect status = new UiRect(4, exit.top(), 4 + maximumWidth, exit.bottom());
-        return new Layout(screen.topToolbar(), screen.bottomToolbar(), title, exit, save, publish, redo, undo, status);
+        return new Layout(screen.topToolbar(), screen.bottomToolbar(), title, exit, save, publish, redo, undo, status,
+                new UiRect(4, 2, Math.max(4, title.left() - 4), 18),
+                new UiRect(screen.width() - 20, 2, screen.width() - 4, 18));
     }
 
     private static List<Action> focusOrder(Model model) {
-        if (!model.hasLease()) return List.of();
-        return model.live() ? List.of(Action.UNDO, Action.REDO, Action.EXIT)
-                : List.of(Action.UNDO, Action.REDO, Action.REVIEW_PUBLISH, Action.SAVE, Action.EXIT);
+        if (!model.hasLease()) return List.of(Action.OPEN_CLIENT_SETTINGS);
+        List<Action> actions = model.live() ? List.of(Action.UNDO, Action.REDO, Action.TOGGLE_GRID_SNAP, Action.OPEN_CLIENT_SETTINGS, Action.EXIT)
+                : List.of(Action.UNDO, Action.REDO, Action.REVIEW_PUBLISH, Action.SAVE, Action.TOGGLE_GRID_SNAP, Action.OPEN_CLIENT_SETTINGS, Action.EXIT);
+        return actions.stream().filter(action -> action != Action.TOGGLE_GRID_SNAP || model.editing()).toList();
+    }
+
+    /** Each future shortcut occupies the next fixed slot without changing the title or footer. */
+    static UiRect shortcutBounds(Layout layout, int index) {
+        int left = layout.shortcuts().left() + index * 20;
+        return new UiRect(left, layout.shortcuts().top(), left + 16, layout.shortcuts().bottom());
+    }
+
+    /** Pixel gear stays legible even when the selected font has no gear glyph. */
+    private static EditorIcon gearIcon() {
+        return new EditorIcon() {
+            public int width(Font font) { return 10; }
+            public void render(GuiGraphics graphics, Font font, UiRect bounds, int color) {
+                int x = bounds.centerX() - 5, y = bounds.centerY() - 5;
+                graphics.fill(x + 2, y + 2, x + 8, y + 8, color);
+                graphics.fill(x + 4, y, x + 6, y + 10, color);
+                graphics.fill(x, y + 4, x + 10, y + 6, color);
+                graphics.fill(x + 1, y + 1, x + 3, y + 3, color);
+                graphics.fill(x + 7, y + 1, x + 9, y + 3, color);
+                graphics.fill(x + 1, y + 7, x + 3, y + 9, color);
+                graphics.fill(x + 7, y + 7, x + 9, y + 9, color);
+                graphics.fill(x + 4, y + 4, x + 6, y + 6, GraystonePalette.PANEL);
+            }
+        };
+    }
+
+    private static Component snapLabel(Model model) {
+        return Component.translatable("screen.brnquest.editor.snap_to_grid",
+                Component.translatable(model.snapToGrid() ? "options.on" : "options.off"));
+    }
+
+    /** Native pixel grid avoids font-dependent glyphs; the slash also distinguishes Off without color. */
+    private static EditorIcon gridIcon(boolean enabled) {
+        return new EditorIcon() {
+            public int width(Font font) { return 10; }
+            public void render(GuiGraphics graphics, Font font, UiRect bounds, int color) {
+                int left = bounds.centerX() - 5, top = bounds.centerY() - 5;
+                for (int offset = 0; offset <= 8; offset += 4) {
+                    graphics.fill(left + offset, top, left + offset + 1, top + 9, color);
+                    graphics.fill(left, top + offset, left + 9, top + offset + 1, color);
+                }
+                if (!enabled) {
+                    for (int offset = 0; offset < 10; offset++)
+                        graphics.fill(left + offset, top + 9 - offset, left + offset + 2, top + 10 - offset, 0xFFFF9B9B);
+                }
+            }
+        };
     }
 
     private boolean accepts(QuestScreenFrameIdentity identity) {
@@ -268,6 +346,8 @@ final class QuestEditorChrome {
             case OPEN_CATALOG -> "screen.brnquest.editor.catalog.open";
             case OPEN_LIVE -> "screen.brnquest.editor.edit_current";
             case EXIT -> "screen.brnquest.editor.exit";
+            case TOGGLE_GRID_SNAP -> "screen.brnquest.editor.snap_to_grid";
+            case OPEN_CLIENT_SETTINGS -> "screen.brnquest.client_settings";
         };
     }
 }

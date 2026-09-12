@@ -77,6 +77,39 @@ class QuestEditorChromeTest {
         assertTrue(chrome.activateFocused(identity).isEmpty());
     }
 
+    @Test void shortcutFitsNarrowHeaderAndUsesGuardedIntentInBothModes() {
+        for (boolean live : List.of(false, true)) {
+            var chrome = new QuestEditorChrome();
+            var identity = identity("r1", 320, 240);
+            var screen = new QuestScreenLayout(320, 240, true, true);
+            var layout = chrome.advance(screen, model(identity, false, false, live));
+            var shortcut = QuestEditorChrome.shortcutBounds(layout, 0);
+            assertTrue(shortcut.right() < layout.title().left());
+            assertTrue(shortcut.bottom() <= layout.topToolbar().bottom());
+            assertEquals(QuestEditorChrome.Action.TOGGLE_GRID_SNAP,
+                    chrome.click(identity, shortcut.centerX(), shortcut.centerY()).intent().action());
+            assertFalse(chrome.click(identity("r2", 320, 240), shortcut.centerX(), shortcut.centerY()).consumed());
+            chrome.advance(screen, model(identity, true, false, live));
+            assertNull(chrome.click(identity, shortcut.centerX(), shortcut.centerY()).intent());
+        }
+    }
+
+    @Test void clientSettingsAreAvailableWithoutEditingOrAuthorPermission() {
+        var chrome = new QuestEditorChrome();
+        var identity = new QuestScreenFrameIdentity(BOOK, "r1", false, 320, 240);
+        var model = new QuestEditorChrome.Model(identity, "Test", BOOK, false, false, false, false,
+                false, false, false, false, 0, 0, false, false, null, false, List.of(), true);
+        var layout = chrome.advance(new QuestScreenLayout(320, 240, false, false), model);
+        assertTrue(layout.settings().left() > layout.title().right());
+        assertEquals(QuestEditorChrome.Action.OPEN_CLIENT_SETTINGS,
+                chrome.click(identity, layout.settings().centerX(), layout.settings().centerY()).intent().action());
+        assertTrue(chrome.focusNext(identity, false));
+        assertEquals(QuestEditorChrome.Action.OPEN_CLIENT_SETTINGS,
+                chrome.activateFocused(identity).orElseThrow().action());
+        var snap = QuestEditorChrome.shortcutBounds(layout, 0);
+        assertFalse(chrome.click(identity, snap.centerX(), snap.centerY()).consumed());
+    }
+
     private static QuestScreenFrameIdentity identity(String revision, int width, int height) {
         return new QuestScreenFrameIdentity(BOOK, revision, true, width, height);
     }
@@ -84,6 +117,6 @@ class QuestEditorChromeTest {
     private static QuestEditorChrome.Model model(QuestScreenFrameIdentity identity, boolean busy,
                                                   boolean dirty, boolean live) {
         return new QuestEditorChrome.Model(identity, "Test", BOOK, true, true, true, live, busy, dirty,
-                true, true, 1, 1, !busy, !busy, Component.literal("Ready"), false, List.of());
+                true, true, 1, 1, !busy, !busy, Component.literal("Ready"), false, List.of(), true);
     }
 }

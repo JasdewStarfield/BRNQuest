@@ -303,7 +303,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     public void tick() {
         super.tick();
         ClientEditorState editor = ClientEditorState.get();
-        editor.tick();
         reconcileModeSelection(editor);
         // Session loss must also remove the typed form widgets, not merely stop painting its panel.
         if (!editor.editing() && (typedEditorOpen || typedPropertySection.open())) closeTypedEditor();
@@ -316,8 +315,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }) || (!editor.allowed() && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
             closeActiveEditorOverlay();
         }
-        editor.pollRenewRequest().ifPresent(request ->
-                AuthoringNetwork.renewSession(request.sessionId(), request.draftRevision()));
         editor.pollPublishReview().ifPresent(review -> {
             closeActiveEditorOverlay();
             publishReviewSection.open(publishReviewModel(review));
@@ -1117,10 +1114,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         return true;
                     }).orElse(false);
         }
-        if (editorKeyboardSurfaceReady() && keyCode == 258) {
+        if (chromeKeyboardSurfaceReady() && keyCode == 258) {
             return editorChrome.focusNext(currentFrameIdentity(), hasShiftDown());
         }
-        if (editorKeyboardSurfaceReady() && (keyCode == 257 || keyCode == 335)) {
+        if (chromeKeyboardSurfaceReady() && (keyCode == 257 || keyCode == 335)) {
             return editorChrome.activateFocused(currentFrameIdentity()).map(intent -> {
                 handleEditorChromeIntent(intent, displaySnapshot() == null ? null : displaySnapshot().book());
                 return true;
@@ -1197,7 +1194,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean editorKeyboardSurfaceReady() {
-        return ClientEditorState.get().hasLease() && !ClientEditorState.get().busy()
+        return ClientEditorState.get().hasLease() && chromeKeyboardSurfaceReady();
+    }
+
+    /** Browsing players can reach client settings without acquiring an authoring session. */
+    private boolean chromeKeyboardSurfaceReady() {
+        return !ClientEditorState.get().busy()
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen && !typedPropertySection.open()
                 && !(getFocused() instanceof net.minecraft.client.gui.components.EditBox);
@@ -1207,6 +1209,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void handleEditorChromeIntent(QuestEditorChrome.Intent intent, QuestBookDefinition displayedBook) {
         ClientEditorState editor = ClientEditorState.get();
         switch (intent.action()) {
+            case TOGGLE_GRID_SNAP -> toggleGridSnap();
+            case OPEN_CLIENT_SETTINGS -> net.neoforged.fml.config.ModConfigs.getConfigSet(
+                    net.neoforged.fml.config.ModConfig.Type.CLIENT).stream()
+                    .filter(config -> config.getSpec() == BrnQuestClientConfig.SPEC).findFirst()
+                    .ifPresent(config -> openChildScreen(new net.neoforged.neoforge.client.gui.ConfigurationScreen.ConfigurationSectionScreen(
+                            this, net.neoforged.fml.config.ModConfig.Type.CLIENT, config,
+                            Component.translatable("screen.brnquest.client_settings"))));
             case SAVE -> editor.beginSave().ifPresent(request -> AuthoringNetwork.saveSession(
                     request.sessionId(), editor.bookId(), request.draftRevision()));
             case REVIEW_PUBLISH -> {
@@ -1277,7 +1286,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 book.id(), editor.allowed(), editor.editing(), editor.hasLease(), editor.live(), editor.busy(),
                 editor.dirty(), editor.canUndo(), editor.canRedo(), editor.undoSteps(), editor.redoSteps(),
                 publishSurfaceReady, editorHistorySurfaceReady(), status,
-                editor.mode() == ClientEditorState.Mode.ERROR, errorTooltip);
+                editor.mode() == ClientEditorState.Mode.ERROR, errorTooltip, BrnQuestClientConfig.VALUES.snapToGrid.get());
         QuestEditorChrome.RenderResult chromeResult = editorChrome.render(
                 graphics, font, layout(), chromeModel, mouseX, mouseY);
         if (chromeResult.hoveredDetail() != null) hoveredDetailText = chromeResult.hoveredDetail();
@@ -1469,6 +1478,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             default -> { }
         }
         return true;
+    }
+
+    /** Shortcut writes the same live config exposed by the settings screen, never an authoring mutation. */
+    private void toggleGridSnap() {
+        var preference = BrnQuestClientConfig.VALUES.snapToGrid;
+        preference.set(!preference.get());
+        BrnQuestClientConfig.SPEC.save();
     }
 
     private List<EditorPopupMenu.Entry> contextMenuEntries() {
@@ -4586,7 +4602,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         snapshot.book().quests().forEach(quest -> positions.put(quest.id(),
                 new DraftBookEditor.Position(quest.x(), quest.y())));
         return new QuestCanvasController.InputModel(currentFrameIdentity(), chapter == null ? null : chapter.id(),
-                ClientEditorState.get().editing(), positions);
+                ClientEditorState.get().editing(), BrnQuestClientConfig.VALUES.snapToGrid.get(), positions);
     }
 
     /** Re-resolves stable canvas IDs against the live snapshot before any network mutation. */

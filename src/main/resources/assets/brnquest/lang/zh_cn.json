@@ -1,4 +1,5 @@
 {
+  "screen.brnquest.editor.structure.chapter_properties": "章节属性",
   "screen.brnquest.item_submission.planned": "预计扣除：%s 个物品",
   "screen.brnquest.choice.waiting": "等待服务器响应…",
   "screen.brnquest.choice.loaded": "已加载 %s / %s 个选项",

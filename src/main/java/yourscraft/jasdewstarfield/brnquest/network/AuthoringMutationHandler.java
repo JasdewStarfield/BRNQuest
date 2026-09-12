@@ -61,7 +61,7 @@ final class AuthoringMutationHandler {
                                 wire.title(), "", wire.targetIndex(), List.of()));
                 case UPDATE_CHAPTER -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
-                                wire.title(), wire.targetIndex()));
+                                wire.title(), wire.targetIndex(), wire.config()));
                 case MOVE_CHAPTER -> editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), wire.targetIndex());
                 case DELETE_CHAPTER -> editor.removeChapterWithContents(player, sessionId, bookId,
@@ -128,13 +128,14 @@ final class AuthoringMutationHandler {
         return id;
     }
 
-    private static ChapterDefinition chapterReplacement(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
+    // Missing icon retains legacy callers; an explicit empty icon resets the chapter fallback.
+    static ChapterDefinition chapterReplacement(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
                                                         ResourceLocation chapterId, ResourceLocation groupId,
-                                                        String title, int order) {
+                                                        String title, int order, Map<String, String> config) {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), title,
-                chapter.icon(), order, chapter.quests(), chapter.extensions());
+                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions());
     }
 
     private static QuestDefinition questCopy(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,

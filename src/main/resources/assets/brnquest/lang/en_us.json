@@ -1,4 +1,5 @@
 {
+  "screen.brnquest.editor.structure.chapter_properties": "Chapter properties",
   "screen.brnquest.item_submission.planned": "Planned consumption: %s items",
   "screen.brnquest.choice.waiting": "Waiting for server…",
   "screen.brnquest.choice.loaded": "Loaded %s / %s choices",

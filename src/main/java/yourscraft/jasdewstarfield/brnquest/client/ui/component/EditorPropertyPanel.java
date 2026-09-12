@@ -42,20 +42,27 @@ public final class EditorPropertyPanel {
 
     public static void render(GuiGraphics graphics, Font font, Layout layout, Component heading,
                               int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
-        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, false, 0xFF202632);
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, false, 0xFF202632, false);
     }
 
     /** Modal forms retain their centered heading and panel color while sharing the row composition. */
     public static void renderCentered(GuiGraphics graphics, Font font, Layout layout, Component heading,
                                       int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
-        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, 0xFF202832);
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, 0xFF202832, false);
+    }
+
+    /** New modal forms share the PNG graystone surface without changing older panel layouts. */
+    public static void renderGraystone(GuiGraphics graphics, Font font, Layout layout, Component heading,
+                                      int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons) {
+        render(graphics, font, layout, heading, headingColor, rows, footer, buttons, true, 0xFF30332E, true);
     }
 
     private static void render(GuiGraphics graphics, Font font, Layout layout, Component heading,
                                int headingColor, List<RowContent> rows, Footer footer, ButtonRenderer buttons,
-                               boolean centered, int backgroundColor) {
+                               boolean centered, int backgroundColor, boolean graystone) {
         UiRect panel = layout.panel();
-        graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), backgroundColor);
+        if (graystone) GraystoneSurface.raised(graphics, panel, backgroundColor, true);
+        else graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), backgroundColor);
         Component title = Component.literal(font.plainSubstrByWidth(heading.getString(), layout.width()));
         if (centered) graphics.drawCenteredString(font, title, panel.centerX(), layout.headingY(), headingColor);
         else graphics.drawString(font, title, layout.left(), layout.headingY(), headingColor, false);

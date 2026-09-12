@@ -36,6 +36,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestIconEditorRow;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextureSelector;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
@@ -141,9 +142,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             .define("size", "screen.brnquest.editor.quest.size", 32)
             .define("icon_scale", "screen.brnquest.editor.quest.icon_scale", 32)
             .define("min_width", "screen.brnquest.editor.quest.min_width", 32);
+    // Chapter icon changes stay local until the dialog is applied. Child selectors only update this value.
+    private String structureChapterIcon = "";
+    private QuestIconEditorRow.Layout chapterIconRow;
+    private IconEditorMode chapterIconMode = IconEditorMode.ITEM;
+
     private final EditorFormFields<String> structureFields = new EditorFormFields<String>()
             .define("id", "screen.brnquest.editor.structure.id", 256)
-            .define("title", "screen.brnquest.editor.structure.title", 256);
+            .define("title", "screen.brnquest.editor.structure.title", 256)
+            .define("texture", "screen.brnquest.editor.quest.icon_mode.texture", 256)
+            .define("chapter_item", "screen.brnquest.editor.quest.icon", 256);
     private EditorTextField quickTextField;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
@@ -447,7 +455,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             advanceCanvasMotion(motionFrameSeconds);
             renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
-            if (!structureFormOpen()) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
+            if (!structureFormOpen() || structureFormKind == StructureFormKind.RENAME_CHAPTER) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
             else {
                 canvasFrame = null;
                 graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
@@ -467,10 +475,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 formButtons.viewport(null, 0);
             }
             renderEditorChrome(graphics, snapshot.book(), mouseX, mouseY);
-            if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
-            offsetDetailsDrawerFieldsForMotion();
-            super.render(graphics, mouseX, mouseY, partialTick);
-            renderDeferredTooltip(graphics, mouseX, mouseY);
+            // Item rendering and canvas badges use positive depth. Raise the entire modal, including
+            // registered EditBoxes and tooltips, above them; restore the pose even if rendering fails.
+            graphics.flush();
+            graphics.pose().pushPose();
+            try {
+                if (structureFormOpen()) graphics.pose().translate(0, 0, 500);
+                if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
+                offsetDetailsDrawerFieldsForMotion();
+                super.render(graphics, mouseX, mouseY, partialTick);
+                renderDeferredTooltip(graphics, mouseX, mouseY);
+                graphics.flush();
+            } finally {
+                graphics.pose().popPose();
+            }
         } finally {
             renderFrame = null;
         }
@@ -500,14 +518,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Chapter icons share the existing cached item parser; decorative icons never become JEI targets. */
     private void renderChapterIcon(GuiGraphics graphics, ChapterDefinition chapter, UiRect bounds) {
-        var texture = yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.textureId(chapter.icon());
+        renderChapterIcon(graphics, chapter.id(), chapter.icon(), bounds);
+    }
+
+    private void renderChapterIcon(GuiGraphics graphics, ResourceLocation cacheId, String icon, UiRect bounds) {
+        if (icon == null || icon.isBlank()) return;
+        var texture = yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.textureId(icon);
         if (texture.isPresent()) {
             graphics.blit(texture.orElseThrow(), bounds.left(), bounds.top(), 0, 0, 16, 16, 16, 16);
             return;
         }
-        ItemStack stack = item(chapter.id(), chapter.icon());
-        graphics.renderItem(stack.isEmpty() ? new ItemStack(net.minecraft.world.item.Items.BOOK) : stack,
-                bounds.left(), bounds.top());
+        ItemStack stack = item(cacheId, icon);
+        if (!stack.isEmpty()) graphics.renderItem(stack, bounds.left(), bounds.top());
     }
 
     /** Applies navigation intents after resolving their stable IDs against the current book snapshot. */
@@ -1445,7 +1467,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     .action("DELETE_GROUP", Component.translatable("screen.brnquest.editor.context.delete"), true));
             case CHAPTER -> EditorPopupMenu.menu(menu -> menu
                     .action("RENAME_CHAPTER", Component.translatable(
-                            "screen.brnquest.editor.context.rename"), false)
+                            "screen.brnquest.editor.structure.chapter_properties"), false)
                     .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
                             .action("MOVE_CHAPTER_UP", Component.translatable(
                                     "screen.brnquest.editor.context.move_up"), false)
@@ -1876,6 +1898,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         hoveredDetailText = null;
         hoveredComponentTooltip = List.of();
         UiRect form = structureFormBounds();
+        if (structureFormKind == StructureFormKind.RENAME_CHAPTER) {
+            renderChapterProperties(graphics, mouseX, mouseY);
+            return;
+        }
         graphics.fill(0, 0, width, height, 0x88000000);
         EditorPropertyPanel.renderCentered(graphics, font,
                 new EditorPropertyPanel.Layout(form, form.left() + 12, form.width() - 24,
@@ -1891,7 +1917,86 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         g, bounds, label, null, enabled, tone, mouseX, mouseY));
     }
 
+    /** Modal editing matches the input boundary; selecting an icon never saves implicitly. */
+    private void renderChapterProperties(GuiGraphics graphics, int mouseX, int mouseY) {
+        UiRect form = structureFormBounds();
+        graphics.fill(0, 0, width, height, 0x88000000);
+        boolean enabled = !ClientEditorState.get().busy();
+        var rows = new ArrayList<EditorPropertyPanel.RowContent>();
+        rows.add(EditorPropertyPanel.text(font, structureFields.field("id"),
+                "screen.brnquest.editor.structure.id", 64, null, false));
+        rows.add(EditorPropertyPanel.text(font, structureFields.field("title"),
+                "screen.brnquest.editor.structure.title", 64, null, enabled));
+        rows.add((g, x, y, w) -> chapterIconRow = renderTextureSelector(g, x, y, w,
+                chapterIconInput(), chapterIconMode, mouseX, mouseY));
+        if (chapterIconMode == IconEditorMode.ITEM) structureFields.field("texture").hide();
+        else structureFields.field("chapter_item").hide();
+        EditorPropertyPanel.renderGraystone(graphics, font,
+                new EditorPropertyPanel.Layout(form, form.left() + 12, form.width() - 24,
+                        form.top() + 10, form.top() + 32, 32),
+                Component.translatable("screen.brnquest.editor.structure.chapter_properties"), 0xFFFFFFFF, rows,
+                new EditorPropertyPanel.Footer(structureFormCancelBounds(), structureFormDoneBounds(),
+                        Component.translatable("gui.done"), enabled && chapterTextureValid() && !structureFields.field("title").getValue().isBlank(),
+                        EditorButton.Tone.PRIMARY),
+                (g, bounds, label, active, tone) -> renderEditorTextButton(
+                        g, bounds, label, null, active, tone, mouseX, mouseY));
+        renderEditorTextButton(graphics, chapterIconClearBounds(), Component.translatable("screen.brnquest.field.clear"),
+                null, enabled && !chapterIconValue().isEmpty(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    private UiRect chapterIconClearBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.left() + 12, form.top() + 124, form.right() - 12, form.top() + 144);
+    }
+
+    private EditorTextField chapterIconInput() {
+        return structureFields.field(chapterIconMode == IconEditorMode.ITEM ? "chapter_item" : "texture");
+    }
+
+    /** Empty is an intentional absence of decoration, not a request for a fallback item. */
+    private String chapterIconValue() {
+        if (chapterIconMode == IconEditorMode.ITEM) {
+            String id = chapterIconInput().getValue().strip();
+            if (id.equals(iconItemId(structureChapterIcon))) return structureChapterIcon;
+            ResourceLocation parsed = ResourceLocation.tryParse(id);
+            if (parsed == null || minecraft == null || minecraft.level == null || !BuiltInRegistries.ITEM.containsKey(parsed)) return "";
+            return BuiltInRegistries.ITEM.get(parsed).getDefaultInstance().save(minecraft.level.registryAccess()).toString();
+        }
+        String path = structureFields.field("texture").getValue().strip();
+        return path.isEmpty() ? "" : "texture:" + path;
+    }
+
+    private boolean chapterTextureValid() {
+        String value = chapterIconInput().getValue().strip();
+        ResourceLocation id = ResourceLocation.tryParse(value);
+        return value.isEmpty() || (id != null && (chapterIconMode == IconEditorMode.TEXTURE || BuiltInRegistries.ITEM.containsKey(id)));
+    }
+
     private boolean handleStructureFormClick(double mouseX, double mouseY, int button) {
+        if (button == 0 && structureFormKind == StructureFormKind.RENAME_CHAPTER
+                && !ClientEditorState.get().busy()) {
+            if (chapterIconRow != null && chapterIconRow.mode().contains(mouseX, mouseY)) {
+                // Each mode keeps its local candidate while toggling; only the active candidate is saved.
+                chapterIconMode = chapterIconMode == IconEditorMode.ITEM ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
+                setFocused(null);
+                return true;
+            }
+            if (chapterIconMode == IconEditorMode.ITEM && chapterIconRow != null && chapterIconRow.picker().contains(mouseX, mouseY)) {
+                openEditorItemSelector(stack -> {
+                    if (minecraft != null && minecraft.level != null && !stack.isEmpty())
+                    {
+                        structureChapterIcon = stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString();
+                        structureFields.field("chapter_item").setValue(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+                    }
+                });
+                return true;
+            }
+            if (chapterIconClearBounds().contains(mouseX, mouseY)) {
+                chapterIconInput().setValue("");
+                if (chapterIconMode == IconEditorMode.ITEM) structureChapterIcon = "";
+                return true;
+            }
+        }
         if (button == 0 && structureFormCancelBounds().contains(mouseX, mouseY)) {
             closeStructureForm();
             return true;
@@ -1927,6 +2032,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (chapter != null) {
                 title = localizedStructureTitle("chapter", chapter.id(), chapter.title());
                 structureFormParent = chapter.groupId();
+                chapterIconMode = yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.isTexture(chapter.icon())
+                        ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
+                structureChapterIcon = chapterIconMode == IconEditorMode.ITEM ? chapter.icon() : "";
+                structureFields.field("chapter_item").setValue(iconItemId(structureChapterIcon));
+                chapterIconRow = null;
+                structureFields.field("texture").setValue(chapterIconMode == IconEditorMode.TEXTURE
+                        ? chapter.icon().substring("texture:".length()) : "");
             }
         } else {
             id = suggestId(book, kind.idStem());
@@ -1949,6 +2061,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void submitStructureForm() {
         ClientEditorState editor = ClientEditorState.get();
+        if (editor.busy()) return;
         QuestBookDefinition book = displaySnapshot().book();
         ResourceLocation id = ResourceLocation.tryParse(structureFields.field("id").getValue());
         if (id == null || structureFields.field("title").getValue().isBlank()) return;
@@ -1966,10 +2079,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     (int) book.chapters().stream().filter(value -> value.groupId().equals(structureFormParent)).count(),
                     0, 0, List.of());
             case RENAME_CHAPTER -> {
+                if (!chapterTextureValid()) return;
                 ChapterDefinition chapter = book.chapters().stream()
                         .filter(value -> value.id().equals(structureFormTarget)).findFirst().orElse(null);
-                if (chapter != null) sendMutation("UPDATE_CHAPTER", chapter.id(), chapter.groupId(), null, title,
-                        chapter.order(), 0, 0, List.of());
+                if (chapter == null || !sendMutation("UPDATE_CHAPTER", chapter.id(), chapter.groupId(), null, title,
+                        chapter.order(), 0, 0, List.of(), Map.of("icon", chapterIconValue()))) return;
             }
             case ADD_QUEST -> sendMutation("ADD_QUEST", id, structureFormParent, null, title, 0,
                     structureFormX, structureFormY, List.of());
@@ -1985,7 +2099,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         structureFormTarget = null;
         structureFormParent = null;
         setFocused(null);
-        for (EditorTextField field : List.of(structureFields.field("id"), structureFields.field("title"))) {
+        for (EditorTextField field : List.of(structureFields.field("id"), structureFields.field("title"), structureFields.field("texture"), structureFields.field("chapter_item"))) {
             if (field == null) continue;
             field.hide();
         }
@@ -1997,6 +2111,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private UiRect structureFormBounds() {
+        if (structureFormKind == StructureFormKind.RENAME_CHAPTER)
+            return layout().centeredDialog(420, 300, 20, 180);
         return layout().centeredDialog(380, 260, 20, 126);
     }
 
@@ -3497,39 +3613,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     /** Shows an ordinary item ID while retaining the native SNBT representation behind the form. */
     private void renderQuestIconEditorField(GuiGraphics graphics, int left, int top, int width,
                                             int mouseX, int mouseY) {
-        int labelWidth = 48;
-        questIconRowLayout = QuestIconEditorRow.layout(left, top, width, labelWidth);
-        String label = font.plainSubstrByWidth(Component.translatable("screen.brnquest.editor.quest.icon").getString(),
-                questIconRowLayout.label().width() - 4);
-        graphics.drawString(font, Component.literal(label), questIconRowLayout.label().left(), questIconRowLayout.label().top() + 5,
-                0xFF9FB0C2, false);
-        renderEditorTextButton(graphics, questIconRowLayout.mode(), Component.translatable(questEditorIconMode.translationKey),
-                null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        questFields.field("icon").show(questIconRowLayout.input(), !ClientEditorState.get().busy());
-        ResourceLocation iconId = ResourceLocation.tryParse(questFields.field("icon").getValue().strip());
-        if (questEditorIconMode == IconEditorMode.ITEM
-                && iconId != null && BuiltInRegistries.ITEM.containsKey(iconId)) {
-            Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
-            ItemStack stack = BuiltInRegistries.ITEM.get(iconId).getDefaultInstance();
-            EditorButton.Definition definition = EditorButton.Definition.iconOnly(
-                    select, select, EditorIcon.item(stack));
-            renderEditorActionButton(graphics, questIconRowLayout.picker(), definition,
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-            registerRecipeLookupTarget(stack, EditorButton.iconBounds(font, questIconRowLayout.picker(), definition),
-                    questIconRowLayout.picker(), mouseX, mouseY);
-        } else if (questEditorIconMode == IconEditorMode.ITEM) {
-            Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
-                    renderEditorActionButton(graphics, questIconRowLayout.picker(), EditorButton.Definition.iconOnly(
-                            select, select, EditorIcon.glyph(Component.literal(
-                                    questFields.field("icon").getValue().isBlank() ? "+" : "?"))),
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        } else if (questEditorIconMode == IconEditorMode.TEXTURE && iconId != null) {
-            graphics.blit(iconId, questIconRowLayout.picker().left() + 2, questIconRowLayout.picker().top() + 1,
-                    0.0F, 0.0F, 16, 16, 16, 16);
-        } else {
-            graphics.drawCenteredString(font, questFields.field("icon").getValue().isBlank() ? "−" : "?",
-                    questIconRowLayout.picker().centerX(), questIconRowLayout.picker().top() + 5, 0xFF9FB0C2);
-        }
+        questIconRowLayout = renderTextureSelector(graphics, left, top, width, questFields.field("icon"),
+                questEditorIconMode, mouseX, mouseY);
+    }
+
+    /** Both chapter and quest forms use the same selector presentation and native recipe tooltip target. */
+    private QuestIconEditorRow.Layout renderTextureSelector(GuiGraphics graphics, int left, int top, int width,
+            EditorTextField input, IconEditorMode mode, int mouseX, int mouseY) {
+        return EditorTextureSelector.render(graphics, font, left, top, width, input, mode == IconEditorMode.TEXTURE,
+                !ClientEditorState.get().busy(),
+                (g, bounds, label, enabled, tone) -> renderEditorTextButton(g, bounds, label, null, enabled, tone, mouseX, mouseY),
+                (g, bounds, definition, enabled, tone) -> renderEditorActionButton(g, bounds, definition, enabled, tone, mouseX, mouseY),
+                (stack, icon, target) -> registerRecipeLookupTarget(stack, icon, target, mouseX, mouseY));
     }
 
     /** Keeps exact coordinate entry available even though pointer dragging snaps to the visible grid. */

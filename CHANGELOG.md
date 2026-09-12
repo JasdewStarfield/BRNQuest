@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 修复章节属性窗口被画布图标穿透的问题，改用灰石窗口背景；章节与任务属性复用物品/贴图选择组件。
+- Chapter properties now render above canvas icons with a graystone dialog surface; chapter and quest properties share the item/texture selector component.
+
+- 章节右键新增属性窗口：修改名称、选择物品或直接引用贴图、清空图标；未配置图标时留空，保留章节内容和扩展字段。
+- Chapter context menus open a properties dialog for renaming, choosing item or texture icons, and clearing icons. Unconfigured icons remain empty; chapter contents and extension fields are preserved.
+
 - 已领取奖励复用完成状态 PNG 角标，替代绿色字体对勾，保留物品数量与原生 Tooltip。
 - Claimed rewards reuse the completion PNG badge instead of a green font checkmark, preserving item counts and native tooltips.
 
@@ -13,8 +19,8 @@
 - 任务左下角状态角标改用独立 PNG，向外偏移并提高渲染层级，避免物品图标遮挡。
 - Lower-left quest status badges now use editable PNG sprites, offset outward and rendered above item icons.
 
-- 章节显示配置的物品/纹理图标与书本回退；画布补充跟踪、完成和不可用标记，详情目标/奖励沿用灰石配色并支持注册类型图标，截断目标名称可悬停查看。
-- Chapters display configured item/texture icons with a book fallback. Canvas nodes gain tracked, completed and blocked markers; objective/reward details use graystone colors and registered type icons, with hover text for truncated objective names.
+- 章节显示配置的物品/纹理图标；画布补充跟踪、完成和不可用标记，详情目标/奖励沿用灰石配色并支持注册类型图标，截断目标名称可悬停查看。
+- Chapters display configured item/texture icons. Canvas nodes gain tracked, completed and blocked markers; objective/reward details use graystone colors and registered type icons, with hover text for truncated objective names.
 
 - 章节导航采用灰石配色与黄铜选中标记，悬停可读完整标题；详情目标/奖励加入图标分区，状态与可完成提示分行以减轻窄屏拥挤。
 - Chapter navigation uses graystone colors, brass selection markers and full-title hover hints. Detail sections gain icon headings, with status and completion hints on separate lines for narrow layouts.

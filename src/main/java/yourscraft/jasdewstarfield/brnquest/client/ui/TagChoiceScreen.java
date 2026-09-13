@@ -153,4 +153,7 @@ public final class TagChoiceScreen extends Screen {
         UiRect panel = panel();
         return new UiRect(panel.left() + 7, panel.bottom() - 22, panel.right() - 7, panel.bottom() - 5);
     }
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

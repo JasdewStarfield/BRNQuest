@@ -18,6 +18,8 @@ import java.util.*;
 /** Maps the observed FTB Quests v13 subset into BRNQuest's independent immutable model. */
 public final class FtbV13Importer {
     // Mapping, diagnostics and conversion reports must recognize the same source aliases.
+    // Reset per import; source policies are materialized for entries and retained as native book settings.
+    private BookSettings importedSettings = BookSettings.DEFAULT;
     private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
             "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill", "all_table", "random", "loot", "choice");
 
@@ -40,6 +42,8 @@ public final class FtbV13Importer {
         List<FtbFieldConversion> conversions = new ArrayList<>();
         String fallbackLocale = "en_us";
         String defaultAutoClaim = "disabled";
+        importedSettings = BookSettings.DEFAULT;
+        QuestCreationDefaults bookDefaults = QuestCreationDefaults.EMPTY;
         InheritedAppearance defaultAppearance = new InheritedAppearance("chamfer", 1.0);
         Map<String, InheritedAppearance> presets = new TreeMap<>();
         Map<String, String> fileExtensions = new TreeMap<>();
@@ -62,15 +66,20 @@ public final class FtbV13Importer {
             }
             recordMappedFields(data, "data.snbt", "data", conversions, Map.ofEntries(
                     Map.entry("version", "schema_version"), Map.entry("fallback_locale", "localization.fallback_locale"),
-                    Map.entry("default_autoclaim_rewards", "reward_defaults.claim_policy"),
+                    Map.entry("default_autoclaim_rewards", "settings.reward_claim_policy"),
                     Map.entry("default_quest_shape", "appearance_defaults.shape"),
                     Map.entry("presets", "appearance_presets"), Map.entry("preset", "appearance_defaults.preset")));
             defaultAutoClaim = data.getString("default_autoclaim_rewards");
-            if (data.getBoolean("suppress_all_autoclaiming")) defaultAutoClaim = "disabled";
+            importedSettings = new BookSettings(data.getBoolean("default_consume_items"), data.getBoolean("default_reward_team"),
+                    rewardPolicy(defaultAutoClaim, "disabled"), data.getBoolean("suppress_all_autoclaiming"), data.getBoolean("pause_game"));
+            recordMappedFields(data, "data.snbt", "data", conversions, Map.of(
+                    "default_consume_items", "settings.consume_items", "default_reward_team", "settings.reward_team",
+                    "suppress_all_autoclaiming", "settings.suppress_auto_claim", "pause_game", "settings.pause_game"));
             fallbackLocale = BookLocalization.normalizeLocale(data.getString("fallback_locale"));
             presets.putAll(readPresets(data.getCompound("presets")));
             defaultAppearance = inheritedAppearance(data, defaultAppearance, presets);
-            fileExtensions.putAll(extensions(data, Set.of("version", "title", "default_autoclaim_rewards"),
+            bookDefaults = importDefaults(data, defaultAppearance);
+            fileExtensions.putAll(extensions(data, Set.of("version", "title", "default_autoclaim_rewards", "default_consume_items", "default_reward_team", "suppress_all_autoclaiming", "pause_game"),
                     "data.snbt", "data", conversions));
             readAllTranslations(source.resolve("lang"), localeTranslations, report);
             String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
@@ -101,7 +110,7 @@ public final class FtbV13Importer {
         fileExtensions.put("ftb.default_autoclaim_rewards", defaultAutoClaim);
         QuestBookDefinition book = new QuestBookDefinition(bookId, BrnQuestConstants.DATA_SCHEMA,
                 fallbackTranslations.getOrDefault("title", bookId.toString()), groups, chapters, aliases,
-                new BookLocalization(fallbackLocale, localeTranslations), fileExtensions);
+                new BookLocalization(fallbackLocale, localeTranslations), fileExtensions, bookDefaults, importedSettings);
         int taskCount = book.quests().stream().mapToInt(q -> q.tasks().size()).sum();
         int rewardCount = book.quests().stream().mapToInt(q -> q.rewards().size()).sum();
         return new FtbImportResult(book, report, groups.size(), chapters.size(), book.quests().size(), taskCount,
@@ -181,7 +190,8 @@ public final class FtbV13Importer {
             recordMappedFields(raw, path.getFileName().toString(), "chapter[" + legacy + "]", conversions,
                     Map.of("id", "id", "group", "group_id", "icon", "icon", "order_index", "order",
                             "quests", "quests", "default_quest_shape", "appearance_defaults.shape",
-                            "default_quest_size", "appearance_defaults.size", "preset", "appearance_defaults.preset"));
+                            "default_quest_size", "appearance_defaults.size", "preset", "appearance_defaults.preset",
+                            "default_min_width", "quest_defaults.min_width", "consume_items", "consume_items"));
             InheritedAppearance chapterAppearance = inheritedAppearance(raw, defaultAppearance, presets);
             InheritedBehavior chapterBehavior = new InheritedBehavior(
                     raw.getBoolean("hide_quest_until_deps_visible"), raw.getBoolean("hide_quest_until_deps_complete"),
@@ -191,14 +201,32 @@ public final class FtbV13Importer {
             for (int index = 0; index < questTags.size(); index++) {
                 quests.add(readQuest(questTags.getCompound(index), bookId, chapterId, namespace,
                         translations, aliases, path.getFileName().toString(), index, defaultAutoClaim, report,
-                        conversions, chapterAppearance, presets, chapterBehavior));
+                        conversions, chapterAppearance, presets, chapterBehavior, raw.contains("default_min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("default_min_width") : 0.0, inheritedBoolean(raw, "consume_items", importedSettings.consumeItems())));
+            }
+            ResourceLocation autofocus = null;
+            String rawFocus = raw.getString("autofocus_id");
+            if (!rawFocus.isBlank()) {
+                // FTB stores hexadecimal object IDs; resolve against this chapter, never fabricate a target.
+                try {
+                    String canonical = String.format(Locale.ROOT, "%016X", Long.parseUnsignedLong(rawFocus, 16));
+                    autofocus = quests.stream().filter(q -> q.id().equals(QuestIds.normalize(namespace, canonical)))
+                            .map(QuestDefinition::id).findFirst().orElse(null);
+                } catch (IllegalArgumentException ignored) { /* Invalid references are preserved for manual repair below. */ }
+                if (autofocus == null) report.add(problem(Diagnostic.Severity.WARN, "BQF-030",
+                        path.getFileName().toString(), chapterId.toString(), "autofocus_id",
+                        "Autofocus is not a quest in this chapter; source field preserved without camera behavior"));
+            }
+            var mappedChapterFields = new java.util.HashSet<>(Set.of("id", "group", "title", "icon", "order_index", "quests", "consume_items"));
+            if (autofocus != null || rawFocus.isBlank()) {
+                mappedChapterFields.add("autofocus_id");
+                recordMappedFields(raw, path.getFileName().toString(), "chapter[" + legacy + "]", conversions, Map.of("autofocus_id", "autofocus_id"));
             }
             target.add(new ChapterDefinition(bookId, chapterId, groupId,
                     translations.getOrDefault("chapter." + legacy + ".title", legacy),
                     raw.contains("icon") ? raw.get("icon").toString() : "",
                     raw.getInt("order_index"), quests,
-                    extensions(raw, Set.of("id", "group", "title", "icon", "order_index", "quests"),
-                            path.getFileName().toString(), "chapter[" + legacy + "]", conversions)));
+                    extensions(raw, mappedChapterFields,
+                            path.getFileName().toString(), "chapter[" + legacy + "]", conversions), importDefaults(raw, chapterAppearance), raw.contains("consume_items", Tag.TAG_BYTE) ? raw.getBoolean("consume_items") : null, autofocus));
         } catch (Exception exception) {
             report.add(problem(Diagnostic.Severity.FATAL, "BQF-003", path.getFileName().toString(), "", "", exception.getMessage()));
         }
@@ -211,14 +239,14 @@ public final class FtbV13Importer {
                                       List<FtbFieldConversion> conversions,
                                       InheritedAppearance inheritedAppearance,
                                       Map<String, InheritedAppearance> presets,
-                                      InheritedBehavior inheritedBehavior) {
+                                      InheritedBehavior inheritedBehavior, double inheritedMinWidth, boolean inheritedConsumeItems) {
         String legacy = raw.getString("id");
         ResourceLocation id = remember(namespace, legacy, aliases);
         List<ResourceLocation> dependencies = new ArrayList<>();
         ListTag dependencyTags = raw.getList("dependencies", Tag.TAG_STRING);
         for (int i = 0; i < dependencyTags.size(); i++) dependencies.add(remember(namespace, dependencyTags.getString(i), aliases));
         List<TaskDefinition> tasks = readTasks(raw.getList("tasks", Tag.TAG_COMPOUND), bookId, namespace,
-                translations, aliases, file, legacy, report, conversions);
+                translations, aliases, file, legacy, report, conversions, inheritedConsumeItems);
         List<RewardDefinition> rewards = readRewards(raw.getList("rewards", Tag.TAG_COMPOUND), bookId, namespace,
                 translations, aliases, file, legacy, defaultAutoClaim, report, conversions);
         String translatedTitle = translations.getOrDefault("quest." + legacy + ".title", "");
@@ -247,7 +275,7 @@ public final class FtbV13Importer {
         QuestAppearance appearance = new QuestAppearance(resolved.shape(),
                 raw.contains("size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("size") : resolved.size(),
                 raw.contains("icon_scale", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("icon_scale") : 1.0,
-                raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : 0.0);
+                raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : inheritedMinWidth);
         QuestBehavior behavior = new QuestBehavior(
                 inheritedBoolean(raw, "hide_until_deps_visible", inheritedBehavior.hideUntilDependenciesVisible()),
                 inheritedBoolean(raw, "hide_until_deps_complete", inheritedBehavior.hideUntilDependenciesComplete()),
@@ -295,7 +323,7 @@ public final class FtbV13Importer {
     private List<TaskDefinition> readTasks(ListTag list, ResourceLocation bookId, String namespace,
                                            Map<String, String> translations,
                                            Map<String, ResourceLocation> aliases, String file, String quest,
-                                           DiagnosticReport report, List<FtbFieldConversion> conversions) {
+                                           DiagnosticReport report, List<FtbFieldConversion> conversions, boolean inheritedConsumeItems) {
         List<TaskDefinition> result = new ArrayList<>();
         for (int i = 0; i < list.size(); i++) {
             CompoundTag raw = list.getCompound(i);
@@ -306,6 +334,13 @@ public final class FtbV13Importer {
             ResourceLocation mappedType = typeId(type);
             recordTypeConversion(file, "quests[" + quest + "].tasks[" + legacy + "]", type, mappedType, conversions);
             Map<String, String> config = flatten(raw, Set.of("optional_task"));
+            if (mappedType.equals(TaskTypes.ITEM) || mappedType.equals(TaskTypes.ITEM_CHOICE)) {
+                boolean consume = inheritedBoolean(raw, "consume_items", inheritedConsumeItems);
+                config.put("consume_items", Boolean.toString(consume));
+                conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", "consume_items", "config.consume_items",
+                        raw.contains("consume_items", Tag.TAG_BYTE) ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.DEFAULTED,
+                        "Resolved task > chapter > book consumption: " + consume));
+            }
             advancementFields(mappedType, raw, config);
             String encounterError=FtbEncounterFields.apply(mappedType,raw,config);
             if(!encounterError.isEmpty()) report.add(problem(Diagnostic.Severity.ERROR,"BQF-109",file,"tasks["+legacy+"]",legacy,encounterError));
@@ -406,10 +441,13 @@ public final class FtbV13Importer {
             config.put("title", translations.getOrDefault("reward." + legacy + ".title", ""));
             String ftbAuto = raw.contains("auto", Tag.TAG_STRING) ? raw.getString("auto") : "default";
             String policy = rewardPolicy(ftbAuto, defaultAutoClaim);
+            conversions.add(new FtbFieldConversion(file, "rewards[" + legacy + "]", "team_reward", "team_reward",
+                    raw.contains("team_reward", Tag.TAG_BYTE) ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.DEFAULTED,
+                    "Resolved reward > book team policy: " + inheritedBoolean(raw, "team_reward", importedSettings.rewardTeam())));
             conversions.add(new FtbFieldConversion(file, "quests[" + quest + "].rewards[" + legacy + "]",
                     "auto", "claim_policy", FtbFieldConversion.Status.MAPPED, ftbAuto + " -> " + policy));
             return new RewardDefinition(bookId, remember(namespace, legacy, aliases), mappedType, config,
-                    policy, raw.getBoolean("team_reward"));
+                    policy, inheritedBoolean(raw, "team_reward", importedSettings.rewardTeam()));
     }
 
     // Active recursion stack rejects real cycles but permits independent copies of a shared source table.
@@ -458,7 +496,8 @@ public final class FtbV13Importer {
             String type = child.getString("type");
             if (type.isBlank()) { type = "item"; child.putString("type", type); }
             if(!Set.of("all_table","choice","random","loot").contains(builtInPath(type)) && ++tableNodes>256)throw new IllegalArgumentException("Reward table node budget at "+quest);
-            if (child.getBoolean("team_reward") || (!child.getString("auto").isBlank()
+            if (inheritedBoolean(child, "team_reward", importedSettings.rewardTeam())
+                    != inheritedBoolean(root, "team_reward", importedSettings.rewardTeam()) || (!child.getString("auto").isBlank()
                     && !Set.of("default", "disabled").contains(child.getString("auto"))))
                 throw new IllegalArgumentException("root/entry_" + i + ": child claim policy cannot be promoted to root");
             // Child aliases stay local and cannot replace the top-level legacy ID map.
@@ -657,6 +696,22 @@ public final class FtbV13Importer {
                 : raw.contains("default_quest_size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("default_quest_size")
                 : preset.size();
         return new InheritedAppearance(shape, size);
+    }
+
+    /** Retain only source-specified defaults; imported existing quests still store resolved values. */
+    private QuestCreationDefaults importDefaults(CompoundTag raw, InheritedAppearance appearance) {
+        var values = new TreeMap<String, String>();
+        if (raw.contains("default_quest_shape") || raw.contains("preset")) values.put("shape", appearance.shape());
+        if (raw.contains("default_quest_size") || raw.contains("preset")) values.put("size", Double.toString(appearance.size()));
+        if (raw.contains("default_min_width", Tag.TAG_ANY_NUMERIC)) values.put("min_width", Double.toString(raw.getDouble("default_min_width")));
+        Map.of("hide_quest_until_deps_visible", "hide_until_dependencies_visible",
+                "hide_quest_until_deps_complete", "hide_until_dependencies_complete",
+                "hide_quest_details_until_startable", "hide_details_until_startable",
+                "hide_text_until_complete", "hide_text_until_complete", "require_sequential_tasks", "sequential_tasks",
+                "default_repeatable_quest", "repeatable").forEach((source, target) -> {
+            if (raw.contains(source, Tag.TAG_BYTE)) values.put(target, Boolean.toString(raw.getBoolean(source)));
+        });
+        return new QuestCreationDefaults(values);
     }
 
     private record InheritedAppearance(String shape, double size) {}

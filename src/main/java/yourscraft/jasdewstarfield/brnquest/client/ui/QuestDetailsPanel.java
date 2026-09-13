@@ -20,7 +20,7 @@ final class QuestDetailsPanel {
     record Layout(UiRect content, UiRect clip, int trackX) {}
     record Model(QuestDefinition quest, String title, String subtitle, String description,
                  QuestStatus status, Component statusText,
-                 int statusColor, boolean editing, boolean gameplay, boolean ready) {}
+                 int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim) {}
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
         void reward(RewardDefinition reward, int x, int y);
@@ -141,7 +141,7 @@ final class QuestDetailsPanel {
         }
 
         List<RewardDefinition> visibleRewards = quest.rewards().stream()
-                .filter(reward -> reward.policy().visible() || editing).toList();
+                .filter(reward -> reward.policy().visible() || editing || model.suppressAutoClaim()).toList();
         if (!visibleRewards.isEmpty()) {
             y += 4;
             y = renderSection(graphics, font, "screen.brnquest.rewards", "reward_table", contentLeft, y, contentWidth, 0xFFE6C77B);

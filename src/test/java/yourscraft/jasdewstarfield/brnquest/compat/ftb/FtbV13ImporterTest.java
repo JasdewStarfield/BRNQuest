@@ -17,6 +17,61 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void autofocusResolvesHexQuestIdsAndPreservesUnsupportedTargets() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Path chapter = temporary.resolve("chapters/a.snbt");
+        for (String focus : List.of("aBcD", "000000000000ABCD", "1000000000000002", "invalid")) {
+            Files.writeString(chapter, "{id:'1000000000000001',autofocus_id:'" + focus
+                    + "',quests:[{id:'000000000000ABCD'}]}", StandardCharsets.UTF_8);
+            var result = new FtbV13Importer().importBook(temporary, "test", "main");
+            assertFalse(result.report().hasErrors(), result.report().toJson());
+            var imported = result.book().chapters().getFirst();
+            if (focus.equals("aBcD") || focus.equals("000000000000ABCD")) {
+                assertEquals(imported.quests().getFirst().id(), imported.autofocusQuestId());
+                assertFalse(imported.extensions().containsKey("ftb.autofocus_id"));
+            } else {
+                assertNull(imported.autofocusQuestId());
+                assertTrue(imported.extensions().get("ftb.autofocus_id").contains(focus));
+                assertTrue(result.report().toJson().contains("BQF-030"));
+            }
+        }
+    }
+
+    @Test void bookAndChapterPoliciesResolveExplicitFalseAndRetainSuppression() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"),
+                "{version:13,default_consume_items:true,default_reward_team:true,default_autoclaim_rewards:'enabled',suppress_all_autoclaiming:true,pause_game:true}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/a.snbt"), """
+                {id:'1000000000000001',consume_items:false,quests:[{id:'2000000000000001',tasks:[
+                {id:'3000000000000001',type:'item',item:{id:'minecraft:stone',count:1}},
+                {id:'3000000000000002',type:'item',item:{id:'minecraft:stone',count:1},consume_items:true}],rewards:[
+                {id:'4000000000000001',type:'xp',xp:3},
+                {id:'4000000000000002',type:'xp',xp:4,team_reward:false,auto:'invisible'}]}]}
+                """, StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/b.snbt"), """
+                {id:'1000000000000002',quests:[{id:'2000000000000002',tasks:[
+                {id:'3000000000000003',type:'item',item:{id:'minecraft:stone',count:1}}]}]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        var book = result.book();
+        assertTrue(book.settings().consumeItems());
+        assertTrue(book.settings().suppressAutoClaim());
+        assertTrue(book.settings().pauseGame());
+        var first = book.quests().getFirst();
+        assertEquals("false", first.tasks().get(0).config().get("consume_items"));
+        assertEquals("true", first.tasks().get(1).config().get("consume_items"));
+        assertEquals("true", book.quests().getLast().tasks().getFirst().config().get("consume_items"));
+        assertTrue(first.rewards().get(0).teamReward());
+        assertFalse(first.rewards().get(1).teamReward());
+        assertEquals("auto_visible", first.rewards().get(0).claimPolicy());
+        assertEquals("auto_hidden", first.rewards().get(1).claimPolicy(), "Suppression preserves the source policy for later re-enabling");
+        assertEquals(book, NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject()));
+    }
+
     @Test void unknownGroupFieldsRemainSourceExtensions() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
@@ -349,6 +404,23 @@ class FtbV13ImporterTest {
         assertTrue(result.reportJson().contains("BQF-107"));
         var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject());
         assertEquals(rewards, decoded.quests().getFirst().rewards());
+    }
+
+    @Test void chapterMinWidthDefaultsPreserveExplicitZeroAndCreationTemplate() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13,default_quest_shape:circle}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/test.snbt"), """
+                {id:"B000000000000001",default_min_width:4.0,default_repeatable_quest:true,quests:[
+                  {id:"C000000000000001"}, {id:"C000000000000002",min_width:0.0}
+                ]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "converted", "defaults");
+        assertEquals(4, result.book().quests().getFirst().appearance().minWidth());
+        assertEquals(0, result.book().quests().getLast().appearance().minWidth());
+        assertEquals("4.0", result.book().chapters().getFirst().questDefaults().values().get("min_width"));
+        assertEquals("true", result.book().chapters().getFirst().questDefaults().values().get("repeatable"));
+        assertEquals("circle", result.book().questDefaults().values().get("shape"));
     }
 
     private Path fixture() throws URISyntaxException {

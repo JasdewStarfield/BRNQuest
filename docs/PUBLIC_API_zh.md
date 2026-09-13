@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.17`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.20`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -158,3 +158,5 @@ ClientTaskPresentation.icon(TaskView) 与 ClientRewardPresentation.icon(RewardVi
 experimental.13 公开 ComposableReward、RewardLeafContext、RewardType.composition() 及客户端 ClientConfigEditors/Factory。语义与恢复责任见 [EXTENSION_API_zh.md](EXTENSION_API_zh.md)。网络协议为 18。
 
 `ChapterGroupView` 的 `icon()`、`description()` 与 `extensions()` 提供章节组展示元数据。扩展 map 为只读快照，字段来源和构造兼容性见 API 版本说明；组仅组织章节，不参与任务默认配置继承。
+
+章节视图的 `autofocusQuestId()` 为可空的同章节任务 ID，供客户端定位章节入口；它不改变任务进度或选中状态。

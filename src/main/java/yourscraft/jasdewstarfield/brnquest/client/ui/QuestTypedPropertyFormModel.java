@@ -91,8 +91,8 @@ final class QuestTypedPropertyFormModel {
             String value = "";
             if (nextSchema != null && index < nextSchema.fields().size()) {
                 ConfigFieldDescriptor field = nextSchema.fields().get(index);
-                value = existing ? nextSchema.rawConfig().getOrDefault(field.key(), field.defaultValue().orElse(""))
-                        : field.defaultValue().orElse("");
+                // Creation schemas may carry type-owned book/chapter defaults, ahead of generic field defaults.
+                value = nextSchema.rawConfig().getOrDefault(field.key(), field.defaultValue().orElse(""));
             }
             configValues.set(index, value);
         }

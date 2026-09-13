@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- 顶部网格吸附与客户端设置图标改用可替换的 PNG GUI sprite，支持资源重载。
+- Replaced toolbar grid-snap and client-settings drawings with resource-pack-replaceable PNG GUI sprites.
+
+- 章节新增自动聚焦任务选择器与 FTB `autofocus_id` 导入；进入章节时保留缩放并居中目标，任务改名、移动、删除及撤销同步维护引用。
+- Added chapter auto-focus quest selection and FTB `autofocus_id` import; chapter entry preserves zoom and centers the target, with reference maintenance across rename, move, deletion and undo.
+
+- 修复编辑模式忽略任务书暂停开关：单人浏览、普通编辑与高级草稿均遵循设置。
+- Fixed editing modes ignoring the book pause setting; it now applies to browsing, live editing and advanced drafts in single-player.
+
+- 补齐书级团队奖励、物品消耗及领取方式创建默认值，章节可覆盖物品消耗；FTB 导入解析对应父级默认值。新增全书自动领取抑制与单人浏览暂停，抑制期间隐藏自动奖励可手动领取。
+- Added book defaults for team rewards, item consumption and claim policy, chapter consumption overrides, and matching FTB import inheritance. Added book-wide auto-claim suppression and single-player browsing pause; suppressed hidden rewards remain manually accessible.
+
+- 任务界面在本次游戏运行期间按世界／服务器记住关闭时的编辑状态，下次打开自动申请普通编辑会话。
+- The quest UI remembers editing on close per world/server during the game session and requests live editing when reopened.
+- 新任务创建模板补齐完成前隐藏、目标完成数显示阈值、锁图标、依赖判定方式、重复冷却和忽略奖励阻塞；模板编辑器支持分组滚动，严格校验整数与枚举值。
+- Extended new quest templates with completion hiding, objective-count reveal thresholds, lock icons, dependency requirements, repeat cooldowns and reward-blocking behavior. The template editor groups fields in a scrollable form and validate integer/enum overrides strictly.
+
+- 任务书属性与章节属性支持稀疏的新任务创建模板，包含外观及首批行为默认值；新建时服务端合并默认值，已有任务、复制与移动不重新应用。新增书标题/默认语言入口，模板随保存、撤销和恢复副本保留；FTB 导入补齐章节默认最小宽度及显式 0 覆盖。
+- Added book properties and sparse book/chapter creation templates for appearance and initial behavior settings. Defaults resolve server-side only for new quests; existing, copied and moved quests retain effective values. Book title/fallback language are editable, templates survive persistence and undo, and FTB import now resolves chapter minimum-width defaults while preserving explicit zero.
+
 - 组名、章节名和任务标题／副标题快捷编辑增加紧凑语言按钮，可直接新建译文；切换语言保留输入，确认一次保存全部改动。快捷编辑只更新所选字段，不再顺带写入其它字段的回退文本。
 - Added compact language controls to group/chapter names and quick quest title/subtitle editing. Authors can add translations without changing the game language, retain pending text across locale switches, and save all edits together. Quick edits no longer copy fallback text into unrelated fields.
 

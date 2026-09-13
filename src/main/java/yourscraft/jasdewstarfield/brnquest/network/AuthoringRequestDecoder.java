@@ -326,9 +326,9 @@ final class AuthoringRequestDecoder {
                 var config = boundedConfig(wire.config());
                 String title = wire.title() == null ? "" : wire.title();
                 text(title, "title", 32767, true);
-                String claim = "manual";
+                String claim = action == AuthoringMutationAction.ADD_REWARD ? "" : "manual";
                 String locale = "";
-                if (action == AuthoringMutationAction.UPDATE_REWARD) {
+                if (action == AuthoringMutationAction.UPDATE_REWARD || (action == AuthoringMutationAction.ADD_REWARD && !title.isBlank())) {
                     String policy = title.strip();
                     if (policy.length() > 64 || !yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy.isKnown(policy))
                         throw invalid("INVALID_EDITOR_MUTATION", "claim_policy", "Reward claim policy must be manual, auto_visible, auto_silent, or auto_hidden");
@@ -342,6 +342,7 @@ final class AuthoringRequestDecoder {
                 }
                 if (config.containsKey(yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.FIELD)) {
                     String kind = switch (action) {
+                        case UPDATE_BOOK_PROPERTIES -> "book";
                         case UPDATE_GROUP -> "chapter_group";
                         case UPDATE_CHAPTER -> "chapter";
                         case UPDATE_QUEST_TRANSLATION -> "quest";
@@ -354,6 +355,12 @@ final class AuthoringRequestDecoder {
                     } catch (IllegalArgumentException exception) {
                         throw invalid(null, "config.text_field", exception.getMessage());
                     }
+                }
+                if (config.containsKey("quest_defaults")) {
+                    try {
+                        yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults.fromJson(
+                                com.google.gson.JsonParser.parseString(config.get("quest_defaults")));
+                    } catch (RuntimeException exception) { throw invalid(null, "config.quest_defaults", "Invalid creation template"); }
                 }
                 // Historical structural titles are truncated, while config and translations are preserved exactly.
                 return new MutationRequest(session, book, revision, action, target, parent, source,

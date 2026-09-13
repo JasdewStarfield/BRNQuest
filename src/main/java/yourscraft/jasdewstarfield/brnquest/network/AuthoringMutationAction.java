@@ -12,6 +12,7 @@ enum AuthoringMutationAction {
     DELETE_GROUP,
     ADD_CHAPTER,
     UPDATE_CHAPTER,
+    UPDATE_BOOK_PROPERTIES,
     MOVE_CHAPTER,
     DELETE_CHAPTER,
     ADD_QUEST,

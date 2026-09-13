@@ -13,6 +13,17 @@ import java.util.Set;
 final class QuestScreenSessionState {
     private static final Map<Key, Snapshot> snapshots = new HashMap<>();
 
+    private static final Map<String, Boolean> editorPreferences = new HashMap<>();
+
+    /** Remember intent only; reopening must acquire a fresh server-authorized session. */
+    static synchronized void rememberEditing(String serverId, boolean editing) {
+        editorPreferences.put(normalizeServerId(serverId), editing);
+    }
+
+    static synchronized boolean reopenEditing(String serverId) {
+        return editorPreferences.getOrDefault(normalizeServerId(serverId), false);
+    }
+
     private QuestScreenSessionState() {}
 
     static synchronized Snapshot load(String serverId, ResourceLocation bookId) {
@@ -35,7 +46,7 @@ final class QuestScreenSessionState {
                 QuestViewportMath.clampZoom(zoom), navigationCollapsed, foldedGroups));
     }
 
-    static synchronized void clearForTest() { snapshots.clear(); }
+    static synchronized void clearForTest() { snapshots.clear(); editorPreferences.clear(); }
 
     private static String normalizeServerId(String serverId) {
         return serverId == null || serverId.isBlank() ? "unknown" : serverId;

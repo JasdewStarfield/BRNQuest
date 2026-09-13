@@ -38,3 +38,17 @@ Group names are edited in the current game language while other translations are
 The language button in group/chapter names and quick quest title/subtitle editors starts with the player’s current language. Choose an existing language or enter a new locale code (such as `ja_jp`) to author a translation without changing the game language. The button tooltip briefly identifies fallback text. Switching languages retains pending input; Done saves all changes together, while Cancel discards them. A single-field quick edit leaves other text fields untouched.
 
 When the selected language has no translation, fallback text appears only as a gray placeholder. Typing starts from an empty field, and confirming untouched input creates no translation. In the default language itself, the native default remains directly editable.
+
+While editing, right-click the canvas and choose Book properties to edit the book title, fallback language and new quest defaults. Chapter properties expose chapter defaults. Templates cover shape, size, icon scale, minimum width, dependency visibility/completion hiding, detail/text hiding, sequential objectives and repeatability. Blank numbers and Default toggles inherit; explicit Off and zero remain overrides. New quests resolve core → book → chapter → explicit inputs once. Existing, copied and moved quests retain their effective values. Confirm the outer properties form after editing a template; canceling it discards pending changes.
+
+New quest defaults also include hiding until completion, completed objectives required to reveal the quest, lock-icon visibility, dependency requirement, repeat cooldown in seconds and ignoring reward blocking. Thresholds and cooldowns accept nonnegative integers: zero overrides the parent while blank inherits. Dependency modes support all/any dependencies completed or started.
+
+### Entry defaults and book settings
+
+Book properties expose default item consumption, team sharing and claim policies for new entries, plus automatic-claim suppression and single-player quest UI pause. Chapters can override item consumption or inherit the book default. Existing entries and copies retain their values; interactive rewards default to manual claims.
+
+Suppression affects existing rewards, exposes hidden automatic rewards for manual claiming, and preserves stored policies. Re-enabling automatic claims does not grant claimed rewards again. The pause setting applies to both browsing and editing in single-player; multiplayer remains unpaused.
+
+Chapter properties offer a searchable **Auto focus** quest picker, including **None**. Entering the chapter or reopening the quest UI centers its target in the visible canvas without changing zoom or opening details; returning from a child screen does not refocus. Quest renames update the reference; removal or relocation to another chapter clears it, with undo support. Native chapter JSON uses optional `autofocus_id` (namespaced quest ID). FTB hexadecimal same-chapter quest references are converted on import; unsupported or invalid references are preserved with a warning.
+
+In edit mode, right-click a quest node and choose **Set as chapter auto focus**. The shortcut supports undo; selecting the existing target creates no change. An unset target has a dedicated tooltip.

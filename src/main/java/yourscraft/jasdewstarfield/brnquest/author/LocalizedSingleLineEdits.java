@@ -20,7 +20,7 @@ public final class LocalizedSingleLineEdits {
 
     /** Validate before applying any candidate changes, including callers outside the packet decoder. */
     public static void validate(String kind, String field, Map<String, String> values) {
-        if (!Set.of("chapter_group", "chapter", "quest").contains(kind)
+        if (!Set.of("book", "chapter_group", "chapter", "quest").contains(kind)
                 || !(field.equals("title") || kind.equals("quest") && field.equals("quest_subtitle")))
             throw new IllegalArgumentException("Unsupported localized single-line field");
         if (values.size() > 64) throw new IllegalArgumentException("Too many edited locales");
@@ -39,7 +39,7 @@ public final class LocalizedSingleLineEdits {
         if (kind.equals("chapter_group") && book.chapterGroups().stream().noneMatch(g -> g.id().equals(id))
                 || kind.equals("chapter") && book.chapters().stream().noneMatch(c -> c.id().equals(id)))
             throw new IllegalArgumentException("Unknown localized text target");
-        String key = quest == null ? BookText.structureTitleKey(book, kind, id) : BookText.questPrefix(quest) + field;
+        String key = kind.equals("book") ? "title" : quest == null ? BookText.structureTitleKey(book, kind, id) : BookText.questPrefix(quest) + field;
         String fallback = book.localization().fallbackLocale();
         Map<String, Map<String, String>> translations = new TreeMap<>(book.localization().translations());
         values.forEach((locale, value) -> {
@@ -58,9 +58,9 @@ public final class LocalizedSingleLineEdits {
                     field.equals("quest_subtitle") ? nativeValue : q.subtitle(), q.description(), q.icon(), q.x(), q.y(),
                     q.dependencies(), q.tasks(), q.rewards(), q.legacyId(), q.appearance(), q.behavior(), q.extensions()) : q).toList();
             return new ChapterDefinition(c.bookId(), c.id(), c.groupId(), nativeValue != null && kind.equals("chapter") && c.id().equals(id)
-                    ? nativeValue : c.title(), c.icon(), c.order(), quests, c.extensions());
+                    ? nativeValue : c.title(), c.icon(), c.order(), quests, c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId());
         }).toList();
-        return new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(), groups, chapters, book.legacyIds(),
-                new BookLocalization(fallback, translations), book.extensions());
+        return new QuestBookDefinition(book.id(), book.schemaVersion(), kind.equals("book") && nativeValue != null ? nativeValue : book.title(), groups, chapters, book.legacyIds(),
+                new BookLocalization(fallback, translations), book.extensions(), book.questDefaults(), book.settings());
     }
 }

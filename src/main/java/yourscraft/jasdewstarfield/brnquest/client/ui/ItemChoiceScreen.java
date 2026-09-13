@@ -665,4 +665,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         return new UiRect(left, top, left + SLOT_SIZE, top + SLOT_SIZE);
     }
 
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

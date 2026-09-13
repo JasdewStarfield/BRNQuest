@@ -131,13 +131,13 @@ final class QuestEditorChrome {
                     mouseX, mouseY, tooltip);
         }
 
-        // Compact shortcuts share one ordered strip; full configuration stays in the context menu.
+        // Compact shortcuts share one ordered strip; the gear opens full client configuration.
         if (model.editing()) {
             Component snapLabel = snapLabel(model);
             tooltip = renderButton(graphics, font, shortcutBounds(layout, 0),
                     EditorButton.Definition.iconOnly(snapLabel,
                             snapLabel,
-                            gridIcon(model.snapToGrid())),
+                            model.snapToGrid() ? SNAP_ON_ICON : SNAP_OFF_ICON),
                     !model.busy(), Action.TOGGLE_GRID_SNAP,
                     model.snapToGrid() ? EditorButton.Tone.PRIMARY : EditorButton.Tone.NEUTRAL,
                     mouseX, mouseY, tooltip);
@@ -145,7 +145,7 @@ final class QuestEditorChrome {
 
         Component settingsLabel = Component.translatable("screen.brnquest.client_settings");
         tooltip = renderButton(graphics, font, layout.settings(),
-                EditorButton.Definition.iconOnly(settingsLabel, settingsLabel, gearIcon()),
+                EditorButton.Definition.iconOnly(settingsLabel, settingsLabel, SETTINGS_ICON),
                 !model.busy(), Action.OPEN_CLIENT_SETTINGS, EditorButton.Tone.NEUTRAL,
                 mouseX, mouseY, tooltip);
 
@@ -283,45 +283,17 @@ final class QuestEditorChrome {
         return new UiRect(left, layout.shortcuts().top(), left + 16, layout.shortcuts().bottom());
     }
 
-    /** Pixel gear stays legible even when the selected font has no gear glyph. */
-    private static EditorIcon gearIcon() {
-        return new EditorIcon() {
-            public int width(Font font) { return 10; }
-            public void render(GuiGraphics graphics, Font font, UiRect bounds, int color) {
-                int x = bounds.centerX() - 5, y = bounds.centerY() - 5;
-                graphics.fill(x + 2, y + 2, x + 8, y + 8, color);
-                graphics.fill(x + 4, y, x + 6, y + 10, color);
-                graphics.fill(x, y + 4, x + 10, y + 6, color);
-                graphics.fill(x + 1, y + 1, x + 3, y + 3, color);
-                graphics.fill(x + 7, y + 1, x + 9, y + 3, color);
-                graphics.fill(x + 1, y + 7, x + 3, y + 9, color);
-                graphics.fill(x + 7, y + 7, x + 9, y + 9, color);
-                graphics.fill(x + 4, y + 4, x + 6, y + 6, GraystonePalette.PANEL);
-            }
-        };
-    }
+    // PNGs are the source of truth; resolve current atlas sprites through the shared renderer for F3+T.
+    private static final EditorIcon SETTINGS_ICON = EditorIcon.sprite(
+            net.minecraft.resources.ResourceLocation.parse("brnquest:editor/toolbar/settings"));
+    private static final EditorIcon SNAP_ON_ICON = EditorIcon.sprite(
+            net.minecraft.resources.ResourceLocation.parse("brnquest:editor/toolbar/snap_on"));
+    private static final EditorIcon SNAP_OFF_ICON = EditorIcon.sprite(
+            net.minecraft.resources.ResourceLocation.parse("brnquest:editor/toolbar/snap_off"));
 
     private static Component snapLabel(Model model) {
         return Component.translatable("screen.brnquest.editor.snap_to_grid",
                 Component.translatable(model.snapToGrid() ? "options.on" : "options.off"));
-    }
-
-    /** Native pixel grid avoids font-dependent glyphs; the slash also distinguishes Off without color. */
-    private static EditorIcon gridIcon(boolean enabled) {
-        return new EditorIcon() {
-            public int width(Font font) { return 10; }
-            public void render(GuiGraphics graphics, Font font, UiRect bounds, int color) {
-                int left = bounds.centerX() - 5, top = bounds.centerY() - 5;
-                for (int offset = 0; offset <= 8; offset += 4) {
-                    graphics.fill(left + offset, top, left + offset + 1, top + 9, color);
-                    graphics.fill(left, top + offset, left + 9, top + offset + 1, color);
-                }
-                if (!enabled) {
-                    for (int offset = 0; offset < 10; offset++)
-                        graphics.fill(left + offset, top + 9 - offset, left + offset + 2, top + 10 - offset, 0xFFFF9B9B);
-                }
-            }
-        };
     }
 
     private boolean accepts(QuestScreenFrameIdentity identity) {

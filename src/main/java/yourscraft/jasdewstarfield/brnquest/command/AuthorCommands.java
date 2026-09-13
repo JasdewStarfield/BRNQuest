@@ -260,8 +260,8 @@ final class AuthorCommands {
         var definition = new QuestDefinition(book, quest, chapter, StringArgumentType.getString(context, "title"),
                 "", "", id(context, "icon").toString(), DoubleArgumentType.getDouble(context, "x"),
                 DoubleArgumentType.getDouble(context, "y"), List.of(), List.of(), List.of(), "");
-        return reportEdit(context, "draft_add_quest", quest, new DraftEditService().addQuest(
-                player(context), session(context), book, revision(context), chapter, definition));
+        return reportEdit(context, "draft_add_quest", quest, new DraftEditService().createQuest(
+                player(context), session(context), book, revision(context), chapter, definition, yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults.EMPTY));
     }
 
     private static int addDependency(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
@@ -277,7 +277,7 @@ final class AuthorCommands {
         ResourceLocation task = id(context, "task");
         var definition = new TaskDefinition(book, task, id(context, "type"), config(context),
                 BoolArgumentType.getBool(context, "optional"));
-        return reportEdit(context, "draft_add_task", task, new DraftEditService().addTask(
+        return reportEdit(context, "draft_add_task", task, new DraftEditService().createTask(
                 player(context), session(context), book, revision(context), quest, definition));
     }
 

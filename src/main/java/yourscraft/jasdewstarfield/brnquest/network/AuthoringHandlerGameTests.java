@@ -263,7 +263,7 @@ public final class AuthoringHandlerGameTests {
         void apply(String action, String target, String parent, String source) { apply(action, target, parent, source, Map.of()); }
 
         void apply(String action, String target, String parent, String source, Map<String, String> config) {
-            String title = action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
+            String title = action.equals("ADD_REWARD") ? "" : action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
             if (action.equals("UPDATE_QUEST_TRANSLATION") && config.isEmpty()) config = Map.of("title", "本地化标题", "description", "描述");
             var positions = action.equals("MOVE_QUESTS") ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
             int index = action.equals("UPDATE_TASK") || action.equals("UPDATE_REWARD") ? 1 : 0;
@@ -374,6 +374,7 @@ public final class AuthoringHandlerGameTests {
             check(helper, last(fixture.packets).review() != null
                     && last(fixture.packets).review().publishAllowed() == preview.success(),
                     "review preserves the authoritative publish decision");
+            fixture.apply("UPDATE_BOOK_PROPERTIES", "book", "", "");
             check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all 27 mutations plus review executed");
             helper.succeed();
         } finally { release(admin); }
@@ -426,6 +427,93 @@ public final class AuthoringHandlerGameTests {
             check(helper, translations.size() == 1 && translations.containsKey("quest.brnquest:q.title"), "quick edit only writes its own field");
             fixture.apply("UNDO", "", "", "");
             check(helper, fixture.snapshot().equals(beforeQuest), "one undo reverts both quest translations");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+
+    /** Real author packets freeze defaults at creation and retain atomic undo for template changes. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void creationTemplatesAreAppliedOnlyAtCreation(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var fixture = new MutationFixture(helper, admin);
+            fixture.apply("ADD_GROUP", "g", "", "");
+            fixture.apply("ADD_CHAPTER", "c", "g", "");
+            fixture.apply("ADD_QUEST", "old", "c", "");
+            var original = fixture.quest("old");
+            fixture.apply("UPDATE_BOOK_PROPERTIES", "book", "", "", Map.of("quest_defaults", "{\"size\":2,\"repeatable\":true,\"min_width\":4,\"invisible_until_complete\":true,\"visible_after_tasks\":2,\"hide_lock_icon\":true,\"dependency_requirement\":\"one_started\",\"repeat_cooldown_seconds\":120,\"ignore_reward_blocking\":true}"));
+            check(helper, fixture.quest("old").equals(original), "existing quests remain unchanged");
+            var bookConfigured = fixture.snapshot();
+            fixture.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("quest_defaults", "{\"repeatable\":false,\"min_width\":0}"));
+            fixture.apply("ADD_QUEST", "q", "c", "", Map.of("quest_defaults", "{\"icon_scale\":1.5}"));
+            var created = fixture.quest("q");
+            check(helper, created.appearance().size() == 2 && created.appearance().iconScale() == 1.5
+                    && created.appearance().minWidth() == 0 && !created.behavior().repeatable(), "book, chapter and explicit overrides resolve once");
+            check(helper, created.behavior().invisibleUntilComplete() && created.behavior().visibleAfterTasks() == 2
+                    && created.behavior().hideLockIcon() && created.behavior().repeatCooldownSeconds() == 120
+                    && created.behavior().ignoreRewardBlocking()
+                    && created.behavior().dependencyRequirement() == yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement.ONE_STARTED,
+                    "extended behavior defaults survive the real packet and creation path");
+            fixture.apply("UNDO", "", "", "");
+            fixture.apply("UNDO", "", "", "");
+            check(helper, fixture.snapshot().equals(bookConfigured), "chapter template undo restores the complete prior book");
+            fixture.apply("REDO", "", "", "");
+            fixture.apply("REDO", "", "", "");
+            check(helper, fixture.quest("q").equals(created), "redo restores explicit created values");
+            fixture.apply("COPY_QUEST", "copy", "", "q");
+            check(helper, fixture.quest("copy").appearance().equals(created.appearance()), "copy preserves source values");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Real packets cover new-entry defaults, chapter false overrides, copies and settings undo. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void entryDefaultsAreMaterializedThroughAuthorPackets(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_QUEST", "q", "c", "");
+            f.apply("UPDATE_BOOK_PROPERTIES", "book", "", "", Map.of("book_settings",
+                    "{\"consume_items\":true,\"reward_team\":true,\"reward_claim_policy\":\"auto_hidden\",\"suppress_auto_claim\":true,\"pause_game\":true}"));
+            var configured = f.snapshot();
+            f.apply("ADD_TASK", "t", "q", "item", Map.of("item", "{id:'minecraft:stone',count:1}"));
+            check(helper, f.quest("q").tasks().getFirst().config().get("consume_items").equals("true"), "book consumption reaches type normalization");
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("default_consume_items", "false"));
+            f.apply("ADD_TASK", "t2", "q", "item", Map.of("item", "{id:'minecraft:stone',count:1}"));
+            check(helper, f.quest("q").tasks().getLast().config().get("consume_items").equals("false"), "chapter false overrides book true");
+            f.apply("COPY_TASK", "tcopy", "q", "t");
+            check(helper, f.quest("q").tasks().getLast().config().get("consume_items").equals("true"), "copy retains source consumption");
+            f.apply("ADD_REWARD", "r", "q", "xp", Map.of("xp", "3"));
+            var reward = f.quest("q").rewards().getFirst();
+            check(helper, reward.teamReward() && reward.claimPolicy().equals("auto_hidden"), "new rewards receive shared defaults");
+            check(helper, f.snapshot().settings().equals(configured.settings()), "all immutable rebuilds retain book settings");
+            f.apply("UPDATE_BOOK_PROPERTIES", "book", "", "", Map.of("book_settings", "{}"));
+            check(helper, f.quest("q").rewards().getFirst().equals(reward), "changing defaults does not rewrite existing rewards");
+            f.apply("UNDO", "", "", "");
+            check(helper, f.snapshot().settings().equals(configured.settings()), "undo restores complete book policy");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Focus travels through the real mutation decoder, snapshot response and history restoration. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void chapterAutofocusSurvivesPacketsAndUndo(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_QUEST", "q", "c", "");
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("autofocus_id", f.id("q").toString()));
+            check(helper, f.id("q").equals(f.snapshot().chapters().getFirst().autofocusQuestId()), "packet sets focus");
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("icon", ""));
+            check(helper, f.id("q").equals(f.snapshot().chapters().getFirst().autofocusQuestId()), "legacy metadata packet retains focus");
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("autofocus_id", ""));
+            check(helper, f.snapshot().chapters().getFirst().autofocusQuestId() == null, "explicit empty clears focus");
+            f.apply("UNDO", "", "", "");
+            check(helper, f.id("q").equals(f.snapshot().chapters().getFirst().autofocusQuestId()), "undo restores reference");
             helper.succeed();
         } finally { release(admin); }
     }

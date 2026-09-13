@@ -27,6 +27,8 @@ public final class QuestBookDiffer {
                     before.extensions(), after.extensions());
             mapProperties(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "localization.",
                     flattenTranslations(before.localization()), flattenTranslations(after.localization()));
+            mapProperties(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "quest_defaults.", before.questDefaults().values(), after.questDefaults().values());
+            mapProperties(entries, SemanticDiffEntry.ObjectKind.BOOK, after.id(), "settings.", before.settings().values(), after.settings().values());
             compareGroups(entries, before, after);
             compareChapters(entries, before, after);
             compareQuests(entries, before, after);
@@ -69,6 +71,9 @@ public final class QuestBookDiffer {
             else {
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "title", oldValue.title(), newValue.title());
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "icon", oldValue.icon(), newValue.icon());
+                property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "autofocus_id", java.util.Objects.toString(oldValue.autofocusQuestId(), ""), java.util.Objects.toString(newValue.autofocusQuestId(), ""));
+                property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "consume_items", java.util.Objects.toString(oldValue.consumeItems(), "default"), java.util.Objects.toString(newValue.consumeItems(), "default"));
+                mapProperties(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "quest_defaults.", oldValue.questDefaults().values(), newValue.questDefaults().values());
                 mapProperties(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "extensions.",
                         oldValue.extensions(), newValue.extensions());
                 if (!oldValue.groupId().equals(newValue.groupId())) add(entries, SemanticDiffEntry.Kind.MOVED,

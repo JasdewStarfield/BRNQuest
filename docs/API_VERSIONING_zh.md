@@ -1,5 +1,21 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.19 → experimental.20
+
+`ChapterView.autofocusQuestId()` 返回可空的同章节任务 ID；null 表示未设置自动聚焦。新增完整构造器并保留全部旧构造器。依赖 record 组件反射、equals/toString 的附属应考虑新增组件。
+
+## experimental.18 → experimental.19
+
+- `QuestBookView.settings()` 提供不可变书设置映射；`ChapterView.consumeItems()` 为可空布尔值，null 表示新物品目标继承书默认。
+- 保留此前全部 view 构造器；新增的完整构造器可传入设置。旧书的默认行为和编码保持不变。
+- `TaskType.creationConfig(config, defaults)` 为默认实现直接返回 config 的纯函数扩展点。类型可选择使用其拥有的创建提示；当前提示为 `consume_items`。保留显式输入、未知键，不做 IO/进度变更；更新和复制不调用此钩子。
+- 创建默认值在新增项时固化；`suppress_auto_claim` 是影响现有奖励的书级运行策略，`pause_game` 为单人任务界面暂停策略。
+
+
+## experimental.17 → experimental.18
+
+`QuestBookView` 与 `ChapterView` 增加只读 `questDefaults()`，以不可变键值映射公开稀疏的新任务创建模板；旧构造器保留并使用空模板。依赖 record 组件反射、equals 或 toString 的附属应重新检查其假设。模板不代表既有任务的运行时继承值，任务视图仍返回显式有效配置。
+
 ## experimental.16 → experimental.17
 
 `ChapterGroupView` 新增 `icon`、`description` 和不可变 `extensions`，原五参数构造器保留并使用空元数据。既有 accessor 和构造调用无需修改；依赖 record 组件反射、模式解构或生成的 equals/toString 的消费者需考虑新增组件。`ChapterGroupDefinition` 同样保留原四参数构造入口；它属于内部数据模型，不新增公共稳定承诺。API 查询中的组名称继续按既有 locale 解析，新增说明首版为原生普通文本。
@@ -17,7 +33,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.17`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.20`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

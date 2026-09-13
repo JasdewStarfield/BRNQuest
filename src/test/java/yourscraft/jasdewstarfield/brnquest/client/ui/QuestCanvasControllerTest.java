@@ -26,6 +26,21 @@ class QuestCanvasControllerTest {
             new QuestScreenFrameIdentity(BOOK, "rev-1", true, 200, 200);
 
     @Test
+    void chapterFocusAccountsForNavigationWidthAtEverySupportedZoom() {
+        for (double zoom : List.of(0.5, 1.0, 2.0)) {
+            QuestCanvasController controller = new QuestCanvasController();
+            controller.resetCamera(100, -300, zoom);
+            controller.focusChapterPoint(408, -272, 360, 300);
+            var camera = controller.renderedCamera(300, 180);
+            assertEquals(360, camera.screenX(408), 0.00001);
+            assertEquals(180, camera.screenY(-272), 0.00001);
+            assertEquals(zoom, camera.zoom());
+            assertTrue(controller.selection().isEmpty());
+            assertFalse(controller.gestureActive());
+        }
+    }
+
+    @Test
     void viewClickReturnsSemanticDetailsIntentAndStaleFrameIsRejected() {
         QuestCanvasController controller = controller();
         QuestCanvasRenderer.Frame frame = frame(IDENTITY, positions());

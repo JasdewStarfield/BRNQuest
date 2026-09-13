@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorLocalizedText;
 import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
 
@@ -121,6 +123,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ResourceLocation viewportBookId;
     private ResourceLocation editorSelectedQuest;
     private boolean editorSelectionMode;
+    private boolean reopenEditorChecked;
+    private Boolean closingEditingPreference;
     private boolean catalogRequested;
     private final EditorPickerList<ClientEditorState.CatalogEntry> catalogPicker = new EditorPickerList<>();
     private String catalogFilter = "";
@@ -160,6 +164,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private EditorTextField quickTextField;
     private EditorLocalizedText quickLocalizedText;
     private EditorLocalizedText structureLocalizedTitle;
+    private Boolean structureConsumeItems;
+    private ResourceLocation structureAutofocusQuestId;
+    private QuestCreationDefaults structureDefaults = QuestCreationDefaults.EMPTY;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
     private Component quickTextIssue;
@@ -283,6 +290,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return;
         }
         ClientEditorState editor = ClientEditorState.get();
+        QuestScreenSessionState.rememberEditing(serverContextId,
+                closingEditingPreference != null ? closingEditingPreference : editor.editing());
         if (editor.dirty()) {
             // A forced screen replacement must not silently discard the only
             // authoritative copy of an unsaved in-memory draft. Reopening the
@@ -294,6 +303,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 AuthoringNetwork.closeSession(request.sessionId(), request.draftRevision()));
         editor.abandonLocalSession();
         super.removed();
+    }
+
+    @Override public boolean isPauseScreen() {
+        // Pause world simulation in either mode. Main-thread packet work and client lease ticks still run.
+        var snapshot = displaySnapshot();
+        return minecraft != null && minecraft.hasSingleplayerServer() && snapshot != null
+                && snapshot.book().settings().pauseGame();
     }
 
     @Override
@@ -309,6 +325,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     public void tick() {
         super.tick();
         ClientEditorState editor = ClientEditorState.get();
+        restoreEditingPreference(editor);
         reconcileModeSelection(editor);
         // Session loss must also remove the typed form widgets, not merely stop painting its panel.
         if (!editor.editing() && (typedEditorOpen || typedPropertySection.open())) closeTypedEditor();
@@ -367,6 +384,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
      * changes between the runtime snapshot and an editor draft. Missing IDs close details instead
      * of reviving the target mode's unrelated historical selection.
      */
+    /** Wait for permissions and book synchronization, then attempt reopening once per screen. */
+    private void restoreEditingPreference(ClientEditorState editor) {
+        if (reopenEditorChecked) return;
+        if (editor.editing() || !QuestScreenSessionState.reopenEditing(serverContextId)) {
+            reopenEditorChecked = true;
+            return;
+        }
+        if (editor.mode() == ClientEditorState.Mode.CATALOG_LOADING || editor.busy()) return;
+        if (!editor.allowed()) { reopenEditorChecked = true; return; }
+        QuestBookSnapshot snapshot = displaySnapshot();
+        if (snapshot == null) return;
+        reopenEditorChecked = true;
+        // Resume ordinary editing through the same handshake as the explicit toolbar action.
+        if (editor.beginOpenCurrent(snapshot.book().id())) AuthoringNetwork.openLiveSession(snapshot.book().id());
+    }
+
     private void reconcileModeSelection(ClientEditorState editor) {
         boolean nextEditorMode = editor.draft().isPresent();
         boolean modeChanged = nextEditorMode != editorSelectionMode;
@@ -600,6 +633,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         rememberedChapterId = chapterId;
         rememberedChapterResolved = true;
         canvasController.resetChapter();
+        focusChapter(chapters.get(index));
         detailsOpen = false;
         detailsPanel.scroll().snap(0);
         closeQuestEditingPanels();
@@ -713,7 +747,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
                         !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_desc", quest.description()),
                         status, statusText, statusColor(status),
-                        editing, gameplayAllowed(), canSubmit(quest, status)), new QuestDetailsPanel.Rows() {
+                        editing, gameplayAllowed(), canSubmit(quest, status), displaySnapshot().book().settings().suppressAutoClaim()), new QuestDetailsPanel.Rows() {
                     public int task(TaskDefinition task, int x, int y, int rowWidth) {
                         return renderTask(graphics, quest, task, status, x, y, rowWidth, mouseX, mouseY);
                     }
@@ -1243,14 +1277,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     request.sessionId(), editor.bookId(), request.draftRevision(), false));
             case EXIT -> {
                 if (editor.dirty()) requestDiscardConfirmation(null, false);
-                else closeEditorSession(null);
+                else {
+                    closingEditingPreference = false;
+                    closeEditorSession(null);
+                }
             }
             case OPEN_LIVE -> {
+                closingEditingPreference = null;
                 if (displayedBook != null && editor.beginOpenCurrent(displayedBook.id())) {
                     AuthoringNetwork.openLiveSession(displayedBook.id());
                 }
             }
-            case OPEN_ADVANCED -> requestDraftSourceChoice(displaySnapshot());
+            case OPEN_ADVANCED -> {
+                closingEditingPreference = null;
+                requestDraftSourceChoice(displaySnapshot());
+            }
             case OPEN_CATALOG -> {
                 boolean opening = !editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG);
                 closeActiveEditorOverlay();
@@ -1465,6 +1506,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 ResourceLocation chapterId = currentChapterId();
                 if (chapterId != null) openStructureForm(StructureFormKind.ADD_QUEST, null, chapterId, graphX, graphY);
             }
+            case "SET_CHAPTER_AUTOFOCUS" -> setChapterAutofocus(book, target);
             case "COPY_QUEST" -> openStructureForm(StructureFormKind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
             case "DELETE_QUEST" -> requestDelete(DeleteKind.QUEST, target, book);
             case "ADD_CHAPTER" -> openStructureForm(StructureFormKind.ADD_CHAPTER, null, target, 0, 0);
@@ -1472,6 +1514,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case "MOVE_GROUP_UP" -> moveGroup(book, target, -1);
             case "MOVE_GROUP_DOWN" -> moveGroup(book, target, 1);
             case "DELETE_GROUP" -> requestDelete(DeleteKind.GROUP, target, book);
+            case "BOOK_PROPERTIES" -> openBookProperties();
             case "RENAME_CHAPTER" -> openStructureForm(StructureFormKind.RENAME_CHAPTER, target, null, 0, 0);
             case "MOVE_CHAPTER_UP" -> moveChapter(book, target, -1);
             case "MOVE_CHAPTER_DOWN" -> moveChapter(book, target, 1);
@@ -1501,10 +1544,34 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         BrnQuestClientConfig.SPEC.save();
     }
 
+    /** Reuse the chapter mutation so shortcut changes retain metadata and participate in undo. */
+    private void setChapterAutofocus(QuestBookDefinition book, ResourceLocation questId) {
+        if (questId == null || ClientEditorState.get().busy()) return;
+        book.chapters().stream().filter(chapter -> chapter.quests().stream().anyMatch(q -> q.id().equals(questId)))
+                .findFirst().filter(chapter -> !questId.equals(chapter.autofocusQuestId())).ifPresent(chapter ->
+                        sendMutation("UPDATE_CHAPTER", chapter.id(), chapter.groupId(), null, chapter.title(),
+                                chapter.order(), 0, 0, List.of(), Map.of("autofocus_id", questId.toString())));
+    }
+
+    private void openBookProperties() {
+        if (ClientEditorState.get().busy()) return;
+        var book = displaySnapshot().book();
+        openChildScreen(new EditorBookPropertiesScreen(this, book, minecraft.getLanguageManager().getSelected(), value -> {
+            var config = new java.util.TreeMap<String, String>();
+            config.put("fallback_locale", value.fallback());
+            config.put("quest_defaults", value.defaults().toJson().toString());
+            config.put("book_settings", value.settings().toJson().toString());
+            config.put(LocalizedSingleLineEdits.FIELD, "title");
+            value.titles().forEach((locale, title) -> config.put(LocalizedSingleLineEdits.PREFIX + locale, title));
+            sendMutation("UPDATE_BOOK_PROPERTIES", book.id(), null, null, "", 0, 0, 0, List.of(), config);
+        }));
+    }
+
     private List<EditorPopupMenu.Entry> contextMenuEntries() {
         return switch (editContextKind) {
             case CANVAS -> EditorPopupMenu.menu(menu -> menu.action("ADD_QUEST",
-                    Component.translatable("screen.brnquest.editor.context.add_quest"), false));
+                    Component.translatable("screen.brnquest.editor.context.add_quest"), false)
+                    .action("BOOK_PROPERTIES", Component.translatable("screen.brnquest.book.properties"), false));
             case NODE -> EditorPopupMenu.menu(menu -> menu
                     .action("SELF_FORCE_QUEST", Component.translatable("screen.brnquest.admin.self_force"), false,
                             canManageProgress(editContextTarget, null))
@@ -1512,6 +1579,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             canManageProgress(editContextTarget, null))
                     .action("ADMIN_QUEST", adminProgressLabel(editContextTarget, null), false,
                             canManageProgress(editContextTarget, null))
+                    .action("SET_CHAPTER_AUTOFOCUS", Component.translatable("screen.brnquest.chapter.autofocus.set_here"), false)
                     .action("COPY_QUEST", Component.translatable("screen.brnquest.editor.context.copy_quest"), false)
                     .action("DELETE_QUEST", Component.translatable(
                             "screen.brnquest.editor.context.delete_quest"), true)).stream()
@@ -2030,6 +2098,28 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderEditorTextButton(g, chapterGroupBounds(),
                     Component.translatable("screen.brnquest.editor.structure.group_value", name), name,
                     enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            Component focusName = displaySnapshot().book().chapters().stream()
+                    .filter(c -> c.id().equals(structureFormTarget)).flatMap(c -> c.quests().stream())
+                    .filter(q -> q.id().equals(structureAutofocusQuestId)).findFirst()
+                    .<Component>map(q -> Component.literal(questTitle(q)))
+                    .orElse(Component.translatable("screen.brnquest.chapter.autofocus.none"));
+            renderEditorTextButton(g, chapterAutofocusBounds(),
+                    Component.translatable("screen.brnquest.chapter.autofocus.value", focusName),
+                    structureAutofocusQuestId == null
+                            ? Component.translatable("screen.brnquest.chapter.autofocus.unset_help")
+                            : Component.translatable("screen.brnquest.chapter.autofocus.help", focusName),
+                    enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        });
+        if (structureFormKind == StructureFormKind.RENAME_CHAPTER) rows.add((g, x, y, w) -> {
+            // Share the existing row so the chapter dialog still fits the minimum GUI height.
+            renderEditorTextButton(g, chapterDefaultsBounds(), Component.translatable("screen.brnquest.defaults.title"),
+                    null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            Component value = Component.translatable(structureConsumeItems == null
+                    ? "screen.brnquest.defaults.inherit" : structureConsumeItems ? "options.on" : "options.off",
+                    Component.translatable(displaySnapshot().book().settings().consumeItems() ? "options.on" : "options.off"));
+            renderEditorTextButton(g, chapterConsumeBounds(),
+                    Component.translatable("screen.brnquest.chapter.consume_items", value),
+                    Component.translatable("screen.brnquest.book.setting.consume_items.help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         });
         EditorPropertyPanel.renderGraystone(graphics, font,
                 new EditorPropertyPanel.Layout(form, form.left() + 12, form.width() - 24,
@@ -2092,12 +2182,39 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return Map.copyOf(result);
     }
 
+    private UiRect chapterConsumeBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.centerX() + 4, form.top() + 160, form.right() - 12, form.top() + 180);
+    }
+
+    private UiRect chapterDefaultsBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.left() + 12, form.top() + 160, form.centerX() - 4, form.top() + 180);
+    }
+
     private UiRect chapterGroupBounds() {
         UiRect form = structureFormBounds();
-        return new UiRect(form.left() + 12, form.top() + 128, form.right() - 12, form.top() + 148);
+        return new UiRect(form.left() + 12, form.top() + 128, form.centerX() - 4, form.top() + 148);
     }
 
     /** Stable IDs are distinct from localized labels; choosing only changes the pending form. */
+    private UiRect chapterAutofocusBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.centerX() + 4, form.top() + 128, form.right() - 12, form.top() + 148);
+    }
+
+    /** The picker edits only the pending form; the parent submits the selected stable ID. */
+    private void openChapterAutofocusPicker() {
+        var choices = new ArrayList<EditorChoiceScreen.Choice>();
+        choices.add(new EditorChoiceScreen.Choice("", Component.translatable("screen.brnquest.chapter.autofocus.none")));
+        displaySnapshot().book().chapters().stream().filter(c -> c.id().equals(structureFormTarget))
+                .flatMap(c -> c.quests().stream()).forEach(q -> choices.add(new EditorChoiceScreen.Choice(
+                        q.id().toString(), Component.literal(questTitle(q) + " [" + q.id() + "]"))));
+        openChildScreen(new EditorChoiceScreen(this, Component.translatable("screen.brnquest.chapter.autofocus"),
+                choices, java.util.Objects.toString(structureAutofocusQuestId, ""),
+                id -> structureAutofocusQuestId = id.isEmpty() ? null : ResourceLocation.parse(id)));
+    }
+
     private void openChapterGroupPicker() {
         var choices = displaySnapshot().book().chapterGroups().stream()
                 .sorted(java.util.Comparator.comparingInt(ChapterGroupDefinition::order)
@@ -2142,6 +2259,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 && !ClientEditorState.get().busy()) {
             if (EditorLocalizedText.languageBounds(structureTitleBounds()).contains(mouseX, mouseY)) {
                 openLocalePicker(structureLocalizedTitle, structureFields.field("title"));
+                return true;
+            }
+            if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterAutofocusBounds().contains(mouseX, mouseY)) {
+                openChapterAutofocusPicker();
+                return true;
+            }
+            if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterConsumeBounds().contains(mouseX, mouseY)) {
+                structureConsumeItems = structureConsumeItems == null ? Boolean.TRUE : structureConsumeItems ? Boolean.FALSE : null;
+                return true;
+            }
+            if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterDefaultsBounds().contains(mouseX, mouseY)) {
+                openChildScreen(new EditorCreationDefaultsScreen(this, structureDefaults, displaySnapshot().book().questDefaults(),
+                        value -> structureDefaults = value));
                 return true;
             }
             if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterGroupBounds().contains(mouseX, mouseY)) {
@@ -2214,6 +2344,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 title = structureLocalizedTitle.value();
                 structureFormParent = chapter.groupId();
                 initializeStructureIcon(chapter.icon());
+                structureDefaults = chapter.questDefaults();
+                structureConsumeItems = chapter.consumeItems();
+                structureAutofocusQuestId = chapter.autofocusQuestId();
             }
         } else {
             id = suggestId(book, kind.idStem());
@@ -2274,7 +2407,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (chapter == null || !sendMutation("UPDATE_CHAPTER", chapter.id(), structureFormParent, null, title,
                         chapter.groupId().equals(structureFormParent) ? chapter.order() : book.chapters().stream()
                                 .filter(value -> value.groupId().equals(structureFormParent))
-                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("icon", chapterIconValue())))) return;
+                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("icon", chapterIconValue(), "quest_defaults", structureDefaults.toJson().toString(), "default_consume_items", java.util.Objects.toString(structureConsumeItems, "default"), "autofocus_id", java.util.Objects.toString(structureAutofocusQuestId, ""))))) return;
             }
             case ADD_QUEST -> sendMutation("ADD_QUEST", id, structureFormParent, null, title, 0,
                     structureFormX, structureFormY, List.of());
@@ -2309,7 +2442,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect structureFormBounds() {
         if (structureMetadataForm())
-            return layout().centeredDialog(420, 300, 20, 184);
+            return layout().centeredDialog(420, 300, 20, structureFormKind == StructureFormKind.RENAME_CHAPTER ? 216 : 184);
         return layout().centeredDialog(380, 260, 20, 126);
     }
 
@@ -2603,7 +2736,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (structureLocalizedTitle != null) structureLocalizedTitle.remember(structureFields.field("title").getValue());
             return List.of(structureFields.field("id").getValue(),
                     structureLocalizedTitle == null ? structureFields.field("title").getValue() : structureLocalizedTitle.changes(),
-                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode,
+                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode, structureDefaults, java.util.Objects.toString(structureConsumeItems, "default"), java.util.Objects.toString(structureAutofocusQuestId, ""),
                     structureFields.field("group_description").getValue(),
                     structureFields.field(chapterIconMode == IconEditorMode.ITEM ? "chapter_item" : "texture").getValue());
         }
@@ -2809,11 +2942,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertyMessage = null;
         ConfigEditorSchema schema = typedEditorKind == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(new yourscraft.jasdewstarfield.brnquest.api.TaskView(
-                        snapshot.book().id(), id, typeId, Map.of(), false))
+                        snapshot.book().id(), id, typeId, yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.taskConfig(
+                                snapshot.book(), typedEditorQuestId, typeId, Map.of()), false))
                 : ConfigEditorSchemas.forReward(new yourscraft.jasdewstarfield.brnquest.api.RewardView(
                         snapshot.book().id(), id, typeId, Map.of(), "manual", false));
         propertyScroll.snap(0);
         typedPropertySection.openNew(id, typeId, schema);
+        if (typedEditorKind == QuestTypedEntryKind.REWARD) typedPropertySection.creationRewardDefaults(
+                yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.rewardPolicy(snapshot.book(), typeId, schema.rawConfig()),
+                snapshot.book().settings().rewardTeam());
         formBaseline = localFormValues();
         setFocused(typedPropertySection.form().identityField("id"));
     }
@@ -4371,6 +4508,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             editorOverlays.close();
             discardSwitchTarget = null;
             discardClosesScreen = false;
+            // Closing the UI remembers editing; explicitly leaving the mode remembers browsing.
+            closingEditingPreference = target == null ? closeScreen : null;
             closeEditorSession(target);
             if (closeScreen) super.onClose();
         }
@@ -4884,6 +5023,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
         }
         rememberedChapterResolved = true;
+        focusChapter(chapters.get(Math.min(chapterIndex, chapters.size() - 1)));
+    }
+
+    /** Chapter entry is a one-shot camera move, independent of selection focus and child-screen lifecycles. */
+    private void focusChapter(ChapterDefinition chapter) {
+        if (chapter.autofocusQuestId() == null) return;
+        chapter.quests().stream().filter(q -> q.id().equals(chapter.autofocusQuestId())).findFirst().ifPresent(q -> {
+            var currentLayout = layout();
+            double centerX = (currentLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0)
+                    + currentLayout.canvasRight(0.0)) / 2.0;
+            canvasController.focusChapterPoint(nodeGraphX(q), nodeGraphY(q), centerX, screenOriginX());
+        });
     }
 
     private ResourceLocation currentChapterId() {

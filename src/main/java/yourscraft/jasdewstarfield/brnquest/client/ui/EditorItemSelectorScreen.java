@@ -229,4 +229,7 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
     private EditorItemSelectorLayout layout() {
         return new EditorItemSelectorLayout(width, height);
     }
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

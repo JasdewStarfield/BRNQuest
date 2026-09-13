@@ -119,8 +119,8 @@ public final class EditorQuestBehaviorScreen extends Screen {
         String[] sections = {"visibility", "dependencies", "completion"};
         for (int i = 0; i < starts.length; i++) {
             var bounds = rowBounds(starts[i]);
-            graphics.drawString(font, Component.translatable("screen.brnquest.editor.section." + sections[i]),
-                    bounds.left(), bounds.top() - 16, GraystonePalette.ACCENT, false);
+            EditorPropertyPanel.section(font, "screen.brnquest.editor.section." + sections[i])
+                    .render(graphics, bounds.left(), bounds.top() - 24, bounds.width());
         }
         for (int row = 0; row < ROW_COUNT; row++) {
             UiRect bounds = rowBounds(row);
@@ -296,7 +296,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
 
     private UiRect rowBounds(int row) {
         UiRect viewport = viewport();
-        int top = viewport.top() + row * ROW_HEIGHT + 18 * (1 + (row >= 7 ? 1 : 0) + (row >= 9 ? 1 : 0)) - (int) Math.round(renderedScroll);
+        int top = viewport.top() + row * ROW_HEIGHT + 24 * (1 + (row >= 7 ? 1 : 0) + (row >= 9 ? 1 : 0)) - (int) Math.round(renderedScroll);
         return new UiRect(viewport.left(), top, viewport.right(), top + EditorPropertyFormLayout.FIELD_HEIGHT);
     }
 
@@ -305,7 +305,10 @@ public final class EditorQuestBehaviorScreen extends Screen {
         return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), labelWidth);
     }
 
-    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT + 54; }
+    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT + 72; }
     private UiRect cancelBounds() { UiRect p=panel(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
     private UiRect applyBounds() { UiRect p=panel(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

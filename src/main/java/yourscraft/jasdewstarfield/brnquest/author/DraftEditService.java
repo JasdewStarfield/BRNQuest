@@ -1,11 +1,13 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookSettings;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 
 import java.util.List;
 import java.util.Map;
+import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -147,6 +149,28 @@ public final class DraftEditService {
                 book -> DraftBookEditor.removeChapterWithContents(book, chapterId));
     }
 
+    /** Creation templates are resolved on the server and become explicit quest values. */
+    public AuthorOperationResult<DraftEditResult> createQuest(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation chapterId, QuestDefinition quest,
+            QuestCreationDefaults explicit) {
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.createQuest(book, chapterId, quest, explicit));
+    }
+
+    /** Combined settings update shares one undo/revision transaction with book metadata. */
+    public AuthorOperationResult<DraftEditResult> updateBookProperties(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, QuestCreationDefaults defaults, String fallback,
+            Map<String, String> titles, BookSettings settings) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.updateBookProperties(book, defaults, fallback, titles, settings));
+    }
+
+    public AuthorOperationResult<DraftEditResult> updateBookProperties(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, QuestCreationDefaults defaults, String fallback,
+            Map<String, String> titles) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.updateBookProperties(book, defaults, fallback, titles));
+    }
+
     public AuthorOperationResult<DraftEditResult> addQuest(ServerPlayer player, UUID sessionId,
                                                             ResourceLocation bookId, String revision,
                                                             ResourceLocation chapterId, QuestDefinition quest) {
@@ -223,6 +247,14 @@ public final class DraftEditService {
                                                                     ResourceLocation questId, ResourceLocation dependencyId) {
         return apply(player, sessionId, bookId, revision,
                 book -> DraftBookEditor.removeDependency(book, questId, dependencyId));
+    }
+
+    /** Creation honors type-owned defaults; add/copy/update retain fully specified definitions. */
+    public AuthorOperationResult<DraftEditResult> createTask(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation questId, TaskDefinition task) {
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addTask(book, questId,
+                new TaskDefinition(task.bookId(), task.id(), task.typeId(),
+                        EntryCreationPolicy.taskConfig(book, questId, task.typeId(), task.config()), task.optional())));
     }
 
     public AuthorOperationResult<DraftEditResult> addTask(ServerPlayer player, UUID sessionId,

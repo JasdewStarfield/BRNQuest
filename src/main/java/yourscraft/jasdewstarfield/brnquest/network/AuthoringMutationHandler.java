@@ -1,5 +1,8 @@
 package yourscraft.jasdewstarfield.brnquest.network;
 
+import yourscraft.jasdewstarfield.brnquest.data.BookSettings;
+import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
+
 import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
 
 import net.minecraft.resources.ResourceLocation;
@@ -49,6 +52,12 @@ final class AuthoringMutationHandler {
             result = switch (wire.action()) {
                 case UNDO -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
                 case REDO -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
+                case UPDATE_BOOK_PROPERTIES -> editor.updateBookProperties(player, sessionId, bookId, wire.draftRevision(),
+                        readDefaults(wire.config(), current.value().book().questDefaults()),
+                        wire.config().getOrDefault("fallback_locale", current.value().book().localization().fallbackLocale()),
+                        LocalizedSingleLineEdits.values(wire.config()), wire.config().containsKey("book_settings")
+                                ? BookSettings.fromJson(com.google.gson.JsonParser.parseString(wire.config().get("book_settings")))
+                                : current.value().book().settings());
                 case ADD_GROUP -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterGroupDefinition(bookId, requireId(targetId), wire.title(), wire.targetIndex()));
                 case UPDATE_GROUP -> wire.config().containsKey(LocalizedSingleLineEdits.FIELD)
@@ -77,10 +86,10 @@ final class AuthoringMutationHandler {
                         : editor.moveChapterOrder(player, sessionId, bookId, wire.draftRevision(), requireId(targetId), wire.targetIndex());
                 case DELETE_CHAPTER -> editor.removeChapterWithContents(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
-                case ADD_QUEST -> editor.addQuest(player, sessionId, bookId, wire.draftRevision(),
+                case ADD_QUEST -> editor.createQuest(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new QuestDefinition(bookId, requireId(targetId), parentId,
                                 wire.title(), "", "", "", wire.x(), wire.y(),
-                                List.of(), List.of(), List.of(), ""));
+                                List.of(), List.of(), List.of(), ""), readDefaults(wire.config(), QuestCreationDefaults.EMPTY));
                 case COPY_QUEST -> editor.copyQuest(player, sessionId, bookId, wire.draftRevision(),
                         requireId(sourceId), questCopy(current.value().book(), sourceId, requireId(targetId),
                                 wire.title(), wire.x(), wire.y()));
@@ -121,6 +130,21 @@ final class AuthoringMutationHandler {
                 config.getOrDefault("icon", source.icon()), config.getOrDefault("description", source.description()), source.extensions());
     }
 
+    private static Boolean readConsumeItems(Map<String, String> config, Boolean fallback) {
+        if (!config.containsKey("default_consume_items")) return fallback;
+        return switch (config.get("default_consume_items")) {
+            case "default" -> null;
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException("Invalid consumption default");
+        };
+    }
+
+    private static QuestCreationDefaults readDefaults(Map<String, String> config, QuestCreationDefaults fallback) {
+        return config.containsKey("quest_defaults") ? QuestCreationDefaults.fromJson(
+                com.google.gson.JsonParser.parseString(config.get("quest_defaults"))) : fallback;
+    }
+
     void complete(AuthoringRequestDecoder.MutationRequest wire, AuthorOperationResult<DraftEditResult> result) {
         UUID sessionId = wire.sessionId();
         ResourceLocation bookId = wire.bookId();
@@ -158,7 +182,9 @@ final class AuthoringMutationHandler {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), config.containsKey(LocalizedSingleLineEdits.FIELD) ? chapter.title() : title,
-                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions());
+                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions(), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
+                config.containsKey("autofocus_id") ? (config.get("autofocus_id").isBlank() ? null
+                        : ResourceLocation.parse(config.get("autofocus_id"))) : chapter.autofocusQuestId());
     }
 
     private static QuestDefinition questCopy(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
@@ -221,7 +247,8 @@ final class AuthoringMutationHandler {
             return switch (wire.action()) {
                 case ADD_TASK -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                taskMutationConfig(player, sourceId, wire.config()), false));
+                                taskMutationConfig(player, sourceId, yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.taskConfig(
+                                        book, parentId, sourceId, wire.config())), false));
                 case UPDATE_TASK -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), requireId(sourceId), taskReplacement(player, book,
                                 parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
@@ -234,7 +261,9 @@ final class AuthoringMutationHandler {
                         requireId(parentId), requireId(targetId));
                 case ADD_REWARD -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new RewardDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                rewardMutationConfig(wire.config()), "manual", false));
+                                rewardMutationConfig(wire.config()), wire.claimPolicy().isBlank()
+                                        ? yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.rewardPolicy(book, sourceId, wire.config()) : wire.claimPolicy(),
+                                wire.claimPolicy().isBlank() ? book.settings().rewardTeam() : wire.targetIndex() != 0));
                 case UPDATE_REWARD -> editor.updateReward(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), requireId(sourceId), rewardReplacement(book,
                                 parentId, sourceId, requireId(targetId), wire.config(), wire.claimPolicy(),

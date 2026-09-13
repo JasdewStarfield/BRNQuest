@@ -18,7 +18,7 @@ public final class ApiViews {
         return new QuestBookView(book.id(), book.schemaVersion(), book.title(), snapshot.revision(),
                 book.chapterGroups().stream().map(ChapterGroupDefinition::id).toList(),
                 book.chapters().stream().map(ChapterDefinition::id).toList(),
-                book.quests().stream().map(QuestDefinition::id).toList(), book.legacyIds());
+                book.quests().stream().map(QuestDefinition::id).toList(), book.legacyIds(), book.questDefaults().values(), book.settings().values());
     }
 
     public static ChapterGroupView chapterGroup(QuestBookSnapshot snapshot, ChapterGroupDefinition group) {
@@ -29,7 +29,7 @@ public final class ApiViews {
 
     public static ChapterView chapter(ChapterDefinition chapter) {
         return new ChapterView(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
-                chapter.order(), chapter.quests().stream().map(QuestDefinition::id).toList());
+                chapter.order(), chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId());
     }
 
     /** Localized projections keep identifiers and source storage unchanged. */
@@ -37,7 +37,7 @@ public final class ApiViews {
         var source = book(snapshot);
         return new QuestBookView(source.id(), source.schemaVersion(),
                 BookText.title(snapshot.book(), locale), source.revision(),
-                source.chapterGroupIds(), source.chapterIds(), source.questIds(), source.legacyIds());
+                source.chapterGroupIds(), source.chapterIds(), source.questIds(), source.legacyIds(), source.questDefaults(), source.settings());
     }
 
     public static ChapterGroupView chapterGroup(QuestBookSnapshot snapshot, ChapterGroupDefinition group, String locale) {
@@ -52,7 +52,7 @@ public final class ApiViews {
         return new ChapterView(chapter.bookId(), chapter.id(), chapter.groupId(),
                 BookText.structureTitle(snapshot.book(), "chapter",
                         chapter.id(), locale, chapter.title()), chapter.icon(), chapter.order(),
-                chapter.quests().stream().map(QuestDefinition::id).toList());
+                chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId());
     }
 
     public static QuestView quest(QuestDefinition quest) {

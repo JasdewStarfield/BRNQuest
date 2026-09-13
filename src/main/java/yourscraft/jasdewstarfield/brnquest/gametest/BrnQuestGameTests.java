@@ -26,6 +26,7 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftRepository;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.DraftService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditService;
+import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.author.DraftDiffService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPersistenceService;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPublishService;
@@ -1104,6 +1105,36 @@ public final class BrnQuestGameTests {
                 java.nio.file.Files.deleteIfExists(path);
             }
         }
+    }
+
+    /** Global suppression gates completion and reconciliation without destroying stored reward policies. */
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void bookSuppressesAutomaticClaimsUntilReenabled(GameTestHelper helper) {
+        var player = helper.makeMockServerPlayerInLevel();
+        var task = new TaskDefinition(id("book"), id("policy_check"), TaskTypes.CHECKMARK, Map.of(), false);
+        var reward = new RewardDefinition(id("book"), id("policy_xp"), RewardTypes.XP, Map.of("xp", "7"), "auto_hidden", false);
+        var quest = quest("policy_quest", List.of(), List.of(task), List.of(reward));
+        install(quest);
+        var original = QuestBookManager.get().active().orElseThrow().book();
+        var suppressed = DraftBookEditor.updateBookProperties(original, original.questDefaults(),
+                original.localization().fallbackLocale(), Map.of(), new BookSettings(false, false, "manual", true, true)).value().book();
+        helper.assertTrue(QuestBookManager.get().install(suppressed, new DiagnosticReport()), "install suppression");
+        var engine = ProgressEngine.get(); engine.reconcile(player);
+        int before = player.totalExperience;
+        helper.assertTrue(engine.completeTask(player, quest.id(), task.id()).success(), "complete objective");
+        engine.reconcile(player);
+        helper.assertTrue(player.totalExperience == before && !engine.rewardClaimed(player, reward), "completion and reconcile cannot auto-claim while suppressed");
+        helper.assertTrue(engine.claim(player, reward.id()).changed(), "suppressed reward remains manually claimable");
+        helper.assertTrue(player.totalExperience == before + 7, "manual claim grants once");
+        helper.assertTrue(QuestBookManager.get().install(original, new DiagnosticReport()), "restore original policy");
+        engine.reconcile(player);
+        helper.assertTrue(player.totalExperience == before + 7, "reenabling does not duplicate a manual receipt");
+        var secondPlayer = helper.makeMockServerPlayerInLevel();
+        engine.reconcile(secondPlayer);
+        helper.assertTrue(engine.completeTask(secondPlayer, quest.id(), task.id()).success(), "unsuppressed completion");
+        helper.assertTrue(engine.rewardClaimed(secondPlayer, reward), "original automatic policy resumes");
+        helper.succeed();
     }
 
     private static QuestDefinition quest(String path, List<ResourceLocation> dependencies,

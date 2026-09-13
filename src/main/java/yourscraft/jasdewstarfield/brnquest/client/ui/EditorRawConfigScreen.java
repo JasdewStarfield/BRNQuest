@@ -138,4 +138,7 @@ public final class EditorRawConfigScreen extends Screen {
         int left = panel.right() - 12 - buttonWidth;
         return new UiRect(left, panel.bottom() - 30, panel.right() - 12, panel.bottom() - 10);
     }
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

@@ -40,6 +40,9 @@ public final class QuestBookValidator {
             if (!chapter.bookId().equals(book.id())) add(report, Diagnostic.Severity.FATAL, "BQV-112", chapter.id(), "Chapter has a different bookId");
             if (!chapters.add(chapter.id())) add(report, Diagnostic.Severity.FATAL, "BQV-113", chapter.id(), "Duplicate chapter ID");
             if (!groups.contains(chapter.groupId())) add(report, Diagnostic.Severity.ERROR, "BQV-114", chapter.id(), "Missing chapter group " + chapter.groupId());
+            // Focus references must remain inside the chapter, including when loading hand-written JSON.
+            if (chapter.autofocusQuestId() != null && chapter.quests().stream().noneMatch(q -> q.id().equals(chapter.autofocusQuestId())))
+                add(report, Diagnostic.Severity.ERROR, "BQV-125", chapter.id(), "Autofocus target is not a quest in this chapter: " + chapter.autofocusQuestId());
             chapter.quests().forEach(quest -> {
                 if (!quest.bookId().equals(book.id()) || !quest.chapterId().equals(chapter.id())) add(report, Diagnostic.Severity.FATAL, "BQV-115", quest.id(), "Quest ownership does not match its container");
                 if (quests.putIfAbsent(quest.id(), quest) != null) add(report, Diagnostic.Severity.FATAL, "BQV-101", quest.id(), "Duplicate quest ID");

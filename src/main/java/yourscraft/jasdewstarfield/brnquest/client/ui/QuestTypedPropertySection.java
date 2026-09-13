@@ -117,6 +117,12 @@ final class QuestTypedPropertySection {
         form.openNew(schema, id.toString(), "manual");
     }
 
+    /** Seed reward semantics without changing whether this form creates or updates an entry. */
+    void creationRewardDefaults(String policy, boolean team) {
+        teamReward = team;
+        form.openNew(form.schema(), originalId.toString(), policy);
+    }
+
     void toggleOptional() { optional = !optional; }
     void toggleTeamReward() { teamReward = !teamReward; }
     void markSubmissionPending() { submissionPending = true; pendingCurrent = null; }

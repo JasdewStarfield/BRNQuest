@@ -101,6 +101,11 @@ final class QuestCanvasController {
         cancelGesture();
     }
 
+    /** Centers a chapter entry point inside the visible canvas without changing zoom or selecting it. */
+    void focusChapterPoint(double graphX, double graphY, double targetScreenX, double screenOriginX) {
+        resetCamera(graphX - (targetScreenX - screenOriginX) / zoom, graphY, zoom);
+    }
+
     void resetChapter() {
         clearSelection();
         nodeDrag.clearPreview();

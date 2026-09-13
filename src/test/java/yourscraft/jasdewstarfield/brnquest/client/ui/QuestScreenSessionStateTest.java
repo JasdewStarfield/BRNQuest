@@ -24,6 +24,15 @@ class QuestScreenSessionStateTest {
         assertEquals(java.util.Set.of(), QuestScreenSessionState.load("a", ResourceLocation.parse("test:other")).foldedGroups());
     }
 
+    @Test void editingPreferenceIsIsolatedAndExplicitExitClearsIt() {
+        assertEquals(false, QuestScreenSessionState.reopenEditing("server-a"));
+        QuestScreenSessionState.rememberEditing("server-a", true);
+        assertEquals(true, QuestScreenSessionState.reopenEditing("server-a"));
+        assertEquals(false, QuestScreenSessionState.reopenEditing("server-b"));
+        QuestScreenSessionState.rememberEditing("server-a", false);
+        assertEquals(false, QuestScreenSessionState.reopenEditing("server-a"));
+    }
+
     @Test void firstScreenStartsWithCollapsedNavigation() {
         assertEquals(true, QuestScreenSessionState.Snapshot.defaults().navigationCollapsed());
     }

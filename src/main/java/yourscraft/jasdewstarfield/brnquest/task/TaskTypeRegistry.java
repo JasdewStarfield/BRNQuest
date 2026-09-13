@@ -117,6 +117,15 @@ public final class TaskTypeRegistry {
                         config -> ItemChoiceMatcher.parseConfig(config).map(ignored -> config));
 
         @Override
+        public Map<String, String> creationConfig(Map<String, String> config, Map<String, String> defaults) {
+            // Both historical spellings count as explicit input; only omitted consumption inherits.
+            if (config.containsKey("consume_items") || config.containsKey("consume")) return config;
+            var result = new java.util.LinkedHashMap<>(config);
+            if (defaults.containsKey("consume_items")) result.put("consume_items", defaults.get("consume_items"));
+            return Map.copyOf(result);
+        }
+
+        @Override
         public Codec<Map<String, String>> configCodec() { return CODEC; }
 
         @Override

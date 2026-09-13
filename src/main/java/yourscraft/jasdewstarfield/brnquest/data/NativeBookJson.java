@@ -19,6 +19,8 @@ public final class NativeBookJson {
         root.addProperty("title", book.title());
         root.add("localization", encodeLocalization(book.localization()));
         root.add("extensions", encodeStringMap(book.extensions()));
+        if (!book.questDefaults().values().isEmpty()) root.add("quest_defaults", book.questDefaults().toJson());
+        if (!book.settings().equals(BookSettings.DEFAULT)) root.add("settings", book.settings().toJson());
         JsonArray groups = new JsonArray();
         book.chapterGroups().stream().sorted(Comparator.comparingInt(ChapterGroupDefinition::order)
                 .thenComparing(g -> g.id().toString())).forEach(group -> {
@@ -63,17 +65,29 @@ public final class NativeBookJson {
         Map<String, ResourceLocation> aliases = new TreeMap<>();
         if (root.has("legacy_ids")) root.getAsJsonObject("legacy_ids").entrySet().forEach(e -> aliases.put(e.getKey(), id(e.getValue().getAsString())));
         return new QuestBookDefinition(bookId, schema, text(root, "title"), groups, chapters, aliases,
-                decodeLocalization(root), stringMap(root, "extensions"));
+                decodeLocalization(root), stringMap(root, "extensions"), QuestCreationDefaults.fromJson(root.get("quest_defaults")), BookSettings.fromJson(root.get("settings")));
+    }
+
+    /** Strict nullable booleans distinguish inheritance from an explicit false. */
+    public static Boolean optionalBoolean(JsonObject value, String key) {
+        if (!value.has(key)) return null;
+        JsonElement field = value.get(key);
+        if (!field.isJsonPrimitive() || !field.getAsJsonPrimitive().isBoolean())
+            throw new JsonParseException("Expected boolean: " + key);
+        return field.getAsBoolean();
     }
 
     private static JsonObject encodeChapter(ChapterDefinition chapter) {
         JsonObject value = new JsonObject();
         value.addProperty("id", chapter.id().toString());
         value.addProperty("group_id", chapter.groupId().toString());
+        if (chapter.autofocusQuestId() != null) value.addProperty("autofocus_id", chapter.autofocusQuestId().toString());
+        if (chapter.consumeItems() != null) value.addProperty("consume_items", chapter.consumeItems());
         value.addProperty("title", chapter.title());
         value.addProperty("icon", chapter.icon());
         value.addProperty("order", chapter.order());
         value.add("extensions", encodeStringMap(chapter.extensions()));
+        if (!chapter.questDefaults().values().isEmpty()) value.add("quest_defaults", chapter.questDefaults().toJson());
         JsonArray quests = new JsonArray();
         // Quest, task, and reward list order is author-visible presentation data.
         chapter.quests().forEach(quest -> quests.add(encodeQuest(quest)));
@@ -155,7 +169,8 @@ public final class NativeBookJson {
         List<QuestDefinition> quests = new ArrayList<>();
         for (JsonElement element : value.getAsJsonArray("quests")) quests.add(decodeQuest(bookId, chapterId, element.getAsJsonObject()));
         return new ChapterDefinition(bookId, chapterId, id(value.get("group_id").getAsString()), text(value, "title"),
-                text(value, "icon"), integer(value, "order"), quests, stringMap(value, "extensions"));
+                text(value, "icon"), integer(value, "order"), quests, stringMap(value, "extensions"), QuestCreationDefaults.fromJson(value.get("quest_defaults")), optionalBoolean(value, "consume_items"),
+                value.has("autofocus_id") ? id(value.get("autofocus_id").getAsString()) : null);
     }
 
     private static QuestDefinition decodeQuest(ResourceLocation bookId, ResourceLocation chapterId, JsonObject value) {

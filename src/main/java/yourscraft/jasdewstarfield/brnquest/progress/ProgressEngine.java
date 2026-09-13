@@ -567,6 +567,8 @@ public final class ProgressEngine {
 
     /** Interactive types are skipped by every automatic trigger, including restored completions. */
     private static boolean automaticAllowed(RewardDefinition reward) {
+        var book = QuestBookManager.get().active().orElse(null);
+        if (book == null || book.book().settings().suppressAutoClaim()) return false;
         var type = RewardTypeRegistry.get(reward.typeId());
         return reward.policy().automatic() && type != null && !type.requiresManualClaim(reward.config());
     }

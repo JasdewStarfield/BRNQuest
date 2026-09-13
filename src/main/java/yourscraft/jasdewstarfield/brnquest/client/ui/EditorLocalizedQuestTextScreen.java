@@ -200,4 +200,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
     private UiRect descriptionBounds() { UiRect p = panelBounds(); return new UiRect(p.left() + 12, p.top() + 116, p.right() - 12, p.bottom() - 48); }
     private UiRect cancelBounds() { UiRect p = panelBounds(); return new UiRect(p.left() + 12, p.bottom() - 34, p.centerX() - 4, p.bottom() - 10); }
     private UiRect applyBounds() { UiRect p = panelBounds(); return new UiRect(p.centerX() + 4, p.bottom() - 34, p.right() - 12, p.bottom() - 10); }
+    /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */
+    @Override public boolean isPauseScreen() { return parent != null && parent.isPauseScreen(); }
+
 }

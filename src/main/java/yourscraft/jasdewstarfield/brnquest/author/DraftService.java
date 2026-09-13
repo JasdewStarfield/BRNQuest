@@ -124,11 +124,11 @@ public final class DraftService {
         List<ChapterDefinition> chapters = original.chapters().stream().map(chapter ->
                 new ChapterDefinition(targetBookId, chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
                         chapter.order(), chapter.quests().stream().map(quest -> copyQuest(targetBookId, quest)).toList(),
-                        chapter.extensions()))
+                        chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId()))
                 .toList();
         QuestBookDefinition copy = new QuestBookDefinition(targetBookId, original.schemaVersion(),
                 original.title() + " (recovered)", groups, chapters, original.legacyIds(),
-                original.localization(), original.extensions());
+                original.localization(), original.extensions(), original.questDefaults(), original.settings());
         return copy;
     }
 

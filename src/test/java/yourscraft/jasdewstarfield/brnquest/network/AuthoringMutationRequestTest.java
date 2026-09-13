@@ -28,7 +28,7 @@ class AuthoringMutationRequestTest {
                  ADD_REWARD, UPDATE_REWARD, COPY_REWARD -> json.addProperty("sourceId", "test:source");
             default -> { }
         }
-        json.addProperty("title", action == AuthoringMutationAction.UPDATE_REWARD ? "auto_hidden"
+        json.addProperty("title", action == AuthoringMutationAction.ADD_REWARD ? "" : action == AuthoringMutationAction.UPDATE_REWARD ? "auto_hidden"
                 : action == AuthoringMutationAction.UPDATE_QUEST_TRANSLATION ? "zh-CN" : "Title");
         if (action == AuthoringMutationAction.MOVE_QUESTS) {
             var positions = new JsonArray(); positions.add(position("test:a", 1)); positions.add(position("test:b", 2));
@@ -48,6 +48,18 @@ class AuthoringMutationRequestTest {
             assertTrue(result.success(), action + ": " + result.failure());
             assertEquals(action, result.value().action());
         }
+    }
+
+    @Test void rewardCreationDistinguishesInheritanceFromExplicitManualAndFalse() {
+        var json = request(AuthoringMutationAction.ADD_REWARD);
+        assertEquals("", AuthoringRequestDecoder.mutation(json.toString()).value().claimPolicy());
+        json.addProperty("title", "manual"); json.addProperty("targetIndex", 0);
+        var explicit = AuthoringRequestDecoder.mutation(json.toString());
+        assertTrue(explicit.success());
+        assertEquals("manual", explicit.value().claimPolicy());
+        assertEquals(0, explicit.value().targetIndex());
+        json.addProperty("title", "not_a_policy");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
     }
 
     @Test void requiredActionIdentifiersAreRejectedWhenMissing() {

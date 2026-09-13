@@ -177,6 +177,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<Object> formBaseline = List.of();
     private ResourceLocation questEditorQuestId;
     private Component questEditorMessage;
+    private Component clipboardMessage;
+    private long clipboardMessageUntil;
     private boolean dependencyEditorOpen;
     private ResourceLocation dependencyEditorQuestId;
     private final EditorListPanel<ResourceLocation> dependencyList = new EditorListPanel<>();
@@ -211,6 +213,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
     private ContextKind editContextKind = ContextKind.NONE;
     private ResourceLocation editContextTarget;
+    private java.util.Set<ResourceLocation> contextSelection = java.util.Set.of();
+    private java.util.Set<ResourceLocation> deleteSelection = java.util.Set.of();
     private int editContextX;
     private int editContextY;
     private int editContextSubmenu = -1;
@@ -1150,6 +1154,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             closeTypedEditor();
             return true;
         }
+        // Only the list surface owns object clipboard shortcuts; text editors retain native Ctrl+C/V.
+        if (typedListInputReady() && hasControlDown()) {
+            if (keyCode == 86) { pasteTypedClipboard(); return true; }
+            if (keyCode == 67) {
+                typedEntryList.focusedEntry().ifPresent(this::copyTypedClipboard);
+                return true;
+            }
+        }
         // The composed list follows its visible action order, including footer controls.
         if (typedListInputReady() && keyCode == 258) {
             return typedEntryList.focusNext(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
@@ -1507,6 +1519,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (chapterId != null) openStructureForm(StructureFormKind.ADD_QUEST, null, chapterId, graphX, graphY);
             }
             case "SET_CHAPTER_AUTOFOCUS" -> setChapterAutofocus(book, target);
+            case "COPY_SELECTION_SNAPSHOT" -> copyQuestClipboard(contextSelection);
+            case "COPY_QUEST_SNAPSHOT" -> copyQuestClipboard(java.util.Set.of(target));
+            case "PASTE_QUEST_SNAPSHOT" -> pasteQuestClipboard(graphX, graphY);
+            case "COPY_SELECTION" -> sendSelectionMutation("COPY_QUESTS", contextSelection);
+            case "DELETE_SELECTION" -> {
+                deleteSelection = java.util.Set.copyOf(contextSelection);
+                deleteKind = DeleteKind.NONE;
+                deleteTarget = null;
+                long references = book.quests().stream().filter(q -> !deleteSelection.contains(q.id()))
+                        .filter(q -> q.dependencies().stream().anyMatch(deleteSelection::contains)).count();
+                deleteImpact = Component.translatable("screen.brnquest.selection.delete_warning", deleteSelection.size(), references).getString();
+                editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+            }
+            case "CLEAR_SELECTION" -> canvasController.clearSelection();
             case "COPY_QUEST" -> openStructureForm(StructureFormKind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
             case "DELETE_QUEST" -> requestDelete(DeleteKind.QUEST, target, book);
             case "ADD_CHAPTER" -> openStructureForm(StructureFormKind.ADD_CHAPTER, null, target, 0, 0);
@@ -1515,11 +1541,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case "MOVE_GROUP_DOWN" -> moveGroup(book, target, 1);
             case "DELETE_GROUP" -> requestDelete(DeleteKind.GROUP, target, book);
             case "BOOK_PROPERTIES" -> openBookProperties();
+            case "COPY_CHAPTER" -> sendMutation("COPY_CHAPTER", target, null, null, "", 0, 0, 0, List.of());
             case "RENAME_CHAPTER" -> openStructureForm(StructureFormKind.RENAME_CHAPTER, target, null, 0, 0);
             case "MOVE_CHAPTER_UP" -> moveChapter(book, target, -1);
             case "MOVE_CHAPTER_DOWN" -> moveChapter(book, target, 1);
             case "DELETE_CHAPTER" -> requestDelete(DeleteKind.CHAPTER, target, book);
-            case "EDIT_TYPED", "COPY_TYPED", "MOVE_TYPED_UP", "MOVE_TYPED_DOWN",
+            case "EDIT_TYPED", "COPY_TYPED", "COPY_TYPED_SNAPSHOT", "MOVE_TYPED_UP", "MOVE_TYPED_DOWN",
                     "COPY_TYPED_ID", "COPY_TYPED_TYPE", "DELETE_TYPED" ->
                     performTypedContextAction(action, target, typedIndex, book);
             case "COPY_DEPENDENCY_ID" -> {
@@ -1571,7 +1598,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return switch (editContextKind) {
             case CANVAS -> EditorPopupMenu.menu(menu -> menu.action("ADD_QUEST",
                     Component.translatable("screen.brnquest.editor.context.add_quest"), false)
+                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
                     .action("BOOK_PROPERTIES", Component.translatable("screen.brnquest.book.properties"), false));
+            case SELECTION -> EditorPopupMenu.menu(menu -> menu
+                    .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
+                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
+                    .action("COPY_SELECTION", Component.translatable("screen.brnquest.selection.copy", contextSelection.size()), false)
+                    .action("DELETE_SELECTION", Component.translatable("screen.brnquest.selection.delete", contextSelection.size()), true)
+                    .action("CLEAR_SELECTION", Component.translatable("screen.brnquest.selection.clear"), false));
             case NODE -> EditorPopupMenu.menu(menu -> menu
                     .action("SELF_FORCE_QUEST", Component.translatable("screen.brnquest.admin.self_force"), false,
                             canManageProgress(editContextTarget, null))
@@ -1580,6 +1614,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     .action("ADMIN_QUEST", adminProgressLabel(editContextTarget, null), false,
                             canManageProgress(editContextTarget, null))
                     .action("SET_CHAPTER_AUTOFOCUS", Component.translatable("screen.brnquest.chapter.autofocus.set_here"), false)
+                    .action("COPY_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
                     .action("COPY_QUEST", Component.translatable("screen.brnquest.editor.context.copy_quest"), false)
                     .action("DELETE_QUEST", Component.translatable(
                             "screen.brnquest.editor.context.delete_quest"), true)).stream()
@@ -1596,6 +1631,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                     "screen.brnquest.editor.context.move_down"), false))
                     .action("DELETE_GROUP", Component.translatable("screen.brnquest.editor.context.delete"), true));
             case CHAPTER -> EditorPopupMenu.menu(menu -> menu
+                    .action("COPY_CHAPTER", Component.translatable("screen.brnquest.chapter.copy"), false)
                     .action("RENAME_CHAPTER", Component.translatable(
                             "screen.brnquest.editor.structure.chapter_properties"), false)
                     .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
@@ -1614,6 +1650,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                             canManageProgress(typedEditorQuestId, editContextTarget))
                     .action("EDIT_TYPED", Component.translatable(
                             "screen.brnquest.editor.action.edit"), false)
+                    .action("COPY_TYPED_SNAPSHOT", Component.translatable("screen.brnquest.clipboard.copy"), false)
                     .action("COPY_TYPED", Component.translatable(
                             "screen.brnquest.editor.action.copy"), false)
                     .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
@@ -1699,6 +1736,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         String prefix = typedEditorKind.actionPrefix();
         switch (action) {
             case "EDIT_TYPED" -> openTypedPropertyEditor(quest, typedId);
+            case "COPY_TYPED_SNAPSHOT" -> copyTypedClipboard(typedId);
             case "COPY_TYPED" -> {
                 ResourceLocation copyId = suggestId(book, typedEditorKind.idStem() + "_copy");
                 sendMutation("COPY_" + prefix, copyId, quest.id(), typedId, "", 0, 0, 0, List.of());
@@ -1722,6 +1760,64 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     sendMutation("DELETE_" + prefix, typedId, quest.id(), null, "", 0, 0, 0, List.of());
             default -> { }
         }
+    }
+
+    /** Store detached definitions before navigation; this does not send a server mutation. */
+    private void copyQuestClipboard(java.util.Set<ResourceLocation> ids) {
+        if (ClientEditorState.get().busy()) return;
+        try {
+            EditorQuestClipboard.copy(serverContextId,
+                    yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(displaySnapshot().book(), ids));
+            clipboardMessage = Component.translatable("screen.brnquest.quest_clipboard.copied", ids.size());
+        } catch (IllegalArgumentException exception) {
+            clipboardMessage = Component.translatable("screen.brnquest.clipboard.too_large");
+        }
+        clipboardMessageUntil = System.currentTimeMillis() + 5000;
+    }
+    private boolean canPasteQuestClipboard() {
+        return !ClientEditorState.get().busy() && currentChapterId() != null && displaySnapshot() != null
+                && EditorQuestClipboard.get(serverContextId, displaySnapshot().book().id()).isPresent();
+    }
+    /** The selection's minimum X/Y corner anchors at the canvas context-menu position. */
+    private void pasteQuestClipboard(double x, double y) {
+        if (!canPasteQuestClipboard()) return;
+        EditorQuestClipboard.get(serverContextId, displaySnapshot().book().id()).ifPresent(value -> {
+            clipboardMessage = null;
+            sendMutation("PASTE_QUESTS", currentChapterId(), null, null, "", 0, x, y, List.of(), Map.of("snapshot", value.encode()));
+        });
+    }
+
+    /** Copy freezes every config string, including localized text and opaque nested reward data. */
+    private void copyTypedClipboard(ResourceLocation entryId) {
+        var quest = selectedQuest();
+        var entry = quest == null ? null : typedEditorKind.entry(quest, entryId);
+        if (entry == null) return;
+        try {
+            EditorTypedClipboard.copy(serverContextId, entry.task() != null
+                    ? yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.of(entry.task())
+                    : yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.of(entry.reward()));
+            typedEditorMessage = Component.translatable("screen.brnquest.clipboard.copied");
+        } catch (IllegalArgumentException exception) {
+            typedEditorMessage = Component.translatable("screen.brnquest.clipboard.too_large");
+        }
+    }
+
+    private boolean canPasteTypedClipboard() {
+        var snapshot = displaySnapshot();
+        return snapshot != null && EditorTypedClipboard.get(serverContextId, snapshot.book().id(),
+                typedEditorKind == QuestTypedEntryKind.TASK).isPresent();
+    }
+
+    /** Each accepted paste appends one new ID and creates one server-owned undo step. */
+    private void pasteTypedClipboard() {
+        if (ClientEditorState.get().busy() || !typedListInputReady()) return;
+        var snapshot = displaySnapshot();
+        if (snapshot == null) return;
+        EditorTypedClipboard.get(serverContextId, snapshot.book().id(), typedEditorKind == QuestTypedEntryKind.TASK)
+                .ifPresentOrElse(value -> sendMutation("PASTE_" + typedEditorKind.actionPrefix(),
+                        suggestId(snapshot.book(), typedEditorKind.idStem() + "_copy"), typedEditorQuestId, null,
+                        "", 0, 0, 0, List.of(), Map.of("snapshot", value.encode())),
+                        () -> typedEditorMessage = Component.translatable("screen.brnquest.clipboard.unavailable"));
     }
 
     private void copyTechnicalId(String value) {
@@ -1849,6 +1945,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case QUICK_TEXT -> closeQuickTextEditor();
             case DELETE_CONFIRMATION -> {
+                deleteSelection = java.util.Set.of();
                 deleteKind = DeleteKind.NONE;
                 deleteTarget = null;
                 deleteImpact = "";
@@ -2354,7 +2451,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 QuestDefinition source = book.quests().stream().filter(value -> value.id().equals(target))
                         .findFirst().orElse(null);
                 if (source != null) {
-                    title = source.title() + " Copy";
+                    title = yourscraft.jasdewstarfield.brnquest.author.QuestCopyTitles.suggestedTitle(book, source);
                     structureFormParent = source.chapterId();
                 }
             }
@@ -2457,6 +2554,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void requestDelete(DeleteKind kind, ResourceLocation target, QuestBookDefinition book) {
+        deleteSelection = java.util.Set.of();
         closeActiveEditorOverlay();
         deleteKind = kind;
         deleteTarget = target;
@@ -2484,6 +2582,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
     }
 
+    /** Freeze IDs in the request; the server reads current coordinates and validates the whole selection. */
+    private void sendSelectionMutation(String action, java.util.Set<ResourceLocation> ids) {
+        if (ids.isEmpty() || ClientEditorState.get().busy()) return;
+        var positions = ids.stream().sorted().map(id -> new AuthoringNetwork.PositionWire(id.toString(), 0, 0)).toList();
+        sendMutation(action, null, null, null, "", 0, 1, 1, positions);
+    }
+
     private void renderDeleteConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
         EditorConfirmDialog.render(graphics, font, layout(), formButtons,
                 Component.translatable("screen.brnquest.editor.delete.warning"), Component.literal(deleteImpact),
@@ -2495,12 +2600,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (button != 0) return true;
         EditorConfirmDialog.Action dialogAction = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
         if (dialogAction == EditorConfirmDialog.Action.CANCEL) {
+            deleteSelection = java.util.Set.of();
             deleteKind = DeleteKind.NONE;
             deleteTarget = null;
             editorOverlays.close();
             return true;
         }
         if (dialogAction == EditorConfirmDialog.Action.CONFIRM) {
+            if (!deleteSelection.isEmpty()) {
+                var selected = deleteSelection;
+                deleteSelection = java.util.Set.of();
+                editorOverlays.close();
+                sendSelectionMutation("DELETE_QUESTS", selected);
+                return true;
+            }
             String action = switch (deleteKind) {
                 case GROUP -> "DELETE_GROUP";
                 case CHAPTER -> "DELETE_CHAPTER";
@@ -2757,6 +2870,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private Component editorStatus() {
         ClientEditorState editor = ClientEditorState.get();
+        if (editor.editing() && !editor.busy() && editor.mode() != ClientEditorState.Mode.ERROR
+                && clipboardMessage != null && System.currentTimeMillis() < clipboardMessageUntil) return clipboardMessage;
         // Unsaved form values are local even when the parent draft reports saved.
         if (editor.editing() && !editor.busy() && editor.mode() != ClientEditorState.Mode.ERROR
                 && localFormChanged())
@@ -2800,7 +2915,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 currentFrameIdentity(), quest.id(), typedEditorKind,
                 Component.translatable(typedEditorKind.headingKey()),
                 typedEditorMessage, !ClientEditorState.get().busy(), typedEditorKind.size(quest),
-                index -> typedEditorKind.value(quest, index).id(), row -> typedRowContent(quest, row.index()));
+                index -> typedEditorKind.value(quest, index).id(), row -> typedRowContent(quest, row.index()), canPasteTypedClipboard());
         QuestTypedEntryListSection.Layout sectionLayout = new QuestTypedEntryListSection.Layout(offset,
                 new UiRect(detailLeft() + 4 + offset, topToolbarHeight() + 4,
                         width - 4 + offset, height - bottomToolbarHeight() - 4),
@@ -2833,6 +2948,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             typedTypePickerFrame = null;
             typedEditorMessage = null;
             editorOverlays.show(EditorOverlayHost.Kind.TYPED_TYPE_PICKER);
+            return;
+        }
+        if (intent.action() == QuestTypedEntryListSection.Action.PASTE) {
+            pasteTypedClipboard();
             return;
         }
         if (intent.action() == QuestTypedEntryListSection.Action.DONE) {
@@ -4877,14 +4996,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_NODE_CONTEXT -> {
                 QuestDefinition quest = snapshot.quests().get(intent.targetId());
                 if (ClientEditorState.get().editing() && quest != null) {
-                    openEditContext(ContextKind.NODE, quest.id(), intent.pointerX(), intent.pointerY(),
+                    boolean multiple = canvasController.selection().size() > 1;
+                    openEditContext(multiple ? ContextKind.SELECTION : ContextKind.NODE, quest.id(), intent.pointerX(), intent.pointerY(),
                             quest.x(), quest.y());
+                    contextSelection = multiple ? java.util.Set.copyOf(canvasController.selection()) : java.util.Set.of();
                 }
             }
             case OPEN_CANVAS_CONTEXT -> {
                 if (ClientEditorState.get().editing() && chapter != null) {
-                    openEditContext(ContextKind.CANVAS, null, intent.pointerX(), intent.pointerY(),
+                    boolean multiple = canvasController.selection().size() > 1;
+                    openEditContext(multiple ? ContextKind.SELECTION : ContextKind.CANVAS, null, intent.pointerX(), intent.pointerY(),
                             intent.questX(), intent.questY());
+                    contextSelection = multiple ? java.util.Set.copyOf(canvasController.selection()) : java.util.Set.of();
                 }
             }
             case MOVE_QUESTS -> {
@@ -5201,7 +5324,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
     }
 
-    private enum ContextKind { NONE, CANVAS, NODE, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
+    private enum ContextKind { NONE, CANVAS, NODE, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
 
     private enum QuickTextKind {
         NONE(""),

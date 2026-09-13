@@ -20,13 +20,19 @@ import java.util.function.IntFunction;
 
 /** Owns typed-entry list rendering and hit geometry; semantic actions are returned to the parent. */
 final class QuestTypedEntryListSection {
-    enum Action { EDIT, MORE, ADD, DONE }
+    enum Action { EDIT, MORE, ADD, PASTE, DONE }
 
     record Intent(Action action, ResourceLocation entryId, int x, int y) {}
 
     record Model(QuestScreenFrameIdentity identity, ResourceLocation questId, QuestTypedEntryKind kind, Component heading,
                  Component message, boolean enabled, int count, IntFunction<ResourceLocation> idAt,
-                 Function<EditorListPanel.Row<ResourceLocation>, EditorEntryListPanel.Content> contentAt) {}
+                 Function<EditorListPanel.Row<ResourceLocation>, EditorEntryListPanel.Content> contentAt, boolean canPaste) {
+        Model(QuestScreenFrameIdentity identity, ResourceLocation questId, QuestTypedEntryKind kind, Component heading,
+              Component message, boolean enabled, int count, IntFunction<ResourceLocation> idAt,
+              Function<EditorListPanel.Row<ResourceLocation>, EditorEntryListPanel.Content> contentAt) {
+            this(identity, questId, kind, heading, message, enabled, count, idAt, contentAt, false);
+        }
+    }
 
     record Layout(int drawerOffset, UiRect panel, UiRect list, UiRect clip, int trackX,
                   UiRect add, UiRect done, int messageWidth) {}
@@ -63,7 +69,14 @@ final class QuestTypedEntryListSection {
                     new ActionKey(null, Action.ADD), EditorButton.Definition.iconAndText(add, add,
                     EditorIcon.glyph(Component.literal("+"))), model.enabled(), EditorButton.Tone.PRIMARY,
                     (x, y) -> pendingIntent = new Intent(Action.ADD, null, x.intValue(), y.intValue())),
-                    layout.add(), layout.clip()));
+                    new UiRect(layout.add().left(), layout.add().top(), layout.add().centerX() - 2, layout.add().bottom()), layout.clip()));
+            // Text-only paste action reuses the footer's keyboard focus and click geometry.
+            footer.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
+                    new ActionKey(null, Action.PASTE), EditorButton.Definition.text(
+                    Component.translatable("screen.brnquest.clipboard.paste"), Component.translatable("screen.brnquest.clipboard.paste_help")),
+                    model.enabled() && model.canPaste(), EditorButton.Tone.PRIMARY,
+                    (x, y) -> pendingIntent = new Intent(Action.PASTE, null, x.intValue(), y.intValue())),
+                    new UiRect(layout.add().centerX() + 2, layout.add().top(), layout.add().right(), layout.add().bottom()), layout.clip()));
             footer.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
                     new ActionKey(null, Action.DONE), EditorButton.Definition.text(
                     Component.translatable("gui.done"), null), true, EditorButton.Tone.NEUTRAL,
@@ -129,6 +142,11 @@ final class QuestTypedEntryListSection {
     Optional<Component> narration(QuestScreenFrameIdentity current, ResourceLocation questId,
                                   QuestTypedEntryKind kind, boolean inputAllowed) {
         return accepts(current, questId, kind) && inputAllowed ? entries.actions().narration() : Optional.empty();
+    }
+
+    /** A focused row is the keyboard copy target; footer focus never silently copies another row. */
+    Optional<ResourceLocation> focusedEntry() {
+        return entries.actions().focusedKey().map(ActionKey::entryId);
     }
 
     void invalidate() {

@@ -139,9 +139,9 @@ class AuthoringProtocolTest {
     }
 
     @Test void mutationNamesAreExactAndUnknownActionsAreRejected() {
-        var expected = List.of("UNDO", "REDO", "ADD_GROUP", "UPDATE_GROUP", "MOVE_GROUP", "DELETE_GROUP", "ADD_CHAPTER", "UPDATE_CHAPTER", "UPDATE_BOOK_PROPERTIES", "MOVE_CHAPTER", "DELETE_CHAPTER", "ADD_QUEST", "COPY_QUEST", "DELETE_QUEST", "MOVE_QUESTS", "UPDATE_QUEST_TRANSLATION", "ADD_DEPENDENCY", "REMOVE_DEPENDENCY", "ADD_TASK", "UPDATE_TASK", "COPY_TASK", "MOVE_TASK", "DELETE_TASK", "ADD_REWARD", "UPDATE_REWARD", "COPY_REWARD", "MOVE_REWARD", "DELETE_REWARD");
-        assertEquals(28, expected.size());
-        assertEquals(29, AuthoringMutationAction.values().length); // REVIEW shares the envelope.
+        var expected = List.of("UNDO", "REDO", "ADD_GROUP", "UPDATE_GROUP", "MOVE_GROUP", "DELETE_GROUP", "ADD_CHAPTER", "COPY_CHAPTER", "UPDATE_CHAPTER", "UPDATE_BOOK_PROPERTIES", "MOVE_CHAPTER", "DELETE_CHAPTER", "ADD_QUEST", "COPY_QUEST", "COPY_QUESTS", "PASTE_QUESTS", "DELETE_QUESTS", "DELETE_QUEST", "MOVE_QUESTS", "UPDATE_QUEST_TRANSLATION", "ADD_DEPENDENCY", "REMOVE_DEPENDENCY", "ADD_TASK", "UPDATE_TASK", "COPY_TASK", "PASTE_TASK", "MOVE_TASK", "DELETE_TASK", "ADD_REWARD", "UPDATE_REWARD", "COPY_REWARD", "PASTE_REWARD", "MOVE_REWARD", "DELETE_REWARD");
+        assertEquals(34, expected.size());
+        assertEquals(35, AuthoringMutationAction.values().length); // REVIEW shares the envelope.
         for (String name : expected) assertEquals(name, AuthoringMutationAction.fromWire(name).orElseThrow().wireName());
         assertEquals(AuthoringMutationAction.REVIEW, AuthoringMutationAction.fromWire("REVIEW").orElseThrow());
         for (String invalid : Arrays.asList(null, "", "undo", "UNDO ", "UNKNOWN")) {

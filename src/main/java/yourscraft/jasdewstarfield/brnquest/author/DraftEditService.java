@@ -339,6 +339,26 @@ public final class DraftEditService {
         });
     }
 
+    /** Frozen definitions still pass through normal permissions, revision checks and whole-book validation. */
+    public AuthorOperationResult<DraftEditResult> pasteQuestClipboard(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation chapterId, QuestClipboardSnapshot snapshot, double x, double y) {
+        return apply(player, sessionId, bookId, revision, book -> snapshot.paste(book, chapterId, x, y));
+    }
+
+    /** Copy the complete chapter through the same permission/revision/validation/history transaction. */
+    public AuthorOperationResult<DraftEditResult> duplicateChapter(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation sourceId) {
+        return apply(player, sessionId, bookId, revision, book -> ChapterCopyEdits.copy(book, sourceId));
+    }
+
+    /** Selection edits share the existing revision, validation and atomic undo boundary. */
+    public AuthorOperationResult<DraftEditResult> editQuestSelection(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, java.util.Set<ResourceLocation> ids, boolean copy, double dx, double dy) {
+        var frozenIds = java.util.Set.copyOf(ids);
+        return apply(player, sessionId, bookId, revision, book -> copy
+                ? QuestSelectionEdits.copy(book, frozenIds, dx, dy) : DraftBookEditor.removeQuestSelection(book, frozenIds));
+    }
+
     private AuthorOperationResult<DraftEditResult> apply(ServerPlayer player, UUID sessionId,
                                                           ResourceLocation bookId, String revision,
                                                           Function<QuestBookDefinition, AuthorOperationResult<DraftChange>> operation) {

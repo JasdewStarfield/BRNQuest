@@ -744,5 +744,21 @@
   "screen.brnquest.chapter.autofocus.value": "Auto focus: %s",
   "screen.brnquest.chapter.autofocus.help": "Center on %s when entering this chapter.",
   "screen.brnquest.chapter.autofocus.unset_help": "No auto-focus quest is set.",
-  "screen.brnquest.chapter.autofocus.set_here": "Set as chapter auto focus"
+  "screen.brnquest.chapter.autofocus.set_here": "Set as chapter auto focus",
+  "screen.brnquest.clipboard.copy": "Copy configuration",
+  "screen.brnquest.clipboard.paste": "Paste",
+  "screen.brnquest.clipboard.paste_help": "Paste a same-book configuration snapshot (Ctrl+V). Private references are kept unchanged.",
+  "screen.brnquest.clipboard.copied": "Configuration copied; private references kept unchanged",
+  "screen.brnquest.clipboard.too_large": "Configuration is too large to copy (64 KiB limit)",
+  "screen.brnquest.clipboard.unavailable": "No matching configuration for this book and entry kind",
+  "screen.brnquest.selection.copy": "Copy selection (%s quests)",
+  "screen.brnquest.selection.delete": "Delete selection (%s quests)",
+  "screen.brnquest.selection.clear": "Clear selection",
+  "screen.brnquest.selection.delete_warning": "Delete %s quests with all objectives/rewards and remove references from %s other quests. This can be undone.",
+  "screen.brnquest.chapter.copy": "Copy chapter",
+  "screen.brnquest.quest_clipboard.copy": "Copy to clipboard",
+  "screen.brnquest.quest_clipboard.paste": "Paste quests",
+  "screen.brnquest.quest_clipboard.copied": "Copied %s quests; paste in any chapter of this book",
+  "screen.brnquest.editor.error.CLIPBOARD_DEPENDENCY_MISSING": "Cannot paste: an external dependency was deleted. Restore it or copy the selection again.",
+  "screen.brnquest.editor.error.INVALID_PASTE_DESTINATION": "Cannot paste: the destination chapter or position is invalid."
 }

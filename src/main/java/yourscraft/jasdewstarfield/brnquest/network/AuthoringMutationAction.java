@@ -11,12 +11,16 @@ enum AuthoringMutationAction {
     MOVE_GROUP,
     DELETE_GROUP,
     ADD_CHAPTER,
+    COPY_CHAPTER,
     UPDATE_CHAPTER,
     UPDATE_BOOK_PROPERTIES,
     MOVE_CHAPTER,
     DELETE_CHAPTER,
     ADD_QUEST,
     COPY_QUEST,
+    COPY_QUESTS,
+    PASTE_QUESTS,
+    DELETE_QUESTS,
     DELETE_QUEST,
     MOVE_QUESTS,
     UPDATE_QUEST_TRANSLATION,
@@ -25,11 +29,13 @@ enum AuthoringMutationAction {
     ADD_TASK,
     UPDATE_TASK,
     COPY_TASK,
+    PASTE_TASK,
     MOVE_TASK,
     DELETE_TASK,
     ADD_REWARD,
     UPDATE_REWARD,
     COPY_REWARD,
+    PASTE_REWARD,
     MOVE_REWARD,
     DELETE_REWARD,
     REVIEW;
@@ -48,8 +54,8 @@ enum AuthoringMutationAction {
     /** Families remain explicit so adding an action cannot accidentally route it by name substring. */
     boolean isTypedEntry() {
         return switch (this) {
-            case ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
-                 ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> true;
+            case ADD_TASK, UPDATE_TASK, COPY_TASK, PASTE_TASK, MOVE_TASK, DELETE_TASK,
+                 ADD_REWARD, UPDATE_REWARD, COPY_REWARD, PASTE_REWARD, MOVE_REWARD, DELETE_REWARD -> true;
             default -> false;
         };
     }

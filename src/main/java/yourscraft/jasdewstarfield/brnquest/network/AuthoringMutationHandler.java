@@ -70,6 +70,9 @@ final class AuthoringMutationHandler {
                         requireId(targetId), wire.targetIndex());
                 case DELETE_GROUP -> editor.removeGroupWithContents(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId));
+                case PASTE_QUESTS -> editor.pasteQuestClipboard(player, sessionId, bookId, wire.draftRevision(), requireId(targetId),
+                        QuestClipboardSnapshot.decode(wire.config().get("snapshot")), wire.x(), wire.y());
+                case COPY_CHAPTER -> editor.duplicateChapter(player, sessionId, bookId, wire.draftRevision(), requireId(targetId));
                 case ADD_CHAPTER -> editor.addChapter(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterDefinition(bookId, requireId(targetId), requireId(parentId),
                                 wire.title(), "", wire.targetIndex(), List.of()));
@@ -90,6 +93,8 @@ final class AuthoringMutationHandler {
                         requireId(parentId), new QuestDefinition(bookId, requireId(targetId), parentId,
                                 wire.title(), "", "", "", wire.x(), wire.y(),
                                 List.of(), List.of(), List.of(), ""), readDefaults(wire.config(), QuestCreationDefaults.EMPTY));
+                case COPY_QUESTS, DELETE_QUESTS -> editor.editQuestSelection(player, sessionId, bookId, wire.draftRevision(),
+                        wire.positions().keySet(), wire.action() == AuthoringMutationAction.COPY_QUESTS, wire.x(), wire.y());
                 case COPY_QUEST -> editor.copyQuest(player, sessionId, bookId, wire.draftRevision(),
                         requireId(sourceId), questCopy(current.value().book(), sourceId, requireId(targetId),
                                 wire.title(), wire.x(), wire.y()));
@@ -108,8 +113,8 @@ final class AuthoringMutationHandler {
                         requireId(targetId), requireId(sourceId));
                 case REMOVE_DEPENDENCY -> editor.removeDependency(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId), requireId(sourceId));
-                case ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
-                     ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> mutateTyped(wire, current.value().book());
+                case ADD_TASK, UPDATE_TASK, COPY_TASK, PASTE_TASK, MOVE_TASK, DELETE_TASK,
+                     ADD_REWARD, UPDATE_REWARD, COPY_REWARD, PASTE_REWARD, MOVE_REWARD, DELETE_REWARD -> mutateTyped(wire, current.value().book());
                 default -> AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
                         "UNKNOWN_EDITOR_MUTATION", "Unknown editor mutation action");
             };
@@ -245,6 +250,11 @@ final class AuthoringMutationHandler {
         ResourceLocation sourceId = wire.sourceId();
         var editor = AuthorApi.editor();
             return switch (wire.action()) {
+                // Paste deliberately bypasses creation defaults: the snapshot already contains explicit values.
+                case PASTE_TASK -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), TypedEntrySnapshot.decode(wire.config().get("snapshot")).task(requireId(targetId)));
+                case PASTE_REWARD -> editor.addReward(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(parentId), TypedEntrySnapshot.decode(wire.config().get("snapshot")).reward(requireId(targetId)));
                 case ADD_TASK -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
                                 taskMutationConfig(player, sourceId, yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.taskConfig(

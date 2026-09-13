@@ -62,6 +62,22 @@ class QuestCanvasControllerTest {
     }
 
     @Test
+    void selectedNodeContextPreservesGroupAndAuthoritativeRemovalPrunesIt() {
+        var controller = controller();
+        var frame = frame(IDENTITY, positions());
+        controller.selectOnly(B);
+        controller.mouseClicked(frame, input(true, IDENTITY), 100, 100, 0, true, 0);
+        controller.cancelGesture();
+        assertEquals(java.util.Set.of(A, B), controller.selection());
+        controller.mouseClicked(frame, input(true, IDENTITY), 100, 100, 1, false, 0);
+        assertEquals(java.util.Set.of(A, B), controller.selection());
+        controller.reconcile(positions()::get, true);
+        assertEquals(java.util.Set.of(A, B), controller.selection());
+        controller.reconcile(id -> id.equals(A) ? positions().get(A) : null, false);
+        assertEquals(java.util.Set.of(A), controller.selection());
+    }
+
+    @Test
     void rightClicksReturnNodeAndCanvasContextWithoutMutatingTheBook() {
         QuestCanvasController controller = controller();
         QuestCanvasRenderer.Frame frame = frame(IDENTITY, positions());

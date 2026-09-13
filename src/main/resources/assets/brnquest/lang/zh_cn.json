@@ -744,5 +744,21 @@
   "screen.brnquest.chapter.autofocus.value": "自动聚焦：%s",
   "screen.brnquest.chapter.autofocus.help": "进入章节时以 %s 为中心显示。",
   "screen.brnquest.chapter.autofocus.unset_help": "未设置自动聚焦任务。",
-  "screen.brnquest.chapter.autofocus.set_here": "设为章节自动聚焦"
+  "screen.brnquest.chapter.autofocus.set_here": "设为章节自动聚焦",
+  "screen.brnquest.clipboard.copy": "复制配置",
+  "screen.brnquest.clipboard.paste": "粘贴",
+  "screen.brnquest.clipboard.paste_help": "粘贴同任务书的配置快照（Ctrl+V）。私有引用原样保留。",
+  "screen.brnquest.clipboard.copied": "已复制配置；私有引用原样保留",
+  "screen.brnquest.clipboard.too_large": "配置过大，无法复制（上限 64 KiB）",
+  "screen.brnquest.clipboard.unavailable": "剪贴板中没有适用于当前任务书和类型的配置",
+  "screen.brnquest.selection.copy": "整体复制（%s 个任务）",
+  "screen.brnquest.selection.delete": "整体删除（%s 个任务）",
+  "screen.brnquest.selection.clear": "取消选择",
+  "screen.brnquest.selection.delete_warning": "将删除 %s 个任务及其全部目标、奖励，并移除 %s 个其他任务指向它们的依赖。可撤销。",
+  "screen.brnquest.chapter.copy": "复制章节",
+  "screen.brnquest.quest_clipboard.copy": "复制到剪贴板",
+  "screen.brnquest.quest_clipboard.paste": "粘贴任务",
+  "screen.brnquest.quest_clipboard.copied": "已复制 %s 个任务，可切换章节后粘贴",
+  "screen.brnquest.editor.error.CLIPBOARD_DEPENDENCY_MISSING": "无法粘贴：剪贴板引用的外部依赖任务已被删除，请恢复依赖或重新复制。",
+  "screen.brnquest.editor.error.INVALID_PASTE_DESTINATION": "无法粘贴：目标章节或粘贴位置已失效。"
 }

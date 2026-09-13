@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- 单任务／多选任务支持同书跨章节快照粘贴，保留相对布局与多语言文本；源项删除后仍可粘贴，外部依赖失效时整次拒绝。
+- Added same-book cross-chapter quest snapshot paste with relative layout and localized text, surviving source deletion and rejecting stale external dependencies atomically.
+
+- 章节右键菜单新增整章复制，保留布局、默认值和多语言文本，重映射内部依赖与自动聚焦，支持一次撤销。
+- Added chapter copying with preserved layout, defaults and localized text, remapped internal dependencies and autofocus, and atomic undo.
+
+- 多选任务新增独立右键菜单，支持整体复制、确认删除和取消选择；批量编辑重映射内部依赖并支持一次撤销。
+- Added a multi-quest context menu for whole-selection copying, confirmed deletion and deselection, with internal dependency remapping and atomic undo.
+
+- 新增同任务书的目标/奖励配置快照剪贴板，支持跨任务粘贴、独立新 ID 和撤销，保留复制时的显式属性与未知配置。
+- Added same-book task/reward configuration snapshots with cross-quest paste, fresh IDs and undo, preserving explicit properties and opaque configuration.
+
 - 顶部网格吸附与客户端设置图标改用可替换的 PNG GUI sprite，支持资源重载。
 - Replaced toolbar grid-snap and client-settings drawings with resource-pack-replaceable PNG GUI sprites.
 

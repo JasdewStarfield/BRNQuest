@@ -267,6 +267,8 @@ final class QuestCanvasController {
     void reconcile(java.util.function.Function<ResourceLocation, DraftBookEditor.Position> authoritative,
                    boolean rejected) {
         nodeDrag.reconcile(authoritative, rejected);
+        // Drop vanished nodes only after an authoritative snapshot, preserving selection on rejected edits.
+        selection.removeIf(id -> authoritative.apply(id) == null);
     }
 
     void cancelGesture() {

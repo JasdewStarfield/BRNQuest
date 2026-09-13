@@ -289,11 +289,17 @@ public final class DraftBookEditor {
         // Copy every locale and extension text suffix to the new identity; later edits stay independent.
         String sourcePrefix = BookText.questPrefix(quest(book, sourceId));
         String targetPrefix = BookText.questPrefix(copy);
+        int copyNumber = QuestCopyTitles.nextNumber(book, quest(book, sourceId));
         Map<String, Map<String, String>> translations = new java.util.TreeMap<>();
         book.localization().translations().forEach((locale, source) -> {
             Map<String, String> values = new java.util.TreeMap<>(source);
             source.forEach((key, value) -> {
-                if (key.startsWith(sourcePrefix)) values.put(targetPrefix + key.substring(sourcePrefix.length()), value);
+                if (key.startsWith(sourcePrefix)) {
+                    String suffix = key.substring(sourcePrefix.length());
+                    // Only explicit non-empty titles receive a marker; subtitles/body/extensions stay byte-for-byte.
+                    values.put(targetPrefix + suffix, suffix.equals("title") && !value.isBlank()
+                            ? QuestCopyTitles.title(value, locale, copyNumber) : value);
+                }
             });
             translations.put(locale, values);
         });
@@ -723,6 +729,14 @@ public final class DraftBookEditor {
         return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
                 quest.description(), quest.icon(), quest.x(), quest.y(), dependencies, tasks, rewards, quest.legacyId(),
                 quest.appearance(), quest.behavior(), quest.extensions());
+    }
+
+    /** Batch deletion removes internal/external dependency edges and autofocus references in one candidate. */
+    public static AuthorOperationResult<DraftChange> removeQuestSelection(QuestBookDefinition book, Set<ResourceLocation> ids) {
+        var selected = book.quests().stream().filter(q -> ids.contains(q.id())).toList();
+        if (ids.isEmpty() || selected.size() != ids.size() || selected.stream().map(QuestDefinition::chapterId).distinct().count() != 1)
+            return invalid("INVALID_SELECTION", "Select existing quests from one chapter");
+        return changed(removeQuestSetAndReferences(book, ids), book.quests().stream().map(QuestDefinition::id).toArray(ResourceLocation[]::new));
     }
 
     private static QuestBookDefinition removeQuestSetAndReferences(QuestBookDefinition book,

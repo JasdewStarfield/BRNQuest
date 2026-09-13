@@ -265,7 +265,7 @@ public final class AuthoringHandlerGameTests {
         void apply(String action, String target, String parent, String source, Map<String, String> config) {
             String title = action.equals("ADD_REWARD") ? "" : action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
             if (action.equals("UPDATE_QUEST_TRANSLATION") && config.isEmpty()) config = Map.of("title", "本地化标题", "description", "描述");
-            var positions = action.equals("MOVE_QUESTS") ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
+            var positions = (action.equals("MOVE_QUESTS") || action.equals("COPY_QUESTS") || action.equals("DELETE_QUESTS")) ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
             int index = action.equals("UPDATE_TASK") || action.equals("UPDATE_REWARD") ? 1 : 0;
             var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
                     raw(target), raw(parent), raw(source), title, index, 1, 2, positions, config);
@@ -277,6 +277,17 @@ public final class AuthoringHandlerGameTests {
                     action + " result: " + response.code() + " " + response.message());
             revision = response.draftRevision(); seen.add(decoded.value().action());
             check(helper, EditSessionService.get().inspect(player, book).value().draftRevision().equals(revision), "response revision is authoritative");
+        }
+
+        void selection(String action, List<String> paths) {
+            var positions = paths.stream().map(path -> new AuthoringNetwork.PositionWire(raw(path), 0, 0)).toList();
+            var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
+                    "", "", "", "", 0, 1, 1, positions, Map.of());
+            var decoded = AuthoringRequestDecoder.mutation(GSON.toJson(wire));
+            check(helper, decoded.success(), "selection request decoded");
+            packets.clear(); handler.mutate(decoded.value());
+            check(helper, last(packets).status().equals("SUCCESS"), "selection mutation succeeds: " + last(packets).code());
+            revision = last(packets).draftRevision();
         }
 
         void checkQuestProperties() {
@@ -352,18 +363,31 @@ public final class AuthoringHandlerGameTests {
             fixture.apply("MOVE_REWARD", "reward_copy", "q", "");
             check(helper, fixture.quest("q").rewards().getFirst().id().equals(fixture.id("reward_copy")), "reward moved to requested index");
             fixture.apply("DELETE_REWARD", "reward_copy", "q", "");
+            fixture.apply("PASTE_TASK", "task_pasted", "q2", "", Map.of("snapshot",
+                    yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.of(fixture.quest("q").tasks().getFirst()).encode()));
+            fixture.apply("PASTE_REWARD", "reward_pasted", "q2", "", Map.of("snapshot",
+                    yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.of(fixture.quest("q").rewards().getFirst()).encode()));
             fixture.checkQuestProperties();
             fixture.apply("COPY_QUEST", "q_copy", "", "q");
             check(helper, fixture.quest("q_copy").tasks().getFirst().config().equals(opaque), "quest copy uses server-owned nested task data");
             // Exercise translation copying through the actual decoder, handler and draft transaction.
             check(helper, BookText.quest(fixture.snapshot(),
-                    fixture.quest("q_copy"), "zh_cn", "title", "").equals("本地化标题"),
+                    fixture.quest("q_copy"), "zh_cn", "title", "").equals("本地化标题（副本）"),
                     "quest copy preserves server-owned localized text");
             String beforeUndo = fixture.revision;
             fixture.apply("UNDO", "", "", "");
             check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q_copy"))), "undo removes copied quest");
             fixture.apply("REDO", "", "", "");
             check(helper, fixture.revision.equals(beforeUndo), "redo restores the exact semantic revision");
+            var frozenQuest = yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(fixture.snapshot(), java.util.Set.of(fixture.id("q"))).encode();
+            fixture.apply("PASTE_QUESTS", "c2", "", "", Map.of("snapshot", frozenQuest));
+            fixture.apply("UNDO", "", "", "");
+            fixture.apply("COPY_CHAPTER", "c", "", "");
+            fixture.apply("UNDO", "", "", "");
+            fixture.apply("COPY_QUESTS", "", "", "");
+            fixture.apply("UNDO", "", "", "");
+            fixture.apply("DELETE_QUESTS", "", "", "");
+            fixture.apply("UNDO", "", "", "");
             fixture.apply("DELETE_QUEST", "q_copy", "", "");
             fixture.apply("DELETE_CHAPTER", "c2", "", "");
             check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q2"))), "chapter deletion removes its contained quest");
@@ -375,7 +399,7 @@ public final class AuthoringHandlerGameTests {
                     && last(fixture.packets).review().publishAllowed() == preview.success(),
                     "review preserves the authoritative publish decision");
             fixture.apply("UPDATE_BOOK_PROPERTIES", "book", "", "");
-            check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all 27 mutations plus review executed");
+            check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all mutation actions plus review executed");
             helper.succeed();
         } finally { release(admin); }
     }
@@ -514,6 +538,111 @@ public final class AuthoringHandlerGameTests {
             check(helper, f.snapshot().chapters().getFirst().autofocusQuestId() == null, "explicit empty clears focus");
             f.apply("UNDO", "", "", "");
             check(helper, f.id("q").equals(f.snapshot().chapters().getFirst().autofocusQuestId()), "undo restores reference");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Copy is read-only; pasting a deleted source still validates and forms one history step per new ID. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void typedClipboardRetainsDeletedSourceAndAtomicHistory(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", "");
+            f.apply("ADD_QUEST", "q", "c", ""); f.apply("ADD_QUEST", "destination", "c", "");
+            var opaque = Map.of("title.zh_cn", "复制目标", "title.en_us", "Copied task", "private_ref", "brnquest:original");
+            f.apply("ADD_TASK", "source", "q", "opaque_task", opaque);
+            f.apply("UPDATE_TASK", "source", "q", "source", opaque);
+            var copy = yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.of(f.quest("q").tasks().getFirst());
+            f.apply("DELETE_TASK", "source", "q", "");
+            var before = f.snapshot();
+            f.apply("PASTE_TASK", "copy1", "destination", "", Map.of("snapshot", copy.encode()));
+            check(helper, f.quest("destination").tasks().getFirst().config().equals(opaque)
+                    && f.quest("destination").tasks().getFirst().optional(), "paste retains deleted source configuration and optional flag");
+            f.apply("UNDO", "", "", "");
+            check(helper, f.snapshot().equals(before), "one undo restores the whole book");
+            f.apply("REDO", "", "", "");
+            f.apply("PASTE_TASK", "copy2", "destination", "", Map.of("snapshot", copy.encode()));
+            check(helper, f.quest("destination").tasks().size() == 2, "repeated paste has independent IDs");
+            String revision = f.revision;
+            var wire = new AuthoringNetwork.EditorMutationWire(f.token.toString(), f.book.toString(), revision,
+                    "PASTE_TASK", f.raw("copy2"), f.raw("destination"), "", "", 0, 0, 0, List.of(), Map.of("snapshot", copy.encode()));
+            f.handler.mutate(AuthoringRequestDecoder.mutation(GSON.toJson(wire)).value());
+            check(helper, last(f.packets).code().equals("DUPLICATE_TYPED_ID"), "duplicate destination IDs are rejected");
+            check(helper, EditSessionService.get().inspect(admin, f.book).value().draftRevision().equals(revision), "failed paste has no partial change");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Real packets ensure multi-node graph edits are a single history step, not independent partial edits. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void questSelectionCopiesAndDeletesAtomically(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", "");
+            f.apply("ADD_QUEST", "q", "c", ""); f.apply("ADD_QUEST", "q2", "c", "");
+            f.apply("ADD_DEPENDENCY", "q2", "", "q");
+            var original = f.snapshot();
+            f.selection("COPY_QUESTS", List.of("q", "q2"));
+            var copied = f.snapshot();
+            check(helper, copied.quests().size() == 4, "both nodes copied");
+            var a = copied.quests().stream().filter(q -> q.id().getPath().startsWith("q_copy_")).findFirst().orElseThrow();
+            var b = copied.quests().stream().filter(q -> q.id().getPath().startsWith("q2_copy_")).findFirst().orElseThrow();
+            check(helper, b.dependencies().equals(List.of(a.id())), "internal edge targets copied quest");
+            f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(original), "one undo removes whole copy");
+            f.apply("REDO", "", "", ""); check(helper, f.snapshot().equals(copied), "redo restores exact copied IDs");
+            f.selection("DELETE_QUESTS", List.of("q", "q2"));
+            check(helper, f.snapshot().quests().size() == 2, "whole original selection deleted");
+            f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(copied), "one undo restores whole deletion");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** A complete chapter must publish and restore as one authoritative history entry. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void chapterCopyIsAtomic(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", "");
+            f.apply("ADD_QUEST", "q", "c", ""); f.apply("ADD_QUEST", "q2", "c", "");
+            f.apply("ADD_DEPENDENCY", "q2", "", "q");
+            var before = f.snapshot();
+            f.apply("COPY_CHAPTER", "c", "", "");
+            var after = f.snapshot();
+            var copy = after.chapters().stream().filter(c -> !c.id().equals(f.id("c"))).findFirst().orElseThrow();
+            check(helper, copy.quests().size() == 2, "whole chapter copied");
+            check(helper, copy.quests().get(1).dependencies().equals(List.of(copy.quests().getFirst().id())), "copied edge remains internal");
+            f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(before), "one undo removes chapter and contents");
+            f.apply("REDO", "", "", ""); check(helper, f.snapshot().equals(after), "redo restores exact chapter identities");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Deleted sources and navigation do not invalidate frozen definitions or their one-step history. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void crossChapterSnapshotSurvivesSourceDeletion(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_CHAPTER", "dest", "g", "");
+            f.apply("ADD_QUEST", "q", "c", ""); f.apply("ADD_QUEST", "q2", "c", ""); f.apply("ADD_DEPENDENCY", "q2", "", "q");
+            String snapshot = yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(f.snapshot(), java.util.Set.of(f.id("q"), f.id("q2"))).encode();
+            f.apply("DELETE_CHAPTER", "c", "", "");
+            var before = f.snapshot();
+            f.apply("PASTE_QUESTS", "dest", "", "", Map.of("snapshot", snapshot));
+            var after = f.snapshot();
+            check(helper, after.quests().size() == 2 && after.quests().stream().allMatch(q -> q.chapterId().equals(f.id("dest"))), "pasted into existing destination after source deletion");
+            check(helper, after.quests().get(1).dependencies().equals(List.of(after.quests().getFirst().id())), "frozen internal dependency remapped");
+            f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(before), "whole paste undone");
+            f.apply("REDO", "", "", ""); check(helper, f.snapshot().equals(after), "exact paste restored");
+            f.apply("PASTE_QUESTS", "dest", "", "", Map.of("snapshot", snapshot));
+            check(helper, f.snapshot().quests().size() == 4, "repeated paste allocates fresh identities");
             helper.succeed();
         } finally { release(admin); }
     }

@@ -15,12 +15,12 @@ class AuthoringMutationRequestTest {
         json.addProperty("bookId", "test:book"); json.addProperty("draftRevision", "revision");
         json.addProperty("action", action.wireName());
         switch (action) {
-            case UNDO, REDO, REVIEW, MOVE_QUESTS -> { }
+            case UNDO, REDO, REVIEW, MOVE_QUESTS, COPY_QUESTS, DELETE_QUESTS -> { }
             default -> json.addProperty("targetId", "test:target");
         }
         switch (action) {
-            case ADD_CHAPTER, UPDATE_CHAPTER, ADD_QUEST, ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
-                 ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> json.addProperty("parentId", "test:parent");
+            case ADD_CHAPTER, UPDATE_CHAPTER, ADD_QUEST, ADD_TASK, UPDATE_TASK, COPY_TASK, PASTE_TASK, MOVE_TASK, DELETE_TASK,
+                 ADD_REWARD, UPDATE_REWARD, COPY_REWARD, PASTE_REWARD, MOVE_REWARD, DELETE_REWARD -> json.addProperty("parentId", "test:parent");
             default -> { }
         }
         switch (action) {
@@ -28,13 +28,41 @@ class AuthoringMutationRequestTest {
                  ADD_REWARD, UPDATE_REWARD, COPY_REWARD -> json.addProperty("sourceId", "test:source");
             default -> { }
         }
+        if (action == AuthoringMutationAction.PASTE_TASK || action == AuthoringMutationAction.PASTE_REWARD) {
+            var config = new JsonObject();
+            config.addProperty("snapshot", new yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot(
+                    net.minecraft.resources.ResourceLocation.parse("test:book"), action == AuthoringMutationAction.PASTE_TASK,
+                    net.minecraft.resources.ResourceLocation.parse("test:type"), Map.of(), false, "manual", false).encode());
+            json.add("config", config);
+        }
+        if (action == AuthoringMutationAction.PASTE_QUESTS) {
+            var config = new JsonObject();
+            config.addProperty("snapshot", questSnapshot()); json.add("config", config);
+        }
         json.addProperty("title", action == AuthoringMutationAction.ADD_REWARD ? "" : action == AuthoringMutationAction.UPDATE_REWARD ? "auto_hidden"
                 : action == AuthoringMutationAction.UPDATE_QUEST_TRANSLATION ? "zh-CN" : "Title");
-        if (action == AuthoringMutationAction.MOVE_QUESTS) {
+        if (action == AuthoringMutationAction.MOVE_QUESTS || action == AuthoringMutationAction.COPY_QUESTS || action == AuthoringMutationAction.DELETE_QUESTS) {
             var positions = new JsonArray(); positions.add(position("test:a", 1)); positions.add(position("test:b", 2));
             json.add("positions", positions);
         }
         return json;
+    }
+
+    /** A small real native snapshot exercises the same decoder used by the client. */
+    private static String questSnapshot() {
+        var book = net.minecraft.resources.ResourceLocation.parse("test:book");
+        var chapter = net.minecraft.resources.ResourceLocation.parse("test:chapter");
+        var q = new yourscraft.jasdewstarfield.brnquest.data.QuestDefinition(book, net.minecraft.resources.ResourceLocation.parse("test:q"), chapter,
+                "Q", "", "", "", 0, 0, List.of(), List.of(), List.of(), "");
+        return new yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot(new yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition(
+                book, 1, "", List.of(), List.of(new yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition(book, chapter, chapter, "", "", 0, List.of(q))),
+                Map.of(), yourscraft.jasdewstarfield.brnquest.data.BookLocalization.EMPTY, Map.of())).encode();
+    }
+    @Test void questPasteRejectsCrossBookAndMissingSnapshot() {
+        var json = request(AuthoringMutationAction.PASTE_QUESTS);
+        json.addProperty("bookId", "test:other"); assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        json = request(AuthoringMutationAction.PASTE_QUESTS); json.remove("config");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
     }
 
     private static JsonObject position(String id, double x) {
@@ -48,6 +76,16 @@ class AuthoringMutationRequestTest {
             assertTrue(result.success(), action + ": " + result.failure());
             assertEquals(action, result.value().action());
         }
+    }
+
+    @Test void pasteRejectsMissingSnapshotCrossBookAndWrongEntryKind() {
+        var json = request(AuthoringMutationAction.PASTE_TASK);
+        var missing = json.deepCopy(); missing.remove("config");
+        assertFalse(AuthoringRequestDecoder.mutation(missing.toString()).success());
+        var crossBook = json.deepCopy(); crossBook.addProperty("bookId", "test:other");
+        assertFalse(AuthoringRequestDecoder.mutation(crossBook.toString()).success());
+        json.addProperty("action", "PASTE_REWARD");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
     }
 
     @Test void rewardCreationDistinguishesInheritanceFromExplicitManualAndFalse() {

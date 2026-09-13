@@ -294,12 +294,12 @@ final class AuthoringRequestDecoder {
                 ResourceLocation parent = optionalId(wire.parentId(), "parentId");
                 ResourceLocation source = optionalId(wire.sourceId(), "sourceId");
                 switch (action) {
-                    case UNDO, REDO, REVIEW, MOVE_QUESTS -> { }
+                    case UNDO, REDO, REVIEW, MOVE_QUESTS, COPY_QUESTS, DELETE_QUESTS -> { }
                     default -> require(target, "targetId");
                 }
                 switch (action) {
-                    case ADD_CHAPTER, UPDATE_CHAPTER, ADD_QUEST, ADD_TASK, UPDATE_TASK, COPY_TASK, MOVE_TASK, DELETE_TASK,
-                         ADD_REWARD, UPDATE_REWARD, COPY_REWARD, MOVE_REWARD, DELETE_REWARD -> require(parent, "parentId");
+                    case ADD_CHAPTER, UPDATE_CHAPTER, ADD_QUEST, ADD_TASK, UPDATE_TASK, COPY_TASK, PASTE_TASK, MOVE_TASK, DELETE_TASK,
+                         ADD_REWARD, UPDATE_REWARD, COPY_REWARD, PASTE_REWARD, MOVE_REWARD, DELETE_REWARD -> require(parent, "parentId");
                     default -> { }
                 }
                 switch (action) {
@@ -321,9 +321,16 @@ final class AuthoringRequestDecoder {
                             throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node entries require unique IDs and finite coordinates");
                     }
                 }
-                if (action == AuthoringMutationAction.MOVE_QUESTS && positions.isEmpty())
+                if ((action == AuthoringMutationAction.MOVE_QUESTS || action == AuthoringMutationAction.COPY_QUESTS
+                        || action == AuthoringMutationAction.DELETE_QUESTS) && positions.isEmpty())
                     throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
                 var config = boundedConfig(wire.config());
+                if (action == AuthoringMutationAction.PASTE_TASK || action == AuthoringMutationAction.PASTE_REWARD) {
+                    var snapshot = yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.decode(config.get("snapshot"));
+                    snapshot.requireDestination(book, action == AuthoringMutationAction.PASTE_TASK);
+                }
+                if (action == AuthoringMutationAction.PASTE_QUESTS)
+                    yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.decode(config.get("snapshot")).requireDestination(book);
                 String title = wire.title() == null ? "" : wire.title();
                 text(title, "title", 32767, true);
                 String claim = action == AuthoringMutationAction.ADD_REWARD ? "" : "manual";

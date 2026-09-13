@@ -370,8 +370,8 @@ class DraftBookEditorTest {
             QuestDefinition copy = quest("copy", source.chapterId(), List.of());
             QuestBookDefinition copied = value(DraftBookEditor.copyQuest(candidate, source.id(), copy));
             var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(copied)).getAsJsonObject());
-            assertEquals("原任务", BookText.quest(decoded, copy, "zh_cn", "title", copy.title()));
-            assertEquals("元", BookText.quest(decoded, copy, "ja_jp", "title", copy.title()));
+            assertEquals("原任务（副本）", BookText.quest(decoded, copy, "zh_cn", "title", copy.title()));
+            assertEquals("元 (Copy)", BookText.quest(decoded, copy, "ja_jp", "title", copy.title()));
             assertEquals("opaque", decoded.localization().translations().get("zh_cn").get(BookText.questPrefix(copy) + "extension"));
             assertEquals(candidate.localization().translations().get("zh_cn").get(prefix + "title"),
                     decoded.localization().translations().get("zh_cn").get(prefix + "title"));

@@ -221,12 +221,14 @@ public final class FtbV13Importer {
                 mappedChapterFields.add("autofocus_id");
                 recordMappedFields(raw, path.getFileName().toString(), "chapter[" + legacy + "]", conversions, Map.of("autofocus_id", "autofocus_id"));
             }
+            mappedChapterFields.add("default_hide_dependency_lines");
+            recordMappedFields(raw, path.getFileName().toString(), "chapter[" + legacy + "]", conversions, Map.of("default_hide_dependency_lines", "default_hide_dependency_lines"));
             target.add(new ChapterDefinition(bookId, chapterId, groupId,
                     translations.getOrDefault("chapter." + legacy + ".title", legacy),
                     raw.contains("icon") ? raw.get("icon").toString() : "",
                     raw.getInt("order_index"), quests,
                     extensions(raw, mappedChapterFields,
-                            path.getFileName().toString(), "chapter[" + legacy + "]", conversions), importDefaults(raw, chapterAppearance), raw.contains("consume_items", Tag.TAG_BYTE) ? raw.getBoolean("consume_items") : null, autofocus));
+                            path.getFileName().toString(), "chapter[" + legacy + "]", conversions), importDefaults(raw, chapterAppearance), raw.contains("consume_items", Tag.TAG_BYTE) ? raw.getBoolean("consume_items") : null, autofocus, raw.getBoolean("default_hide_dependency_lines")));
         } catch (Exception exception) {
             report.add(problem(Diagnostic.Severity.FATAL, "BQF-003", path.getFileName().toString(), "", "", exception.getMessage()));
         }
@@ -256,7 +258,7 @@ public final class FtbV13Importer {
                 Map.entry("icon", "icon"), Map.entry("dependencies", "dependencies"),
                 Map.entry("tasks", "tasks"), Map.entry("rewards", "rewards"),
                 Map.entry("shape", "appearance.shape"), Map.entry("size", "appearance.size"),
-                Map.entry("icon_scale", "appearance.icon_scale"), Map.entry("min_width", "appearance.min_width"),
+                Map.entry("icon_scale", "appearance.icon_scale"), Map.entry("min_width", "appearance.min_width"), Map.entry("hide_dependency_lines", "hide_dependency_lines"),
                 Map.entry("preset", "appearance.preset"),
                 Map.entry("hide_until_deps_visible", "behavior.hide_until_dependencies_visible"),
                 Map.entry("hide_until_deps_complete", "behavior.hide_until_dependencies_complete"),
@@ -275,7 +277,7 @@ public final class FtbV13Importer {
         QuestAppearance appearance = new QuestAppearance(resolved.shape(),
                 raw.contains("size", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("size") : resolved.size(),
                 raw.contains("icon_scale", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("icon_scale") : 1.0,
-                raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : inheritedMinWidth);
+                raw.contains("min_width", Tag.TAG_ANY_NUMERIC) ? raw.getDouble("min_width") : inheritedMinWidth, raw.contains("hide_dependency_lines", Tag.TAG_BYTE) ? raw.getBoolean("hide_dependency_lines") : null);
         QuestBehavior behavior = new QuestBehavior(
                 inheritedBoolean(raw, "hide_until_deps_visible", inheritedBehavior.hideUntilDependenciesVisible()),
                 inheritedBoolean(raw, "hide_until_deps_complete", inheritedBehavior.hideUntilDependenciesComplete()),
@@ -294,7 +296,7 @@ public final class FtbV13Importer {
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
                 dependencies, tasks, rewards, legacy, appearance, behavior,
                 extensions(raw, Set.of("id", "title", "subtitle", "description", "icon", "x", "y",
-                        "dependencies", "tasks", "rewards", "shape", "size", "icon_scale", "min_width",
+                        "dependencies", "tasks", "rewards", "shape", "size", "icon_scale", "min_width", "hide_dependency_lines",
                         "hide_until_deps_visible", "hide_until_deps_complete", "invisible", "invisible_until_tasks",
                         "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon",
                         "dependency_requirement", "min_required_dependencies", "require_sequential_tasks",

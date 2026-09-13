@@ -647,4 +647,31 @@ public final class AuthoringHandlerGameTests {
         } finally { release(admin); }
     }
 
+    /** Chapter defaults survive older metadata packets, quest edits and atomic history. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void dependencyLineSettingsPersistAcrossAuthoring(GameTestHelper helper) {
+        var admin=helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f=new MutationFixture(helper,admin);
+            f.apply("ADD_GROUP","g","",""); f.apply("ADD_CHAPTER","c","g",""); f.apply("ADD_QUEST","q","c","");
+            f.apply("UPDATE_CHAPTER","c","g","",Map.of("default_hide_dependency_lines","true"));
+            check(helper,f.snapshot().chapters().getFirst().defaultHideDependencyLines(),"chapter default enabled");
+            f.apply("UPDATE_CHAPTER","c","g","");
+            check(helper,f.snapshot().chapters().getFirst().defaultHideDependencyLines(),"older packet preserves new default");
+            for (String value : List.of("false","true","default")) {
+                var request = new AuthoringRequestDecoder.QuestRequest(f.token,f.book,f.revision,f.id("q"),f.id("q"),"Q","","",
+                        null,null,true,null,null,null,null,value);
+                new AuthoringQuestUpdateHandler(admin,f.sender).update(request);
+                var reply=last(f.packets); f.revision=reply.draftRevision();
+                check(helper,java.util.Objects.equals(f.quest("q").appearance().hideDependencyLines(),value.equals("default")?null:Boolean.valueOf(value)),"task tri-state persisted");
+            }
+            f.apply("UNDO","","","");
+            check(helper,Boolean.TRUE.equals(f.quest("q").appearance().hideDependencyLines()),"undo restores explicit hide");
+            f.apply("COPY_CHAPTER","c","","");
+            check(helper,f.snapshot().chapters().stream().allMatch(c->c.defaultHideDependencyLines()),"chapter copies preserve default");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
 }

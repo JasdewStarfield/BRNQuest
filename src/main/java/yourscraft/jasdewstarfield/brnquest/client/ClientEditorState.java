@@ -536,7 +536,7 @@ public final class ClientEditorState {
                             quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
                             quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
                             quest.appearance(), quest.behavior(), quest.extensions());
-                }).toList(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId())).toList();
+                }).toList(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines())).toList();
         QuestBookSnapshot candidate = QuestBookSnapshot.of(new QuestBookDefinition(current.id(),
                 current.schemaVersion(), current.title(), current.chapterGroups(), chapters, current.legacyIds(),
                 current.localization(), current.extensions(), current.questDefaults(), current.settings()));

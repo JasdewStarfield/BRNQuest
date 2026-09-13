@@ -29,7 +29,7 @@ public final class ApiViews {
 
     public static ChapterView chapter(ChapterDefinition chapter) {
         return new ChapterView(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
-                chapter.order(), chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId());
+                chapter.order(), chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines());
     }
 
     /** Localized projections keep identifiers and source storage unchanged. */
@@ -52,7 +52,7 @@ public final class ApiViews {
         return new ChapterView(chapter.bookId(), chapter.id(), chapter.groupId(),
                 BookText.structureTitle(snapshot.book(), "chapter",
                         chapter.id(), locale, chapter.title()), chapter.icon(), chapter.order(),
-                chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId());
+                chapter.quests().stream().map(QuestDefinition::id).toList(), chapter.questDefaults().values(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines());
     }
 
     public static QuestView quest(QuestDefinition quest) {

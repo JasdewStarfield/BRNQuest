@@ -58,7 +58,7 @@ public final class LocalizedSingleLineEdits {
                     field.equals("quest_subtitle") ? nativeValue : q.subtitle(), q.description(), q.icon(), q.x(), q.y(),
                     q.dependencies(), q.tasks(), q.rewards(), q.legacyId(), q.appearance(), q.behavior(), q.extensions()) : q).toList();
             return new ChapterDefinition(c.bookId(), c.id(), c.groupId(), nativeValue != null && kind.equals("chapter") && c.id().equals(id)
-                    ? nativeValue : c.title(), c.icon(), c.order(), quests, c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId());
+                    ? nativeValue : c.title(), c.icon(), c.order(), quests, c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId(), c.defaultHideDependencyLines());
         }).toList();
         return new QuestBookDefinition(book.id(), book.schemaVersion(), kind.equals("book") && nativeValue != null ? nativeValue : book.title(), groups, chapters, book.legacyIds(),
                 new BookLocalization(fallback, translations), book.extensions(), book.questDefaults(), book.settings());

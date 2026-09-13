@@ -16,7 +16,18 @@ public final class BrnQuestClientConfig {
 
     private BrnQuestClientConfig() {}
 
+    /** Read defaults before config loading; live reads also make runtime edits effective immediately. */
+    public static <T> T read(ModConfigSpec.ConfigValue<T> value) {
+        return SPEC.isLoaded() ? value.get() : value.getDefault();
+    }
+
+    public enum GridVisibility { ALWAYS, EDITING_ONLY, NEVER }
+
     public static final class Values {
+        public final ModConfigSpec.BooleanValue autoCollapseNavigation, reduceMotion, rememberEditingMode, rememberViewport;
+        public final ModConfigSpec.DoubleValue zoomStep;
+        public final ModConfigSpec.IntValue nodeDragHoldMillis, navigationWidth, detailsWidth;
+        public final ModConfigSpec.EnumValue<GridVisibility> showGrid;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
         public final ModConfigSpec.DoubleValue zoomSmoothSpeed;
@@ -26,8 +37,18 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.BooleanValue snapToGrid;
 
         private Values(ModConfigSpec.Builder builder) {
+            // Zero widths select the existing responsive layout; custom widths are additionally clamped on screen.
+            builder.push("interface");
+            autoCollapseNavigation = builder.define("autoCollapseNavigation", true);
+            rememberEditingMode = builder.define("rememberEditingMode", true);
+            rememberViewport = builder.define("rememberViewport", true);
+            navigationWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("navigationWidth", 0, 0, 400);
+            detailsWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("detailsWidth", 0, 0, 600);
+            showGrid = builder.defineEnum("showGrid", GridVisibility.ALWAYS);
+            builder.pop();
             // Author preference only: toggling this must never create a book revision.
             builder.comment("Quest editor preferences").push("editor");
+            nodeDragHoldMillis = builder.comment("Captured when a node press begins.").defineInRange("nodeDragHoldMillis", 220, 100, 1000);
             snapToGrid = builder.comment("Snap dragged quest nodes to the grid. Applies to the next drag.")
                     .define("snapToGrid", true);
             builder.pop();
@@ -42,6 +63,8 @@ public final class BrnQuestClientConfig {
             builder.pop();
 
             builder.comment("Quest screen animation settings").push("animations");
+            reduceMotion = builder.define("reduceMotion", false);
+            zoomStep = builder.defineInRange("zoomStep", 0.10, 0.01, 0.50);
             zoomSmoothSpeed = builder
                     .comment("Zoom response per second.")
                     .defineInRange("zoomSmoothSpeed", 12.0, 1.0, 40.0);

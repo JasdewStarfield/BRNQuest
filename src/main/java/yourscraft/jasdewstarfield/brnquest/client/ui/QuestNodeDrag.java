@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor.Position;
 import java.util.Collections;
@@ -9,7 +11,7 @@ import java.util.Set;
 
 /** Pure gesture state. It returns a move intent once; the screen still validates and submits it. */
 final class QuestNodeDrag {
-    private static final long HOLD_NANOS = 220_000_000L;
+    private long holdNanos = 220_000_000L;
     private final Map<ResourceLocation, Position> preview = new LinkedHashMap<>();
     private final Map<ResourceLocation, Position> snapped = new LinkedHashMap<>();
     private Map<ResourceLocation, Position> origins = Map.of();
@@ -48,6 +50,7 @@ final class QuestNodeDrag {
         startY = graphY;
         pressX = screenX;
         pressY = screenY;
+        holdNanos = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.nodeDragHoldMillis) * 1_000_000L;
         started = now;
         pickedUp = false;
         moved = false;
@@ -55,14 +58,14 @@ final class QuestNodeDrag {
     }
 
     boolean requestsPan(double x, double y, long now) {
-        return QuestViewportMath.shouldPanBeforeLongPress(now - started, HOLD_NANOS,
+        return QuestViewportMath.shouldPanBeforeLongPress(now - started, holdNanos,
                 x - pressX, y - pressY, 4.0);
     }
 
     void update(double graphX, double graphY, double screenX, double screenY, long now) {
         if (!active || origins.isEmpty()) return;
         if (!pickedUp && requestsPan(screenX, screenY, now)) return;
-        if (!pickedUp && now - started >= HOLD_NANOS) pickedUp = true;
+        if (!pickedUp && now - started >= holdNanos) pickedUp = true;
         if (!pickedUp) return;
         double dx = (graphX - startX) / QuestViewportMath.GRID_SCALE;
         double dy = (graphY - startY) / QuestViewportMath.GRID_SCALE;

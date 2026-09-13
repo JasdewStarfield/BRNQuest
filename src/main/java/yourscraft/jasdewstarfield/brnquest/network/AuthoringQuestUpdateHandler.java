@@ -62,7 +62,9 @@ final class AuthoringQuestUpdateHandler {
         double replacementY = hasY ? wire.y() : quest.y();
         var appearanceInput = wire.appearance();
         QuestAppearance appearance = appearanceInput == null ? quest.appearance() : new QuestAppearance(
-                appearanceInput.shape(), appearanceInput.size(), appearanceInput.iconScale(), appearanceInput.minWidth());
+                appearanceInput.shape(), appearanceInput.size(), appearanceInput.iconScale(), appearanceInput.minWidth(), quest.appearance().hideDependencyLines());
+        if (wire.hideDependencyLines() != null) appearance = new QuestAppearance(appearance.shape(), appearance.size(), appearance.iconScale(), appearance.minWidth(),
+                wire.hideDependencyLines().equals("default") ? null : Boolean.valueOf(wire.hideDependencyLines()));
         var behaviorInput = wire.behavior();
         QuestBehavior behavior = behaviorInput == null ? quest.behavior() : new QuestBehavior(
                 behaviorInput.hideUntilDependenciesVisible(), behaviorInput.hideUntilDependenciesComplete(),

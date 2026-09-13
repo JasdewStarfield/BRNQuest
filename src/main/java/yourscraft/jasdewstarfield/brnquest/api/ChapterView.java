@@ -7,7 +7,12 @@ import java.util.List;
 /** Immutable public chapter projection in author-defined quest order. */
 @ApiStatus(ApiStability.EXPERIMENTAL)
 public record ChapterView(ResourceLocation bookId, ResourceLocation id, ResourceLocation groupId,
-                          String title, String icon, int order, List<ResourceLocation> questIds, java.util.Map<String, String> questDefaults, Boolean consumeItems, ResourceLocation autofocusQuestId) {
+                          String title, String icon, int order, List<ResourceLocation> questIds, java.util.Map<String, String> questDefaults, Boolean consumeItems, ResourceLocation autofocusQuestId, boolean defaultHideDependencyLines) {
+    /** Compatibility constructor for chapter views predating dependency-line defaults. */
+    public ChapterView(ResourceLocation bookId, ResourceLocation id, ResourceLocation groupId, String title, String icon,
+            int order, List<ResourceLocation> questIds, java.util.Map<String, String> defaults, Boolean consumeItems, ResourceLocation autofocusQuestId) {
+        this(bookId, id, groupId, title, icon, order, questIds, defaults, consumeItems, autofocusQuestId, false);
+    }
     /** An absent target keeps the ordinary chapter viewport behavior. */
     public ChapterView(ResourceLocation bookId, ResourceLocation id, ResourceLocation groupId,
             String title, String icon, int order, List<ResourceLocation> questIds, java.util.Map<String, String> questDefaults, Boolean consumeItems) {

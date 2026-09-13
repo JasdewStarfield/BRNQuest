@@ -11,6 +11,7 @@ import java.util.Map;
 /** Owns the rendered detail frame and converts pointer input into protocol-free semantic intents. */
 final class QuestDetailsInteraction {
     enum Action {
+        OPEN_UPSTREAM, OPEN_DOWNSTREAM,
         CLOSE, COMPLETE_QUEST, TOGGLE_TRACKED, SUBMIT_TASK, OPEN_SUBMISSION_CHOICES,
         OPEN_ITEM_SLOT_SELECTION, CLAIM_REWARD, OPEN_REWARD_OPTIONS, QUICK_EDIT_TEXT,
         EDIT_PROPERTIES, EDIT_TASKS, EDIT_REWARDS, EDIT_DEPENDENCIES
@@ -25,12 +26,14 @@ final class QuestDetailsInteraction {
     record Frame(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
                  UiRect panel, UiRect close, UiRect complete, UiRect track,
                  Map<String, UiRect> textAreas, Map<Action, UiRect> editorActions,
-                 List<TaskTarget> tasks, Map<ResourceLocation, UiRect> rewards) {
+                 List<TaskTarget> tasks, Map<ResourceLocation, UiRect> rewards,
+                 Map<Action, UiRect> relationToggles) {
         Frame {
             textAreas = Map.copyOf(textAreas);
             editorActions = Map.copyOf(editorActions);
             tasks = List.copyOf(tasks);
             rewards = Map.copyOf(rewards);
+            relationToggles = Map.copyOf(relationToggles);
         }
     }
 
@@ -47,6 +50,7 @@ final class QuestDetailsInteraction {
     private final List<TaskTarget> tasks = new ArrayList<>();
     private final Map<ResourceLocation, UiRect> rewards = new LinkedHashMap<>();
     private Frame frame;
+    private final Map<Action, UiRect> relationToggles = new LinkedHashMap<>();
     private final Map<ResourceLocation,UiRect> rewardOptions = new LinkedHashMap<>();
 
     void begin(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
@@ -64,6 +68,7 @@ final class QuestDetailsInteraction {
         tasks.clear();
         rewards.clear();
         rewardOptions.clear();
+        relationToggles.clear();
         frame = null;
     }
 
@@ -91,9 +96,14 @@ final class QuestDetailsInteraction {
     /** Read-only candidates remain clickable even when a reward cannot be claimed. */
     void rewardOptions(ResourceLocation id, UiRect bounds) { if (bounds != null) rewardOptions.put(id,bounds); }
 
+    /** Navigation is read-only and remains available in preview, independently of gameplay actions. */
+    void relationToggle(Action action, UiRect bounds) {
+        if (bounds != null) relationToggles.put(action, bounds);
+    }
+
     Frame finish() {
         frame = new Frame(identity, questId, editing, gameplay, panel, close, complete, track,
-                textAreas, editorActions, tasks, rewards);
+                textAreas, editorActions, tasks, rewards, relationToggles);
         return frame;
     }
 
@@ -116,6 +126,8 @@ final class QuestDetailsInteraction {
         }
         // Right click is reserved for author gestures and never becomes a gameplay mutation.
         if (button != 0) return intent(null, null, null);
+        for (var entry : frame.relationToggles().entrySet())
+            if (entry.getValue().containsExclusive(x, y)) return intent(entry.getKey(), null, null);
         for (TaskTarget task : frame.tasks()) {
             if (task.candidates() != null && task.candidates().contains(x, y)) {
                 return intent(Action.OPEN_SUBMISSION_CHOICES, task.taskId(), null);

@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 /**
  * Computes the stable regions of the quest screen from one immutable snapshot.
  * Editor components consume these rectangles so opening a side drawer cannot
@@ -25,6 +27,8 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     }
 
     public int navigationWidth() {
+        int custom = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.navigationWidth);
+        if (custom > 0) return clamp(custom, Math.min(100, width / 4), Math.max(100, width / 4));
         if (!compact()) return REGULAR_NAVIGATION_WIDTH;
         return clamp(Math.round(width * 0.22F), COMPACT_NAVIGATION_MIN, COMPACT_NAVIGATION_MAX);
     }
@@ -34,6 +38,9 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     }
 
     public int detailsWidth() {
+        int custom = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.detailsWidth);
+        // Limit both custom drawers to leave room for the canvas when opened together.
+        if (custom > 0) return clamp(custom, Math.min(184, width / 2), Math.max(184, width / 2));
         if (!compact()) return REGULAR_DETAILS_WIDTH;
         return clamp(Math.round(width * 0.34F), COMPACT_DETAILS_MIN, COMPACT_DETAILS_MAX);
     }

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 新增章节 `default_hide_dependency_lines` 与任务三态 `hide_dependency_lines`，支持编辑、导入、保存和复制；聚焦时仍显示相关依赖线。
+- Added chapter dependency-line defaults and per-quest inherit/show/hide overrides across editing, import, persistence and copying; focused relationships remain visible.
+
+- 任务详情新增常驻双箭头按钮，打开可滚动的前置／后续任务弹窗，显示状态并支持跨章节跳转聚焦；聚焦任务的前置与后续依赖连线分别以蓝色和橙色加粗高亮。
+- Added permanent double-chevron controls opening scrollable prerequisite/follow-up dialogs with status and cross-chapter focus navigation, plus blue/orange highlights for incoming/outgoing dependency paths.
+
 - 单任务／多选任务支持同书跨章节快照粘贴，保留相对布局与多语言文本；源项删除后仍可粘贴，外部依赖失效时整次拒绝。
 - Added same-book cross-chapter quest snapshot paste with relative layout and localized text, surviving source deletion and rejecting stale external dependencies atomically.
 

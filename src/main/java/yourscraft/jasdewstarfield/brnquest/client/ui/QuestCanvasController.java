@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSelectionFocus;
@@ -62,6 +64,14 @@ final class QuestCanvasController {
     private QuestScreenFrameIdentity gestureIdentity;
     private final EditorSmoothValue zoomMotion = new EditorSmoothValue(1.0, 0.00001);
     private final EditorSelectionFocus<ResourceLocation> selectionFocus = new EditorSelectionFocus<>();
+    private ResourceLocation explicitFocusId;
+    private boolean explicitFocusPending;
+
+    /** Explicit links use the same easing as node selection, even when automatic focus is disabled. */
+    void requestFocus(ResourceLocation id) {
+        explicitFocusId = Objects.requireNonNull(id);
+        explicitFocusPending = true;
+    }
     private final QuestNodeDrag nodeDrag = new QuestNodeDrag();
     private final Set<ResourceLocation> selection = new LinkedHashSet<>();
 
@@ -97,6 +107,8 @@ final class QuestCanvasController {
         renderedPanX = panX;
         renderedPanY = panY;
         selectionFocus.reset(panX, panY);
+        explicitFocusId = null;
+        explicitFocusPending = false;
         selection.clear();
         cancelGesture();
     }
@@ -113,6 +125,8 @@ final class QuestCanvasController {
         zoom = renderedZoom;
         panX = panY = renderedPanX = renderedPanY = 0;
         selectionFocus.reset(0, 0);
+        explicitFocusId = null;
+        explicitFocusPending = false;
         cancelGesture();
     }
 
@@ -134,14 +148,16 @@ final class QuestCanvasController {
         renderedPanY = panY;
 
         boolean requested = selectionFocus.observe(focus.detailsOpen(), focus.selectedId());
-        if (!focus.enabled() || !focus.detailsOpen() || focus.selectedId() == null
+        boolean explicit = explicitFocusId != null && explicitFocusId.equals(focus.selectedId());
+        if ((!focus.enabled() && !explicit) || !focus.detailsOpen() || focus.selectedId() == null
                 || focus.targetGraphX() == null || focus.targetGraphY() == null) {
             cancelFocus();
             return;
         }
-        if (requested) {
+        if (requested || explicit && explicitFocusPending) {
             finishZoomMotion(focus.screenOriginX(), focus.screenOriginY());
             selectionFocus.start(focus.selectedId(), renderedPanX, renderedPanY);
+            explicitFocusPending = false;
         }
         EditorSelectionFocus.Point point = selectionFocus.advance(gestureActive(), renderedPanX, renderedPanY,
                 () -> new EditorSelectionFocus.Point(
@@ -152,6 +168,7 @@ final class QuestCanvasController {
                 seconds, focusSpeed);
         panX = renderedPanX = point.x();
         panY = renderedPanY = point.y();
+        if (!explicit || selectionFocus.focusing() == null) explicitFocusId = null;
     }
 
     ClickResult mouseClicked(QuestCanvasRenderer.Frame frame, InputModel model,
@@ -261,7 +278,7 @@ final class QuestCanvasController {
 
     void scrollZoom(double amount) {
         cancelFocus();
-        zoomMotion.target(QuestViewportMath.clampZoom(zoomMotion.target() + amount * 0.10));
+        zoomMotion.target(QuestViewportMath.clampZoom(zoomMotion.target() + amount * BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.zoomStep)));
     }
 
     void reconcile(java.util.function.Function<ResourceLocation, DraftBookEditor.Position> authoritative,
@@ -278,6 +295,8 @@ final class QuestCanvasController {
     }
 
     void cancelFocus() {
+        explicitFocusId = null;
+        explicitFocusPending = false;
         selectionFocus.cancel(renderedPanX, renderedPanY);
         panX = renderedPanX;
         panY = renderedPanY;

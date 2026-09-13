@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.20` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.21` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 

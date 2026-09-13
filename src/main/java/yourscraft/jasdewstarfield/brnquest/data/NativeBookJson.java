@@ -81,6 +81,7 @@ public final class NativeBookJson {
         JsonObject value = new JsonObject();
         value.addProperty("id", chapter.id().toString());
         value.addProperty("group_id", chapter.groupId().toString());
+        if (chapter.defaultHideDependencyLines()) value.addProperty("default_hide_dependency_lines", true);
         if (chapter.autofocusQuestId() != null) value.addProperty("autofocus_id", chapter.autofocusQuestId().toString());
         if (chapter.consumeItems() != null) value.addProperty("consume_items", chapter.consumeItems());
         value.addProperty("title", chapter.title());
@@ -110,6 +111,7 @@ public final class NativeBookJson {
         appearance.addProperty("size", quest.appearance().size());
         appearance.addProperty("icon_scale", quest.appearance().iconScale());
         appearance.addProperty("min_width", quest.appearance().minWidth());
+        if (quest.appearance().hideDependencyLines() != null) value.addProperty("hide_dependency_lines", quest.appearance().hideDependencyLines());
         value.add("appearance", appearance);
         if (!quest.behavior().equals(QuestBehavior.DEFAULT)) {
             JsonObject behavior = new JsonObject();
@@ -170,7 +172,8 @@ public final class NativeBookJson {
         for (JsonElement element : value.getAsJsonArray("quests")) quests.add(decodeQuest(bookId, chapterId, element.getAsJsonObject()));
         return new ChapterDefinition(bookId, chapterId, id(value.get("group_id").getAsString()), text(value, "title"),
                 text(value, "icon"), integer(value, "order"), quests, stringMap(value, "extensions"), QuestCreationDefaults.fromJson(value.get("quest_defaults")), optionalBoolean(value, "consume_items"),
-                value.has("autofocus_id") ? id(value.get("autofocus_id").getAsString()) : null);
+                value.has("autofocus_id") ? id(value.get("autofocus_id").getAsString()) : null,
+                Boolean.TRUE.equals(optionalBoolean(value, "default_hide_dependency_lines")));
     }
 
     private static QuestDefinition decodeQuest(ResourceLocation bookId, ResourceLocation chapterId, JsonObject value) {
@@ -192,7 +195,7 @@ public final class NativeBookJson {
                 text(value, "title"), text(value, "subtitle"), text(value, "description"), text(value, "icon"),
                 decimal(value, "x", 0.0), decimal(value, "y", 0.0), dependencies, tasks, rewards, text(value, "legacy_id"),
                 new QuestAppearance(text(appearance, "shape", "chamfer"), decimal(appearance, "size", 1.0),
-                        decimal(appearance, "icon_scale", 1.0), decimal(appearance, "min_width", 0.0)),
+                        decimal(appearance, "icon_scale", 1.0), decimal(appearance, "min_width", 0.0), optionalBoolean(value, "hide_dependency_lines")),
                 new QuestBehavior(bool(behavior, "hide_until_dependencies_visible"),
                         bool(behavior, "hide_until_dependencies_complete"), bool(behavior, "invisible_until_complete"),
                         integer(behavior, "visible_after_tasks"), bool(behavior, "hide_details_until_startable"),

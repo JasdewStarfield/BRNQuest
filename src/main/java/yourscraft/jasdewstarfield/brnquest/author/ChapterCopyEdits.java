@@ -18,7 +18,7 @@ public final class ChapterCopyEdits {
         int number = nextNumber(book, source);
         var seed = new ChapterDefinition(book.id(), targetId, source.groupId(),
                 QuestCopyTitles.title(source.title(), book.localization().fallbackLocale(), number), source.icon(),
-                source.order(), List.of(), source.extensions(), source.questDefaults(), source.consumeItems(), null);
+                source.order(), List.of(), source.extensions(), source.questDefaults(), source.consumeItems(), null, source.defaultHideDependencyLines());
         var added = DraftBookEditor.addChapter(book, seed);
         if (!added.success()) return added;
         QuestBookDefinition result = added.value().book();
@@ -34,7 +34,7 @@ public final class ChapterCopyEdits {
             if (source.quests().get(i).id().equals(source.autofocusQuestId())) focus = target.quests().get(i).id();
         }
         var focused = new ChapterDefinition(book.id(), targetId, target.groupId(), target.title(), target.icon(), target.order(),
-                target.quests(), target.extensions(), target.questDefaults(), target.consumeItems(), focus);
+                target.quests(), target.extensions(), target.questDefaults(), target.consumeItems(), focus, target.defaultHideDependencyLines());
         var updated = DraftBookEditor.updateChapter(result, targetId, focused);
         if (!updated.success()) return updated;
         result = updated.value().book();

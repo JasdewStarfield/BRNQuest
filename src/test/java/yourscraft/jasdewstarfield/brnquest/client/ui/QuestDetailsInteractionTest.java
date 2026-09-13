@@ -16,6 +16,17 @@ class QuestDetailsInteractionTest {
     private static final ResourceLocation REWARD = id("reward");
     private static final UiRect PANEL = new UiRect(600, 20, 800, 580);
 
+    @Test void relationNavigationWorksInPreviewButRejectsRightClicksAndStaleFrames() {
+        var interaction = frame(false, false);
+        interaction.relationToggle(QuestDetailsInteraction.Action.OPEN_UPSTREAM, new UiRect(620, 60, 700, 80));
+        interaction.finish();
+        assertEquals(QuestDetailsInteraction.Action.OPEN_UPSTREAM,
+                interaction.click(identity("r1", 800), 650, 70, 0).intent().action());
+        assertNull(interaction.click(identity("r1", 800), 650, 70, 1).intent());
+        assertFalse(interaction.click(identity("r2", 800), 650, 70, 0).consumed());
+        interaction.invalidate(); assertFalse(interaction.click(identity("r1", 800), 650, 70, 0).consumed());
+    }
+
     @Test void candidateButtonWinsOverTheContainingTaskRowEvenInPreview() {
         QuestDetailsInteraction interaction = frame(false, false);
         interaction.task(TASK, new UiRect(620, 100, 780, 124),

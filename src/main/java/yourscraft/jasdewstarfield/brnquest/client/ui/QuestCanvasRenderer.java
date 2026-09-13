@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -63,7 +65,11 @@ final class QuestCanvasRenderer {
 
     record Model(QuestScreenFrameIdentity identity, ResourceLocation chapterId, UiRect viewport,
                  Camera camera, List<NodeModel> nodes, boolean dragActive, int attentionPingOffsetY,
-                 double pointerX, double pointerY) {
+                 double pointerX, double pointerY, ResourceLocation focusedQuestId, boolean defaultHideDependencyLines) {
+        Model(QuestScreenFrameIdentity identity, ResourceLocation chapterId, UiRect viewport, Camera camera,
+                List<NodeModel> nodes, boolean dragActive, int attentionPingOffsetY, double pointerX, double pointerY) {
+            this(identity, chapterId, viewport, camera, nodes, dragActive, attentionPingOffsetY, pointerX, pointerY, null, false);
+        }
         Model {
             nodes = List.copyOf(nodes);
         }
@@ -102,8 +108,17 @@ final class QuestCanvasRenderer {
         graphics.pose().pushPose();
         graphics.pose().translate((float) frame.camera().originX(), (float) frame.camera().originY(), 0.0F);
         graphics.pose().scale((float) frame.camera().zoom(), (float) frame.camera().zoom(), 1.0F);
-        renderGrid(graphics, frame.graphBounds());
-        frame.dependencies().forEach(dependency -> renderDependency(graphics, dependency));
+        // Grid visibility is independent of authoring snap behavior and quest coordinates.
+        var gridMode = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.showGrid);
+        if (gridMode == BrnQuestClientConfig.GridVisibility.ALWAYS
+                || gridMode == BrnQuestClientConfig.GridVisibility.EDITING_ONLY && model.identity().editing())
+            renderGrid(graphics, frame.graphBounds());
+        // Paint highlighted paths last so unrelated crossing paths cannot cover their directional cue.
+        frame.dependencies().stream().filter(d -> dependencyVisible(d, model.focusedQuestId(), model.defaultHideDependencyLines()))
+                .filter(d -> edgeColor(d, model.focusedQuestId()) == GraystonePalette.EDGE)
+                .forEach(d -> renderDependency(graphics, d, GraystonePalette.EDGE, 1));
+        frame.dependencies().stream().filter(d -> edgeColor(d, model.focusedQuestId()) != GraystonePalette.EDGE)
+                .forEach(d -> renderDependency(graphics, d, edgeColor(d, model.focusedQuestId()), 2));
         frame.nodes().forEach(node -> renderSnapGhost(graphics, font, node, frame.graphBounds()));
         frame.nodes().forEach(node -> renderNode(graphics, font, node, model.attentionPingOffsetY()));
         graphics.pose().popPose();
@@ -206,16 +221,24 @@ final class QuestCanvasRenderer {
     }
 
     /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
-    private static void renderDependency(GuiGraphics graphics, DependencyFrame dependency) {
+    /** Visibility belongs to the dependent quest; focused neighbors remain inspectable without changing stored settings. */
+    static boolean dependencyVisible(DependencyFrame edge, ResourceLocation focused, boolean chapterDefault) {
+        return edgeColor(edge, focused) != GraystonePalette.EDGE || !edge.child().model().appearance().hideDependencyLines(chapterDefault);
+    }
+
+    static int edgeColor(DependencyFrame dependency, ResourceLocation focused) {
+        return QuestRelations.edgeColor(dependency.parent().model().id(), dependency.child().model().id(), focused, GraystonePalette.EDGE);
+    }
+
+    private static void renderDependency(GuiGraphics graphics, DependencyFrame dependency, int color, int thickness) {
         int x1 = dependency.parent().graphX(), y1 = dependency.parent().graphY();
         int x2 = dependency.child().graphX(), y2 = dependency.child().graphY();
         int radius = NODE_BASE_SIZE / 2;
-        int color = GraystonePalette.EDGE;
         if (Math.abs(x2 - x1) < radius * 2) {
             int direction = y2 >= y1 ? 1 : -1;
             int startY = y1 + direction * radius;
             int endY = y2 - direction * radius;
-            vertical(graphics, x1, startY, endY, color);
+            vertical(graphics, x1, startY, endY, color, thickness);
             arrowVertical(graphics, x1, endY, direction, color);
             return;
         }
@@ -223,9 +246,9 @@ final class QuestCanvasRenderer {
         int startX = x1 + direction * radius;
         int endX = x2 - direction * radius;
         int middleX = (startX + endX) / 2;
-        horizontal(graphics, startX, middleX, y1, color);
-        vertical(graphics, middleX, y1, y2, color);
-        horizontal(graphics, middleX, endX, y2, color);
+        horizontal(graphics, startX, middleX, y1, color, thickness);
+        vertical(graphics, middleX, y1, y2, color, thickness);
+        horizontal(graphics, middleX, endX, y2, color, thickness);
         arrowHorizontal(graphics, endX, y2, direction, color);
     }
 
@@ -368,12 +391,12 @@ final class QuestCanvasRenderer {
         graphics.fill(x - radius, y - radius + cut, x + radius + 1, y + radius - cut + 1, color);
     }
 
-    private static void horizontal(GuiGraphics graphics, int x1, int x2, int y, int color) {
-        graphics.fill(Math.min(x1, x2), y, Math.max(x1, x2) + 1, y + 1, color);
+    private static void horizontal(GuiGraphics graphics, int x1, int x2, int y, int color, int thickness) {
+        graphics.fill(Math.min(x1, x2), y, Math.max(x1, x2) + 1, y + thickness, color);
     }
 
-    private static void vertical(GuiGraphics graphics, int x, int y1, int y2, int color) {
-        graphics.fill(x, Math.min(y1, y2), x + 1, Math.max(y1, y2) + 1, color);
+    private static void vertical(GuiGraphics graphics, int x, int y1, int y2, int color, int thickness) {
+        graphics.fill(x, Math.min(y1, y2), x + thickness, Math.max(y1, y2) + 1, color);
     }
 
     private static void arrowHorizontal(GuiGraphics graphics, int x, int y, int direction, int color) {

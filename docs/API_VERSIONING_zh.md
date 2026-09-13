@@ -1,5 +1,10 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.20 → experimental.21
+
+`ChapterView` 新增 `defaultHideDependencyLines` 只读字段。保留此前构造器，旧构造器默认 false；依赖隐藏仅影响渲染，不改变任务依赖判定。
+
+
 ## experimental.19 → experimental.20
 
 `ChapterView.autofocusQuestId()` 返回可空的同章节任务 ID；null 表示未设置自动聚焦。新增完整构造器并保留全部旧构造器。依赖 record 组件反射、equals/toString 的附属应考虑新增组件。
@@ -33,7 +38,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.20`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.21`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

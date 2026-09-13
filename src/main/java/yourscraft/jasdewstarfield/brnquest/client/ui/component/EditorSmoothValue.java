@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 /**
  * Small deterministic animation state for continuous editor values.
  * Direct-manipulation paths can {@link #snap(double)} so hit testing never trails the cursor.
@@ -30,6 +32,11 @@ public final class EditorSmoothValue {
     }
 
     public double advanceFrame(double elapsedSeconds, double responsePerSecond) {
+        // Shared animation primitive covers child screens as well as canvas and drawer movement.
+        if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.reduceMotion)) {
+            current = target;
+            return current;
+        }
         double remaining = target - current;
         if (Math.abs(remaining) <= settleEpsilon) {
             current = target;

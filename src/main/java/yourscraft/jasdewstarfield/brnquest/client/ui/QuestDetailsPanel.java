@@ -23,6 +23,7 @@ final class QuestDetailsPanel {
                  int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim) {}
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
+        default int relations(int x, int y, int width) { return y; }
         void reward(RewardDefinition reward, int x, int y);
         default int rewardWidth(RewardDefinition reward) { return QuestViewportMath.REWARD_ROW_HEIGHT; }
     }
@@ -69,11 +70,12 @@ final class QuestDetailsPanel {
 
         boolean ready = model.ready();
         Component statusText = model.statusText();
-        // Reserve the trailing tracking control and wrap status independently of completion actions.
+        // Share the status row with tracking and relation navigation instead of adding a toolbar row.
+        rows.relations(contentLeft + contentWidth - 36, y - 3, 36);
         int statusBottom = EditorTextRenderer.drawWrapped(graphics, font, statusText.getString(),
-                contentLeft, y, Math.max(1, contentWidth - 28), model.statusColor());
+                contentLeft, y, Math.max(1, contentWidth - 68), model.statusColor());
         int statusTop = y;
-        int statusWidth = Math.min(font.width(statusText), Math.max(1, contentWidth - 28));
+        int statusWidth = Math.min(font.width(statusText), Math.max(1, contentWidth - 68));
         if (model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()) {
             // Cyan underline and info glyph advertise that the locked reason is inspectable.
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
@@ -82,7 +84,7 @@ final class QuestDetailsPanel {
         }
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int pinX = contentLeft + contentWidth - font.width(pin) - 18;
+            int pinX = contentLeft + contentWidth - font.width(pin) - 42;
             graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : GraystonePalette.SECONDARY, false);
             if (mouseX >= pinX - 2 && mouseX <= pinX + font.width(pin) + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
                 hint = Component.translatable(status == QuestStatus.ACTIVE
@@ -92,7 +94,7 @@ final class QuestDetailsPanel {
         UiRect trackAction = null;
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
             String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int pinX = contentLeft + contentWidth - font.width(pin) - 18;
+            int pinX = contentLeft + contentWidth - font.width(pin) - 42;
             trackAction = visiblePart(new UiRect(pinX - 2, y, pinX + font.width(pin) + 2,
                     y + font.lineHeight), layout.content());
         }

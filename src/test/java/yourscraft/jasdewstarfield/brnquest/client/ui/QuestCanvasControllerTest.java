@@ -26,6 +26,28 @@ class QuestCanvasControllerTest {
             new QuestScreenFrameIdentity(BOOK, "rev-1", true, 200, 200);
 
     @Test
+    void explicitLinkFocusEasesWithAutoFocusDisabledAndCanBeInterrupted() {
+        QuestCanvasController controller = new QuestCanvasController();
+        controller.resetCamera(0, 0, 1);
+        var focus = new QuestCanvasController.FocusModel(false, true, A,
+                400.0, 200.0, 0, 0, 0, 0);
+        controller.requestFocus(A);
+        // Requesting navigation must not change the displayed camera before its next animation frame.
+        assertEquals(400, controller.renderedCamera(0, 0).screenX(400), 0.001);
+        controller.advanceFrame(0.016, 10, 10, focus);
+        double movingX = controller.renderedCamera(0, 0).screenX(400);
+        assertTrue(movingX > 0 && movingX < 400);
+        controller.cancelFocus();
+        controller.advanceFrame(0.016, 10, 10, focus);
+        assertEquals(movingX, controller.renderedCamera(0, 0).screenX(400), 0.001);
+        // Re-following the same link restarts focus even though the selected ID has not changed.
+        controller.requestFocus(A);
+        for (int i = 0; i < 200; i++) controller.advanceFrame(0.016, 10, 10, focus);
+        assertEquals(0, controller.renderedCamera(0, 0).screenX(400), 0.02);
+        assertEquals(0, controller.renderedCamera(0, 0).screenY(200), 0.02);
+    }
+
+    @Test
     void chapterFocusAccountsForNavigationWidthAtEverySupportedZoom() {
         for (double zoom : List.of(0.5, 1.0, 2.0)) {
             QuestCanvasController controller = new QuestCanvasController();

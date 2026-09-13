@@ -17,7 +17,7 @@ class ChapterCopyEditsTest {
     private static QuestBookDefinition book(boolean empty) {
         var source = new ChapterDefinition(id("book"), id("chapter"), id("g"), "Chapter", "minecraft:book", 0,
                 empty ? List.of() : List.of(quest("a", List.of()), quest("b", List.of(id("a"), id("external")))),
-                Map.of("custom", "kept"), QuestCreationDefaults.EMPTY, false, empty ? null : id("b"));
+                Map.of("custom", "kept"), QuestCreationDefaults.EMPTY, false, empty ? null : id("b"), true);
         var next = new ChapterDefinition(id("book"), id("next"), id("g"), "Next", "", 1, List.of());
         return new QuestBookDefinition(id("book"), 1, "Book", List.of(new ChapterGroupDefinition(id("book"), id("g"), "Group", 0)),
                 List.of(source, next), Map.of("old_chapter", source.id()),
@@ -28,6 +28,7 @@ class ChapterCopyEditsTest {
         var change = ChapterCopyEdits.copy(original, id("chapter")); assertTrue(change.success(), change.message());
         var result = change.value().book();
         var copy = result.chapters().stream().filter(c -> c.title().equals("Chapter (Copy)")).findFirst().orElseThrow();
+        assertTrue(copy.defaultHideDependencyLines());
         assertEquals(1, copy.order()); assertEquals(id("g"), copy.groupId());
         assertEquals("minecraft:book", copy.icon()); assertEquals(false, copy.consumeItems());
         assertEquals(Map.of("custom", "kept"), copy.extensions());

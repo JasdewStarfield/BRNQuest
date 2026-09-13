@@ -103,6 +103,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorSmoothValue detailsDrawerMotion = new EditorSmoothValue(0.0, 0.001);
     private final QuestNavigationPanel navigationPanel = new QuestNavigationPanel();
     private final QuestDetailsPanel detailsPanel = new QuestDetailsPanel();
+
     private final QuestDetailsInteraction detailsInteraction = new QuestDetailsInteraction();
     private final QuestTaskRowWidget taskRowWidget = new QuestTaskRowWidget();
     private final QuestRewardCellWidget rewardCellWidget = new QuestRewardCellWidget();
@@ -165,6 +166,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private EditorLocalizedText quickLocalizedText;
     private EditorLocalizedText structureLocalizedTitle;
     private Boolean structureConsumeItems;
+    private boolean structureHideDependencyLines;
+    private Boolean questHideDependencyLines;
+    private UiRect questHideLinesBounds;
     private ResourceLocation structureAutofocusQuestId;
     private QuestCreationDefaults structureDefaults = QuestCreationDefaults.EMPTY;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
@@ -234,6 +238,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
     // Legacy form dispatch shares one rendered-button feedback adapter.
+    private final List<EditorTextField> propertyNativeFields = new ArrayList<>();
     private final EditorButtonInput formButtons = new EditorButtonInput();
     private QuestScreenFrameIdentity formButtonFrame;
     private EditorOverlayHost.Kind formButtonOverlay;
@@ -269,9 +274,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // setScreen(parent) initializes this same QuestScreen again after an item/raw-config child
         // closes. Re-register existing fields instead of replacing them, preserving the complete
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
-        questFields.bind(font, this::addRenderableWidget);
+        propertyNativeFields.clear();
+        questFields.bind(font, this::registerPropertyField);
         structureFields.bind(font, this::addRenderableWidget);
-        typedPropertySection.bind(font, this::addRenderableWidget);
+        typedPropertySection.bind(font, this::registerPropertyField);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 256);
         serverContextId = currentServerContext();
@@ -540,6 +546,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (structureFormOpen()) graphics.pose().translate(0, 0, 500);
                 if (structureFormOpen()) renderStructureForm(graphics, mouseX, mouseY);
                 offsetDetailsDrawerFieldsForMotion();
+                // Native inputs render later than their rows, so give them the same viewport explicitly.
+                var inputClip = propertyViewport().translated(detailsDrawerOffsetX(), 0);
+                graphics.enableScissor(Math.max(canvasRight(), inputClip.left()), inputClip.top(), inputClip.right(), inputClip.bottom());
+                try {
+                    for (var field : propertyNativeFields) field.render(graphics,
+                            inputClip.containsExclusive(mouseX, mouseY) ? mouseX : Integer.MIN_VALUE,
+                            inputClip.containsExclusive(mouseX, mouseY) ? mouseY : Integer.MIN_VALUE, partialTick);
+                } finally { graphics.disableScissor(); }
                 super.render(graphics, mouseX, mouseY, partialTick);
                 renderDeferredTooltip(graphics, mouseX, mouseY);
                 graphics.flush();
@@ -681,7 +695,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 new QuestCanvasRenderer.Model(currentFrameIdentity(), chapter == null ? null : chapter.id(),
                         new UiRect(canvasLeft(), topToolbarHeight(), canvasRight(),
                                 height - bottomToolbarHeight()),
-                        camera, nodes, canvasController.dragActive(), attentionPingOffsetY, mouseX, mouseY));
+                        camera, nodes, canvasController.dragActive(), attentionPingOffsetY, mouseX, mouseY,
+                        detailsOpen ? selectedQuestId() : null, chapter != null && chapter.defaultHideDependencyLines()));
         canvasFrame = result.frame();
         if (!result.tooltip().isEmpty()) hoveredComponentTooltip = result.tooltip();
     }
@@ -752,6 +767,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_desc", quest.description()),
                         status, statusText, statusColor(status),
                         editing, gameplayAllowed(), canSubmit(quest, status), displaySnapshot().book().settings().suppressAutoClaim()), new QuestDetailsPanel.Rows() {
+                    public int relations(int x, int y, int rowWidth) {
+                        return renderQuestRelations(graphics, quest, x, y, rowWidth, content, mouseX, mouseY);
+                    }
                     public int task(TaskDefinition task, int x, int y, int rowWidth) {
                         return renderTask(graphics, quest, task, status, x, y, rowWidth, mouseX, mouseY);
                     }
@@ -848,6 +866,80 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         } else if (cell.hint() != null) hoveredDetailText = cell.hint();
     }
 
+    /** Native-size icons share the status row; navigation never adds height to the detail flow. */
+    private int renderQuestRelations(GuiGraphics graphics, QuestDefinition quest, int x, int y, int rowWidth,
+            UiRect viewport, int mouseX, int mouseY) {
+        var relations = QuestRelations.resolve(displaySnapshot().book().quests(), quest.id(), this::questVisible);
+        renderRelationButton(graphics, new UiRect(x, y, x + 16, y + 16), viewport,
+                true, relations.upstream().size(), mouseX, mouseY);
+        renderRelationButton(graphics, new UiRect(x + rowWidth - 16, y, x + rowWidth, y + 16), viewport,
+                false, relations.downstream().size(), mouseX, mouseY);
+        return y;
+    }
+    private void renderRelationButton(GuiGraphics graphics, UiRect bounds, UiRect viewport, boolean upstream,
+            int count, int mouseX, int mouseY) {
+        int color = upstream ? QuestRelations.UPSTREAM_COLOR : QuestRelations.DOWNSTREAM_COLOR;
+        String direction = upstream ? "upstream" : "downstream";
+        var label = Component.translatable("screen.brnquest.relations." + direction, count);
+        var visible = bounds.intersection(viewport);
+        boolean hovered = visible.width() > 0 && visible.height() > 0 && visible.containsExclusive(mouseX, mouseY);
+        // Render the full 16x16 PNG directly, without the generic button's padding or permanent bevel.
+        if (hovered) graphics.fill(bounds.left(), bounds.top(), bounds.right(), bounds.bottom(), GraystonePalette.HOVER);
+        EditorIcon.sprite(ResourceLocation.parse("brnquest:editor/relations/" + direction))
+                .render(graphics, font, bounds, count == 0 && !hovered ? GraystonePalette.DISABLED : color);
+        if (hovered) hoveredComponentTooltip = List.of(label);
+        if (visible.width() > 0 && visible.height() > 0) detailsInteraction.relationToggle(upstream
+                ? QuestDetailsInteraction.Action.OPEN_UPSTREAM : QuestDetailsInteraction.Action.OPEN_DOWNSTREAM, visible);
+    }
+    /** Live rows follow snapshot/visibility changes while the child keeps the parent session renewing. */
+    private void openRelationsScreen(QuestDefinition source, boolean upstream) {
+        openChildScreen(new QuestRelationsScreen(this, upstream, () -> {
+            var snapshot = displaySnapshot();
+            if (snapshot == null) return List.of();
+            var relations = QuestRelations.resolve(snapshot.book().quests(), source.id(), this::questVisible);
+            return (upstream ? relations.upstream() : relations.downstream()).stream().map(target -> {
+                var state = status(target);
+                boolean hideText = !ClientEditorState.get().editing() && target.behavior().hideTextUntilComplete() && !isCompleted(state);
+                return new QuestRelationsScreen.Entry(target.id(), Component.literal(hideText ? "???" : questTitle(target)),
+                        Component.literal(chapterTitle(snapshot.book(), target.chapterId())),
+                        gameplayAllowed() ? Component.translatable("screen.brnquest.status." + state.name().toLowerCase(java.util.Locale.ROOT))
+                                : Component.translatable("screen.brnquest.editor.preview"),
+                        gameplayAllowed() ? statusColor(state) : GraystonePalette.MUTED);
+            }).toList();
+        }, id -> navigateRelatedQuest(source, id)));
+    }
+
+    /** Explicit relationship navigation overrides automatic-focus preferences, while retaining visibility checks. */
+    private void navigateRelatedQuest(QuestDefinition source, ResourceLocation targetId) {
+        var snapshot = displaySnapshot();
+        if (snapshot == null || !QuestRelations.resolve(snapshot.book().quests(), source.id(), this::questVisible).contains(targetId)) return;
+        navigateToQuest(targetId);
+    }
+
+    /** Shared destination for relation lists and future Markdown links; resolve IDs against the live book. */
+    boolean navigateToQuest(ResourceLocation targetId) {
+        var snapshot = displaySnapshot();
+        if (snapshot == null) return false;
+        var target = snapshot.quests().get(targetId);
+        if (target == null || !questVisible(target)) return false;
+        boolean sameChapter = target.chapterId().equals(currentChapterId());
+        if (!sameChapter) selectNavigationChapter(snapshot.book(), target.chapterId());
+        if (ClientEditorState.get().editing()) openEditorQuestDetails(target.id());
+        else {
+            ClientQuestState.get().selected(target.id()); closeQuestEditingPanels(); openDetailsPanel();
+            detailsPanel.scroll().snap(0);
+            BrnQuestNetwork.selectQuest(ClientQuestState.get().revision(), target.id().toString());
+        }
+        // Center inside the final drawer layout even when chapter autofocus points somewhere else.
+        var finalLayout = layout();
+        double centerX = (finalLayout.canvasLeft(navigationCollapsed ? 0.0 : 1.0) + finalLayout.canvasRight(1.0)) / 2.0;
+        if (sameChapter) canvasController.requestFocus(target.id());
+        else canvasController.focusChapterPoint(nodeGraphX(target), nodeGraphY(target), centerX, screenOriginX());
+        if (ClientEditorState.get().editing()) canvasController.selectOnly(target.id());
+        detailsInteraction.invalidate(); canvasFrame = null;
+        return true;
+    }
+
     /** Re-resolves every detail intent against the current snapshot before starting a client request. */
     private void handleDetailsIntent(QuestDetailsInteraction.Intent intent) {
         if (intent.action() == QuestDetailsInteraction.Action.CLOSE) {
@@ -861,6 +953,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (quest == null || !quest.id().equals(selectedQuestId())) return;
         switch (intent.action()) {
             case CLOSE -> { }
+            case OPEN_UPSTREAM -> openRelationsScreen(quest, true);
+            case OPEN_DOWNSTREAM -> openRelationsScreen(quest, false);
             case QUICK_EDIT_TEXT -> {
                 if (ClientEditorState.get().editing() && intent.textArea() != null) {
                     openQuickTextEditor(quest, QuickTextKind.valueOf(intent.textArea()));
@@ -991,6 +1085,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         if (questEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
+            // Partially visible controls may only receive clicks in the clipped part; footer stays independent.
+            if (!propertyViewport().containsExclusive(mouseX, mouseY)
+                    && !questEditorSaveBounds().contains(mouseX, mouseY)
+                    && !questEditorCancelBounds().contains(mouseX, mouseY)) return true;
             if (button == 0 && questLocalizedTextEditorBounds != null
                     && questLocalizedTextEditorBounds.contains(mouseX, mouseY)) {
                 QuestDefinition quest = draftQuest(questEditorQuestId);
@@ -1001,6 +1099,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     && questShapeDropdownBounds.contains(mouseX, mouseY)) {
                 openEnumDropdown(questShapeDropdownBounds, QUEST_SHAPES,
                         questFields.field("shape")::setValue, value -> authorValueLabel("shape", value));
+                return true;
+            }
+            if (button == 0 && propertyViewport().contains(mouseX, mouseY) && questHideLinesBounds != null && questHideLinesBounds.contains(mouseX, mouseY)) {
+                questHideDependencyLines = questHideDependencyLines == null ? Boolean.TRUE : questHideDependencyLines ? Boolean.FALSE : null;
                 return true;
             }
             if (button == 0 && questBehaviorEditorBounds != null
@@ -2211,6 +2313,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             // Share the existing row so the chapter dialog still fits the minimum GUI height.
             renderEditorTextButton(g, chapterDefaultsBounds(), Component.translatable("screen.brnquest.defaults.title"),
                     null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            renderEditorTextButton(g, chapterHideLinesBounds(), Component.translatable("screen.brnquest.chapter.hide_dependency_lines",
+                            Component.translatable(structureHideDependencyLines ? "options.on" : "options.off")),
+                    Component.translatable("screen.brnquest.dependency_lines.help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             Component value = Component.translatable(structureConsumeItems == null
                     ? "screen.brnquest.defaults.inherit" : structureConsumeItems ? "options.on" : "options.off",
                     Component.translatable(displaySnapshot().book().settings().consumeItems() ? "options.on" : "options.off"));
@@ -2277,6 +2382,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         result.put(LocalizedSingleLineEdits.FIELD, field);
         text.changes().forEach((locale, value) -> result.put(LocalizedSingleLineEdits.PREFIX + locale, value));
         return Map.copyOf(result);
+    }
+
+    private UiRect chapterHideLinesBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.left()+12, form.top()+188, form.right()-12, form.top()+208);
     }
 
     private UiRect chapterConsumeBounds() {
@@ -2362,6 +2472,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 openChapterAutofocusPicker();
                 return true;
             }
+            if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterHideLinesBounds().contains(mouseX, mouseY)) {
+                structureHideDependencyLines = !structureHideDependencyLines; return true;
+            }
             if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterConsumeBounds().contains(mouseX, mouseY)) {
                 structureConsumeItems = structureConsumeItems == null ? Boolean.TRUE : structureConsumeItems ? Boolean.FALSE : null;
                 return true;
@@ -2443,6 +2556,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 initializeStructureIcon(chapter.icon());
                 structureDefaults = chapter.questDefaults();
                 structureConsumeItems = chapter.consumeItems();
+                structureHideDependencyLines = chapter.defaultHideDependencyLines();
                 structureAutofocusQuestId = chapter.autofocusQuestId();
             }
         } else {
@@ -2504,7 +2618,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (chapter == null || !sendMutation("UPDATE_CHAPTER", chapter.id(), structureFormParent, null, title,
                         chapter.groupId().equals(structureFormParent) ? chapter.order() : book.chapters().stream()
                                 .filter(value -> value.groupId().equals(structureFormParent))
-                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("icon", chapterIconValue(), "quest_defaults", structureDefaults.toJson().toString(), "default_consume_items", java.util.Objects.toString(structureConsumeItems, "default"), "autofocus_id", java.util.Objects.toString(structureAutofocusQuestId, ""))))) return;
+                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("icon", chapterIconValue(), "quest_defaults", structureDefaults.toJson().toString(), "default_consume_items", java.util.Objects.toString(structureConsumeItems, "default"), "autofocus_id", java.util.Objects.toString(structureAutofocusQuestId, ""), "default_hide_dependency_lines", Boolean.toString(structureHideDependencyLines))))) return;
             }
             case ADD_QUEST -> sendMutation("ADD_QUEST", id, structureFormParent, null, title, 0,
                     structureFormX, structureFormY, List.of());
@@ -2539,7 +2653,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect structureFormBounds() {
         if (structureMetadataForm())
-            return layout().centeredDialog(420, 300, 20, structureFormKind == StructureFormKind.RENAME_CHAPTER ? 216 : 184);
+            return layout().centeredDialog(420, 300, 20, structureFormKind == StructureFormKind.RENAME_CHAPTER ? 244 : 184);
         return layout().centeredDialog(380, 260, 20, 126);
     }
 
@@ -2849,7 +2963,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (structureLocalizedTitle != null) structureLocalizedTitle.remember(structureFields.field("title").getValue());
             return List.of(structureFields.field("id").getValue(),
                     structureLocalizedTitle == null ? structureFields.field("title").getValue() : structureLocalizedTitle.changes(),
-                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode, structureDefaults, java.util.Objects.toString(structureConsumeItems, "default"), java.util.Objects.toString(structureAutofocusQuestId, ""),
+                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode, structureDefaults, structureHideDependencyLines, java.util.Objects.toString(structureConsumeItems, "default"), java.util.Objects.toString(structureAutofocusQuestId, ""),
                     structureFields.field("group_description").getValue(),
                     structureFields.field(chapterIconMode == IconEditorMode.ITEM ? "chapter_item" : "texture").getValue());
         }
@@ -2863,6 +2977,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 values.add(questFields.field(key).getValue());
             values.add(questEditorIconMode);
             values.add(questEditorBehavior);
+            values.add(java.util.Objects.toString(questHideDependencyLines, "default"));
             return List.copyOf(values);
         }
         return List.of();
@@ -4038,6 +4153,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questLocalizedTextEditorBounds = null;
         questShapeDropdownBounds = null;
         questBehaviorEditorBounds = null;
+        questHideLinesBounds = null;
         questIconRowLayout = null;
         rows.add(EditorPropertyPanel.text(font, questFields.field("id"),
                 "screen.brnquest.editor.quest.id", 78, null, enabled));
@@ -4051,6 +4167,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         rows.add((g, x, y, w) -> renderQuestIconEditorField(g, x, y, w, mouseX, mouseY));
         rows.add(this::renderQuestPositionEditorField);
+        rows.add((g,x,y,w) -> {
+            var row = EditorPropertyFormLayout.row(x,y,w,78);
+            EditorPropertyRow.label(g,font,Component.translatable("screen.brnquest.quest.hide_dependency_lines"),row.label(),null);
+            questHideLinesBounds = row.field();
+            var label = Component.translatable(questHideDependencyLines == null ? "screen.brnquest.dependency_lines.inherit"
+                    : questHideDependencyLines ? "screen.brnquest.dependency_lines.hide" : "screen.brnquest.dependency_lines.show");
+            renderEditorTextButton(g,row.field(),label,Component.translatable("screen.brnquest.dependency_lines.help"),enabled,EditorButton.Tone.NEUTRAL,mouseX,mouseY);
+        });
         rows.add(EditorPropertyPanel.section(font, "screen.brnquest.editor.section.completion"));
         rows.add((g, x, y, w) -> renderQuestBehaviorEditorField(g, x, y, w, enabled, mouseX, mouseY));
         Component heading = questEditorMessage == null
@@ -4093,10 +4217,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
-    /** Only fully rendered rows may receive input; clipped rows never overlap the footer. */
+    /** Keep native fields in input/focus routing while drawing them ourselves inside the property viewport. */
+    private void registerPropertyField(EditorTextField field) {
+        propertyNativeFields.add(field);
+        addWidget(field);
+    }
+
+    /** Pointer targets use the visible intersection, while row rendering retains its original geometry. */
     private UiRect visiblePropertyBounds(UiRect bounds) {
         var viewport = propertyViewport();
-        return bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom() ? bounds : null;
+        var visible = bounds.intersection(viewport);
+        return visible.width() > 0 && visible.height() > 0 ? visible : null;
     }
 
     private UiRect propertyViewport() {
@@ -4120,11 +4251,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         propertyDrawnScroll = propertyScroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
                 rows.size() * 22, viewport.height(), currentMotionFrameSeconds, scrollSmoothSpeed());
         graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+        formButtons.viewport(viewport.translated(detailsDrawerOffsetX(), 0), detailsDrawerOffsetX());
         try {
             for (int index = 0; index < rows.size(); index++) {
                 int y = viewport.top() + index * 22 - (int)Math.round(propertyDrawnScroll);
-                // Hidden inputs must not keep clickable bounds outside the visible row.
-                if (y < viewport.top() || y + 18 > viewport.bottom()) continue;
+                // Keep edge rows; the scissor clips their hidden pixels instead of removing the whole control.
+                if (y + 18 <= viewport.top() || y >= viewport.bottom()) continue;
                 rows.get(index).render(graphics, viewport.left(), y, viewport.width());
             }
         } finally { graphics.disableScissor(); }
@@ -4219,6 +4351,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questFields.field("icon_scale").setValue(Double.toString(quest.appearance().iconScale()));
         questFields.field("min_width").setValue(Double.toString(quest.appearance().minWidth()));
         questEditorBehavior = quest.behavior();
+        questHideDependencyLines = quest.appearance().hideDependencyLines();
         formBaseline = localFormValues();
         setFocused(questFields.field("id"));
     }
@@ -4339,10 +4472,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questLocalizedTextEditorBounds = null;
         questShapeDropdownBounds = null;
         questBehaviorEditorBounds = null;
+        questHideLinesBounds = null;
     }
 
     private Map<String, String> behaviorConfig(QuestBehavior value) {
         Map<String, String> result = new LinkedHashMap<>();
+        result.put("hide_dependency_lines", java.util.Objects.toString(questHideDependencyLines, "default"));
         result.put("hide_until_dependencies_visible", Boolean.toString(value.hideUntilDependenciesVisible()));
         result.put("hide_until_dependencies_complete", Boolean.toString(value.hideUntilDependenciesComplete()));
         result.put("invisible_until_complete", Boolean.toString(value.invisibleUntilComplete()));
@@ -5246,7 +5381,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Auto-collapses navigation only for a genuine closed-to-open details transition. */
     private void openDetailsPanel() {
-        if (!detailsOpen) navigationCollapsed = true;
+        if (!detailsOpen && BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.autoCollapseNavigation)) navigationCollapsed = true;
         detailsOpen = true;
     }
 

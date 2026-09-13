@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
+
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
@@ -21,13 +23,14 @@ final class QuestScreenSessionState {
     }
 
     static synchronized boolean reopenEditing(String serverId) {
+        if (!BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.rememberEditingMode)) return false;
         return editorPreferences.getOrDefault(normalizeServerId(serverId), false);
     }
 
     private QuestScreenSessionState() {}
 
     static synchronized Snapshot load(String serverId, ResourceLocation bookId) {
-        if (bookId == null) return Snapshot.defaults();
+        if (bookId == null || !BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.rememberViewport)) return Snapshot.defaults();
         return snapshots.getOrDefault(new Key(normalizeServerId(serverId), bookId), Snapshot.defaults());
     }
 

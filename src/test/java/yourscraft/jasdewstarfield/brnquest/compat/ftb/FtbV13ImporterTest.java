@@ -17,6 +17,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void dependencyLineDefaultsKeepTaskInheritanceAndExplicitOverrides() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/a.snbt"),
+                "{id:'1000000000000001',default_hide_dependency_lines:true,quests:[{id:'0000000000000001'},{id:'0000000000000002',hide_dependency_lines:false},{id:'0000000000000003',hide_dependency_lines:true}]}", StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary,"test","main");
+        assertFalse(result.report().hasErrors(),result.report().toJson());
+        var chapter = result.book().chapters().getFirst(); assertTrue(chapter.defaultHideDependencyLines());
+        assertNull(chapter.quests().get(0).appearance().hideDependencyLines());
+        assertEquals(false,chapter.quests().get(1).appearance().hideDependencyLines());
+        assertEquals(true,chapter.quests().get(2).appearance().hideDependencyLines());
+        assertFalse(chapter.extensions().containsKey("ftb.default_hide_dependency_lines"));
+        assertFalse(chapter.quests().get(1).extensions().containsKey("ftb.hide_dependency_lines"));
+        var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject());
+        assertEquals(chapter,decoded.chapters().getFirst());
+    }
+
     @Test void autofocusResolvesHexQuestIdsAndPreservesUnsupportedTargets() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);

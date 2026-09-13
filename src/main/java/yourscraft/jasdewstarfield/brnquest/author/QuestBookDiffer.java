@@ -71,6 +71,7 @@ public final class QuestBookDiffer {
             else {
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "title", oldValue.title(), newValue.title());
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "icon", oldValue.icon(), newValue.icon());
+                property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "default_hide_dependency_lines", Boolean.toString(oldValue.defaultHideDependencyLines()), Boolean.toString(newValue.defaultHideDependencyLines()));
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "autofocus_id", java.util.Objects.toString(oldValue.autofocusQuestId(), ""), java.util.Objects.toString(newValue.autofocusQuestId(), ""));
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "consume_items", java.util.Objects.toString(oldValue.consumeItems(), "default"), java.util.Objects.toString(newValue.consumeItems(), "default"));
                 mapProperties(entries, SemanticDiffEntry.ObjectKind.CHAPTER, id, "quest_defaults.", oldValue.questDefaults().values(), newValue.questDefaults().values());
@@ -122,6 +123,7 @@ public final class QuestBookDiffer {
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "subtitle", oldValue.subtitle(), newValue.subtitle());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "description", oldValue.description(), newValue.description());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "icon", oldValue.icon(), newValue.icon());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "hide_dependency_lines", java.util.Objects.toString(oldValue.appearance().hideDependencyLines(), "default"), java.util.Objects.toString(newValue.appearance().hideDependencyLines(), "default"));
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.shape",
                 oldValue.appearance().shape(), newValue.appearance().shape());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.size",

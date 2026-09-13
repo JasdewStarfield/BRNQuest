@@ -103,6 +103,19 @@ class QuestCanvasRendererTest {
         assertNull(QuestCanvasRenderer.nodeAt(frame, IDENTITY, -1, 100));
     }
 
+    @Test void taskOverridesControlIncomingLinesButFocusedRelationsRemainVisible() {
+        var parent = node(id("parent"),0,0,List.of());
+        for (Boolean override : new Boolean[]{null,false,true}) {
+            var child = new QuestCanvasRenderer.NodeModel(id("child"),new QuestAppearance("chamfer",1,1,0,override),
+                    new DraftBookEditor.Position(1,0),null,0,false,false,false,false,false,parent.visual(),ItemStack.EMPTY,List.of(),List.of(parent.id()));
+            var edge=QuestCanvasRenderer.composeFrame(model(List.of(parent,child))).dependencies().getFirst();
+            assertEquals(override != null && !override,QuestCanvasRenderer.dependencyVisible(edge,null,true));
+            assertEquals(override == null || !override,QuestCanvasRenderer.dependencyVisible(edge,null,false));
+            assertTrue(QuestCanvasRenderer.dependencyVisible(edge,parent.id(),true));
+            assertTrue(QuestCanvasRenderer.dependencyVisible(edge,child.id(),true));
+        }
+    }
+
     private static QuestCanvasRenderer.Model model(List<QuestCanvasRenderer.NodeModel> nodes) {
         return new QuestCanvasRenderer.Model(IDENTITY, CHAPTER, new UiRect(0, 0, 200, 200),
                 new QuestCanvasRenderer.Camera(100, 100, 1.0), nodes, false, 0, 100, 100);

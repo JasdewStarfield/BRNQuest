@@ -181,6 +181,11 @@ final class AuthoringMutationHandler {
     }
 
     // Missing icon retains legacy callers; an explicit empty icon resets the chapter fallback.
+    private static boolean strictBoolean(String value) {
+        if (!value.equals("true") && !value.equals("false")) throw new IllegalArgumentException("Invalid dependency-line boolean");
+        return Boolean.parseBoolean(value);
+    }
+
     static ChapterDefinition chapterReplacement(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,
                                                         ResourceLocation chapterId, ResourceLocation groupId,
                                                         String title, int order, Map<String, String> config) {
@@ -189,7 +194,8 @@ final class AuthoringMutationHandler {
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), config.containsKey(LocalizedSingleLineEdits.FIELD) ? chapter.title() : title,
                 config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions(), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
                 config.containsKey("autofocus_id") ? (config.get("autofocus_id").isBlank() ? null
-                        : ResourceLocation.parse(config.get("autofocus_id"))) : chapter.autofocusQuestId());
+                        : ResourceLocation.parse(config.get("autofocus_id"))) : chapter.autofocusQuestId(),
+                config.containsKey("default_hide_dependency_lines") ? strictBoolean(config.get("default_hide_dependency_lines")) : chapter.defaultHideDependencyLines());
     }
 
     private static QuestDefinition questCopy(yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition book,

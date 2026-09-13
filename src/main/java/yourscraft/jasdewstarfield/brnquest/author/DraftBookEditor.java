@@ -148,7 +148,7 @@ public final class DraftBookEditor {
             return invalid("INVALID_AUTOFOCUS", "Autofocus must reference a quest in this chapter");
         // Child quests are owned by their dedicated operations, not an enclosing overwrite.
         ChapterDefinition safe = new ChapterDefinition(book.id(), chapterId, replacement.groupId(), replacement.title(),
-                replacement.icon(), replacement.order(), old.quests(), replacement.extensions(), replacement.questDefaults(), replacement.consumeItems(), replacement.autofocusQuestId());
+                replacement.icon(), replacement.order(), old.quests(), replacement.extensions(), replacement.questDefaults(), replacement.consumeItems(), replacement.autofocusQuestId(), replacement.defaultHideDependencyLines());
         return replaceChapter(book, chapterId, ignored -> safe, chapterId);
     }
 
@@ -170,7 +170,7 @@ public final class DraftBookEditor {
         List<ChapterDefinition> normalized = book.chapters().stream().map(chapter -> {
             Integer order = orders.get(chapter.id());
             return order == null ? chapter : new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(),
-                    chapter.title(), chapter.icon(), order, chapter.quests(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId());
+                    chapter.title(), chapter.icon(), order, chapter.quests(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines());
         }).toList();
         return changed(withChapters(book, normalized), chapterId);
     }
@@ -193,7 +193,7 @@ public final class DraftBookEditor {
             for (int index = 0; index < siblings.size(); index++) {
                 var c = siblings.get(index);
                 replacements.put(c.id(), new ChapterDefinition(c.bookId(), c.id(),
-                        siblings == newSiblings ? groupId : source.groupId(), c.title(), c.icon(), index, c.quests(), c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId()));
+                        siblings == newSiblings ? groupId : source.groupId(), c.title(), c.icon(), index, c.quests(), c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId(), c.defaultHideDependencyLines()));
             }
         }
         return changed(withChapters(book, book.chapters().stream().map(c -> replacements.getOrDefault(c.id(), c)).toList()), chapterId);
@@ -276,7 +276,7 @@ public final class DraftBookEditor {
         if (questLegacySourceExists(book, quest.id())) return retiredQuestId(quest.id());
         return replaceChapter(book, chapterId, chapter -> new ChapterDefinition(chapter.bookId(), chapter.id(),
                 chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), quest),
-                chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId()),
+                chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines()),
                 questObjectIds(quest));
     }
 
@@ -417,7 +417,7 @@ public final class DraftBookEditor {
                             quest.title(), quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
                             quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
                             quest.appearance(), quest.behavior(), quest.extensions());
-                }).toList(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId())).toList();
+                }).toList(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines())).toList();
         return changed(withChapters(book, chapters), positions.keySet().toArray(ResourceLocation[]::new));
     }
 
@@ -721,7 +721,7 @@ public final class DraftBookEditor {
     private static ChapterDefinition withQuests(ChapterDefinition chapter, List<QuestDefinition> quests, ResourceLocation focus) {
         ResourceLocation retainedFocus = quests.stream().anyMatch(q -> q.id().equals(focus)) ? focus : null;
         return new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),
-                chapter.order(), quests, chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), retainedFocus);
+                chapter.order(), quests, chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), retainedFocus, chapter.defaultHideDependencyLines());
     }
 
     private static QuestDefinition copyQuest(QuestDefinition quest, List<ResourceLocation> dependencies,

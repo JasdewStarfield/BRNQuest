@@ -141,7 +141,14 @@ final class AuthoringRequestDecoder {
     record QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
                         ResourceLocation replacementQuestId, String title, String subtitle, String description,
                         IconKind iconKind, ResourceLocation iconId, boolean preserveIcon, Double x, Double y,
-                        AppearanceRequest appearance, BehaviorRequest behavior) {}
+                        AppearanceRequest appearance, BehaviorRequest behavior, String hideDependencyLines) {
+        QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
+                ResourceLocation replacementQuestId, String title, String subtitle, String description, IconKind iconKind,
+                ResourceLocation iconId, boolean preserveIcon, Double x, Double y, AppearanceRequest appearance, BehaviorRequest behavior) {
+            this(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle, description, iconKind,
+                    iconId, preserveIcon, x, y, appearance, behavior, null);
+        }
+    }
 
     static Result<QuestRequest> quest(String json) {
         return boundary("INVALID_QUEST_UPDATE", "Incomplete quest update request", () -> {
@@ -198,8 +205,11 @@ final class AuthoringRequestDecoder {
                     throw invalid("INVALID_QUEST_BEHAVIOR", "behavior", "Quest behavior contains an invalid number or enum");
                 }
             }
+            String hideLines = wire.behavior() == null ? null : wire.behavior().get("hide_dependency_lines");
+            if (hideLines != null && !java.util.Set.of("default", "true", "false").contains(hideLines))
+                throw invalid("INVALID_QUEST_APPEARANCE", "hide_dependency_lines", "Expected default, true or false");
             return new QuestRequest(session, book, revision, quest, replacement, wire.title(), wire.subtitle(),
-                    wire.description(), kind, icon, wire.preserveIcon(), wire.x(), wire.y(), appearance, behavior);
+                    wire.description(), kind, icon, wire.preserveIcon(), wire.x(), wire.y(), appearance, behavior, hideLines);
         });
     }
 

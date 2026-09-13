@@ -30,3 +30,11 @@ See also [reward tables](REWARD_TABLES.md), [workspace and recovery (Chinese)](W
 Use the gear at the top right to open BRNQuest client settings, including grid snapping, scrolling, animation speeds and automatic centering. It is available while browsing and editing, without author permission. The native settings page saves changes when you return; they apply without restarting. With its default file watcher enabled, NeoForge also reloads external changes to `brnquest-client.toml`. A drag already in progress retains its initial snap setting.
 
 In either editing mode, the grid icon at the top left toggles snapping directly. Highlighted means On; a slash means Off. Its tooltip shows only the current state. Preferences do not change book revisions or undo history.
+
+Right-click a chapter-group heading and open **Group properties** to edit its name, choose or clear an item/texture icon, and enter a short description. Changes apply only when you confirm; cancel keeps the previous values. Group icons appear beside headings and descriptions appear on hover. Unknown extension data remains intact when editing or reordering groups.
+
+Group names are edited in the current game language while other translations are preserved. Icons and short descriptions are shared metadata. Changing only metadata does not create a new name translation.
+
+The language button in group/chapter names and quick quest title/subtitle editors starts with the player’s current language. Choose an existing language or enter a new locale code (such as `ja_jp`) to author a translation without changing the game language. The button tooltip briefly identifies fallback text. Switching languages retains pending input; Done saves all changes together, while Cancel discards them. A single-field quick edit leaves other text fields untouched.
+
+When the selected language has no translation, fallback text appears only as a gray placeholder. Typing starts from an empty field, and confirming untouched input creates no translation. In the default language itself, the native default remains directly editable.

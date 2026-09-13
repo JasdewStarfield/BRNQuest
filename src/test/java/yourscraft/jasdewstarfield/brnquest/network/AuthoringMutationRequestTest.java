@@ -129,4 +129,22 @@ class AuthoringMutationRequestTest {
         assertEquals("test:source", response.diagnostics().getFirst().objectId());
         assertEquals("config", response.diagnostics().getFirst().path());
     }
+
+    @Test void localizedSingleLinePatchRejectsUnsupportedFieldsAndInvalidLocales() {
+        var json = request(AuthoringMutationAction.UPDATE_CHAPTER);
+        var config = new JsonObject();
+        config.addProperty("text_field", "title");
+        config.addProperty("text_locale.zh_cn", "Chinese chapter");
+        json.add("config", config);
+        assertTrue(AuthoringRequestDecoder.mutation(json.toString()).success());
+        config.addProperty("text_field", "quest_subtitle");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        config.addProperty("text_field", "title");
+        config.addProperty("text_locale../path", "Invalid");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        config.remove("text_locale../path");
+        config.addProperty("text_locale.zh_cn", "x".repeat(257));
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+    }
+
 }

@@ -118,7 +118,8 @@ public final class DraftService {
 
     static QuestBookDefinition recoveryCopy(QuestBookDefinition original, ResourceLocation targetBookId) {
         List<ChapterGroupDefinition> groups = original.chapterGroups().stream()
-                .map(group -> new ChapterGroupDefinition(targetBookId, group.id(), group.title(), group.order()))
+                .map(group -> new ChapterGroupDefinition(targetBookId, group.id(), group.title(), group.order(),
+                        group.icon(), group.description(), group.extensions()))
                 .toList();
         List<ChapterDefinition> chapters = original.chapters().stream().map(chapter ->
                 new ChapterDefinition(targetBookId, chapter.id(), chapter.groupId(), chapter.title(), chapter.icon(),

@@ -49,6 +49,9 @@ public final class QuestBookDiffer {
             else if (newValue == null) add(entries, SemanticDiffEntry.Kind.REMOVED, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, "", summary(oldValue), "");
             else {
                 property(entries, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, "title", oldValue.title(), newValue.title());
+                property(entries, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, "icon", oldValue.icon(), newValue.icon());
+                property(entries, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, "description", oldValue.description(), newValue.description());
+                mapProperties(entries, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, "extensions.", oldValue.extensions(), newValue.extensions());
                 order(entries, SemanticDiffEntry.ObjectKind.CHAPTER_GROUP, id, oldValue.order(), newValue.order());
             }
         });

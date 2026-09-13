@@ -77,7 +77,7 @@ public final class FtbV13Importer {
                     : localeTranslations.containsKey("zh_cn") ? "zh_cn"
                     : localeTranslations.isEmpty() ? fallbackLocale : localeTranslations.keySet().iterator().next();
             Map<String, String> translations = localeTranslations.getOrDefault(sourceTextLocale, Map.of());
-            readGroups(reader.read(source.resolve("chapter_groups.snbt")), bookId, namespace, translations, aliases, groups);
+            readGroups(reader.read(source.resolve("chapter_groups.snbt")), bookId, namespace, translations, aliases, groups, conversions);
 
             Path chapterDir = source.resolve("chapters");
             String inheritedAutoClaim = defaultAutoClaim;
@@ -152,14 +152,15 @@ public final class FtbV13Importer {
 
     private void readGroups(CompoundTag root, ResourceLocation bookId, String namespace,
                             Map<String, String> translations, Map<String, ResourceLocation> aliases,
-                            List<ChapterGroupDefinition> target) {
+                            List<ChapterGroupDefinition> target, List<FtbFieldConversion> conversions) {
         ListTag list = root.getList("chapter_groups", Tag.TAG_COMPOUND);
         for (int index = 0; index < list.size(); index++) {
             CompoundTag raw = list.getCompound(index);
             String legacy = raw.getString("id");
             ResourceLocation id = remember(namespace, legacy, aliases);
             target.add(new ChapterGroupDefinition(bookId, id,
-                    translations.getOrDefault("chapter_group." + legacy + ".title", legacy), index));
+                    translations.getOrDefault("chapter_group." + legacy + ".title", legacy), index,
+                    "", "", extensions(raw, Set.of("id"), "chapter_groups.snbt", "chapter_group." + legacy, conversions)));
         }
     }
 

@@ -76,7 +76,8 @@ final class QuestNavigationPanel {
 
     RenderResult render(GuiGraphics graphics, Font font, Model model, Layout layout,
                         double seconds, double speed, int mouseX, int mouseY, String locale,
-                        java.util.function.BiConsumer<ChapterDefinition, UiRect> drawIcon) {
+                        java.util.function.BiConsumer<ChapterDefinition, UiRect> drawIcon,
+                        java.util.function.BiConsumer<yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition, UiRect> drawGroupIcon) {
         advance(model, layout);
         List<Component> tooltip = List.of();
         if (layout.visibleRight() > 0) {
@@ -97,10 +98,12 @@ final class QuestNavigationPanel {
                 for (var entry : entries) {
                     if (entry.group() != null) {
                         graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xFF252821);
+                        boolean hasIcon = !entry.group().icon().isBlank();
+                        if (hasIcon) drawGroupIcon.accept(entry.group(), new UiRect(4, y + 1, 15, y + 12));
                         EditorTextRenderer.drawFittedString(graphics, font,
                                 Component.literal((folded.contains(entry.group().id()) ? "▸ " : "▾ ") + BookText.structureTitle(
                                         model.book(), "chapter_group", entry.group().id(), locale, entry.group().title())),
-                                4, y + 2, layout.width() - 8, GraystonePalette.SECONDARY, 0.75F);
+                                hasIcon ? 18 : 4, y + 2, layout.width() - (hasIcon ? 22 : 8), GraystonePalette.SECONDARY, 0.75F);
                         y += GROUP_HEIGHT;
                     } else {
                         ChapterDefinition chapter = entry.chapter();
@@ -157,7 +160,12 @@ final class QuestNavigationPanel {
                 String title = hovered.group() != null
                         ? BookText.structureTitle(model.book(), "chapter_group", hovered.group().id(), locale, hovered.group().title())
                         : BookText.structureTitle(model.book(), "chapter", hovered.chapter().id(), locale, hovered.chapter().title());
-                tooltip = List.of(Component.literal(title));
+                tooltip = new java.util.ArrayList<>();
+                tooltip.add(Component.literal(title));
+                if (hovered.group() != null && !hovered.group().description().isBlank()) {
+                    // Separate tooltip entries preserve authored newlines instead of embedding them in one line.
+                    for (String line : hovered.group().description().split("\\R")) tooltip.add(Component.literal(line));
+                }
             }
         }
         return new RenderResult(dragging ? List.of() : tooltip);

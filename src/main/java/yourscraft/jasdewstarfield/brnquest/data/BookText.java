@@ -23,10 +23,15 @@ public final class BookText {
 
     public static String structureTitle(QuestBookDefinition book, String kind, ResourceLocation id,
                                         String locale, String fallback) {
+        return book.localization().resolve(locale, structureTitleKey(book, kind, id), fallback);
+    }
+
+    /** Shares the exact legacy/native key between structure display and localized property updates. */
+    public static String structureTitleKey(QuestBookDefinition book, String kind, ResourceLocation id) {
         // Historical source IDs remain usable; sorting prevents hash-map order from choosing a title.
         String sourceId = book.legacyIds().entrySet().stream()
                 .filter(entry -> !entry.getKey().startsWith("@") && entry.getValue().equals(id))
                 .map(Map.Entry::getKey).sorted().findFirst().orElse(id.toString());
-        return book.localization().resolve(locale, kind + "." + sourceId + ".title", fallback);
+        return kind + "." + sourceId + ".title";
     }
 }

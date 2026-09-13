@@ -1,4 +1,7 @@
 {
+  "screen.brnquest.editor.structure.group_properties": "章节组属性",
+  "screen.brnquest.editor.group.description": "说明",
+
   "screen.brnquest.client_settings": "BRNQuest 客户端设置",
   "brnquest.configuration.editor": "编辑",
   "brnquest.configuration.editor.tooltip": "个人编辑偏好。",
@@ -688,5 +691,11 @@
   "screen.brnquest.editor.publish.review.details": "查看详细差异",
   "screen.brnquest.reward_table.root": "奖励表",
   "screen.brnquest.reward_table.entry_number": "条目 %s",
-  "screen.brnquest.editor.scope.unchanged": "表单未修改"
+  "screen.brnquest.editor.scope.unchanged": "表单未修改",
+  "screen.brnquest.editor.locale.choose": "编辑语言",
+  "screen.brnquest.editor.locale.existing": "选择已有语言…",
+  "screen.brnquest.editor.locale.code": "语言代码，例如 zh_cn",
+  "screen.brnquest.editor.locale.native": "默认文本 · 点击切换语言",
+  "screen.brnquest.editor.locale.current": "当前语言 · 点击切换语言",
+  "screen.brnquest.editor.locale.fallback": "回退自 %s · 点击切换语言"
 }

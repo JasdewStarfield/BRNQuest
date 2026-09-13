@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -41,6 +42,44 @@ public final class DraftEditService {
                                                                ResourceLocation bookId, String revision,
                                                                ResourceLocation groupId, ChapterGroupDefinition group) {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateGroup(book, groupId, group));
+    }
+
+    /** Metadata and the edited title locale form one revision-checked transaction and one undo step. */
+    public AuthorOperationResult<DraftEditResult> updateGroupProperties(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation groupId, ChapterGroupDefinition group, String locale) {
+        return apply(player, sessionId, bookId, revision,
+                book -> DraftBookEditor.updateGroupProperties(book, groupId, group, locale));
+    }
+
+    /** Metadata and every changed locale are committed together under the same revision and undo entry. */
+    public AuthorOperationResult<DraftEditResult> updateLocalizedGroup(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation id, ChapterGroupDefinition replacement,
+            Map<String, String> values) {
+        return apply(player, sessionId, bookId, revision, book -> {
+            var updated = DraftBookEditor.updateGroup(book, id, replacement);
+            return localize(updated, "chapter_group", id, "title", values);
+        });
+    }
+
+    public AuthorOperationResult<DraftEditResult> updateLocalizedChapter(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation id, ChapterDefinition replacement,
+            Map<String, String> values) {
+        return apply(player, sessionId, bookId, revision, book ->
+                localize(DraftBookEditor.updateChapter(book, id, replacement), "chapter", id, "title", values));
+    }
+
+    /** A quick edit cannot materialize fallback values for the quest's other text fields. */
+    public AuthorOperationResult<DraftEditResult> updateSingleLineTranslations(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation id, String field, Map<String, String> values) {
+        return apply(player, sessionId, bookId, revision, book -> AuthorOperationResult.success("DRAFT_UPDATED", "Localized text updated", new DraftChange(
+                LocalizedSingleLineEdits.apply(book, "quest", id, field, values), List.of(id))));
+    }
+
+    private static AuthorOperationResult<DraftChange> localize(AuthorOperationResult<DraftChange> result,
+            String kind, ResourceLocation id, String field, Map<String, String> values) {
+        if (!result.success()) return result;
+        return AuthorOperationResult.success("DRAFT_UPDATED", "Localized text updated", new DraftChange(LocalizedSingleLineEdits.apply(
+                result.value().book(), kind, id, field, values), result.value().affectedObjects()));
     }
 
     public AuthorOperationResult<DraftEditResult> moveGroup(ServerPlayer player, UUID sessionId,

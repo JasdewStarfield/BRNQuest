@@ -28,6 +28,8 @@ public final class QuestBookValidator {
         Set<ResourceLocation> groups = new HashSet<>();
         book.chapterGroups().forEach(group -> {
             if (!group.bookId().equals(book.id())) add(report, Diagnostic.Severity.FATAL, "BQV-110", group.id(), "Chapter group has a different bookId");
+            if (QuestIconValue.isTexture(group.icon()) && QuestIconValue.textureId(group.icon()).isEmpty())
+                add(report, Diagnostic.Severity.ERROR, "BQV-123", group.id(), "Texture icon must contain a valid ResourceLocation");
             if (!groups.add(group.id())) add(report, Diagnostic.Severity.FATAL, "BQV-111", group.id(), "Duplicate chapter group ID");
         });
 

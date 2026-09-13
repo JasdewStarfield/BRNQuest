@@ -17,6 +17,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void unknownGroupFieldsRemainSourceExtensions() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"),
+                "{chapter_groups:[{id:'1234567890123456',addon_data:{enabled:false,count:0}}]}", StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        var group = result.book().chapterGroups().stream().filter(g -> g.extensions().containsKey("ftb.addon_data"))
+                .findFirst().orElseThrow();
+        assertTrue(group.extensions().get("ftb.addon_data").contains("count:0"));
+        assertEquals("", group.icon(), "Unknown source fields must not be guessed into native metadata");
+        var decoded = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject());
+        assertEquals(group, decoded.chapterGroups().stream().filter(g -> g.id().equals(group.id())).findFirst().orElseThrow());
+    }
+
     @Test void nestedSharedReferencesAreSnapshotsButCyclesAreRejected() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));Files.createDirectories(temporary.resolve("reward_tables"));
         Files.writeString(temporary.resolve("data.snbt"),"{version:13}",StandardCharsets.UTF_8);

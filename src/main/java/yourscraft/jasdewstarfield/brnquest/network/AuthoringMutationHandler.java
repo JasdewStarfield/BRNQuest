@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.network;
 
+import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
+
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.api.AuthorApi;
@@ -49,9 +51,12 @@ final class AuthoringMutationHandler {
                 case REDO -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
                 case ADD_GROUP -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterGroupDefinition(bookId, requireId(targetId), wire.title(), wire.targetIndex()));
-                case UPDATE_GROUP -> editor.updateGroup(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(targetId), new ChapterGroupDefinition(bookId, targetId,
-                                wire.title(), wire.targetIndex()));
+                case UPDATE_GROUP -> wire.config().containsKey(LocalizedSingleLineEdits.FIELD)
+                        ? editor.updateLocalizedGroup(player, sessionId, bookId, wire.draftRevision(), requireId(targetId),
+                                groupReplacement(current.value().book(), targetId, wire.title(), wire.targetIndex(), wire.config()),
+                                LocalizedSingleLineEdits.values(wire.config()))
+                        : editor.updateGroupProperties(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), groupReplacement(current.value().book(), targetId, wire.title(), wire.targetIndex(), wire.config()), wire.config().getOrDefault("locale", ""));
                 case MOVE_GROUP -> editor.moveGroup(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), wire.targetIndex());
                 case DELETE_GROUP -> editor.removeGroupWithContents(player, sessionId, bookId,
@@ -59,7 +64,11 @@ final class AuthoringMutationHandler {
                 case ADD_CHAPTER -> editor.addChapter(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterDefinition(bookId, requireId(targetId), requireId(parentId),
                                 wire.title(), "", wire.targetIndex(), List.of()));
-                case UPDATE_CHAPTER -> editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
+                case UPDATE_CHAPTER -> wire.config().containsKey(LocalizedSingleLineEdits.FIELD)
+                        ? editor.updateLocalizedChapter(player, sessionId, bookId, wire.draftRevision(), requireId(targetId),
+                                chapterReplacement(current.value().book(), targetId, parentId, wire.title(), wire.targetIndex(), wire.config()),
+                                LocalizedSingleLineEdits.values(wire.config()))
+                        : editor.updateChapter(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), chapterReplacement(current.value().book(), targetId, parentId,
                                 wire.title(), wire.targetIndex(), wire.config()));
                 case MOVE_CHAPTER -> wire.config().containsKey("group")
@@ -79,7 +88,10 @@ final class AuthoringMutationHandler {
                         wire.draftRevision(), requireId(targetId));
                 case MOVE_QUESTS -> editor.updateQuestPositions(player, sessionId, bookId, wire.draftRevision(),
                         domainPositions(wire.positions()));
-                case UPDATE_QUEST_TRANSLATION -> editor.updateQuestTranslation(player, sessionId, bookId,
+                case UPDATE_QUEST_TRANSLATION -> wire.config().containsKey(LocalizedSingleLineEdits.FIELD)
+                        ? editor.updateSingleLineTranslations(player, sessionId, bookId, wire.draftRevision(), requireId(targetId),
+                                wire.config().get(LocalizedSingleLineEdits.FIELD), LocalizedSingleLineEdits.values(wire.config()))
+                        : editor.updateQuestTranslation(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId), wire.locale(),
                         wire.config().getOrDefault("title", ""), wire.config().getOrDefault("subtitle", ""),
                         wire.config().getOrDefault("description", ""));
@@ -98,6 +110,15 @@ final class AuthoringMutationHandler {
             return;
         }
         complete(wire, result);
+    }
+
+    /** Metadata edits preserve fields omitted by older clients and all unknown extension data. */
+    private static ChapterGroupDefinition groupReplacement(QuestBookDefinition book, ResourceLocation id,
+                                                            String title, int order, Map<String, String> config) {
+        ChapterGroupDefinition source = book.chapterGroups().stream().filter(group -> group.id().equals(id))
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown chapter group " + id));
+        return new ChapterGroupDefinition(book.id(), id, config.containsKey(LocalizedSingleLineEdits.FIELD) ? source.title() : title, order,
+                config.getOrDefault("icon", source.icon()), config.getOrDefault("description", source.description()), source.extensions());
     }
 
     void complete(AuthoringRequestDecoder.MutationRequest wire, AuthorOperationResult<DraftEditResult> result) {
@@ -136,7 +157,7 @@ final class AuthoringMutationHandler {
                                                         String title, int order, Map<String, String> config) {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
-        return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), title,
+        return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), config.containsKey(LocalizedSingleLineEdits.FIELD) ? chapter.title() : title,
                 config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions());
     }
 

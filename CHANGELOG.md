@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- 组名、章节名和任务标题／副标题快捷编辑增加紧凑语言按钮，可直接新建译文；切换语言保留输入，确认一次保存全部改动。快捷编辑只更新所选字段，不再顺带写入其它字段的回退文本。
+- Added compact language controls to group/chapter names and quick quest title/subtitle editing. Authors can add translations without changing the game language, retain pending text across locale switches, and save all edits together. Quick edits no longer copy fallback text into unrelated fields.
+
+- 章节组属性新增物品/贴图图标及说明，导航显示组图标并在悬停时展示说明；更新、重排、撤销与恢复副本保留扩展数据，导入的未知组字段保留为来源扩展。公共章节组投影提供对应只读字段并保留旧构造入口。
+- Chapter-group properties now support item/texture icons and descriptions, shown in navigation and hover text. Edits, reordering, undo and recovery copies preserve extension data; unknown imported group fields remain source extensions. Public group views expose the metadata while retaining the previous constructor.
+
 - 主界面右上角齿轮接入完整客户端配置，浏览与编辑均可使用，修改无需重启生效；编辑顶栏网格图标快捷切换吸附，简短 Tooltip 显示当前状态。自由拖动保留多选相对位置；设置页中的编辑会话继续续租。
 - Added a top-right gear for all client settings while browsing or editing, with changes applied without restart. The editor grid shortcut toggles snapping with a concise state tooltip; free dragging preserves selection offsets, and author leases stay renewed while settings are open.
 

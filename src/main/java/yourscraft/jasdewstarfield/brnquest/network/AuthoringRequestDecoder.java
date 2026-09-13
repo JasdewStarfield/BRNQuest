@@ -340,6 +340,21 @@ final class AuthoringRequestDecoder {
                     text(config.getOrDefault("subtitle", ""), "config.subtitle", 256, true);
                     text(config.getOrDefault("description", ""), "config.description", 32768, true);
                 }
+                if (config.containsKey(yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.FIELD)) {
+                    String kind = switch (action) {
+                        case UPDATE_GROUP -> "chapter_group";
+                        case UPDATE_CHAPTER -> "chapter";
+                        case UPDATE_QUEST_TRANSLATION -> "quest";
+                        default -> throw invalid(null, "config.text_field", "Localized text is unsupported for this action");
+                    };
+                    try {
+                        yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.validate(kind,
+                                config.get(yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.FIELD),
+                                yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.values(config));
+                    } catch (IllegalArgumentException exception) {
+                        throw invalid(null, "config.text_field", exception.getMessage());
+                    }
+                }
                 // Historical structural titles are truncated, while config and translations are preserved exactly.
                 return new MutationRequest(session, book, revision, action, target, parent, source,
                         title.length() <= 256 ? title : title.substring(0, 256), wire.targetIndex(), wire.x(), wire.y(),

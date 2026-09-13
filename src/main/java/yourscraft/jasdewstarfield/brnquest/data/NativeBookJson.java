@@ -26,6 +26,10 @@ public final class NativeBookJson {
             value.addProperty("id", group.id().toString());
             value.addProperty("title", group.title());
             value.addProperty("order", group.order());
+            // Omit empty additions so historical books keep their content revision on upgrade.
+            if (!group.icon().isEmpty()) value.addProperty("icon", group.icon());
+            if (!group.description().isEmpty()) value.addProperty("description", group.description());
+            if (!group.extensions().isEmpty()) value.add("extensions", encodeStringMap(group.extensions()));
             groups.add(value);
         });
         root.add("chapter_groups", groups);
@@ -51,7 +55,8 @@ public final class NativeBookJson {
         List<ChapterGroupDefinition> groups = new ArrayList<>();
         for (JsonElement element : root.getAsJsonArray("chapter_groups")) {
             JsonObject value = element.getAsJsonObject();
-            groups.add(new ChapterGroupDefinition(bookId, id(value.get("id").getAsString()), text(value, "title"), integer(value, "order")));
+            groups.add(new ChapterGroupDefinition(bookId, id(value.get("id").getAsString()), text(value, "title"), integer(value, "order"),
+                    text(value, "icon"), text(value, "description"), stringMap(value, "extensions")));
         }
         List<ChapterDefinition> chapters = new ArrayList<>();
         for (JsonElement element : root.getAsJsonArray("chapters")) chapters.add(decodeChapter(bookId, element.getAsJsonObject()));

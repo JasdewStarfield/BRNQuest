@@ -24,7 +24,7 @@ public final class ApiViews {
     public static ChapterGroupView chapterGroup(QuestBookSnapshot snapshot, ChapterGroupDefinition group) {
         return new ChapterGroupView(group.bookId(), group.id(), group.title(), group.order(),
                 snapshot.book().chapters().stream().filter(chapter -> chapter.groupId().equals(group.id()))
-                        .map(ChapterDefinition::id).toList());
+                        .map(ChapterDefinition::id).toList(), group.icon(), group.description(), group.extensions());
     }
 
     public static ChapterView chapter(ChapterDefinition chapter) {
@@ -44,7 +44,8 @@ public final class ApiViews {
         var source = chapterGroup(snapshot, group);
         return new ChapterGroupView(group.bookId(), group.id(),
                 BookText.structureTitle(snapshot.book(), "chapter_group",
-                        group.id(), locale, group.title()), group.order(), source.chapterIds());
+                        group.id(), locale, group.title()), group.order(), source.chapterIds(),
+                source.icon(), source.description(), source.extensions());
     }
 
     public static ChapterView chapter(QuestBookSnapshot snapshot, ChapterDefinition chapter, String locale) {

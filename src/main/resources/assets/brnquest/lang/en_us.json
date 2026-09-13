@@ -1,4 +1,7 @@
 {
+  "screen.brnquest.editor.structure.group_properties": "Group properties",
+  "screen.brnquest.editor.group.description": "Description",
+
   "screen.brnquest.client_settings": "BRNQuest client settings",
   "brnquest.configuration.editor": "Editor",
   "brnquest.configuration.editor.tooltip": "Personal editing preferences.",
@@ -688,5 +691,11 @@
   "screen.brnquest.editor.publish.review.details": "Inspect change details",
   "screen.brnquest.reward_table.root": "Reward table",
   "screen.brnquest.reward_table.entry_number": "Entry %s",
-  "screen.brnquest.editor.scope.unchanged": "Form unchanged"
+  "screen.brnquest.editor.scope.unchanged": "Form unchanged",
+  "screen.brnquest.editor.locale.choose": "Edit language",
+  "screen.brnquest.editor.locale.existing": "Choose an existing language…",
+  "screen.brnquest.editor.locale.code": "Language code, e.g. en_us",
+  "screen.brnquest.editor.locale.native": "Default text · Click to change language",
+  "screen.brnquest.editor.locale.current": "Current language · Click to change language",
+  "screen.brnquest.editor.locale.fallback": "From %s · Click to change language"
 }

@@ -264,7 +264,7 @@ public final class AuthoringHandlerGameTests {
 
         void apply(String action, String target, String parent, String source, Map<String, String> config) {
             String title = action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
-            if (action.equals("UPDATE_QUEST_TRANSLATION")) config = Map.of("title", "本地化标题", "description", "描述");
+            if (action.equals("UPDATE_QUEST_TRANSLATION") && config.isEmpty()) config = Map.of("title", "本地化标题", "description", "描述");
             var positions = action.equals("MOVE_QUESTS") ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
             int index = action.equals("UPDATE_TASK") || action.equals("UPDATE_REWARD") ? 1 : 0;
             var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
@@ -375,6 +375,57 @@ public final class AuthoringHandlerGameTests {
                     && last(fixture.packets).review().publishAllowed() == preview.success(),
                     "review preserves the authoritative publish decision");
             check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all 27 mutations plus review executed");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void groupMetadataSurvivesLegacyUpdatesAndUndo(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var fixture = new MutationFixture(helper, admin);
+            fixture.apply("ADD_GROUP", "g", "", "");
+            fixture.apply("UPDATE_GROUP", "g", "", "", Map.of("icon", "texture:minecraft:textures/item/book.png", "description", "Group info"));
+            var configured = fixture.snapshot().chapterGroups().getFirst();
+            fixture.apply("UPDATE_GROUP", "g", "", "");
+            check(helper, fixture.snapshot().chapterGroups().getFirst().equals(configured), "old clients preserve omitted metadata");
+            fixture.apply("UPDATE_GROUP", "g", "", "", Map.of("icon", "", "description", ""));
+            check(helper, fixture.snapshot().chapterGroups().getFirst().icon().isEmpty(), "explicit empty icon clears it");
+            fixture.apply("UNDO", "", "", "");
+            check(helper, fixture.snapshot().chapterGroups().getFirst().equals(configured), "one undo restores group metadata");
+            fixture.apply("REDO", "", "", "");
+            check(helper, fixture.snapshot().chapterGroups().getFirst().description().isEmpty(), "redo restores explicit clearing");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+
+    /** One packet stages several languages, and one undo restores both metadata and every translation. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void localizedSingleLineBatchIsAtomic(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var fixture = new MutationFixture(helper, admin);
+            fixture.apply("ADD_GROUP", "g", "", "");
+            fixture.apply("ADD_CHAPTER", "c", "g", "");
+            fixture.apply("ADD_QUEST", "q", "c", "");
+            var before = fixture.snapshot();
+            fixture.apply("UPDATE_GROUP", "g", "", "", Map.of("text_field", "title", "text_locale.zh_cn", "Chinese group",
+                    "text_locale.en_us", "English group", "description", "Info"));
+            check(helper, fixture.snapshot().chapterGroups().getFirst().title().equals("English group"), "fallback title updates native field");
+            check(helper, fixture.snapshot().localization().resolve("zh_cn", "chapter_group.brnquest:g.title", "").equals("Chinese group"), "Chinese group retained");
+            fixture.apply("UNDO", "", "", "");
+            check(helper, fixture.snapshot().equals(before), "single undo restores all group languages and metadata");
+            fixture.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("text_field", "title", "text_locale.fr_fr", "French chapter"));
+            check(helper, fixture.snapshot().chapters().getFirst().title().equals(before.chapters().getFirst().title()), "translated chapter does not overwrite native title");
+            var beforeQuest = fixture.snapshot();
+            fixture.apply("UPDATE_QUEST_TRANSLATION", "q", "", "", Map.of("text_field", "title", "text_locale.zh_cn", "Chinese quest", "text_locale.fr_fr", "French quest"));
+            var translations = fixture.snapshot().localization().translations().get("zh_cn");
+            check(helper, translations.size() == 1 && translations.containsKey("quest.brnquest:q.title"), "quick edit only writes its own field");
+            fixture.apply("UNDO", "", "", "");
+            check(helper, fixture.snapshot().equals(beforeQuest), "one undo reverts both quest translations");
             helper.succeed();
         } finally { release(admin); }
     }

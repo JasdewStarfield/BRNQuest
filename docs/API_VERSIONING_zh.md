@@ -1,5 +1,11 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.16 → experimental.17
+
+`ChapterGroupView` 新增 `icon`、`description` 和不可变 `extensions`，原五参数构造器保留并使用空元数据。既有 accessor 和构造调用无需修改；依赖 record 组件反射、模式解构或生成的 equals/toString 的消费者需考虑新增组件。`ChapterGroupDefinition` 同样保留原四参数构造入口；它属于内部数据模型，不新增公共稳定承诺。API 查询中的组名称继续按既有 locale 解析，新增说明首版为原生普通文本。
+
+任务书 JSON 使用可选组字段，空值不写入以保持旧内容 revision；网络继续使用现有 UPDATE_GROUP 配置映射，省略字段保留服务端值，显式空字符串清除图标/说明。扩展数据仅通过授权的数据编辑 API 更新，普通元数据表单保留未知值。组不拥有任务创建默认值或运行时继承规则。
+
 ## experimental.15 → experimental.16
 
 - 新增客户端 presentation 默认 typeIcon()、注册图标重载及注册表 typeIcon(id) 查询；新增 EditorIcon.sprite。已有方法保持签名，旧实现默认返回空图标并走兼容回退。
@@ -11,7 +17,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.16`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.17`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

@@ -40,6 +40,34 @@ public final class DraftBookEditor {
         return replaceGroup(book, groupId, ignored -> replacement);
     }
 
+    /** A localized property form edits only the visible language, preserving all other translations. */
+    public static AuthorOperationResult<DraftChange> updateGroupProperties(QuestBookDefinition book,
+            ResourceLocation groupId, ChapterGroupDefinition replacement, String locale) {
+        if (locale == null || locale.isBlank()) return updateGroup(book, groupId, replacement);
+        ChapterGroupDefinition source = book.chapterGroups().stream().filter(g -> g.id().equals(groupId)).findFirst().orElse(null);
+        if (source == null) return notFound("GROUP_NOT_FOUND", groupId);
+        String normalized = BookLocalization.normalizeLocale(locale);
+        boolean titleChanged = !BookText.structureTitle(book, "chapter_group", groupId, normalized, source.title()).equals(replacement.title());
+        boolean fallback = normalized.equals(book.localization().fallbackLocale());
+        var metadata = new ChapterGroupDefinition(replacement.bookId(), replacement.id(),
+                titleChanged && fallback ? replacement.title() : source.title(), replacement.order(),
+                replacement.icon(), replacement.description(), replacement.extensions());
+        var updated = updateGroup(book, groupId, metadata);
+        if (!updated.success() || !titleChanged) return updated;
+        String key = BookText.structureTitleKey(book, "chapter_group", groupId);
+        Map<String, Map<String, String>> translations = new java.util.TreeMap<>(book.localization().translations());
+        Map<String, String> values = new java.util.TreeMap<>(translations.getOrDefault(normalized, Map.of()));
+        // The native title is canonical in the fallback locale, just as for quest text editing.
+        if (fallback) values.remove(key);
+        else values.put(key, replacement.title());
+        if (values.isEmpty()) translations.remove(normalized);
+        else translations.put(normalized, values);
+        var changedBook = updated.value().book();
+        return changed(new QuestBookDefinition(changedBook.id(), changedBook.schemaVersion(), changedBook.title(),
+                changedBook.chapterGroups(), changedBook.chapters(), changedBook.legacyIds(),
+                new BookLocalization(book.localization().fallbackLocale(), translations), changedBook.extensions()), groupId);
+    }
+
     public static AuthorOperationResult<DraftChange> moveGroup(QuestBookDefinition book, ResourceLocation groupId,
                                                                 int targetIndex) {
         List<ChapterGroupDefinition> ordered = book.chapterGroups().stream()
@@ -53,7 +81,8 @@ public final class DraftBookEditor {
         List<ChapterGroupDefinition> normalized = new ArrayList<>();
         for (int index = 0; index < moved.size(); index++) {
             ChapterGroupDefinition group = moved.get(index);
-            normalized.add(new ChapterGroupDefinition(group.bookId(), group.id(), group.title(), index));
+            normalized.add(new ChapterGroupDefinition(group.bookId(), group.id(), group.title(), index,
+                    group.icon(), group.description(), group.extensions()));
         }
         return changed(withGroups(book, normalized), groupId);
     }

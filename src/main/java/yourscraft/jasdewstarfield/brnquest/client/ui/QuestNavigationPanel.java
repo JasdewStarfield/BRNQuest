@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.client.gui.Font;
@@ -319,10 +321,10 @@ final class QuestNavigationPanel {
         Component addGroup = Component.translatable("screen.brnquest.editor.group.add");
         Component addChapter = Component.translatable("screen.brnquest.editor.chapter.add");
         boolean groupHovered = EditorButton.renderInteractive(graphics, font, layout.groupButton(),
-                EditorButton.Definition.iconAndText(addGroup, addGroup, EditorIcon.glyph(Component.literal("+"))),
+                EditorButton.Definition.iconAndText(addGroup, addGroup, QuestActionIcons.named("plus")),
                 true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         boolean chapterHovered = EditorButton.renderInteractive(graphics, font, layout.chapterButton(),
-                EditorButton.Definition.iconAndText(addChapter, addChapter, EditorIcon.glyph(Component.literal("+"))),
+                EditorButton.Definition.iconAndText(addChapter, addChapter, QuestActionIcons.named("plus")),
                 canAddChapter, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         if (chapterHovered) return List.of(addChapter);
         return groupHovered ? List.of(addGroup) : List.of();

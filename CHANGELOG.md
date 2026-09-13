@@ -330,3 +330,5 @@
 - Added the first in-client quest mutation form for title, subtitle, and description; updates retain stable IDs and structural fields, pass server permission/lease/revision validation, and replace the client preview only after verified draft chunks arrive.
 - Fixed editor popover depth and unfocused field readability, and changed draft mutation validation to reject only newly introduced blocking diagnostics so preserved unknown extensions do not make unrelated text edits unsavable.
 - Raised the network protocol to `2`; clients and servers must use matching BRNQuest builds because protocol `1` does not contain authoring payloads.
+
+- Replace editor action glyphs with compact PNG icons, including add controls, tracking, menu actions, search and save; shorten the Chinese properties button label.

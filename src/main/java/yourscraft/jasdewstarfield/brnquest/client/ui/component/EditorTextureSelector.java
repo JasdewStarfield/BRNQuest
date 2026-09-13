@@ -40,7 +40,7 @@ public final class EditorTextureSelector {
         } else if (!textureMode) {
             Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_item");
                     actions.render(graphics, row.picker(), EditorButton.Definition.iconOnly(
-                            select, select, EditorIcon.glyph(Component.literal(
+                            select, select, QuestActionIcons.symbol(Component.literal(
                                     input.getValue().isBlank() ? "+" : "?"))),
                     enabled, EditorButton.Tone.NEUTRAL);
         } else if (textureMode && iconId != null) {

@@ -83,19 +83,18 @@ final class QuestDetailsPanel {
             statusWidth += 4 + font.width("ⓘ");
         }
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
-            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int pinX = contentLeft + contentWidth - font.width(pin) - 42;
-            graphics.drawString(font, Component.literal(pin), pinX, y, status == QuestStatus.ACTIVE ? 0xFF57C7F2 : GraystonePalette.SECONDARY, false);
-            if (mouseX >= pinX - 2 && mouseX <= pinX + font.width(pin) + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
+            int pinX = contentLeft + contentWidth - 10 - 42;
+            QuestActionIcons.named("pin").render(graphics, font, new UiRect(pinX, y, pinX + 10, y + 10),
+                    status == QuestStatus.ACTIVE ? 0xFF57C7F2 : GraystonePalette.SECONDARY);
+            if (mouseX >= pinX - 2 && mouseX <= pinX + 10 + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
                 hint = Component.translatable(status == QuestStatus.ACTIVE
                         ? "screen.brnquest.untrack" : "screen.brnquest.track");
             }
         }
         UiRect trackAction = null;
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
-            String pin = status == QuestStatus.ACTIVE ? "★" : "☆";
-            int pinX = contentLeft + contentWidth - font.width(pin) - 42;
-            trackAction = visiblePart(new UiRect(pinX - 2, y, pinX + font.width(pin) + 2,
+            int pinX = contentLeft + contentWidth - 10 - 42;
+            trackAction = visiblePart(new UiRect(pinX - 2, y, pinX + 10 + 2,
                     y + font.lineHeight), layout.content());
         }
         UiRect completeAction = null;

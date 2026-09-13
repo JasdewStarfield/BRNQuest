@@ -125,10 +125,15 @@ public final class EditorPopupMenu {
             UiRect row = new UiRect(bounds.left() + 1, top + 1, bounds.right() - 1, top + ROW_HEIGHT - 1);
             graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
                     row.contains(mouseX, mouseY) ? GraystonePalette.HOVER : GraystonePalette.ROW);
+            EditorIcon icon = QuestActionIcons.action(entry.action());
+            int iconSpace = icon == null ? 0 : 14;
+            int color = !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF;
+            if (icon != null) icon.render(graphics, font,
+                    new UiRect(bounds.left() + 5, top + 4, bounds.left() + 15, top + 14), color);
             int reserved = showSubmenuArrow && entry.submenu() ? font.width("›") + 10 : 8;
             String label = font.plainSubstrByWidth(entry.label().getString(),
-                    Math.max(1, row.width() - reserved));
-            graphics.drawString(font, label, bounds.left() + 6, top + 5,
+                    Math.max(1, row.width() - reserved - iconSpace));
+            graphics.drawString(font, label, bounds.left() + 6 + iconSpace, top + 5,
                     !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF, false);
             if (showSubmenuArrow && entry.submenu()) {
                 graphics.drawString(font, "›", bounds.right() - font.width("›") - 5, top + 5,

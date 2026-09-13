@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -98,8 +100,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                         Component.translatable("screen.brnquest.editor.localized_text.switch_locale")),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         buttons.render(graphics, font, addLocaleBounds(),
-                EditorButton.Definition.text(Component.literal("+"),
-                        Component.translatable("screen.brnquest.editor.localized_text.add_locale")),
+                EditorButton.Definition.iconOnly(Component.translatable("screen.brnquest.editor.localized_text.add_locale"),
+                        Component.translatable("screen.brnquest.editor.localized_text.add_locale"), QuestActionIcons.named("plus")),
                 true, false, EditorButton.Tone.PRIMARY, mouseX, mouseY);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.title"),
                 panel.left() + 12, panel.top() + 52, GraystonePalette.SECONDARY, false);

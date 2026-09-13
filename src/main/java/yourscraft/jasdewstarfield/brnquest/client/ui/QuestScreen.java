@@ -39,6 +39,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPan
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestModeSelection;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestIconEditorRow;
@@ -808,7 +809,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                          String translationKey, int mouseX, int mouseY) {
         Component label = Component.translatable(translationKey);
         renderEditorActionButton(graphics, bounds, EditorButton.Definition.iconAndText(
-                        label, label, EditorIcon.glyph(Component.literal(glyph))),
+                        label, label, QuestActionIcons.symbol(Component.literal(glyph))),
                 true, EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
@@ -1505,7 +1506,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                         Component accessibleLabel, boolean enabled, boolean dangerous,
                                         int mouseX, int mouseY) {
         EditorButton.Definition definition = EditorButton.Definition.iconOnly(
-                accessibleLabel, accessibleLabel, EditorIcon.glyph(glyph));
+                accessibleLabel, accessibleLabel, QuestActionIcons.symbol(glyph));
         renderEditorActionButton(graphics, bounds, definition, enabled,
                 dangerous ? EditorButton.Tone.DANGER : EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
@@ -2845,7 +2846,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 entries.size(), entries::get, currentMotionFrameSeconds, scrollSmoothSpeed());
         Component searchText = catalogFilter.isBlank()
                 ? Component.translatable("screen.brnquest.editor.catalog.search_hint")
-                : Component.literal("⌕ " + catalogFilter);
+                : Component.literal(catalogFilter);
         Component empty = Component.translatable(catalogFilter.isBlank()
                 ? "screen.brnquest.editor.catalog.current_missing" : "screen.brnquest.editor.catalog.no_match");
         List<Component> tooltip = catalogPicker.render(graphics, font, searchText, catalogFilter.isBlank(), entry -> {
@@ -3291,7 +3292,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             ItemStack stack = item(typedPropertySection.originalId(), field.getValue());
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");
             EditorIcon icon = stack.isEmpty()
-                    ? EditorIcon.glyph(Component.literal("+")) : EditorIcon.item(stack);
+                    ? QuestActionIcons.named("plus") : EditorIcon.item(stack);
             EditorButton.Definition definition = EditorButton.Definition.iconAndText(select, select, icon);
             renderEditorActionButton(graphics, row.field(), definition,
                     !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -3303,7 +3304,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             Component edit = Component.translatable(
                     "screen.brnquest.editor.typed.property.edit_matcher", candidates.size());
             EditorIcon icon = stack.isEmpty()
-                    ? EditorIcon.glyph(Component.literal("+")) : EditorIcon.item(stack);
+                    ? QuestActionIcons.named("plus") : EditorIcon.item(stack);
             EditorButton.Definition definition = EditorButton.Definition.iconAndText(edit, edit, icon);
             renderEditorActionButton(graphics, row.field(), definition,
                     !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -3940,7 +3941,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         rect.left() + 5, rect.top() + 16, dependency == null ? 0xFFFFA070 : GraystonePalette.SECONDARY, false);
                 Component label = Component.translatable("screen.brnquest.editor.dependency.remove");
                 actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(row.key(),
-                        EditorButton.Definition.iconOnly(label, label, EditorIcon.glyph(Component.literal("×"))),
+                        EditorButton.Definition.iconOnly(label, label, QuestActionIcons.named("close")),
                         !ClientEditorState.get().busy(), EditorButton.Tone.DANGER, (x, y) -> {
                             if (!dependencyListInputReady() || ClientEditorState.get().busy()) return;
                             if (!selectedQuest().dependencies().contains(row.key())) return;
@@ -3963,7 +3964,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             Component add = Component.translatable("screen.brnquest.editor.dependency.add");
             renderEditorActionButton(graphics, dependencyAddBounds().translated(offset, 0),
-                    EditorButton.Definition.iconAndText(add, add, EditorIcon.glyph(Component.literal("+"))),
+                    EditorButton.Definition.iconAndText(add, add, QuestActionIcons.named("plus")),
                     !ClientEditorState.get().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
             renderEditorTextButton(graphics, dependencyDoneBounds().translated(offset, 0), Component.translatable("gui.done"),
                     null, true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
@@ -4043,7 +4044,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         List<QuestDependencyEditorModel.Candidate> candidates = dependencyCandidates();
         UiRect bounds = dependencyPickerBounds();
         Component searchText = dependencyFilter.isBlank()
-                ? Component.translatable("screen.brnquest.editor.dependency.search_hint") : Component.literal("⌕ " + dependencyFilter);
+                ? Component.translatable("screen.brnquest.editor.dependency.search_hint") : Component.literal(dependencyFilter);
         graphics.fill(0, 0, width, height, 0x66000000);
         dependencyPicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
                 candidates.size(), candidates::get, currentMotionFrameSeconds, scrollSmoothSpeed());

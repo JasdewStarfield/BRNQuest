@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
@@ -306,7 +308,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     private void renderSmallButton(GuiGraphics graphics, UiRect bounds, String glyph,
                                    boolean enabled, int mouseX, int mouseY) {
         buttonInput.render(graphics, font, bounds,
-                EditorButton.Definition.text(Component.literal(glyph), null),
+                "+".equals(glyph)
+                        ? EditorButton.Definition.iconOnly(Component.literal(glyph), null, QuestActionIcons.named("plus"))
+                        : EditorButton.Definition.text(Component.literal(glyph), null),
                 enabled, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 

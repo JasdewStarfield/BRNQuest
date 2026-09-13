@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -67,7 +69,7 @@ final class QuestTypedEntryListSection {
             Component add = Component.translatable("screen.brnquest.editor.typed.add");
             footer.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
                     new ActionKey(null, Action.ADD), EditorButton.Definition.iconAndText(add, add,
-                    EditorIcon.glyph(Component.literal("+"))), model.enabled(), EditorButton.Tone.PRIMARY,
+                    QuestActionIcons.named("plus")), model.enabled(), EditorButton.Tone.PRIMARY,
                     (x, y) -> pendingIntent = new Intent(Action.ADD, null, x.intValue(), y.intValue())),
                     new UiRect(layout.add().left(), layout.add().top(), layout.add().centerX() - 2, layout.add().bottom()), layout.clip()));
             // Text-only paste action reuses the footer's keyboard focus and click geometry.

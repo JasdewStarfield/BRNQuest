@@ -11,6 +11,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestScreenLayout
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
 import java.util.List;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import java.util.Optional;
 
@@ -109,8 +110,8 @@ final class QuestEditorChrome {
             if (!model.live()) {
                 Component saveLabel = Component.translatable(model.dirty()
                         ? "screen.brnquest.editor.save" : "screen.brnquest.editor.saved");
-                tooltip = renderButton(graphics, font, layout.save(), EditorButton.Definition.text(saveLabel,
-                                Component.translatable("screen.brnquest.editor.save.tooltip")),
+                tooltip = renderButton(graphics, font, layout.save(), EditorButton.Definition.iconAndText(saveLabel,
+                                Component.translatable("screen.brnquest.editor.save.tooltip"), QuestActionIcons.named("save")),
                         model.dirty() && !model.busy(), Action.SAVE, EditorButton.Tone.SUCCESS,
                         mouseX, mouseY, tooltip);
                 tooltip = renderButton(graphics, font, layout.publish(), EditorButton.Definition.text(

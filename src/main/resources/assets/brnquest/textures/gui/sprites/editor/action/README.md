@@ -1,0 +1,2 @@
+Original action icons from the BRNQuest UX prototype. 10x10 transparent PNGs: 8x8 pixel designs with one-pixel padding; forward mirrors back, close is an original cross. Render at native size without resampling. Runtime tint and shadow follow the editor palette.
+reward_table uses the same original pixel design as the detail reward heading, with padding for native 10px action rendering. Menu labels remain visible; disabled and dangerous actions keep their semantic colors.

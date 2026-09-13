@@ -81,9 +81,11 @@ public final class EditorPickerList<K> {
             GraystoneSurface.raised(graphics, bounds, GraystonePalette.PANEL, true);
             graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2,
                     Math.min(bounds.bottom(), bounds.top() + SEARCH_HEIGHT), GraystonePalette.INSET);
+            QuestActionIcons.named("search").render(graphics, font,
+                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            searchText.getString(), Math.max(0, bounds.width() - 12))),
-                    bounds.left() + 6, bounds.top() + 6, showingHint ? GraystonePalette.DISABLED : 0xFFFFFFFF, false);
+                            searchText.getString(), Math.max(0, bounds.width() - 26))),
+                    bounds.left() + 20, bounds.top() + 6, showingHint ? GraystonePalette.DISABLED : 0xFFFFFFFF, false);
         } finally {
             graphics.disableScissor();
         }
@@ -103,13 +105,19 @@ public final class EditorPickerList<K> {
                 int inset = rect.width() >= 36 ? 28 : 4;
                 if (inset == 28) icons.apply(row.key()).render(graphics, font,
                         new UiRect(rect.left()+6, rect.top()+7, rect.left()+22, rect.top()+23), primaryColor);
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
+                QuestActionIcons.named("search").render(graphics, font,
+                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
+            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
                         Math.max(0, rect.width()-inset-4))), rect.left()+inset, rect.top()+11, primaryColor, false);
                 return;
             }
             int textWidth = Math.max(0, rect.width() - 8);
+            QuestActionIcons.named("search").render(graphics, font,
+                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 4, primaryColor, false);
+            QuestActionIcons.named("search").render(graphics, font,
+                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.secondary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 16, GraystonePalette.SECONDARY, false);
         }, () -> {

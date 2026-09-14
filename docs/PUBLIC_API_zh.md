@@ -9,7 +9,7 @@
 | 等级 | 兼容承诺 |
 |---|---|
 | `STABLE` | 在已记录的 API major 版本内保持源码和行为向后兼容；破坏性变更需要版本递增和迁移说明。 |
-| `EXPERIMENTAL` | 可用于集成试验；稳定前允许调整，但每次调整必须有文档、测试和 changelog。 |
+| `EXPERIMENTAL` | 可用于集成试验；稳定前允许调整，但每次调整必须有契约文档和迁移说明。 |
 | `INTERNAL` | 实现细节，不提供兼容承诺，外部调用属于不受支持行为。 |
 
 `yourscraft.jasdewstarfield.brnquest.api.ApiStatus` 是代码内的分级标记。类型未标记时仍以本清单为准，不能因为 Java 可见性为 `public` 就推断为公共 API。
@@ -115,15 +115,6 @@
 注册与 reload 顺序固定为：附属模组在构造/common setup 通过 `BrnQuestPlugins.register` 暂存并原子提交 common 扩展 → 首次服务端资源监听器建立前冻结 Java 插件/common 窗口 → KubeJS server scripts 构建一次性类型候选批次 → 仅在验证线程中用候选类型解码任务书并完成 Codec/整本校验 → 服务端线程紧邻切换脚本类型和单次任务书指针 → 发布 reload 事件 → 对账在线玩家并同步。客户端 presentation 使用独立注册链并在 client setup 冻结，专服不会执行或加载客户端生命周期。
 
 Java 注册表冻结后明确拒绝新条目；脚本类型窗口只在 KubeJS server scripts 评估期间短暂开放。候选解析、扩展校验、脚本错误或 fatal 校验失败时，当前有效 revision、活动资源键、任务书快照和脚本类型表保持不变。`lastReport()` 返回防御性副本，调用方不能在提交后修改已记录的诊断。
-
-## 后续冻结门槛
-
-以下内容完成前不把本页接口提升为 `STABLE`：
-
-- 至少一个 API `1.0.0` 候选版的外部集成反馈与迁移演练；
-- 将当前实验性清单逐项审阅并明确提升或保留实验性。
-
-仓库提供仅依赖公共 API 的真实示例附属模组和编译后签名门禁，使用方法见 [`EXAMPLE_ADDON_zh.md`](EXAMPLE_ADDON_zh.md)。
 
 ## 只读事件
 

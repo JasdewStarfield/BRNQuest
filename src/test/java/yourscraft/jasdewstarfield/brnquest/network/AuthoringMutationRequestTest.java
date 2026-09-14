@@ -70,6 +70,12 @@ class AuthoringMutationRequestTest {
             config.addProperty("scene", yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY.encode());
             json.add("config", config);
         }
+        if (action == AuthoringMutationAction.MOVE_CANVAS_SELECTION || action == AuthoringMutationAction.COPY_CANVAS_SELECTION
+                || action == AuthoringMutationAction.DELETE_CANVAS_SELECTION) {
+            var positions = new JsonArray(); var position = new JsonObject();
+            position.addProperty("questId", "brnquest_selection:decoration/test/art");
+            position.addProperty("x", 1); position.addProperty("y", 2); positions.add(position); json.add("positions", positions);
+        }
         json.addProperty("title", action == AuthoringMutationAction.ADD_REWARD ? "" : action == AuthoringMutationAction.UPDATE_REWARD ? "auto_hidden"
                 : action == AuthoringMutationAction.UPDATE_QUEST_TRANSLATION ? "zh-CN" : "Title");
         if (action == AuthoringMutationAction.MOVE_QUESTS || action == AuthoringMutationAction.COPY_QUESTS || action == AuthoringMutationAction.DELETE_QUESTS) {

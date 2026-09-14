@@ -7,6 +7,8 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSelectionFocus;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
 
+import yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey;
+import yourscraft.jasdewstarfield.brnquest.data.CanvasScene;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -16,7 +18,7 @@ import java.util.Set;
 
 /** Owns canvas camera and pointer gestures while returning protocol-free semantic intents. */
 final class QuestCanvasController {
-    enum Action { OPEN_DETAILS, OPEN_NODE_CONTEXT, OPEN_CANVAS_CONTEXT, MOVE_QUESTS }
+    enum Action { OPEN_DETAILS, OPEN_NODE_CONTEXT, OPEN_CANVAS_CONTEXT, OPEN_DECORATION_CONTEXT, MOVE_QUESTS, MOVE_CANVAS_SELECTION }
 
     record Intent(Action action, ResourceLocation targetId, int pointerX, int pointerY,
                   double questX, double questY, Map<ResourceLocation, DraftBookEditor.Position> positions) {
@@ -34,14 +36,22 @@ final class QuestCanvasController {
         }
 
         static Intent move(Map<ResourceLocation, DraftBookEditor.Position> positions) {
-            return new Intent(Action.MOVE_QUESTS, null, 0, 0, 0, 0, positions);
+            boolean mixed = positions.keySet().stream().anyMatch(CanvasSelectionKey::isDecoration);
+            Map<ResourceLocation, DraftBookEditor.Position> values = new LinkedHashMap<>();
+            positions.forEach((key, value) -> values.put(mixed ? key : CanvasSelectionKey.id(key), value));
+            return new Intent(mixed ? Action.MOVE_CANVAS_SELECTION : Action.MOVE_QUESTS, null, 0, 0, 0, 0, values);
         }
     }
 
     record InputModel(QuestScreenFrameIdentity identity, ResourceLocation chapterId, boolean editing, boolean snapToGrid,
-                      Map<ResourceLocation, DraftBookEditor.Position> chapterPositions) {
+                      Map<ResourceLocation, DraftBookEditor.Position> chapterPositions, java.util.List<CanvasScene.Decoration> decorations) {
+        InputModel(QuestScreenFrameIdentity identity, ResourceLocation chapterId, boolean editing, boolean snapToGrid,
+                   Map<ResourceLocation, DraftBookEditor.Position> chapterPositions) {
+            this(identity, chapterId, editing, snapToGrid, chapterPositions, java.util.List.of());
+        }
         InputModel {
             chapterPositions = Collections.unmodifiableMap(new LinkedHashMap<>(chapterPositions));
+            decorations = java.util.List.copyOf(decorations);
         }
     }
 
@@ -80,22 +90,31 @@ final class QuestCanvasController {
                 screenOriginY + renderedPanY, renderedZoom);
     }
 
-    Set<ResourceLocation> selection() { return Collections.unmodifiableSet(selection); }
-    boolean selected(ResourceLocation id) { return selection.contains(id); }
+    // Public quest accessors preserve the renderer contract; gesture state uses typed keys throughout.
+    Set<ResourceLocation> selection() { return CanvasSelectionKey.ids(selection, false); }
+    Set<ResourceLocation> allSelection() { return Set.copyOf(selection); }
+    Set<ResourceLocation> decorationSelection() { return CanvasSelectionKey.ids(selection, true); }
+    int selectionCount() { return selection.size(); }
+    boolean selected(ResourceLocation id) { return selection.contains(CanvasSelectionKey.quest(id)); }
+    boolean decorationSelected(ResourceLocation id) { return selection.contains(CanvasSelectionKey.decoration(id)); }
+    private boolean selectionOnlyClick;
     boolean gestureActive() { return panning || nodeDrag.active(); }
     boolean dragActive() { return nodeDrag.active(); }
     boolean pickedUp() { return nodeDrag.pickedUp(); }
-    ResourceLocation dragAnchor() { return nodeDrag.anchor(); }
-    DraftBookEditor.Position preview(ResourceLocation id) { return nodeDrag.preview(id); }
-    DraftBookEditor.Position snapPreview(ResourceLocation id) { return nodeDrag.snapPreview(id); }
+    ResourceLocation dragAnchor() { return nodeDrag.anchor() == null || CanvasSelectionKey.isDecoration(nodeDrag.anchor()) ? null : CanvasSelectionKey.id(nodeDrag.anchor()); }
+    DraftBookEditor.Position preview(ResourceLocation id) { return nodeDrag.preview(CanvasSelectionKey.quest(id)); }
+    DraftBookEditor.Position snapPreview(ResourceLocation id) { return nodeDrag.snapPreview(CanvasSelectionKey.quest(id)); }
 
     /** A stationary long press may cross its threshold between input events, so render frames advance it too. */
     void advancePointer(QuestCanvasRenderer.Camera camera, double screenX, double screenY, long nowNanos) {
         nodeDrag.update(camera.graphX(screenX), camera.graphY(screenY), screenX, screenY, nowNanos);
     }
 
+    DraftBookEditor.Position decorationPreview(ResourceLocation id) { return nodeDrag.preview(CanvasSelectionKey.decoration(id)); }
+    /** Rollback restores only client selection; authoritative reconciliation still prunes missing objects. */
+    void restoreSelection(Set<ResourceLocation> keys) { selection.clear(); selection.addAll(keys); }
     void clearSelection() { selection.clear(); }
-    void removeSelection(ResourceLocation id) { selection.remove(id); }
+    void removeSelection(ResourceLocation id) { selection.remove(CanvasSelectionKey.quest(id)); }
     void clearPreview() { nodeDrag.clearPreview(); }
 
     void resetCamera(double graphCenterX, double graphCenterY, double zoom) {
@@ -179,29 +198,40 @@ final class QuestCanvasController {
             return new ClickResult(false, null);
         }
         adoptRenderedCamera();
-        ResourceLocation hit = QuestCanvasRenderer.nodeAt(frame, model.identity(), x, y);
+        ResourceLocation questHit = QuestCanvasRenderer.nodeAt(frame, model.identity(), x, y);
+        CanvasScene.Decoration artwork = questHit == null && model.editing()
+                ? CanvasArtwork.hit(model.decorations(), frame.camera(), x, y) : null;
+        ResourceLocation hit = questHit != null ? CanvasSelectionKey.quest(questHit)
+                : artwork == null ? null : CanvasSelectionKey.decoration(artwork.id());
         if (hit != null) {
-            DraftBookEditor.Position hitPosition = model.chapterPositions().get(hit);
+            DraftBookEditor.Position hitPosition = questHit != null ? model.chapterPositions().get(questHit)
+                    : new DraftBookEditor.Position(artwork.x(), artwork.y());
             if (model.editing()) {
                 if (button == 1) {
-                    if (!selection.contains(hit)) selectOnly(hit);
-                    return new ClickResult(true, Intent.context(Action.OPEN_NODE_CONTEXT, hit, x, y,
-                            hitPosition == null ? 0 : hitPosition.x(), hitPosition == null ? 0 : hitPosition.y()));
+                    if (!selection.contains(hit)) { selection.clear(); selection.add(hit); }
+                    return new ClickResult(true, Intent.context(questHit != null ? Action.OPEN_NODE_CONTEXT : Action.OPEN_DECORATION_CONTEXT,
+                            CanvasSelectionKey.id(hit), x, y, hitPosition == null ? 0 : hitPosition.x(), hitPosition == null ? 0 : hitPosition.y()));
                 }
                 if (button == 0) {
                     nodeDrag.rememberSelection(selection);
+                    // Ctrl only changes membership. In particular, deselection must not start a drag of the remaining group.
+                    selectionOnlyClick = controlDown || selection.size() > 1 || artwork != null;
                     if (controlDown) {
                         if (!selection.add(hit)) selection.remove(hit);
-                        if (selection.isEmpty()) selection.add(hit);
                     } else if (!selection.contains(hit)) {
-                        selectOnly(hit);
+                        selection.clear(); selection.add(hit);
                     }
+                    if (!selection.contains(hit) || artwork != null && artwork.locked()) return new ClickResult(true, null);
+                    Map<ResourceLocation, DraftBookEditor.Position> positions = new LinkedHashMap<>();
+                    model.chapterPositions().forEach((id, value) -> positions.put(CanvasSelectionKey.quest(id), value));
+                    model.decorations().stream().filter(d -> !d.locked()).forEach(d -> positions.put(
+                            CanvasSelectionKey.decoration(d.id()), new DraftBookEditor.Position(d.x(), d.y())));
                     beginNodeDrag(hit, frame.camera().graphX(x), frame.camera().graphY(y), x, y,
-                            model.chapterPositions(), model.identity(), nowNanos, model.snapToGrid());
+                            positions, model.identity(), nowNanos, model.snapToGrid());
                     return new ClickResult(true, null);
                 }
             } else if (button == 0) {
-                return new ClickResult(true, Intent.details(hit));
+                return new ClickResult(true, Intent.details(questHit));
             }
         }
         if (model.editing() && button == 1) {
@@ -269,7 +299,7 @@ final class QuestCanvasController {
             ResourceLocation clicked = nodeDrag.anchor();
             nodeDrag.cancel();
             gestureIdentity = null;
-            return new GestureResult(true, Intent.details(clicked));
+            return new GestureResult(true, selectionOnlyClick ? null : Intent.details(CanvasSelectionKey.id(clicked)));
         }
         panning = false;
         gestureIdentity = null;
@@ -283,8 +313,15 @@ final class QuestCanvasController {
 
     void reconcile(java.util.function.Function<ResourceLocation, DraftBookEditor.Position> authoritative,
                    boolean rejected) {
+        reconcile(authoritative, id -> null, rejected);
+    }
+
+    void reconcile(java.util.function.Function<ResourceLocation, DraftBookEditor.Position> quests,
+                   java.util.function.Function<ResourceLocation, DraftBookEditor.Position> decorations, boolean rejected) {
+        java.util.function.Function<ResourceLocation, DraftBookEditor.Position> authoritative = key ->
+                (CanvasSelectionKey.isDecoration(key) ? decorations : quests).apply(CanvasSelectionKey.id(key));
         nodeDrag.reconcile(authoritative, rejected);
-        // Drop vanished nodes only after an authoritative snapshot, preserving selection on rejected edits.
+        // Drop vanished objects only after an authoritative snapshot; typed IDs cannot collide.
         selection.removeIf(id -> authoritative.apply(id) == null);
     }
 
@@ -325,7 +362,7 @@ final class QuestCanvasController {
 
     void selectOnly(ResourceLocation id) {
         selection.clear();
-        selection.add(id);
+        selection.add(CanvasSelectionKey.quest(id));
     }
 
     private void beginNodeDrag(ResourceLocation anchor, double graphX, double graphY, double screenX, double screenY,

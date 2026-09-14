@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Editor changes remain visible while awaiting server acknowledgement, including chunked responses; rejected edits restore the previous view and selection with an error. Authoritative state and protocol remain unchanged.
+- 编辑提交后立即显示待确认结果，分块回包期间不闪回；拒绝时恢复原画面与选区并报错，服务端权威状态和协议不变。
+- Quest nodes and decorations now share Ctrl multi-selection, group movement, copy/paste and undoable deletion; multi-selection clicks no longer open details or trigger automatic focus.
+- 任务节点与装饰贴图支持 Ctrl 混合多选、整体移动、复制粘贴和可撤销删除；多选点击不再打开详情或自动聚焦。
 - 贴图选择器支持选择或拖入本地 PNG，验证后复制到自动加载的本地素材库并按内容去重；任务书仍只保存资源地址，不上传图片。
 - Import or drop PNGs into the texture picker for a persistent, automatically mounted local library with content-based IDs. Books retain resource locations only; image bytes are not uploaded.
 

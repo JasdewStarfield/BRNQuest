@@ -50,6 +50,9 @@ final class AuthoringMutationHandler {
         AuthorOperationResult<DraftEditResult> result;
         try {
             result = switch (wire.action()) {
+                case MOVE_CANVAS_SELECTION, COPY_CANVAS_SELECTION, DELETE_CANVAS_SELECTION -> editor.editCanvasSelection(
+                        player, sessionId, bookId, wire.draftRevision(), requireId(targetId), wire.action().name(),
+                        domainPositions(wire.positions()), wire.x(), wire.y());
                 case UPDATE_CANVAS -> editor.updateCanvas(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), CanvasScene.decode(wire.config().get("scene")));
                 case UNDO -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());

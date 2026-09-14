@@ -376,6 +376,14 @@ public final class DraftEditService {
                 ? QuestSelectionEdits.copy(book, frozenIds, dx, dy) : DraftBookEditor.removeQuestSelection(book, frozenIds));
     }
 
+    /** Mixed artwork/node edits have one revision, permission check and undo boundary. */
+    public AuthorOperationResult<DraftEditResult> editCanvasSelection(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation chapter, String action,
+            Map<ResourceLocation, DraftBookEditor.Position> positions, double dx, double dy) {
+        var frozen = Map.copyOf(positions);
+        return apply(player, sessionId, bookId, revision, book -> CanvasSelectionEdits.edit(book, chapter, action, frozen, dx, dy));
+    }
+
     private AuthorOperationResult<DraftEditResult> apply(ServerPlayer player, UUID sessionId,
                                                           ResourceLocation bookId, String revision,
                                                           Function<QuestBookDefinition, AuthorOperationResult<DraftChange>> operation) {

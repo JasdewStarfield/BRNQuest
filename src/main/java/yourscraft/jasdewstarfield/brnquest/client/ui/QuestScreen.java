@@ -14,6 +14,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey;
+import yourscraft.jasdewstarfield.brnquest.client.ClientEditPreview;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
@@ -321,7 +323,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override public boolean isPauseScreen() {
         // Pause world simulation in either mode. Main-thread packet work and client lease ticks still run.
-        var snapshot = displaySnapshot();
+        var snapshot = ClientEditorState.get().draft().orElseGet(() -> ClientQuestState.get().book().orElse(null));
         return minecraft != null && minecraft.hasSingleplayerServer() && snapshot != null
                 && snapshot.book().settings().pauseGame();
     }
@@ -414,11 +416,38 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (editor.beginOpenCurrent(snapshot.book().id())) AuthoringNetwork.openLiveSession(snapshot.book().id());
     }
 
+    private record PendingEditUi(java.util.UUID session, ResourceLocation book, ResourceLocation chapter,
+                                 ResourceLocation quest, boolean details, Set<ResourceLocation> selection) {}
+    private PendingEditUi pendingEditUi;
+
+    /** A rejected delete/rename also restores the pre-submit selection instead of leaving an empty detail panel. */
+    private void rememberPendingEditUi() {
+        var editor = ClientEditorState.get();
+        pendingEditUi = new PendingEditUi(editor.sessionId(), editor.bookId(), currentChapterId(),
+                editorSelectedQuest, detailsOpen, canvasController.allSelection());
+    }
+    private void reconcilePendingEditUi(ClientEditorState editor) {
+        if (pendingEditUi == null || editor.busy()) return;
+        var previous = pendingEditUi;
+        pendingEditUi = null;
+        if (editor.mode() != ClientEditorState.Mode.ERROR || !Objects.equals(previous.session(), editor.sessionId())
+                || !Objects.equals(previous.book(), editor.bookId()) || editor.draft().isEmpty()) return;
+        var chapters = QuestPresentation.orderedChapters(editor.draft().orElseThrow().book());
+        for (int i = 0; i < chapters.size(); i++) if (chapters.get(i).id().equals(previous.chapter())) {
+            chapterIndex = i; rememberedChapterId = previous.chapter(); rememberedChapterResolved = true; break;
+        }
+        editorSelectedQuest = previous.quest(); detailsOpen = previous.details();
+        canvasController.restoreSelection(previous.selection());
+        canvasController.clearPreview(); canvasController.cancelFocus();
+        itemCache.clear();
+    }
+
     private void reconcileModeSelection(ClientEditorState editor) {
+        reconcilePendingEditUi(editor);
         boolean nextEditorMode = editor.draft().isPresent();
         boolean modeChanged = nextEditorMode != editorSelectionMode;
         QuestBookSnapshot target = nextEditorMode
-                ? editor.draft().orElse(null) : ClientQuestState.get().book().orElse(null);
+                ? editor.displayDraft().orElse(null) : ClientQuestState.get().book().orElse(null);
         ResourceLocation preferred = editorSelectionMode
                 ? editorSelectedQuest : ClientQuestState.get().selected();
         Set<ResourceLocation> targetIds = target == null ? Set.of() : target.quests().keySet();
@@ -694,6 +723,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
+        canvasArtwork.selectionController(canvasController);
         QuestCanvasRenderer.Camera camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
         if (backgroundPreview == null) canvasController.advancePointer(camera, mouseX, mouseY, System.nanoTime());
         boolean editing = ClientEditorState.get().editing();
@@ -1213,19 +1243,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (mouseX > canvasLeft() && mouseX < canvasRight && isContentY(mouseY)) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
-            if (!ClientEditorState.get().busy() && canvasArtwork.click(canvasFrame, currentFrameIdentity(), mouseX, mouseY, button)) {
-                canvasController.clearSelection();
+            boolean selecting = ClientEditorState.get().editing() && (hasControlDown() || canvasController.selectionCount() > 1);
+            var artwork = chapter == null || canvasFrame == null || QuestCanvasRenderer.nodeAt(canvasFrame, currentFrameIdentity(), mouseX, mouseY) != null
+                    ? null : CanvasArtwork.hit(chapter.canvasScene().decorations(), canvasFrame.camera(), mouseX, mouseY);
+            // Resizing is deliberately a single-selection gesture; group drags always translate all unlocked members.
+            if (!ClientEditorState.get().busy() && !selecting && button == 0 && artwork != null
+                    && canvasController.selectionCount() == 1 && canvasController.decorationSelected(artwork.id())
+                    && CanvasArtwork.resizeHandle(artwork, canvasFrame.camera(), mouseX, mouseY)
+                    && canvasArtwork.click(canvasFrame, currentFrameIdentity(), mouseX, mouseY, button)) return true;
+            QuestCanvasController.ClickResult result = canvasController.mouseClicked(canvasFrame,
+                    canvasInputModel(snapshot, chapter), mouseX, mouseY, button, hasControlDown(), System.nanoTime());
+            if (result.consumed() && ClientEditorState.get().editing() && (selecting || artwork != null)) {
                 editorSelectedQuest = null;
                 detailsOpen = false;
                 closeQuestEditingPanels();
-                if (button == 1) {
-                    var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
-                    if (decoration != null) openEditContext(ContextKind.DECORATION, decoration.id(), (int)mouseX, (int)mouseY, 0, 0);
-                }
-                return true;
             }
-            QuestCanvasController.ClickResult result = canvasController.mouseClicked(canvasFrame,
-                    canvasInputModel(snapshot, chapter), mouseX, mouseY, button, hasControlDown(), System.nanoTime());
             if (result.intent() != null) handleCanvasIntent(result.intent(), snapshot, chapter);
             if (result.consumed()) return true;
         }
@@ -1351,23 +1383,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }).orElse(false);
         }
         if (editorKeyboardSurfaceReady() && hasControlDown()) {
-            var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
-            if (keyCode == 67 && decoration != null) {
-                EditorDecorationClipboard.copy(serverContextId, displaySnapshot().book().id(), decoration);
+            if (keyCode == 67 && !canvasController.allSelection().isEmpty()) {
+                copyQuestClipboard(canvasController.allSelection());
                 return true;
             }
-            if (keyCode == 86 && currentChapter() != null && EditorDecorationClipboard.get(serverContextId, displaySnapshot().book().id()).isPresent()) {
-                var value = EditorDecorationClipboard.get(serverContextId, displaySnapshot().book().id()).orElseThrow();
-                var chapter = currentChapter(); var scene = chapter.canvasScene();
-                if (scene.decorations().size() < yourscraft.jasdewstarfield.brnquest.data.CanvasScene.MAX_DECORATIONS) {
-                    var values = new ArrayList<>(scene.decorations());
-                    var camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
-                    double x = camera.graphX((canvasLeft()+canvasRight())/2.0)/QuestViewportMath.GRID_SCALE;
-                    double y = camera.graphY(contentCenterY())/QuestViewportMath.GRID_SCALE;
-                    if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.snapToGrid)) { x = QuestViewportMath.snapQuestCoordinate(x); y = QuestViewportMath.snapQuestCoordinate(y); }
-                    values.add(value.placed(yourscraft.jasdewstarfield.brnquest.data.CanvasScene.newId(), x, y, value.width(), value.height()));
-                    sendCanvas(chapter.id(), new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(values, scene.canvas(), scene.screen(), scene.screenAbove()));
+            if (keyCode == 86 && currentChapter() != null) {
+                var camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
+                double x = camera.graphX((canvasLeft()+canvasRight())/2.0)/QuestViewportMath.GRID_SCALE;
+                double y = camera.graphY(contentCenterY())/QuestViewportMath.GRID_SCALE;
+                if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.snapToGrid)) {
+                    x = QuestViewportMath.snapQuestCoordinate(x); y = QuestViewportMath.snapQuestCoordinate(y);
                 }
+                pasteQuestClipboard(x, y);
                 return true;
             }
             if (keyCode >= 49 && keyCode <= 52) {
@@ -1406,16 +1433,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 return true;
             }
         }
-        if (editorKeyboardSurfaceReady() && keyCode == 261 && currentChapter() != null) {
-            var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
-            if (decoration != null) {
-                if (!decoration.locked()) {
-                    var scene = currentChapter().canvasScene();
-                    sendCanvas(currentChapterId(), new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(
-                            scene.decorations().stream().filter(d -> !d.id().equals(decoration.id())).toList(), scene.canvas(), scene.screen(), scene.screenAbove()));
-                }
-                return true;
-            }
+        if (editorKeyboardSurfaceReady() && keyCode == 261 && currentChapter() != null && !canvasController.allSelection().isEmpty()) {
+            requestCanvasSelectionDelete(canvasController.allSelection(), displaySnapshot().book());
+            return true;
         }
         if (editorKeyboardSurfaceReady() && keyCode == 261 && editorSelectedQuest != null) {
             QuestBookSnapshot snapshot = displaySnapshot();
@@ -1480,10 +1500,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 editor.beginPublishReview().ifPresent(request -> AuthoringNetwork.reviewPublish(
                     request.sessionId(), editor.bookId(), request.draftRevision()));
             }
-            case REDO -> editor.beginRedo().ifPresent(request -> AuthoringNetwork.history(
-                    request.sessionId(), editor.bookId(), request.draftRevision(), true));
-            case UNDO -> editor.beginUndo().ifPresent(request -> AuthoringNetwork.history(
-                    request.sessionId(), editor.bookId(), request.draftRevision(), false));
+            case REDO -> {
+                if (editor.canRedo()) rememberPendingEditUi();
+                editor.beginRedo().ifPresent(request -> AuthoringNetwork.history(request.sessionId(), editor.bookId(), request.draftRevision(), true));
+            }
+            case UNDO -> {
+                if (editor.canUndo()) rememberPendingEditUi();
+                editor.beginUndo().ifPresent(request -> AuthoringNetwork.history(request.sessionId(), editor.bookId(), request.draftRevision(), false));
+            }
             case EXIT -> {
                 if (editor.dirty()) requestDiscardConfirmation(null, false);
                 else {
@@ -1719,18 +1743,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case "DECORATION_PROPERTIES" -> openDecorationProperties(target);
             case "SET_CHAPTER_AUTOFOCUS" -> setChapterAutofocus(book, target);
             case "COPY_SELECTION_SNAPSHOT" -> copyQuestClipboard(contextSelection);
-            case "COPY_QUEST_SNAPSHOT" -> copyQuestClipboard(java.util.Set.of(target));
+            case "COPY_QUEST_SNAPSHOT" -> copyQuestClipboard(java.util.Set.of(CanvasSelectionKey.quest(target)));
             case "PASTE_QUEST_SNAPSHOT" -> pasteQuestClipboard(graphX, graphY);
-            case "COPY_SELECTION" -> sendSelectionMutation("COPY_QUESTS", contextSelection);
-            case "DELETE_SELECTION" -> {
-                deleteSelection = java.util.Set.copyOf(contextSelection);
-                deleteKind = DeleteKind.NONE;
-                deleteTarget = null;
-                long references = book.quests().stream().filter(q -> !deleteSelection.contains(q.id()))
-                        .filter(q -> q.dependencies().stream().anyMatch(deleteSelection::contains)).count();
-                deleteImpact = Component.translatable("screen.brnquest.selection.delete_warning", deleteSelection.size(), references).getString();
-                editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
-            }
+            case "COPY_SELECTION" -> sendSelectionMutation("COPY_CANVAS_SELECTION", contextSelection);
+            case "DELETE_SELECTION" -> requestCanvasSelectionDelete(contextSelection, book);
             case "CLEAR_SELECTION" -> canvasController.clearSelection();
             case "COPY_QUEST" -> openStructureForm(StructureFormKind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
             case "DELETE_QUEST" -> requestDelete(DeleteKind.QUEST, target, book);
@@ -1801,7 +1817,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
                     .action("ADD_DECORATION", EditorCanvasScreen.label("add_here"), false, currentChapterId() != null)
                     .action("BOOK_PROPERTIES", Component.translatable("screen.brnquest.book.properties"), false));
-            case DECORATION -> EditorPopupMenu.menu(menu -> menu.action("DECORATION_PROPERTIES", EditorCanvasScreen.label("properties"), false));
+            case DECORATION -> EditorPopupMenu.menu(menu -> menu.action("DECORATION_PROPERTIES", EditorCanvasScreen.label("properties"), false)
+                    .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
+                    .action("COPY_SELECTION", Component.translatable("screen.brnquest.selection.copy", contextSelection.size()), false)
+                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
+                    .action("DELETE_SELECTION", Component.translatable("screen.brnquest.selection.delete", contextSelection.size()), true));
             case SELECTION -> EditorPopupMenu.menu(menu -> menu
                     .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
                     .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
@@ -1970,7 +1990,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         try {
             EditorDecorationClipboard.clear();
             EditorQuestClipboard.copy(serverContextId,
-                    yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(displaySnapshot().book(), ids));
+                    yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(displaySnapshot().book(), currentChapterId(),
+                            CanvasSelectionKey.ids(ids, false), CanvasSelectionKey.ids(ids, true)));
             clipboardMessage = Component.translatable("screen.brnquest.quest_clipboard.copied", ids.size());
         } catch (IllegalArgumentException exception) {
             clipboardMessage = Component.translatable("screen.brnquest.clipboard.too_large");
@@ -2819,11 +2840,26 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
     }
 
+    /** Confirm one mixed delete; locked artwork stays selected but is excluded from destructive operations. */
+    private void requestCanvasSelectionDelete(Set<ResourceLocation> keys, QuestBookDefinition book) {
+        var locked = currentChapter().canvasScene().decorations().stream().filter(d -> d.locked())
+                .map(d -> CanvasSelectionKey.decoration(d.id())).collect(java.util.stream.Collectors.toSet());
+        deleteSelection = keys.stream().filter(key -> !locked.contains(key)).collect(java.util.stream.Collectors.toSet());
+        if (deleteSelection.isEmpty()) return;
+        deleteKind = DeleteKind.NONE;
+        deleteTarget = null;
+        var nodes = CanvasSelectionKey.ids(deleteSelection, false);
+        long references = book.quests().stream().filter(q -> !nodes.contains(q.id()))
+                .filter(q -> q.dependencies().stream().anyMatch(nodes::contains)).count();
+        deleteImpact = Component.translatable("screen.brnquest.selection.delete_warning", deleteSelection.size(), references).getString();
+        editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+    }
+
     /** Freeze IDs in the request; the server reads current coordinates and validates the whole selection. */
     private void sendSelectionMutation(String action, java.util.Set<ResourceLocation> ids) {
         if (ids.isEmpty() || ClientEditorState.get().busy()) return;
         var positions = ids.stream().sorted().map(id -> new AuthoringNetwork.PositionWire(id.toString(), 0, 0)).toList();
-        sendMutation(action, null, null, null, "", 0, 1, 1, positions);
+        sendMutation(action, currentChapterId(), null, null, "", 0, 1, 1, positions);
     }
 
     private void renderDeleteConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -2848,7 +2884,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 var selected = deleteSelection;
                 deleteSelection = java.util.Set.of();
                 editorOverlays.close();
-                sendSelectionMutation("DELETE_QUESTS", selected);
+                sendSelectionMutation("DELETE_CANVAS_SELECTION", selected);
                 return true;
             }
             String action = switch (deleteKind) {
@@ -2913,10 +2949,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientEditorState editor = ClientEditorState.get();
         if (!editor.editing() || editor.sessionId() == null || editor.bookId() == null
                 || !editor.beginMutation()) return false;
-        AuthoringNetwork.mutate(new AuthoringNetwork.EditorMutationWire(editor.sessionId().toString(),
+        rememberPendingEditUi();
+        var request = new AuthoringNetwork.EditorMutationWire(editor.sessionId().toString(),
                 editor.bookId().toString(), editor.draftRevision(), action,
                 target == null ? "" : target.toString(), parent == null ? "" : parent.toString(),
-                source == null ? "" : source.toString(), title, targetIndex, x, y, positions, config));
+                source == null ? "" : source.toString(), title, targetIndex, x, y, positions, config);
+        editor.previewMutation(request);
+        AuthoringNetwork.mutate(request);
         return true;
     }
 
@@ -4590,7 +4629,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         QuestDefinition currentQuest = draftQuest(questEditorQuestId);
         if (currentQuest == null) return;
         if (!editor.beginMutation()) return;
+        rememberPendingEditUi();
         ResourceLocation oldId = questEditorQuestId;
+        String iconValue = questFields.field("icon").getValue().strip();
+        boolean preserveIcon = questEditorIconMode == questEditorOriginalIconMode && iconValue.equals(questEditorOriginalIconItemId);
+        String previewIcon = preserveIcon ? currentQuest.icon() : iconValue.isBlank() ? ""
+                : questEditorIconMode == IconEditorMode.TEXTURE ? yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.texture(ResourceLocation.parse(iconValue))
+                : "{id:\"" + iconValue + "\",count:1}";
+        var replacement = new QuestDefinition(currentQuest.bookId(), replacementId, currentQuest.chapterId(),
+                currentQuest.title(), currentQuest.subtitle(), currentQuest.description(), previewIcon,
+                Double.parseDouble(questFields.field("x").getValue().strip()), Double.parseDouble(questFields.field("y").getValue().strip()),
+                currentQuest.dependencies(), currentQuest.tasks(), currentQuest.rewards(), currentQuest.legacyId(),
+                new yourscraft.jasdewstarfield.brnquest.data.QuestAppearance(questFields.field("shape").getValue().strip(),
+                        Double.parseDouble(questFields.field("size").getValue().strip()), Double.parseDouble(questFields.field("icon_scale").getValue().strip()),
+                        Double.parseDouble(questFields.field("min_width").getValue().strip()), questHideDependencyLines),
+                questEditorBehavior, currentQuest.extensions());
+        editor.previewEdit(book -> ClientEditPreview.questProperties(book, oldId, replacement));
         // Icon rendering is cached by quest ID; invalidate both sides of a rename before the new draft arrives.
         itemCache.remove(oldId);
         itemCache.remove(replacementId);
@@ -5265,15 +5319,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         canvasController.reconcile(id -> {
             QuestDefinition quest = snapshot.quests().get(id);
             return quest == null ? null : new DraftBookEditor.Position(quest.x(), quest.y());
-        }, ClientEditorState.get().mode() == ClientEditorState.Mode.ERROR);
+        }, id -> currentChapter() == null ? null : currentChapter().canvasScene().decorations().stream()
+                .filter(d -> d.id().equals(id)).map(d -> new DraftBookEditor.Position(d.x(), d.y())).findFirst().orElse(null),
+                ClientEditorState.get().mode() == ClientEditorState.Mode.ERROR);
     }
 
     private QuestCanvasController.InputModel canvasInputModel(QuestBookSnapshot snapshot, ChapterDefinition chapter) {
         Map<ResourceLocation, DraftBookEditor.Position> positions = new LinkedHashMap<>();
-        snapshot.book().quests().forEach(quest -> positions.put(quest.id(),
+        (chapter == null ? List.<QuestDefinition>of() : chapter.quests()).forEach(quest -> positions.put(quest.id(),
                 new DraftBookEditor.Position(quest.x(), quest.y())));
         return new QuestCanvasController.InputModel(currentFrameIdentity(), chapter == null ? null : chapter.id(),
-                ClientEditorState.get().editing(), BrnQuestClientConfig.VALUES.snapToGrid.get(), positions);
+                ClientEditorState.get().editing(), BrnQuestClientConfig.VALUES.snapToGrid.get(), positions,
+                chapter == null ? List.of() : chapter.canvasScene().decorations());
     }
 
     /** Re-resolves stable canvas IDs against the live snapshot before any network mutation. */
@@ -5297,19 +5354,34 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_NODE_CONTEXT -> {
                 QuestDefinition quest = snapshot.quests().get(intent.targetId());
                 if (ClientEditorState.get().editing() && quest != null) {
-                    boolean multiple = canvasController.selection().size() > 1;
+                    boolean multiple = canvasController.selectionCount() > 1;
                     openEditContext(multiple ? ContextKind.SELECTION : ContextKind.NODE, quest.id(), intent.pointerX(), intent.pointerY(),
                             quest.x(), quest.y());
-                    contextSelection = multiple ? java.util.Set.copyOf(canvasController.selection()) : java.util.Set.of();
+                    contextSelection = multiple ? canvasController.allSelection() : java.util.Set.of();
                 }
             }
             case OPEN_CANVAS_CONTEXT -> {
                 if (ClientEditorState.get().editing() && chapter != null) {
-                    boolean multiple = canvasController.selection().size() > 1;
+                    boolean multiple = canvasController.selectionCount() > 1;
                     openEditContext(multiple ? ContextKind.SELECTION : ContextKind.CANVAS, null, intent.pointerX(), intent.pointerY(),
                             intent.questX(), intent.questY());
-                    contextSelection = multiple ? java.util.Set.copyOf(canvasController.selection()) : java.util.Set.of();
+                    contextSelection = multiple ? canvasController.allSelection() : java.util.Set.of();
                 }
+            }
+            case OPEN_DECORATION_CONTEXT -> {
+                if (ClientEditorState.get().editing() && chapter != null) {
+                    openEditContext(canvasController.selectionCount() > 1 ? ContextKind.SELECTION : ContextKind.DECORATION,
+                            intent.targetId(), intent.pointerX(), intent.pointerY(), intent.questX(), intent.questY());
+                    contextSelection = canvasController.allSelection();
+                }
+            }
+            case MOVE_CANVAS_SELECTION -> {
+                if (!ClientEditorState.get().editing() || chapter == null || intent.positions().isEmpty()) {
+                    canvasController.clearPreview(); return;
+                }
+                var positions = intent.positions().entrySet().stream().map(e -> new AuthoringNetwork.PositionWire(
+                        e.getKey().toString(), e.getValue().x(), e.getValue().y())).toList();
+                if (!sendMutation("MOVE_CANVAS_SELECTION", chapter.id(), null, null, "", 0, 0, 0, positions)) canvasController.clearPreview();
             }
             case MOVE_QUESTS -> {
                 if (!ClientEditorState.get().editing() || intent.positions().isEmpty()
@@ -5477,7 +5549,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private QuestBookSnapshot displaySnapshot() {
         if (renderFrame != null) return renderFrame.snapshot();
-        return ClientEditorState.get().draft().orElseGet(() -> ClientQuestState.get().book().orElse(null));
+        return ClientEditorState.get().displayDraft().orElseGet(() -> ClientQuestState.get().book().orElse(null));
     }
 
     private QuestScreenFrameIdentity currentFrameIdentity() {

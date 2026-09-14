@@ -12,7 +12,7 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
     public static final int MAX_BYTES = 65536;
     public QuestClipboardSnapshot {
         Objects.requireNonNull(content);
-        if (content.chapters().size() != 1 || content.quests().isEmpty()
+        if (content.chapters().size() != 1 || (content.quests().isEmpty() && content.chapters().getFirst().canvasScene().decorations().isEmpty())
                 || content.quests().size() > yourscraft.jasdewstarfield.brnquest.BrnQuestConstants.MAX_QUESTS
                 || content.quests().stream().map(QuestDefinition::id).distinct().count() != content.quests().size()
                 || content.quests().stream().anyMatch(q -> !Double.isFinite(q.x()) || !Double.isFinite(q.y())))
@@ -20,8 +20,17 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
     }
     public static QuestClipboardSnapshot capture(QuestBookDefinition book, Set<ResourceLocation> ids) {
         var selected = book.quests().stream().filter(q -> ids.contains(q.id())).toList();
-        if (selected.isEmpty() || selected.size() != ids.size() || selected.stream().map(QuestDefinition::chapterId).distinct().count() != 1)
-            throw new IllegalArgumentException("Select tasks from one chapter");
+        if (selected.isEmpty()) throw new IllegalArgumentException("Select tasks from one chapter");
+        return capture(book, selected.getFirst().chapterId(), ids, Set.of());
+    }
+    /** A mixed snapshot stores only selected artwork, never chapter backgrounds or unrelated extensions. */
+    public static QuestClipboardSnapshot capture(QuestBookDefinition book, ResourceLocation chapterId,
+                                                 Set<ResourceLocation> ids, Set<ResourceLocation> decorations) {
+        var chapter = book.chapters().stream().filter(c -> c.id().equals(chapterId)).findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
+        var selected = chapter.quests().stream().filter(q -> ids.contains(q.id())).toList();
+        var artwork = chapter.canvasScene().decorations().stream().filter(d -> decorations.contains(d.id())).toList();
+        if (selected.size() != ids.size() || artwork.size() != decorations.size() || ids.isEmpty() && decorations.isEmpty())
+            throw new IllegalArgumentException("Select existing objects from one chapter");
         var prefixes = selected.stream().map(BookText::questPrefix).toList();
         var locales = new TreeMap<String, Map<String, String>>();
         book.localization().translations().forEach((locale, values) -> {
@@ -30,10 +39,15 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
             locales.put(locale, text);
         });
         // Only the selected definitions and their locale keys travel; unrelated book data and progress do not.
-        var chapter = book.chapters().stream().filter(c -> c.id().equals(selected.getFirst().chapterId())).findFirst().orElseThrow();
-        var seed = new ChapterDefinition(book.id(), chapter.id(), chapter.groupId(), "", "", 0, selected);
+        var seed = new ChapterDefinition(book.id(), chapter.id(), chapter.groupId(), "", "", 0, selected, new CanvasScene(artwork, null, null).write(Map.of()), QuestCreationDefaults.EMPTY, null, null, false);
         return new QuestClipboardSnapshot(new QuestBookDefinition(book.id(), book.schemaVersion(), "", List.of(), List.of(seed),
                 Map.of(), new BookLocalization(book.localization().fallbackLocale(), locales), Map.of()));
+    }
+    /** Property editors can copy their unsaved artwork draft into the same canvas clipboard. */
+    public static QuestClipboardSnapshot artwork(ResourceLocation book, CanvasScene.Decoration decoration) {
+        var chapter = new ChapterDefinition(book, book, book, "", "", 0, List.of(),
+                new CanvasScene(List.of(decoration), null, null).write(Map.of()));
+        return new QuestClipboardSnapshot(new QuestBookDefinition(book, 1, "", List.of(), List.of(chapter), Map.of()));
     }
     public String encode() {
         String encoded = NativeBookJson.encode(content);
@@ -67,8 +81,8 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
                 "CLIPBOARD_DEPENDENCY_MISSING", "Cannot paste: external dependency no longer exists: " + missing.getFirst());
         Map<ResourceLocation, ResourceLocation> remap = new LinkedHashMap<>();
         sources.forEach(q -> remap.put(q.id(), fresh(q.id())));
-        double minX = sources.stream().mapToDouble(QuestDefinition::x).min().orElseThrow();
-        double minY = sources.stream().mapToDouble(QuestDefinition::y).min().orElseThrow();
+        double minX = minX();
+        double minY = minY();
         var result = book;
         var affected = new ArrayList<ResourceLocation>();
         for (var source : sources) {
@@ -100,7 +114,28 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
             result = new QuestBookDefinition(result.id(), result.schemaVersion(), result.title(), result.chapterGroups(), result.chapters(),
                     result.legacyIds(), new BookLocalization(result.localization().fallbackLocale(), locales), result.extensions(), result.questDefaults(), result.settings());
         }
+        var chapter = result.chapters().stream().filter(c -> c.id().equals(chapterId)).findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
+        var scene = chapter.canvasScene();
+        var artwork = new ArrayList<>(scene.decorations());
+        for (var source : content.chapters().getFirst().canvasScene().decorations()) {
+            artwork.add(source.placed(CanvasScene.newId(), x + source.x() - minX, y + source.y() - minY, source.width(), source.height()));
+        }
+        if (artwork.size() > CanvasScene.MAX_DECORATIONS)
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST, "DECORATION_LIMIT", "Paste exceeds artwork capacity");
+        if (!artwork.equals(scene.decorations())) {
+            var changed = CanvasEdits.replace(result, chapterId, new CanvasScene(artwork, scene.canvas(), scene.screen(), scene.screenAbove()));
+            if (!changed.success()) return changed;
+            result = changed.value().book(); affected.addAll(changed.value().affectedObjects());
+        }
         return AuthorOperationResult.success("QUEST_CLIPBOARD_PASTED", "Quest snapshot pasted; external dependencies retained", new DraftChange(result, affected));
+    }
+    public double minX() {
+        return Math.min(content.quests().stream().mapToDouble(QuestDefinition::x).min().orElse(Double.POSITIVE_INFINITY),
+                content.chapters().getFirst().canvasScene().decorations().stream().mapToDouble(CanvasScene.Decoration::x).min().orElse(Double.POSITIVE_INFINITY));
+    }
+    public double minY() {
+        return Math.min(content.quests().stream().mapToDouble(QuestDefinition::y).min().orElse(Double.POSITIVE_INFINITY),
+                content.chapters().getFirst().canvasScene().decorations().stream().mapToDouble(CanvasScene.Decoration::y).min().orElse(Double.POSITIVE_INFINITY));
     }
     private static ResourceLocation fresh(ResourceLocation source) {
         // Random identities also avoid reusing progress IDs left by previously deleted copies.

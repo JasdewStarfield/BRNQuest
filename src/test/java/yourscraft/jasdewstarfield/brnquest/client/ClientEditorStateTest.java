@@ -506,6 +506,106 @@ class ClientEditorStateTest {
         assertTrue(state.beginMutation(), "A corrected stable ID should be retryable without draft recovery");
     }
 
+    @Test void pendingEditDisplaysImmediatelyButNeverChangesAuthorityAndSurvivesChunkedAcknowledgement() {
+        var before = positionedBook(ResourceLocation.parse("test:optimistic"), 1, 2);
+        var after = positionedBook(before.book().id(), 7, 9);
+        UUID session = openPreviewBook(before);
+        assertTrue(state.beginMutation());
+        state.previewEdit(book -> after.book());
+        var displayed = state.displayDraft().orElseThrow();
+        assertEquals(after.revision(), displayed.revision());
+        assertEquals(before.revision(), state.draft().orElseThrow().revision());
+        assertEquals(before.revision(), state.draftRevision()); assertFalse(state.dirty());
+        assertFalse(state.gameplayAllowed(after.revision())); assertFalse(state.beginMutation());
+        assertTrue(state.beginSave().isEmpty()); assertTrue(state.beginClose(null).isEmpty());
+        for (int i=0; i<100; i++) state.tick();
+        assertSame(displayed, state.displayDraft().orElseThrow(), "network latency must never restore the old picture");
+        String json = NativeBookJson.encode(after.book()); int split = json.length()/2;
+        var response = new AuthoringNetwork.SessionResponseWire("MUTATE", "SUCCESS", "UPDATED", "ok", session.toString(),
+                before.book().id().toString(), "", after.revision(), before.revision(), 36000, 2,
+                json.getBytes(StandardCharsets.UTF_8).length, 1, 0, List.of());
+        state.acceptSession(GSON.toJson(response));
+        assertSame(displayed, state.displayDraft().orElseThrow()); assertTrue(state.busy());
+        assertTrue(state.acceptDraftChunk(session.toString(), after.revision(), 1, json.substring(split)));
+        assertSame(displayed, state.displayDraft().orElseThrow());
+        assertEquals(before.revision(), state.draft().orElseThrow().revision());
+        assertTrue(state.acceptDraftChunk(session.toString(), after.revision(), 0, json.substring(0,split)));
+        assertSame(displayed, state.draft().orElseThrow(), "matching confirmation retains the visible immutable snapshot");
+        assertFalse(state.hasPendingPreview()); assertFalse(state.busy()); assertEquals(1,state.undoSteps());
+    }
+
+    @Test void rejectedProjectionRollsBackAndKeepsServerDiagnosticsWhileRetryRemainsPossible() {
+        var before = positionedBook(ResourceLocation.parse("test:rollback"), 1, 2); openPreviewBook(before);
+        assertTrue(state.beginMutation()); state.previewEdit(book -> positionedBook(book.id(), 10, 20).book());
+        var diagnostic = new AuthoringNetwork.EditorDiagnosticWire("ERROR", "DENIED", "test:quest", "position", "no");
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("MUTATE", "INVALID_REQUEST", "DENIED", "Cannot move", "", "", "", "", "", 0, 0, 0, List.of(diagnostic))));
+        assertEquals(before.revision(), state.displayDraft().orElseThrow().revision()); assertFalse(state.hasPendingPreview());
+        assertEquals(ClientEditorState.Mode.ERROR,state.mode()); assertEquals("Cannot move",state.statusMessage());
+        assertEquals(List.of(diagnostic),state.diagnostics()); assertEquals(0,state.undoSteps());
+        assertTrue(state.beginMutation()); state.previewEdit(book -> positionedBook(book.id(), 3, 4).book());
+        assertEquals(3,state.displayDraft().orElseThrow().quests().get(ResourceLocation.parse("test:quest")).x());
+    }
+
+    @Test void verifiedPatchUsesConfirmedBaseAndServerNormalizationWinsOverTheProjection() {
+        var before = positionedBook(ResourceLocation.parse("test:patch_preview"), 1, 2);
+        var after = positionedBook(before.book().id(), 7, 9); var session = openPreviewBook(before);
+        assertTrue(state.beginMutation());
+        state.previewEdit(book -> yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor.setBookTitle(after.book(), "Temporary title").value().book());
+        var patch = new AuthoringNetwork.SessionResponseWire("PATCH", "SUCCESS", "QUESTS_MOVED", "ok",
+                session.toString(), before.book().id().toString(), "", after.revision(), before.revision(), 36000, 0, 0, 1, 0,
+                List.of(), null, List.of(new AuthoringNetwork.PositionWire("test:quest",7,9)));
+        state.acceptSession(GSON.toJson(patch));
+        assertEquals(ClientEditorState.Mode.EDITING,state.mode());
+        assertEquals(after.revision(),state.displayDraft().orElseThrow().revision());
+        assertEquals("Book",state.draft().orElseThrow().book().title()); assertFalse(state.hasPendingPreview());
+    }
+
+    @Test void lateRenewAndOldSessionRepliesDoNotDismissAnInFlightProjection() {
+        var before = positionedBook(ResourceLocation.parse("test:late_preview"), 1, 2); var session = openPreviewBook(before);
+        assertTrue(state.beginMutation()); state.previewEdit(book -> positionedBook(book.id(),7,9).book());
+        var shown = state.displayDraft().orElseThrow();
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("RENEW","SUCCESS","SESSION_RENEWED","ok",session.toString(),before.book().id().toString(),"",before.revision(),before.revision(),36000,0,0)));
+        assertTrue(state.busy()); assertSame(shown,state.displayDraft().orElseThrow());
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("MUTATE","SUCCESS","UPDATED","old",UUID.randomUUID().toString(),before.book().id().toString(),"",before.revision(),before.revision(),36000,1,10)));
+        assertSame(shown,state.displayDraft().orElseThrow()); assertTrue(state.busy());
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("RENEW","CONFLICT","STALE_DRAFT_REVISION","late","","","","","",0,0,0)));
+        assertSame(shown,state.displayDraft().orElseThrow()); assertTrue(state.busy());
+    }
+
+    @Test void corruptTransferAndDisconnectDiscardProjectionWithoutInstallingUnverifiedContent() {
+        var before = positionedBook(ResourceLocation.parse("test:corrupt_preview"),1,2); var session=openPreviewBook(before);
+        assertTrue(state.beginMutation()); state.previewEdit(book -> positionedBook(book.id(),7,9).book());
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("MUTATE","SUCCESS","UPDATED","ok",session.toString(),before.book().id().toString(),"","wrong-revision",before.revision(),36000,1,2)));
+        assertFalse(state.acceptDraftChunk(session.toString(),"wrong-revision",0,"{}"));
+        assertEquals(before.revision(),state.displayDraft().orElseThrow().revision()); assertFalse(state.hasPendingPreview());
+        assertTrue(state.recoverableConflict()); assertFalse(state.beginMutation(), "unverified manifest revisions cannot authorize a new edit");
+        state.disconnected(); assertTrue(state.displayDraft().isEmpty());
+        assertFalse(state.acceptDraftChunk(session.toString(),"wrong-revision",0,"{}"));
+        openPreviewBook(before); assertFalse(state.hasPendingPreview());
+    }
+
+    @Test void undoRedoPreviewUsesOnlyVerifiedLocalHistoryAndNoChangeDropsSpeculation() {
+        var before=positionedBook(ResourceLocation.parse("test:history_preview"),1,2); var session=openPreviewBook(before);
+        var after=positionedBook(before.book().id(),7,9);
+        assertTrue(state.beginMutation()); state.previewEdit(book -> after.book());
+        acceptHistoryTransfer(session,after,before.revision(),1,0,"UPDATED");
+        assertTrue(state.beginUndo().isPresent()); assertEquals(before.revision(),state.displayDraft().orElseThrow().revision());
+        assertEquals(after.revision(),state.draft().orElseThrow().revision());
+        acceptHistoryTransfer(session,before,before.revision(),0,1,"UNDONE");
+        assertTrue(state.beginRedo().isPresent()); assertEquals(after.revision(),state.displayDraft().orElseThrow().revision());
+        acceptHistoryTransfer(session,after,before.revision(),1,0,"REDONE");
+        assertTrue(state.beginMutation()); state.previewEdit(book -> before.book());
+        acceptHistoryTransfer(session,after,before.revision(),1,0,"NO_CHANGE");
+        assertEquals(after.revision(),state.displayDraft().orElseThrow().revision()); assertFalse(state.hasPendingPreview());
+        assertTrue(state.beginUndo().isPresent()); assertEquals(before.revision(),state.displayDraft().orElseThrow().revision());
+    }
+
+    private UUID openPreviewBook(QuestBookSnapshot snapshot) {
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire("SUCCESS","DRAFT_CATALOG","ok",true,List.of())));
+        assertTrue(state.beginOpenCurrent(snapshot.book().id())); var session=UUID.randomUUID();
+        acceptTransfer("OPEN",session,snapshot,snapshot.revision()); return session;
+    }
+
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {
         String json = NativeBookJson.encode(snapshot.book());
         var response = new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "SESSION_OPENED", "ok",

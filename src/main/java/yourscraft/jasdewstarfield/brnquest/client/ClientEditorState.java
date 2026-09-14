@@ -58,6 +58,19 @@ public final class ClientEditorState {
     private int expectedBytes;
     private int receivedChunks;
     private QuestBookSnapshot draft;
+    // The pending projection is never exposed by draft(), used for a packet revision, or installed into ClientQuestState.
+    private QuestBookSnapshot displayPreview;
+    private QuestBookSnapshot mutationBase;
+    private int historyDirection;
+    private record PreviewCheckpoint(QuestBookSnapshot snapshot, int bytes) {
+        static PreviewCheckpoint of(QuestBookSnapshot snapshot) {
+            return new PreviewCheckpoint(snapshot, NativeBookJson.encode(snapshot.book()).getBytes(StandardCharsets.UTF_8).length);
+        }
+    }
+    private final java.util.Deque<PreviewCheckpoint> undoPreviews = new java.util.ArrayDeque<>();
+    private final java.util.Deque<PreviewCheckpoint> redoPreviews = new java.util.ArrayDeque<>();
+    private static final int MAX_PREVIEW_HISTORY_BYTES = 8 * 1024 * 1024;
+    private static final int MAX_PREVIEW_HISTORY_STEPS = 16;
     private boolean closeWhenOpened;
     private LeaseRequest immediateClose;
     private AuthoringNetwork.PublishReviewWire pendingPublishReview;
@@ -176,12 +189,40 @@ public final class ClientEditorState {
 
     public synchronized boolean beginMutation() {
         if (!editing() || busy() || recoverableConflict) return false;
+        mutationBase = draft;
+        displayPreview = null;
+        historyDirection = 0;
         mode = Mode.MUTATING;
         statusCode = "DRAFT_MUTATING";
         statusMessage = "";
         diagnostics = List.of();
         return true;
     }
+
+    /** Only the one submitted request may add a display projection; local failures must not veto server validation. */
+    public synchronized void previewMutation(AuthoringNetwork.EditorMutationWire request) {
+        if (sessionId == null || !sessionId.toString().equals(request.sessionId()) || bookId == null
+                || !bookId.toString().equals(request.bookId()) || !draftRevision.equals(request.draftRevision())) return;
+        previewEdit(book -> ClientEditPreview.mutation(book, request));
+    }
+
+    public synchronized void previewEdit(java.util.function.UnaryOperator<QuestBookDefinition> edit) {
+        if (mode != Mode.MUTATING || mutationBase == null || displayPreview != null || historyDirection != 0) return;
+        try {
+            var value = edit.apply(mutationBase.book());
+            if (!value.id().equals(bookId)) return;
+            var candidate = QuestBookSnapshot.of(value);
+            if (candidate.quests().size() <= BrnQuestConstants.MAX_QUESTS) displayPreview = candidate;
+        } catch (RuntimeException ignored) {
+            // Preview is best effort: malformed/unsupported input still receives the real server's error response.
+        }
+    }
+
+    /** UI reads may see pending changes, while all authority-facing accessors retain the verified draft. */
+    public synchronized Optional<QuestBookSnapshot> displayDraft() {
+        return Optional.ofNullable(displayPreview == null ? draft : displayPreview);
+    }
+    public synchronized boolean hasPendingPreview() { return displayPreview != null; }
 
     public synchronized Optional<LeaseRequest> beginUndo() {
         return beginHistory(false);
@@ -193,6 +234,10 @@ public final class ClientEditorState {
 
     private Optional<LeaseRequest> beginHistory(boolean redo) {
         if (mode != Mode.EDITING || !editing() || (redo ? redoSteps : undoSteps) <= 0) return Optional.empty();
+        mutationBase = draft;
+        historyDirection = redo ? 1 : -1;
+        var checkpoint = (redo ? redoPreviews : undoPreviews).peekLast();
+        displayPreview = checkpoint == null ? null : checkpoint.snapshot();
         mode = Mode.MUTATING;
         statusCode = redo ? "DRAFT_REDOING" : "DRAFT_UNDOING";
         statusMessage = "";
@@ -264,6 +309,7 @@ public final class ClientEditorState {
                 yield Optional.empty();
             }
             case "RECOVER" -> {
+                discardPreview(); undoPreviews.clear(); redoPreviews.clear();
                 ResourceLocation recoveredBook = ResourceLocation.tryParse(response.bookId());
                 acceptOpened(response, recoveredBook != null && recoveredBook.equals(bookId));
                 recoverableConflict = false;
@@ -315,7 +361,7 @@ public final class ClientEditorState {
                     || candidate.quests().size() > BrnQuestConstants.MAX_QUESTS) {
                 throw new IllegalArgumentException("Draft identity or revision does not match its manifest");
             }
-            draft = candidate;
+            confirmDraft(candidate);
             chunks = new String[0];
             mode = Mode.EDITING;
             statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
@@ -447,7 +493,7 @@ public final class ClientEditorState {
     private void acceptOpened(AuthoringNetwork.SessionResponseWire response, boolean preserveVerifiedDraft) {
         UUID decodedSession = parseUuid(response.sessionId());
         ResourceLocation decodedBook = ResourceLocation.tryParse(response.bookId());
-        if (preserveVerifiedDraft && (sessionId == null || !sessionId.equals(decodedSession))) {
+        if (preserveVerifiedDraft && (sessionId == null || !sessionId.equals(decodedSession) || !java.util.Objects.equals(bookId, decodedBook))) {
             fail("STALE_EDITOR_RESPONSE", "An older edit-session response was ignored");
             return;
         }
@@ -470,7 +516,10 @@ public final class ClientEditorState {
         expectedBytes = response.decodedBytes();
         chunks = new String[response.chunks()];
         receivedChunks = 0;
-        if (!preserveVerifiedDraft) draft = null;
+        if (!preserveVerifiedDraft) {
+            draft = null;
+            discardPreview(); undoPreviews.clear(); redoPreviews.clear();
+        }
         mode = Mode.RECEIVING_DRAFT;
         if (closeWhenOpened) {
             closeWhenOpened = false;
@@ -544,7 +593,7 @@ public final class ClientEditorState {
             fail("POSITION_PATCH_REVISION_MISMATCH", "The position update did not match the server revision");
             return;
         }
-        draft = candidate;
+        confirmDraft(candidate);
         baseRevision = safe(response.baseRevision());
         draftRevision = response.draftRevision();
         savedRevision = safe(response.savedRevision());
@@ -653,12 +702,52 @@ public final class ClientEditorState {
         expectedBytes = 0;
         receivedChunks = 0;
         draft = null;
+        discardPreview(); undoPreviews.clear(); redoPreviews.clear();
         diagnostics = List.of();
         pendingPublishReview = null;
         recoverableConflict = false;
     }
 
+    /** Confirm only after full content/revision verification. Never use a projection as a patch base. */
+    private void confirmDraft(QuestBookSnapshot candidate) {
+        if (mutationBase == null && draft != null && !draft.revision().equals(candidate.revision())) {
+            // An authoritative replacement outside our tracked request invalidates cached history predictions.
+            undoPreviews.clear(); redoPreviews.clear();
+        }
+        if (mutationBase != null && !mutationBase.revision().equals(candidate.revision())) {
+            if (historyDirection == 0) {
+                undoPreviews.addLast(PreviewCheckpoint.of(mutationBase));
+                redoPreviews.clear();
+            } else {
+                var from = historyDirection > 0 ? redoPreviews : undoPreviews;
+                var to = historyDirection > 0 ? undoPreviews : redoPreviews;
+                if (!from.isEmpty() && from.peekLast().snapshot().revision().equals(candidate.revision())) {
+                    from.removeLast(); to.addLast(PreviewCheckpoint.of(mutationBase));
+                } else { undoPreviews.clear(); redoPreviews.clear(); }
+            }
+            trimPreviewHistory();
+        }
+        // Reuse the already-visible immutable snapshot when the server verifies exactly the same content.
+        draft = displayPreview != null && displayPreview.revision().equals(candidate.revision()) ? displayPreview : candidate;
+        discardPreview();
+    }
+    private void discardPreview() { displayPreview = null; mutationBase = null; historyDirection = 0; }
+    private void trimPreviewHistory() {
+        // Whole snapshots avoid replaying server normalization; bound both memory and retained history depth.
+        long bytes = java.util.stream.Stream.concat(undoPreviews.stream(), redoPreviews.stream())
+                .mapToLong(PreviewCheckpoint::bytes).sum();
+        while (undoPreviews.size()+redoPreviews.size() > MAX_PREVIEW_HISTORY_STEPS || bytes > MAX_PREVIEW_HISTORY_BYTES) {
+            var queue = undoPreviews.isEmpty() ? redoPreviews : undoPreviews;
+            var removed = queue.removeFirst();
+            bytes -= removed.bytes();
+        }
+    }
+
     private void fail(String code, String message) {
+        discardPreview();
+        // A manifest may already advertise a newer revision while its body failed verification.
+        // Keep the old verified picture, but require recovery before allowing another write.
+        if (draft != null && !draft.revision().equals(draftRevision)) recoverableConflict = true;
         mode = Mode.ERROR;
         statusCode = safe(code);
         statusMessage = safe(message);

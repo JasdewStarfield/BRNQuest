@@ -290,6 +290,17 @@ public final class AuthoringHandlerGameTests {
             revision = last(packets).draftRevision();
         }
 
+        /** Typed positions run through the public decoder and real server transaction, not a local shortcut. */
+        void canvasSelection(String action, String chapter, List<AuthoringNetwork.PositionWire> positions) {
+            var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
+                    raw(chapter), "", "", "", 0, 1, 1, positions, Map.of());
+            var decoded = AuthoringRequestDecoder.mutation(GSON.toJson(wire));
+            check(helper, decoded.success(), "mixed selection decoded");
+            packets.clear(); handler.mutate(decoded.value());
+            check(helper, last(packets).status().equals("SUCCESS"), "mixed selection succeeds: " + last(packets).code());
+            revision = last(packets).draftRevision(); seen.add(decoded.value().action());
+        }
+
         void checkQuestProperties() {
             var questHandler = new AuthoringQuestUpdateHandler(player, sender);
             var wire = new AuthoringNetwork.QuestUpdateWire(token.toString(), book.toString(), revision,
@@ -384,6 +395,12 @@ public final class AuthoringHandlerGameTests {
             fixture.apply("UNDO", "", "", "");
             fixture.apply("COPY_CHAPTER", "c", "", "");
             fixture.apply("UNDO", "", "", "");
+            var nodeSelection = List.of(new AuthoringNetwork.PositionWire(
+                    yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey.quest(fixture.id("q")).toString(), 7, 8));
+            for (var action : List.of("MOVE_CANVAS_SELECTION", "COPY_CANVAS_SELECTION", "DELETE_CANVAS_SELECTION")) {
+                fixture.canvasSelection(action, fixture.quest("q").chapterId().getPath(), nodeSelection);
+                fixture.apply("UNDO", "", "", "");
+            }
             fixture.apply("COPY_QUESTS", "", "", "");
             fixture.apply("UNDO", "", "", "");
             fixture.apply("DELETE_QUESTS", "", "", "");
@@ -598,6 +615,42 @@ public final class AuthoringHandlerGameTests {
             f.selection("DELETE_QUESTS", List.of("q", "q2"));
             check(helper, f.snapshot().quests().size() == 2, "whole original selection deleted");
             f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(copied), "one undo restores whole deletion");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
+    /** Mixed moves, copies and deletions must restore both kinds with one undo, including mixed clipboard payloads. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void mixedCanvasSelectionIsAtomic(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_QUEST", "q", "c", "");
+            var art = new CanvasScene.Decoration(f.id("art"), "brnquest_local:textures/imported/local.png", -2, -1, 2, 1, true, 0, false);
+            f.apply("UPDATE_CANVAS", "c", "", "", Map.of("scene", new CanvasScene(List.of(art), null, null).encode()));
+            var original = f.snapshot();
+            var positions = List.of(new AuthoringNetwork.PositionWire(
+                    yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey.quest(f.id("q")).toString(), 5, 6),
+                    new AuthoringNetwork.PositionWire(yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey.decoration(f.id("art")).toString(), 2, 3));
+            for (var action : List.of("MOVE_CANVAS_SELECTION", "COPY_CANVAS_SELECTION", "DELETE_CANVAS_SELECTION")) {
+                f.canvasSelection(action, "c", positions); var changed = f.snapshot();
+                var chapter = changed.chapters().getFirst();
+                if (action.equals("MOVE_CANVAS_SELECTION")) {
+                    check(helper, f.quest("q").x() == 5 && chapter.canvasScene().decorations().getFirst().x() == 2, "both objects moved");
+                } else if (action.equals("COPY_CANVAS_SELECTION")) {
+                    check(helper, changed.quests().size() == 2 && chapter.canvasScene().decorations().size() == 2, "both objects copied");
+                } else check(helper, changed.quests().isEmpty() && chapter.canvasScene().decorations().isEmpty(), "both objects deleted");
+                f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(original), "one undo restores both kinds");
+                f.apply("REDO", "", "", ""); check(helper, f.snapshot().equals(changed), "redo preserves exact mixed result and IDs");
+                f.apply("UNDO", "", "", "");
+            }
+            var frozen = yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(original, f.id("c"), java.util.Set.of(f.id("q")), java.util.Set.of(f.id("art")));
+            f.apply("ADD_CHAPTER", "dest", "g", ""); var beforePaste = f.snapshot();
+            f.apply("PASTE_QUESTS", "dest", "", "", Map.of("snapshot", frozen.encode()));
+            var dest = f.snapshot().chapters().stream().filter(c -> c.id().equals(f.id("dest"))).findFirst().orElseThrow();
+            check(helper, dest.quests().size() == 1 && dest.canvasScene().decorations().size() == 1, "remote paste contains both kinds without local texture resources");
+            f.apply("UNDO", "", "", ""); check(helper, f.snapshot().equals(beforePaste), "mixed paste is one undo");
             helper.succeed();
         } finally { release(admin); }
     }

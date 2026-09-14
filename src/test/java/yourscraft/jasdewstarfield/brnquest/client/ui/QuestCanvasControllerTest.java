@@ -216,6 +216,73 @@ class QuestCanvasControllerTest {
         assertEquals(1, controller.mouseReleased(frame, IDENTITY, 0).intent().positions().get(A).x(), 0.000001);
     }
 
+    @Test
+    void ctrlClickAndExistingMultiSelectionNeverOpenDetailsOrRestartFocus() {
+        var c = controller(); var frame = frame(IDENTITY, positions());
+        c.mouseClicked(frame, input(true, IDENTITY), 100, 100, 0, true, 0);
+        assertNull(c.mouseReleased(frame, IDENTITY, 0).intent());
+        c.mouseClicked(frame, input(true, IDENTITY), 134, 100, 0, true, 10);
+        assertNull(c.mouseReleased(frame, IDENTITY, 0).intent());
+        c.mouseClicked(frame, input(true, IDENTITY), 100, 100, 0, false, 20);
+        assertNull(c.mouseReleased(frame, IDENTITY, 0).intent());
+        assertEquals(java.util.Set.of(A, B), c.selection());
+        // Removing the final member is a real deselection, never an accidental detail click or group drag.
+        c.mouseClicked(frame, input(true, IDENTITY), 100, 100, 0, true, 30);
+        assertFalse(c.dragActive()); assertNull(c.mouseReleased(frame, IDENTITY, 0).intent());
+        c.mouseClicked(frame, input(true, IDENTITY), 134, 100, 0, true, 40);
+        assertEquals(0, c.selectionCount()); assertFalse(c.dragActive());
+    }
+
+    @Test
+    void mixedSelectionMovesTogetherFromEitherKindAndKeepsTypedIdsDistinct() {
+        // Deliberately use the same authored ID for a quest and decoration.
+        var art = new yourscraft.jasdewstarfield.brnquest.data.CanvasScene.Decoration(A, "test:textures/a.png", 0.25, 1, 1, 1, true, 0, false);
+        var model = new QuestCanvasController.InputModel(IDENTITY, CHAPTER, true, false, positions(), List.of(art));
+        var frame = frame(IDENTITY, positions());
+        for (boolean dragArtwork : List.of(false, true)) {
+            var c = controller();
+            c.mouseClicked(frame, model, 100, 100, 0, true, 0); c.mouseReleased(frame, IDENTITY, 0);
+            c.mouseClicked(frame, model, 117, 145, 0, true, 10); c.mouseReleased(frame, IDENTITY, 0);
+            assertEquals(java.util.Set.of(A), c.selection()); assertEquals(java.util.Set.of(A), c.decorationSelection());
+            int x = dragArtwork ? 117 : 100, y = dragArtwork ? 145 : 100;
+            c.mouseClicked(frame, model, x, y, 0, false, 20);
+            c.mouseDragged(frame, IDENTITY, x+17, y+34, 0, 300_000_000L);
+            assertEquals(0.5, c.preview(A).x(), 0.00001);
+            assertEquals(0.75, c.decorationPreview(A).x(), 0.00001);
+            var result = c.mouseReleased(frame, IDENTITY, 0).intent();
+            assertEquals(QuestCanvasController.Action.MOVE_CANVAS_SELECTION, result.action());
+            assertEquals(2, result.positions().size());
+            assertEquals(1, result.positions().get(yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey.quest(A)).y(), 0.00001);
+            assertEquals(2, result.positions().get(yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey.decoration(A)).y(), 0.00001);
+            assertNull(c.mouseReleased(frame, IDENTITY, 0).intent());
+            c.reconcile(positions()::get, id -> new DraftBookEditor.Position(art.x(), art.y()), true);
+            assertNull(c.decorationPreview(A)); assertEquals(2, c.selectionCount());
+        }
+    }
+
+    @Test
+    void artworkGroupPanStaleReleaseAndLockedSelectionPreserveGestureBoundaries() {
+        var art = new yourscraft.jasdewstarfield.brnquest.data.CanvasScene.Decoration(A, "test:textures/a.png", 0, 1, 1, 1, true, 0, true);
+        var model = new QuestCanvasController.InputModel(IDENTITY, CHAPTER, true, true, positions(), List.of(art));
+        var frame = frame(IDENTITY, positions()); var c = controller();
+        c.selectOnly(A);
+        c.mouseClicked(frame, model, 117, 145, 0, true, 0);
+        assertEquals(2, c.selectionCount()); assertFalse(c.dragActive());
+        c.mouseClicked(frame, model, 100, 100, 0, false, 10);
+        c.mouseDragged(frame, IDENTITY, 134, 100, 0, 300_000_000L);
+        var moved = c.mouseReleased(frame, IDENTITY, 0).intent();
+        assertEquals(QuestCanvasController.Action.MOVE_QUESTS, moved.action());
+        assertNull(c.decorationPreview(A));
+        c.mouseClicked(frame, model, 100, 100, 0, false, 400_000_000L);
+        c.mouseDragged(frame, IDENTITY, 134, 100, 0, 700_000_000L);
+        assertNull(c.mouseReleased(frame, revision("new"), 0).intent());
+        // A fast pan restores the full typed selection, including locked artwork.
+        c.mouseClicked(frame, model, 134, 100, 0, false, 800_000_000L);
+        c.mouseDragged(frame, IDENTITY, 151, 100, 0, 810_000_000L);
+        assertEquals(java.util.Set.of(A), c.selection()); assertEquals(java.util.Set.of(A), c.decorationSelection());
+        c.resetChapter(); assertEquals(0, c.selectionCount());
+    }
+
     private static QuestCanvasController controller() {
         QuestCanvasController controller = new QuestCanvasController();
         controller.resetCamera(0, 0, 1);

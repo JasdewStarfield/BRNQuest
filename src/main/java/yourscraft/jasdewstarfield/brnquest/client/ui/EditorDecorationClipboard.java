@@ -11,6 +11,8 @@ final class EditorDecorationClipboard {
     private static ResourceLocation book;
     private static CanvasScene.Decoration value;
     static void copy(String world, ResourceLocation bookId, CanvasScene.Decoration decoration) {
+        // Both the property editor and canvas shortcuts replace the same object clipboard.
+        EditorQuestClipboard.copy(world, yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.artwork(bookId, decoration));
         context = world; book = bookId; value = decoration;
     }
     static Optional<CanvasScene.Decoration> get(String world, ResourceLocation bookId) {

@@ -321,7 +321,9 @@ final class AuthoringRequestDecoder {
                     throw invalid("INVALID_EDITOR_MUTATION", "position", "Moved-node entries require unique IDs and finite coordinates");
                 var positions = new java.util.LinkedHashMap<ResourceLocation, Position>();
                 if (wire.positions() != null) {
-                    if (wire.positions().size() > BrnQuestConstants.MAX_QUESTS)
+                    if (wire.positions().size() > BrnQuestConstants.MAX_QUESTS +
+                            ((action == AuthoringMutationAction.MOVE_CANVAS_SELECTION || action == AuthoringMutationAction.COPY_CANVAS_SELECTION
+                                    || action == AuthoringMutationAction.DELETE_CANVAS_SELECTION) ? yourscraft.jasdewstarfield.brnquest.data.CanvasScene.MAX_DECORATIONS : 0))
                         throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
                     for (PositionWire position : wire.positions()) {
                         if (position == null) throw invalid(null, "positions", "Missing moved-node entry");
@@ -334,6 +336,11 @@ final class AuthoringRequestDecoder {
                 if ((action == AuthoringMutationAction.MOVE_QUESTS || action == AuthoringMutationAction.COPY_QUESTS
                         || action == AuthoringMutationAction.DELETE_QUESTS) && positions.isEmpty())
                     throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
+                if (action == AuthoringMutationAction.MOVE_CANVAS_SELECTION || action == AuthoringMutationAction.COPY_CANVAS_SELECTION
+                        || action == AuthoringMutationAction.DELETE_CANVAS_SELECTION) {
+                    if (positions.isEmpty()) throw invalid(null, "positions", "Select at least one canvas object");
+                    positions.keySet().forEach(yourscraft.jasdewstarfield.brnquest.author.CanvasSelectionKey::id);
+                }
                 var config = boundedConfig(wire.config());
                 if (config.containsKey("backgrounds")) {
                     if (action != AuthoringMutationAction.UPDATE_BOOK_PROPERTIES && action != AuthoringMutationAction.UPDATE_CHAPTER)

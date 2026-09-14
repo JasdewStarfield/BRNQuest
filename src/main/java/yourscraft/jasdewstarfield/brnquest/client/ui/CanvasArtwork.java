@@ -7,7 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.data.CanvasScene;
 import java.util.*;
 
-/** Artwork has its own selection and gesture state; it never emits task or reward intents. */
+/** Renders artwork and owns single-item resizing; the canvas controller owns mixed selection/movement. */
 final class CanvasArtwork {
     private QuestScreenFrameIdentity identity;
     private ResourceLocation chapter, selected;
@@ -16,6 +16,19 @@ final class CanvasArtwork {
     private QuestCanvasRenderer.Camera camera;
     private double startX, startY;
     private boolean resizing, snap;
+    private QuestCanvasController selectionController;
+    void selectionController(QuestCanvasController controller) { selectionController = controller; }
+    static CanvasScene.Decoration hit(List<CanvasScene.Decoration> decorations, QuestCanvasRenderer.Camera camera, double x, double y) {
+        double gx = camera.graphX(x) / QuestViewportMath.GRID_SCALE, gy = camera.graphY(y) / QuestViewportMath.GRID_SCALE;
+        return decorations.stream().filter(d -> gx >= d.x() && gy >= d.y() && gx <= d.x()+d.width() && gy <= d.y()+d.height())
+                .max(Comparator.comparingInt(CanvasScene.Decoration::layer).thenComparing(d -> d.id().toString())).orElse(null);
+    }
+    /** Only an already selected, unlocked single item exposes its resize handle. */
+    static boolean resizeHandle(CanvasScene.Decoration d, QuestCanvasRenderer.Camera camera, double x, double y) {
+        double gx = camera.graphX(x) / QuestViewportMath.GRID_SCALE, gy = camera.graphY(y) / QuestViewportMath.GRID_SCALE;
+        return !d.locked() && (d.x()+d.width()-gx)*QuestViewportMath.GRID_SCALE < 8
+                && (d.y()+d.height()-gy)*QuestViewportMath.GRID_SCALE < 8;
+    }
 
     void render(GuiGraphics g, QuestScreenFrameIdentity frame, ResourceLocation chapterId, CanvasScene value,
                 CanvasScene book, QuestCanvasRenderer.Camera currentCamera, UiRect viewport) {
@@ -30,13 +43,15 @@ final class CanvasArtwork {
         canvasLayer(g, camera, viewport, () -> {
             for (var source : ordered(value)) {
                 var d = preview != null && preview.id().equals(source.id()) ? preview : source;
+                var position = selectionController == null ? null : selectionController.decorationPreview(d.id());
+                if (position != null) d = d.placed(d.id(), position.x(), position.y(), d.width(), d.height());
                 int x = px(d.x()), y = px(d.y()), w = Math.max(1, px(d.width())), h = Math.max(1, px(d.height()));
                 if (x + w < camera.graphX(viewport.left()) || x > camera.graphX(viewport.right())
                         || y + h < camera.graphY(viewport.top()) || y > camera.graphY(viewport.bottom())) continue;
                 LoadedTextures.draw(g, d.texture(), x, y, w, h, 1);
-                if (frame.editing() && d.id().equals(selected)) {
+                if (frame.editing() && (selectionController == null ? d.id().equals(selected) : selectionController.decorationSelected(d.id()))) {
                     g.renderOutline(x, y, w, h, d.locked() ? 0xFF9C9C9C : 0xFFE4C272);
-                    if (!d.locked()) g.fill(x + w - 6, y + h - 6, x + w, y + h, 0xFFE4C272);
+                    if (!d.locked() && (selectionController == null || selectionController.selectionCount() == 1)) g.fill(x + w - 6, y + h - 6, x + w, y + h, 0xFFE4C272);
                 }
             }
         });

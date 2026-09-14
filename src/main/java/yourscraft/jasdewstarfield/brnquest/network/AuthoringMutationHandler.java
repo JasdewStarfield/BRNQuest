@@ -50,6 +50,8 @@ final class AuthoringMutationHandler {
         AuthorOperationResult<DraftEditResult> result;
         try {
             result = switch (wire.action()) {
+                case UPDATE_CANVAS -> editor.updateCanvas(player, sessionId, bookId, wire.draftRevision(),
+                        requireId(targetId), CanvasScene.decode(wire.config().get("scene")));
                 case UNDO -> EditSessionService.get().undo(player, sessionId, bookId, wire.draftRevision());
                 case REDO -> EditSessionService.get().redo(player, sessionId, bookId, wire.draftRevision());
                 case UPDATE_BOOK_PROPERTIES -> editor.updateBookProperties(player, sessionId, bookId, wire.draftRevision(),
@@ -57,7 +59,7 @@ final class AuthoringMutationHandler {
                         wire.config().getOrDefault("fallback_locale", current.value().book().localization().fallbackLocale()),
                         LocalizedSingleLineEdits.values(wire.config()), wire.config().containsKey("book_settings")
                                 ? BookSettings.fromJson(com.google.gson.JsonParser.parseString(wire.config().get("book_settings")))
-                                : current.value().book().settings());
+                                : current.value().book().settings(), wire.config().containsKey("backgrounds") ? CanvasScene.decode(wire.config().get("backgrounds")) : null);
                 case ADD_GROUP -> editor.addGroup(player, sessionId, bookId, wire.draftRevision(),
                         new ChapterGroupDefinition(bookId, requireId(targetId), wire.title(), wire.targetIndex()));
                 case UPDATE_GROUP -> wire.config().containsKey(LocalizedSingleLineEdits.FIELD)
@@ -192,7 +194,8 @@ final class AuthoringMutationHandler {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), config.containsKey(LocalizedSingleLineEdits.FIELD) ? chapter.title() : title,
-                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), chapter.extensions(), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
+                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), config.containsKey("backgrounds")
+                        ? chapter.canvasScene().withBackgrounds(CanvasScene.decode(config.get("backgrounds"))).write(chapter.extensions()) : chapter.extensions(), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
                 config.containsKey("autofocus_id") ? (config.get("autofocus_id").isBlank() ? null
                         : ResourceLocation.parse(config.get("autofocus_id"))) : chapter.autofocusQuestId(),
                 config.containsKey("default_hide_dependency_lines") ? strictBoolean(config.get("default_hide_dependency_lines")) : chapter.defaultHideDependencyLines());

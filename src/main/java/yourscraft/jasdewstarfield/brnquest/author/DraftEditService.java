@@ -116,6 +116,12 @@ public final class DraftEditService {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.copyChapter(book, sourceId, copy));
     }
 
+    /** Shared artwork uses the same permission, lease, revision, validation and undo boundary as quests. */
+    public AuthorOperationResult<DraftEditResult> updateCanvas(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, ResourceLocation target, yourscraft.jasdewstarfield.brnquest.data.CanvasScene scene) {
+        return apply(player, sessionId, bookId, revision, book -> CanvasEdits.replace(book, target, scene));
+    }
+
     public AuthorOperationResult<DraftEditResult> updateChapter(ServerPlayer player, UUID sessionId,
                                                                  ResourceLocation bookId, String revision,
                                                                  ResourceLocation chapterId, ChapterDefinition chapter) {
@@ -154,6 +160,17 @@ public final class DraftEditService {
             ResourceLocation bookId, String revision, ResourceLocation chapterId, QuestDefinition quest,
             QuestCreationDefaults explicit) {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.createQuest(book, chapterId, quest, explicit));
+    }
+
+    /** Backgrounds and metadata are one revision and one undo operation. */
+    public AuthorOperationResult<DraftEditResult> updateBookProperties(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String revision, QuestCreationDefaults defaults, String fallback,
+            Map<String, String> titles, BookSettings settings, yourscraft.jasdewstarfield.brnquest.data.CanvasScene backgrounds) {
+        return apply(player, sessionId, bookId, revision, book -> {
+            var result = DraftBookEditor.updateBookProperties(book, defaults, fallback, titles, settings);
+            if (!result.success() || backgrounds == null) return result;
+            return CanvasEdits.replace(result.value().book(), book.id(), book.canvasScene().withBackgrounds(backgrounds));
+        });
     }
 
     /** Combined settings update shares one undo/revision transaction with book metadata. */

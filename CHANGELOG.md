@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- 修复界面背景在上时的 GUI 裁剪栈泄漏，避免任务界面关闭后边框残留与闪烁；背景与装饰使用独立、异常安全的裁剪/矩阵作用域。
+- Fixed leaked GUI scissor state with screen-background-first stacking, preventing stale borders and flicker after closing the quest UI. Background and decoration scopes now unwind safely.
+
+- 合并书/章背景编辑入口，支持页内切换画布与界面背景；左下角固定叠放顺序配置，支持章节继承、实时预览、保存和撤销。
+- Unified book/chapter background editing with in-page target switching and a fixed stacking-order control, including inheritance, preview, save and undo.
+
+- 背景编辑新增原始比例缩略预览及可保存的缩放倍率；装饰预览按实际宽高显示，等比模式下宽高输入即时联动。
+- Added a background texture thumbnail and persistent scale multiplier; decoration previews retain their authored proportions, with linked width/height inputs under aspect lock.
+
+- 修复背景预览保留上下工具栏空带；预览临时隐藏章节/详情侧栏并铺满窗口，退出后保留原侧栏状态。
+- Background preview now fills the window without toolbar gaps and temporarily hides chapter/details sidebars while preserving their state.
+
+- 背景属性页改用半透明面板和不修改草稿的实时预览；切换自定义模式不自动打开浏览器。章节/任务图标点击贴图预览使用同一资源选择器。
+- Background properties use translucent panels and a draft-free live preview. Switching to Custom no longer opens the browser; quest/chapter texture previews share the resource picker.
+
+- 装饰在画布右键位置创建，并可右键贴图进入独立属性页；画布/界面背景入口归入章节和任务书属性，附行为区别说明，并随外层属性统一保存、取消和撤销。
+- Create decorations at the canvas context-click position and right-click each image for its own properties. Canvas/screen backgrounds move into chapter/book properties, explain their behavior, and share the outer save, cancel and undo boundary.
+
+- 新增可过滤预览的已加载贴图浏览器、独立画布装饰及书/章两级背景；支持拖动、等比缩放、层级、锁定、同书复制粘贴、原子撤销与缺失资源恢复。
+- Added a searchable loaded-texture browser, independent canvas decorations and book/chapter backgrounds, with dragging, aspect-preserving resizing, layers, locking, same-book copy/paste, atomic undo and missing-resource recovery.
+
 - 新增章节 `default_hide_dependency_lines` 与任务三态 `hide_dependency_lines`，支持编辑、导入、保存和复制；聚焦时仍显示相关依赖线。
 - Added chapter dependency-line defaults and per-quest inherit/show/hide overrides across editing, import, persistence and copying; focused relationships remain visible.
 

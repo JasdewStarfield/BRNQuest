@@ -36,9 +36,13 @@ public record ChapterDefinition(ResourceLocation bookId, ResourceLocation id, Re
         this(bookId, id, groupId, title, icon, order, quests, Map.of());
     }
 
+    /** Typed access keeps artwork independent of task types and preserves the schema-1 constructor contract. */
+    public CanvasScene canvasScene() { return CanvasScene.read(extensions); }
+
     public ChapterDefinition {
         quests = List.copyOf(quests);
         extensions = Map.copyOf(extensions);
+        CanvasScene.read(extensions); // Validate reserved artwork data at every construction boundary.
         questDefaults = questDefaults == null ? QuestCreationDefaults.EMPTY : questDefaults;
     }
 }

@@ -32,6 +32,9 @@ public record QuestBookDefinition(ResourceLocation id, int schemaVersion, String
         this(id, schemaVersion, title, chapterGroups, chapters, legacyIds, BookLocalization.EMPTY, Map.of());
     }
 
+    /** Typed access keeps artwork independent of task types and preserves the schema-1 constructor contract. */
+    public CanvasScene canvasScene() { return CanvasScene.read(extensions); }
+
     public QuestBookDefinition {
         settings = settings == null ? BookSettings.DEFAULT : settings;
         chapterGroups = List.copyOf(chapterGroups);
@@ -39,6 +42,7 @@ public record QuestBookDefinition(ResourceLocation id, int schemaVersion, String
         legacyIds = Map.copyOf(legacyIds);
         localization = localization == null ? BookLocalization.EMPTY : localization;
         extensions = Map.copyOf(extensions);
+        CanvasScene.validateBook(id, chapterGroups, chapters, CanvasScene.read(extensions));
         questDefaults = questDefaults == null ? QuestCreationDefaults.EMPTY : questDefaults;
     }
 

@@ -399,6 +399,7 @@ public final class AuthoringHandlerGameTests {
                     && last(fixture.packets).review().publishAllowed() == preview.success(),
                     "review preserves the authoritative publish decision");
             fixture.apply("UPDATE_BOOK_PROPERTIES", "book", "", "");
+            fixture.apply("UPDATE_CANVAS", fixture.book.getPath(), "", "", Map.of("scene", CanvasScene.EMPTY.encode()));
             check(helper, fixture.seen.size() == AuthoringMutationAction.values().length, "all mutation actions plus review executed");
             helper.succeed();
         } finally { release(admin); }
@@ -672,6 +673,62 @@ public final class AuthoringHandlerGameTests {
             check(helper,f.snapshot().chapters().stream().allMatch(c->c.defaultHideDependencyLines()),"chapter copies preserve default");
             helper.succeed();
         } finally { release(admin); }
+    }
+
+    /** Artwork shares the real session boundary: permissions, stale revisions, one undo step and save/reload. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
+    @PrefixGameTestTemplate(false)
+    public static void canvasArtworkRemainsAtomicAndServerOwned(GameTestHelper helper) {
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        var ordinary = helper.makeMockServerPlayerInLevel();
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_QUEST", "q", "c", "");
+            var before = f.snapshot(); String beforeRevision = f.revision;
+            var art = new CanvasScene.Decoration(f.id("art"), "missing:textures/art.png", 3, -2, 4, 2, true, 1, false);
+            var scene = new CanvasScene(List.of(art), new CanvasScene.Background("missing:textures/bg.png", CanvasScene.Fit.COVER, 0.5, 2), null);
+            f.apply("UPDATE_CANVAS", "c", "", "", Map.of("scene", scene.encode()));
+            check(helper, f.snapshot().chapters().getFirst().canvasScene().equals(scene), "server retains unloaded resource IDs");
+            check(helper, f.snapshot().quests().equals(before.quests()), "artwork never changes task configuration");
+            String editedRevision = f.revision;
+            f.apply("UNDO", "", "", "");
+            check(helper, f.snapshot().equals(before), "single undo restores exact original book");
+            f.apply("REDO", "", "", "");
+            check(helper, f.revision.equals(editedRevision), "redo restores identical content revision");
+            // Property-form backgrounds share the metadata transaction and preserve existing artwork.
+            var decorated = f.snapshot();
+            var backgrounds = new CanvasScene(List.of(), null, scene.canvas(), true);
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("backgrounds", backgrounds.encode(), "icon", "minecraft:stone"));
+            var updatedChapter = f.snapshot().chapters().getFirst();
+            check(helper, updatedChapter.canvasScene().decorations().equals(List.of(art))
+                    && updatedChapter.canvasScene().backgrounds().equals(backgrounds)
+                    && updatedChapter.icon().equals("minecraft:stone"), "chapter metadata and backgrounds update together");
+            f.apply("UNDO", "", "", "");
+            check(helper, f.snapshot().equals(decorated), "one undo restores chapter metadata and backgrounds");
+            f.apply("UPDATE_BOOK_PROPERTIES", "book", "", "", Map.of("backgrounds", backgrounds.encode(), "book_settings", "{\"pause_game\":true}"));
+            check(helper, f.snapshot().canvasScene().equals(backgrounds) && f.snapshot().settings().pauseGame(), "book settings and backgrounds update together");
+            f.apply("UNDO", "", "", "");
+            check(helper, f.snapshot().equals(decorated), "one undo restores book metadata and backgrounds");
+            f.apply("UPDATE_CHAPTER", "c", "g", "", Map.of("icon", "minecraft:stone"));
+            check(helper, f.snapshot().chapters().getFirst().canvasScene().equals(scene), "legacy metadata request preserves all artwork");
+            f.apply("UNDO", "", "", "");
+            // The existing session policy clears history on stale revision conflicts; test rejection after history.
+            var stale = new AuthoringNetwork.EditorMutationWire(f.token.toString(), f.book.toString(), beforeRevision,
+                    "UPDATE_CANVAS", f.raw("c"), "", "", "", 0, 0, 0, List.of(), Map.of("scene", CanvasScene.EMPTY.encode()));
+            f.handler.mutate(AuthoringRequestDecoder.mutation(GSON.toJson(stale)).value());
+            check(helper, last(f.packets).code().equals("STALE_DRAFT_REVISION"), "stale artwork replacement rejected");
+            var denied = new DraftEditService().updateCanvas(ordinary, f.token, f.book, editedRevision, f.id("c"), CanvasScene.EMPTY);
+            check(helper, !denied.success(), "ordinary player cannot edit shared decoration");
+            check(helper, f.snapshot().chapters().getFirst().canvasScene().equals(scene), "rejected changes leave no partial scene");
+            new AuthoringPublicationHandler(admin, f.sender).save(new AuthoringRequestDecoder.SessionRequest(f.token, f.book, f.revision));
+            check(helper, last(f.packets).savedRevision().equals(f.revision), "artwork saved through publication boundary");
+            var reload = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(f.snapshot())).getAsJsonObject());
+            check(helper, reload.chapters().getFirst().canvasScene().equals(scene), "native load retains geometry and background");
+            f.apply("COPY_CHAPTER", "c", "", "");
+            var scenes = f.snapshot().chapters().stream().map(ChapterDefinition::canvasScene).toList();
+            check(helper, scenes.size() == 2 && !scenes.get(0).decorations().getFirst().id().equals(scenes.get(1).decorations().getFirst().id()), "chapter copying remaps artwork IDs");
+            helper.succeed();
+        } finally { release(admin); release(ordinary); }
     }
 
 }

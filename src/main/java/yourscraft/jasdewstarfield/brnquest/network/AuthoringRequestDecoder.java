@@ -335,6 +335,14 @@ final class AuthoringRequestDecoder {
                         || action == AuthoringMutationAction.DELETE_QUESTS) && positions.isEmpty())
                     throw invalid("INVALID_EDITOR_MUTATION", "positions", "Moved-node list is empty or exceeds the editor limit");
                 var config = boundedConfig(wire.config());
+                if (config.containsKey("backgrounds")) {
+                    if (action != AuthoringMutationAction.UPDATE_BOOK_PROPERTIES && action != AuthoringMutationAction.UPDATE_CHAPTER)
+                        throw invalid("INVALID_EDITOR_MUTATION", "backgrounds", "Background properties require a book or chapter update");
+                    yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY.withBackgrounds(
+                            yourscraft.jasdewstarfield.brnquest.data.CanvasScene.decode(config.get("backgrounds")));
+                }
+                if (action == AuthoringMutationAction.UPDATE_CANVAS)
+                    yourscraft.jasdewstarfield.brnquest.data.CanvasScene.decode(config.get("scene"));
                 if (action == AuthoringMutationAction.PASTE_TASK || action == AuthoringMutationAction.PASTE_REWARD) {
                     var snapshot = yourscraft.jasdewstarfield.brnquest.author.TypedEntrySnapshot.decode(config.get("snapshot"));
                     snapshot.requireDestination(book, action == AuthoringMutationAction.PASTE_TASK);

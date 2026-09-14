@@ -171,6 +171,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Boolean questHideDependencyLines;
     private UiRect questHideLinesBounds;
     private ResourceLocation structureAutofocusQuestId;
+    private yourscraft.jasdewstarfield.brnquest.data.CanvasScene structureArtwork = yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY;
     private QuestCreationDefaults structureDefaults = QuestCreationDefaults.EMPTY;
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
@@ -216,6 +217,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private String draftChoiceTitle = "";
     private final TransientScreenLifecycle childLifecycle = new TransientScreenLifecycle();
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
+    private final CanvasArtwork canvasArtwork = new CanvasArtwork();
+
     private ContextKind editContextKind = ContextKind.NONE;
     private ResourceLocation editContextTarget;
     private java.util.Set<ResourceLocation> contextSelection = java.util.Set.of();
@@ -466,6 +469,28 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {}
 
+    private yourscraft.jasdewstarfield.brnquest.data.CanvasScene backgroundPreview;
+    private boolean previewBookScope;
+    private final CanvasArtwork previewArtwork = new CanvasArtwork();
+
+    /** Preview is a render-only override: no snapshot, draft revision, or undo entry is changed. */
+    void renderBackgroundPreview(GuiGraphics graphics, int width, int height, float partialTick,
+            yourscraft.jasdewstarfield.brnquest.data.CanvasScene value, boolean bookScope) {
+        ChildScreenBackground.resizeIfNeeded(this, width, height);
+        backgroundPreview = value; previewBookScope = bookScope;
+        try { render(graphics, -1, -1, partialTick); }
+        finally { backgroundPreview = null; previewBookScope = false; }
+    }
+    private yourscraft.jasdewstarfield.brnquest.data.CanvasScene previewChapterArtwork(ChapterDefinition chapter) {
+        var scene = chapter == null ? yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY : chapter.canvasScene();
+        // Book properties preview their defaults directly, even if the current chapter has overrides.
+        return backgroundPreview == null ? scene : scene.withBackgrounds(previewBookScope
+                ? yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY : backgroundPreview);
+    }
+    private yourscraft.jasdewstarfield.brnquest.data.CanvasScene previewBookArtwork(QuestBookDefinition book) {
+        return backgroundPreview != null && previewBookScope ? book.canvasScene().withBackgrounds(backgroundPreview) : book.canvasScene();
+    }
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // Network work can install or clear the draft between two screen ticks. Reconcile here
@@ -494,7 +519,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         try {
             double motionFrameSeconds = motionFrameSeconds();
             currentMotionFrameSeconds = motionFrameSeconds;
-            advanceDrawerMotion(motionFrameSeconds);
+            if (backgroundPreview == null) advanceDrawerMotion(motionFrameSeconds);
             // Sample once per frame so every visible notification hops in lockstep.
             attentionPingOffsetY = AttentionPingAnimation.verticalOffset(System.nanoTime());
 
@@ -505,14 +530,23 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 chapterIndex = Math.min(chapterIndex, chapters.size() - 1);
                 selectedChapter = chapters.get(chapterIndex);
             }
+            yourscraft.jasdewstarfield.brnquest.data.CanvasScene bookArtwork = previewBookArtwork(snapshot.book());
+            if (!previewChapterArtwork(selectedChapter).screenAbove(bookArtwork)) CanvasArtwork.screenBackground(graphics, yourscraft.jasdewstarfield.brnquest.data.CanvasScene.effective(
+                    previewChapterArtwork(selectedChapter).screen(), bookArtwork.screen()), width, height);
+            if (backgroundPreview != null) {
+                // Preview owns the whole window: omit all chrome instead of leaving its layout reservations.
+                // Keep drawer and camera animation state suspended so returning restores the original view.
+                renderCanvas(graphics, selectedChapter, mouseX, mouseY);
+                return;
+            }
             advanceCanvasMotion(motionFrameSeconds);
-            renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
             if (!structureFormOpen() || structureFormKind == StructureFormKind.RENAME_CHAPTER) renderCanvas(graphics, selectedChapter, mouseX, mouseY);
             else {
                 canvasFrame = null;
                 graphics.fill(canvasLeft(), topToolbarHeight(), canvasRight(),
                         height - bottomToolbarHeight(), GraystonePalette.DRAWER);
             }
+            renderNavigation(graphics, snapshot.book(), selectedChapter, mouseX, mouseY, motionFrameSeconds);
             if (detailsDrawerVisible() && !structureFormOpen()) {
                 int visibleLeft = canvasRight();
                 formButtons.viewport(new UiRect(visibleLeft, topToolbarHeight(), width, height - bottomToolbarHeight()), detailsDrawerOffsetX());
@@ -651,6 +685,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         chapterIndex = index;
         rememberedChapterId = chapterId;
         rememberedChapterResolved = true;
+        canvasArtwork.cancel();
         canvasController.resetChapter();
         focusChapter(chapters.get(index));
         detailsOpen = false;
@@ -660,7 +695,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderCanvas(GuiGraphics graphics, ChapterDefinition chapter, int mouseX, int mouseY) {
         QuestCanvasRenderer.Camera camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
-        canvasController.advancePointer(camera, mouseX, mouseY, System.nanoTime());
+        if (backgroundPreview == null) canvasController.advancePointer(camera, mouseX, mouseY, System.nanoTime());
         boolean editing = ClientEditorState.get().editing();
         boolean allowGameplay = gameplayAllowed();
         List<QuestCanvasRenderer.NodeModel> nodes = new ArrayList<>();
@@ -692,6 +727,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         allowGameplay && !(status == QuestStatus.LOCKED && quest.behavior().hideLockIcon()) ? status : null));
             }
         }
+        if (displaySnapshot() != null) (backgroundPreview == null ? canvasArtwork : previewArtwork).render(graphics, currentFrameIdentity(), chapter == null ? null : chapter.id(),
+                previewChapterArtwork(chapter),
+                previewBookArtwork(displaySnapshot().book()), camera,
+                new UiRect(canvasLeft(), topToolbarHeight(), canvasRight(), height - bottomToolbarHeight()));
         QuestCanvasRenderer.RenderResult result = canvasRenderer.render(graphics, font,
                 new QuestCanvasRenderer.Model(currentFrameIdentity(), chapter == null ? null : chapter.id(),
                         new UiRect(canvasLeft(), topToolbarHeight(), canvasRight(),
@@ -1121,6 +1160,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 setFocused(questFields.field("icon"));
                 return true;
             }
+            if (button == 0 && questEditorIconMode == IconEditorMode.TEXTURE
+                    && questIconRowLayout != null && questIconRowLayout.picker().contains(mouseX, mouseY)
+                    && !ClientEditorState.get().busy()) {
+                openChildScreen(new EditorTextureBrowserScreen(this, questFields.field("icon")::setValue));
+                return true;
+            }
             if (button == 0 && questEditorIconMode == IconEditorMode.ITEM
                     && questIconRowLayout != null && questIconRowLayout.picker().contains(mouseX, mouseY)
                     && !ClientEditorState.get().busy()) {
@@ -1168,6 +1213,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (mouseX > canvasLeft() && mouseX < canvasRight && isContentY(mouseY)) {
             List<ChapterDefinition> chapters = QuestPresentation.orderedChapters(snapshot.book());
             ChapterDefinition chapter = chapters.isEmpty() ? null : chapters.get(Math.min(chapterIndex, chapters.size() - 1));
+            if (!ClientEditorState.get().busy() && canvasArtwork.click(canvasFrame, currentFrameIdentity(), mouseX, mouseY, button)) {
+                canvasController.clearSelection();
+                editorSelectedQuest = null;
+                detailsOpen = false;
+                closeQuestEditingPanels();
+                if (button == 1) {
+                    var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
+                    if (decoration != null) openEditContext(ContextKind.DECORATION, decoration.id(), (int)mouseX, (int)mouseY, 0, 0);
+                }
+                return true;
+            }
             QuestCanvasController.ClickResult result = canvasController.mouseClicked(canvasFrame,
                     canvasInputModel(snapshot, chapter), mouseX, mouseY, button, hasControlDown(), System.nanoTime());
             if (result.intent() != null) handleCanvasIntent(result.intent(), snapshot, chapter);
@@ -1179,6 +1235,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public boolean mouseReleased(double x, double y, int button) {
         if (editorOverlays.mouseReleased(x, y, button, super::mouseReleased)) return true;
+        if (button == 0 && canvasArtwork.dragging()) {
+            var replacement = canvasArtwork.release(currentFrameIdentity(), currentChapterId());
+            if (replacement != null) sendCanvas(currentChapterId(), replacement);
+            return true;
+        }
         if (button == 0 && navigationPanel.hasDrag()) {
             var drop = navigationPanel.release(currentFrameIdentity(), x, y);
             if (drop != null) sendMutation("MOVE_CHAPTER", drop.chapter(), null, null, "", drop.index(),
@@ -1195,6 +1256,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
         if (editorOverlays.mouseDragged(x, y, button, dx, dy, super::mouseDragged)) return true;
+        if (canvasArtwork.drag(currentFrameIdentity(), x, y, button)) return true;
         if (navigationPanel.drag(currentFrameIdentity(), x, y, button)) return true;
         QuestCanvasController.GestureResult result = canvasController.mouseDragged(
                 canvasFrame, currentFrameIdentity(), x, y, button, System.nanoTime());
@@ -1205,6 +1267,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (editorOverlays.mouseScrolled(x, y, vertical)) return true;
+        if (canvasArtwork.dragging()) return true;
         if (dependencyEditorOpen && detailsPanelAcceptsPointer(x)) {
             if (dependencyListInputReady()) dependencyList.mouseScrolled(x, y, vertical, scrollStep());
             return true;
@@ -1239,6 +1302,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == 256 && canvasArtwork.cancel()) return true;
         if (keyCode == 256 && navigationPanel.cancelDrag()) return true;
         if (editorOverlays.keyPressed(keyCode, scanCode, modifiers)) return true;
         if (keyCode == 256 && questEditorOpen) {
@@ -1287,6 +1351,25 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }).orElse(false);
         }
         if (editorKeyboardSurfaceReady() && hasControlDown()) {
+            var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
+            if (keyCode == 67 && decoration != null) {
+                EditorDecorationClipboard.copy(serverContextId, displaySnapshot().book().id(), decoration);
+                return true;
+            }
+            if (keyCode == 86 && currentChapter() != null && EditorDecorationClipboard.get(serverContextId, displaySnapshot().book().id()).isPresent()) {
+                var value = EditorDecorationClipboard.get(serverContextId, displaySnapshot().book().id()).orElseThrow();
+                var chapter = currentChapter(); var scene = chapter.canvasScene();
+                if (scene.decorations().size() < yourscraft.jasdewstarfield.brnquest.data.CanvasScene.MAX_DECORATIONS) {
+                    var values = new ArrayList<>(scene.decorations());
+                    var camera = canvasController.renderedCamera(screenOriginX(), contentCenterY());
+                    double x = camera.graphX((canvasLeft()+canvasRight())/2.0)/QuestViewportMath.GRID_SCALE;
+                    double y = camera.graphY(contentCenterY())/QuestViewportMath.GRID_SCALE;
+                    if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.snapToGrid)) { x = QuestViewportMath.snapQuestCoordinate(x); y = QuestViewportMath.snapQuestCoordinate(y); }
+                    values.add(value.placed(yourscraft.jasdewstarfield.brnquest.data.CanvasScene.newId(), x, y, value.width(), value.height()));
+                    sendCanvas(chapter.id(), new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(values, scene.canvas(), scene.screen(), scene.screenAbove()));
+                }
+                return true;
+            }
             if (keyCode >= 49 && keyCode <= 52) {
                 openSelectedQuestEditor(keyCode - 49);
                 return true;
@@ -1320,6 +1403,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (keyCode == 80 && hasShiftDown()) {
                 handleEditorChromeIntent(new QuestEditorChrome.Intent(QuestEditorChrome.Action.REVIEW_PUBLISH),
                         displaySnapshot() == null ? null : displaySnapshot().book());
+                return true;
+            }
+        }
+        if (editorKeyboardSurfaceReady() && keyCode == 261 && currentChapter() != null) {
+            var decoration = canvasArtwork.selected(currentFrameIdentity(), currentChapterId());
+            if (decoration != null) {
+                if (!decoration.locked()) {
+                    var scene = currentChapter().canvasScene();
+                    sendCanvas(currentChapterId(), new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(
+                            scene.decorations().stream().filter(d -> !d.id().equals(decoration.id())).toList(), scene.canvas(), scene.screen(), scene.screenAbove()));
+                }
                 return true;
             }
         }
@@ -1621,6 +1715,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 ResourceLocation chapterId = currentChapterId();
                 if (chapterId != null) openStructureForm(StructureFormKind.ADD_QUEST, null, chapterId, graphX, graphY);
             }
+            case "ADD_DECORATION" -> addDecorationAt(graphX, graphY);
+            case "DECORATION_PROPERTIES" -> openDecorationProperties(target);
             case "SET_CHAPTER_AUTOFOCUS" -> setChapterAutofocus(book, target);
             case "COPY_SELECTION_SNAPSHOT" -> copyQuestClipboard(contextSelection);
             case "COPY_QUEST_SNAPSHOT" -> copyQuestClipboard(java.util.Set.of(target));
@@ -1691,6 +1787,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             config.put("fallback_locale", value.fallback());
             config.put("quest_defaults", value.defaults().toJson().toString());
             config.put("book_settings", value.settings().toJson().toString());
+            config.put("backgrounds", value.backgrounds().encode());
             config.put(LocalizedSingleLineEdits.FIELD, "title");
             value.titles().forEach((locale, title) -> config.put(LocalizedSingleLineEdits.PREFIX + locale, title));
             sendMutation("UPDATE_BOOK_PROPERTIES", book.id(), null, null, "", 0, 0, 0, List.of(), config);
@@ -1702,7 +1799,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case CANVAS -> EditorPopupMenu.menu(menu -> menu.action("ADD_QUEST",
                     Component.translatable("screen.brnquest.editor.context.add_quest"), false)
                     .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
+                    .action("ADD_DECORATION", EditorCanvasScreen.label("add_here"), false, currentChapterId() != null)
                     .action("BOOK_PROPERTIES", Component.translatable("screen.brnquest.book.properties"), false));
+            case DECORATION -> EditorPopupMenu.menu(menu -> menu.action("DECORATION_PROPERTIES", EditorCanvasScreen.label("properties"), false));
             case SELECTION -> EditorPopupMenu.menu(menu -> menu
                     .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
                     .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
@@ -1869,6 +1968,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void copyQuestClipboard(java.util.Set<ResourceLocation> ids) {
         if (ClientEditorState.get().busy()) return;
         try {
+            EditorDecorationClipboard.clear();
             EditorQuestClipboard.copy(serverContextId,
                     yourscraft.jasdewstarfield.brnquest.author.QuestClipboardSnapshot.capture(displaySnapshot().book(), ids));
             clipboardMessage = Component.translatable("screen.brnquest.quest_clipboard.copied", ids.size());
@@ -2317,6 +2417,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             renderEditorTextButton(g, chapterHideLinesBounds(), Component.translatable("screen.brnquest.chapter.hide_dependency_lines",
                             Component.translatable(structureHideDependencyLines ? "options.on" : "options.off")),
                     Component.translatable("screen.brnquest.dependency_lines.help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            renderEditorTextButton(g, chapterBackgroundBounds(),
+                    EditorCanvasScreen.label("backgrounds"),
+                    EditorCanvasScreen.label("backgrounds_help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             Component value = Component.translatable(structureConsumeItems == null
                     ? "screen.brnquest.defaults.inherit" : structureConsumeItems ? "options.on" : "options.off",
                     Component.translatable(displaySnapshot().book().settings().consumeItems() ? "options.on" : "options.off"));
@@ -2387,7 +2490,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect chapterHideLinesBounds() {
         UiRect form = structureFormBounds();
-        return new UiRect(form.left()+12, form.top()+188, form.right()-12, form.top()+208);
+        return new UiRect(form.left()+12, form.top()+188, form.centerX()-4, form.top()+208);
+    }
+
+    /** Keep both background entry points in the existing row at the minimum GUI height. */
+    private UiRect chapterBackgroundBounds() {
+        UiRect form = structureFormBounds();
+        return new UiRect(form.centerX() + 4, form.top() + 188, form.right() - 12, form.top() + 208);
     }
 
     private UiRect chapterConsumeBounds() {
@@ -2473,6 +2582,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 openChapterAutofocusPicker();
                 return true;
             }
+            if (structureFormKind == StructureFormKind.RENAME_CHAPTER) {
+                if (chapterBackgroundBounds().contains(mouseX, mouseY)) {
+                    // Child apply only updates the outer working copy; canceling chapter properties discards it.
+                    openChildScreen(new EditorCanvasScreen(this, serverContextId, displaySnapshot().book().id(), false,
+                            structureArtwork, 1, null, value -> { structureArtwork = value.backgrounds(); return true; }));
+                    return true;
+                }
+            }
             if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterHideLinesBounds().contains(mouseX, mouseY)) {
                 structureHideDependencyLines = !structureHideDependencyLines; return true;
             }
@@ -2493,6 +2610,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 // Each mode keeps its local candidate while toggling; only the active candidate is saved.
                 chapterIconMode = chapterIconMode == IconEditorMode.ITEM ? IconEditorMode.TEXTURE : IconEditorMode.ITEM;
                 setFocused(null);
+                return true;
+            }
+            if (chapterIconMode == IconEditorMode.TEXTURE && chapterIconRow != null && chapterIconRow.picker().contains(mouseX, mouseY)) {
+                openChildScreen(new EditorTextureBrowserScreen(this, structureFields.field("texture")::setValue));
                 return true;
             }
             if (chapterIconMode == IconEditorMode.ITEM && chapterIconRow != null && chapterIconRow.picker().contains(mouseX, mouseY)) {
@@ -2556,6 +2677,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 structureFormParent = chapter.groupId();
                 initializeStructureIcon(chapter.icon());
                 structureDefaults = chapter.questDefaults();
+                structureArtwork = chapter.canvasScene().backgrounds();
                 structureConsumeItems = chapter.consumeItems();
                 structureHideDependencyLines = chapter.defaultHideDependencyLines();
                 structureAutofocusQuestId = chapter.autofocusQuestId();
@@ -2619,7 +2741,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (chapter == null || !sendMutation("UPDATE_CHAPTER", chapter.id(), structureFormParent, null, title,
                         chapter.groupId().equals(structureFormParent) ? chapter.order() : book.chapters().stream()
                                 .filter(value -> value.groupId().equals(structureFormParent))
-                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("icon", chapterIconValue(), "quest_defaults", structureDefaults.toJson().toString(), "default_consume_items", java.util.Objects.toString(structureConsumeItems, "default"), "autofocus_id", java.util.Objects.toString(structureAutofocusQuestId, ""), "default_hide_dependency_lines", Boolean.toString(structureHideDependencyLines))))) return;
+                                .mapToInt(ChapterDefinition::order).max().orElse(-1) + 1, 0, 0, List.of(), localizedConfig(structureLocalizedTitle, "title", Map.of("backgrounds", structureArtwork.encode(), "icon", chapterIconValue(), "quest_defaults", structureDefaults.toJson().toString(), "default_consume_items", java.util.Objects.toString(structureConsumeItems, "default"), "autofocus_id", java.util.Objects.toString(structureAutofocusQuestId, ""), "default_hide_dependency_lines", Boolean.toString(structureHideDependencyLines))))) return;
             }
             case ADD_QUEST -> sendMutation("ADD_QUEST", id, structureFormParent, null, title, 0,
                     structureFormX, structureFormY, List.of());
@@ -2798,6 +2920,49 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return true;
     }
 
+    /** Capture data revision/session, but allow window resize while the child form remains open. */
+    private void openDecorationProperties(ResourceLocation decorationId) {
+        var chapter = currentChapter();
+        var editor = ClientEditorState.get();
+        if (chapter == null || editor.busy() || !editor.editing()
+                || chapter.canvasScene().decorations().stream().noneMatch(d -> d.id().equals(decorationId))) return;
+        var revision = editor.draftRevision(); var session = editor.sessionId(); var book = editor.bookId();
+        canvasArtwork.cancel();
+        openChildScreen(new EditorCanvasScreen(this, serverContextId, book, false, chapter.canvasScene(), 0, decorationId, scene -> {
+            var current = ClientEditorState.get();
+            return java.util.Objects.equals(session, current.sessionId()) && java.util.Objects.equals(revision, current.draftRevision())
+                    && java.util.Objects.equals(book, current.bookId()) && sendCanvas(chapter.id(), scene);
+        }));
+    }
+
+    /** Freeze the right-click graph position and revision while the resource picker is open. */
+    private void addDecorationAt(double x, double y) {
+        var chapter = currentChapter();
+        var editor = ClientEditorState.get();
+        if (chapter == null || !editor.editing() || editor.busy()) return;
+        var scene = chapter.canvasScene();
+        if (scene.decorations().size() >= yourscraft.jasdewstarfield.brnquest.data.CanvasScene.MAX_DECORATIONS) return;
+        var session = editor.sessionId(); var revision = editor.draftRevision(); var book = editor.bookId();
+        boolean snap = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.snapToGrid);
+        double anchorX = snap ? QuestViewportMath.snapQuestCoordinate(x) : x;
+        double anchorY = snap ? QuestViewportMath.snapQuestCoordinate(y) : y;
+        openChildScreen(new EditorTextureBrowserScreen(this, texture -> {
+            var current = ClientEditorState.get();
+            if (!java.util.Objects.equals(session, current.sessionId()) || !java.util.Objects.equals(revision, current.draftRevision())
+                    || !java.util.Objects.equals(book, current.bookId())) return;
+            var size = LoadedTextures.size(ResourceLocation.parse(texture));
+            double h = Math.clamp(2.0 * size.height() / size.width(), 0.05, 1024);
+            var values = new ArrayList<>(scene.decorations());
+            values.add(new yourscraft.jasdewstarfield.brnquest.data.CanvasScene.Decoration(
+                    yourscraft.jasdewstarfield.brnquest.data.CanvasScene.newId(), texture, anchorX, anchorY, 2, h, true, 0, false));
+            sendCanvas(chapter.id(), new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(values, scene.canvas(), scene.screen(), scene.screenAbove()));
+        }));
+    }
+
+    private boolean sendCanvas(ResourceLocation target, yourscraft.jasdewstarfield.brnquest.data.CanvasScene scene) {
+        return target != null && sendMutation("UPDATE_CANVAS", target, null, null, "", 0, 0, 0, List.of(), Map.of("scene", scene.encode()));
+    }
+
     private ResourceLocation suggestId(QuestBookDefinition book, String stem) {
         String namespace = book.id().getNamespace();
         Set<ResourceLocation> ids = new java.util.HashSet<>();
@@ -2964,7 +3129,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (structureLocalizedTitle != null) structureLocalizedTitle.remember(structureFields.field("title").getValue());
             return List.of(structureFields.field("id").getValue(),
                     structureLocalizedTitle == null ? structureFields.field("title").getValue() : structureLocalizedTitle.changes(),
-                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode, structureDefaults, structureHideDependencyLines, java.util.Objects.toString(structureConsumeItems, "default"), java.util.Objects.toString(structureAutofocusQuestId, ""),
+                    java.util.Objects.toString(structureFormParent, ""), chapterIconMode, structureDefaults, structureArtwork, structureHideDependencyLines, java.util.Objects.toString(structureConsumeItems, "default"), java.util.Objects.toString(structureAutofocusQuestId, ""),
                     structureFields.field("group_description").getValue(),
                     structureFields.field(chapterIconMode == IconEditorMode.ITEM ? "chapter_item" : "texture").getValue());
         }
@@ -5170,7 +5335,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int contentCenterY() {
-        return layout().contentCenterY();
+        return backgroundPreview != null ? height / 2 : layout().contentCenterY();
     }
 
     private boolean isContentY(double y) {
@@ -5182,11 +5347,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int canvasLeft() {
-        return layout().canvasLeft(navigationDrawerMotion.current());
+        return backgroundPreview != null ? 0 : layout().canvasLeft(navigationDrawerMotion.current());
     }
 
     private int canvasRight() {
-        return layout().canvasRight(detailsDrawerMotion.current());
+        return backgroundPreview != null ? width : layout().canvasRight(detailsDrawerMotion.current());
     }
 
     private int navigationHandleLeft() {
@@ -5235,11 +5400,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int topToolbarHeight() {
-        return layout().topToolbarHeight();
+        return backgroundPreview != null ? 0 : layout().topToolbarHeight();
     }
 
     private int bottomToolbarHeight() {
-        return layout().bottomToolbarHeight();
+        return backgroundPreview != null ? 0 : layout().bottomToolbarHeight();
     }
 
     private int detailContentTop() {
@@ -5460,7 +5625,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
     }
 
-    private enum ContextKind { NONE, CANVAS, NODE, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
+    private enum ContextKind { NONE, CANVAS, NODE, DECORATION, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
 
     private enum QuickTextKind {
         NONE(""),

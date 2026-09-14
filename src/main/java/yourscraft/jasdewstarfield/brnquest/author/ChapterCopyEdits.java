@@ -18,7 +18,7 @@ public final class ChapterCopyEdits {
         int number = nextNumber(book, source);
         var seed = new ChapterDefinition(book.id(), targetId, source.groupId(),
                 QuestCopyTitles.title(source.title(), book.localization().fallbackLocale(), number), source.icon(),
-                source.order(), List.of(), source.extensions(), source.questDefaults(), source.consumeItems(), null, source.defaultHideDependencyLines());
+                source.order(), List.of(), source.canvasScene().copied().write(source.extensions()), source.questDefaults(), source.consumeItems(), null, source.defaultHideDependencyLines());
         var added = DraftBookEditor.addChapter(book, seed);
         if (!added.success()) return added;
         QuestBookDefinition result = added.value().book();

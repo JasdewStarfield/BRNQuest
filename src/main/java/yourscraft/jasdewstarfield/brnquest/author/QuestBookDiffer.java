@@ -206,11 +206,38 @@ public final class QuestBookDiffer {
         Set<String> keys = new TreeSet<>(before.keySet());
         keys.addAll(after.keySet());
         keys.forEach(key -> {
+            if (prefix.equals("extensions.") && key.equals(CanvasScene.KEY)
+                    && (kind == SemanticDiffEntry.ObjectKind.BOOK || kind == SemanticDiffEntry.ObjectKind.CHAPTER)) {
+                // Review artwork as individual authored properties, never as a large escaped JSON string.
+                mapProperties(entries, kind, id, "canvas.", canvasProperties(CanvasScene.read(before)), canvasProperties(CanvasScene.read(after)));
+                return;
+            }
             String oldValue = before.getOrDefault(key, "");
             String newValue = after.getOrDefault(key, "");
             if (!Objects.equals(oldValue, newValue)) add(entries, SemanticDiffEntry.Kind.CONFIG_CHANGED, kind, id,
                     prefix + key, oldValue, newValue);
         });
+    }
+
+    private static Map<String, String> canvasProperties(CanvasScene scene) {
+        var values = new TreeMap<String, String>();
+        values.put("background_order", scene.screenAbove() == null ? "inherit" : scene.screenAbove() ? "screen_above" : "canvas_above");
+        backgroundProperties(values, "canvas_background.", scene.canvas());
+        backgroundProperties(values, "screen_background.", scene.screen());
+        for (var d : scene.decorations()) {
+            String prefix = "decorations." + d.id() + ".";
+            values.put(prefix + "texture", d.texture()); values.put(prefix + "x", "" + d.x()); values.put(prefix + "y", "" + d.y());
+            values.put(prefix + "width", "" + d.width()); values.put(prefix + "height", "" + d.height());
+            values.put(prefix + "aspect_locked", "" + d.aspectLocked()); values.put(prefix + "layer", "" + d.layer());
+            values.put(prefix + "locked", "" + d.locked());
+        }
+        return values;
+    }
+    private static void backgroundProperties(Map<String, String> values, String prefix, CanvasScene.Background b) {
+        values.put(prefix + "mode", b == null ? "inherit" : b.texture().isEmpty() ? "disabled" : "custom");
+        if (b != null) {
+            values.put(prefix + "texture", b.texture()); values.put(prefix + "fit", b.fit().name()); values.put(prefix + "opacity", "" + b.opacity()); values.put(prefix + "scale", "" + b.scale());
+        }
     }
 
     private static Map<String, String> flattenTranslations(BookLocalization localization) {

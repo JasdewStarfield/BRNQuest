@@ -43,12 +43,20 @@ public final class EditorTextureSelector {
                             select, select, QuestActionIcons.symbol(Component.literal(
                                     input.getValue().isBlank() ? "+" : "?"))),
                     enabled, EditorButton.Tone.NEUTRAL);
-        } else if (textureMode && iconId != null) {
-            graphics.blit(iconId, row.picker().left() + 2, row.picker().top() + 1,
-                    0.0F, 0.0F, 16, 16, 16, 16);
         } else {
-            graphics.drawCenteredString(font, input.getValue().isBlank() ? "−" : "?",
-                    row.picker().centerX(), row.picker().top() + 5, GraystonePalette.SECONDARY);
+            // The preview remains a real picker action even when a pack is absent or the ID is empty.
+            Component select = Component.translatable("screen.brnquest.editor.quest.icon.select_texture");
+            EditorIcon preview = iconId == null ? QuestActionIcons.named("plus") : new EditorIcon() {
+                public int width(Font ignored) { return 16; }
+                public void render(GuiGraphics g, Font ignored, UiRect bounds, int color) {
+                    int size = Math.min(16, Math.min(bounds.width(), bounds.height()));
+                    yourscraft.jasdewstarfield.brnquest.client.ui.LoadedTextures.draw(g, iconId.toString(),
+                            bounds.centerX() - size / 2, bounds.centerY() - size / 2, size, size, (color >>> 24) / 255F);
+                }
+            };
+            // The image itself is the button, with the same accessible label for empty/missing textures.
+            actions.render(graphics, row.picker(), EditorButton.Definition.iconOnly(select, select, preview),
+                    enabled, EditorButton.Tone.NEUTRAL);
         }
         return row;
     }

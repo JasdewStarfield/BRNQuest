@@ -9,6 +9,32 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Every action family is tested with minimal legal input and adversarial JSON boundaries. */
 class AuthoringMutationRequestTest {
+    @Test void canvasReplacementRequiresBoundedValidSceneAndTarget() {
+        var json = request(AuthoringMutationAction.UPDATE_CANVAS);
+        assertTrue(AuthoringRequestDecoder.mutation(json.toString()).success());
+        json.getAsJsonObject("config").addProperty("scene", "{\"decorations\":null}");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        json = request(AuthoringMutationAction.UPDATE_CANVAS); json.remove("targetId");
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+    }
+    @Test void backgroundPropertiesAcceptOnlyMetadataActionsAndNoDecorations() {
+        for (var action : List.of(AuthoringMutationAction.UPDATE_CHAPTER, AuthoringMutationAction.UPDATE_BOOK_PROPERTIES)) {
+            var json = request(action); var config = new JsonObject();
+            config.addProperty("backgrounds", yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY.encode());
+            json.add("config", config);
+            assertTrue(AuthoringRequestDecoder.mutation(json.toString()).success());
+            var injected = new yourscraft.jasdewstarfield.brnquest.data.CanvasScene(List.of(
+                    new yourscraft.jasdewstarfield.brnquest.data.CanvasScene.Decoration(
+                            net.minecraft.resources.ResourceLocation.parse("test:injected"), "test:textures/art.png", 0, 0, 1, 1, true, 0, false)), null, null);
+            config.addProperty("backgrounds", injected.encode());
+            assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+            config.addProperty("backgrounds", "{}");
+            assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        }
+        var json = request(AuthoringMutationAction.UPDATE_CANVAS);
+        json.getAsJsonObject("config").addProperty("backgrounds", yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY.encode());
+        assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+    }
     static JsonObject request(AuthoringMutationAction action) {
         var json = new JsonObject();
         json.addProperty("sessionId", "00000000-0000-0000-0000-000000000001");
@@ -38,6 +64,11 @@ class AuthoringMutationRequestTest {
         if (action == AuthoringMutationAction.PASTE_QUESTS) {
             var config = new JsonObject();
             config.addProperty("snapshot", questSnapshot()); json.add("config", config);
+        }
+        if (action == AuthoringMutationAction.UPDATE_CANVAS) {
+            var config = new JsonObject();
+            config.addProperty("scene", yourscraft.jasdewstarfield.brnquest.data.CanvasScene.EMPTY.encode());
+            json.add("config", config);
         }
         json.addProperty("title", action == AuthoringMutationAction.ADD_REWARD ? "" : action == AuthoringMutationAction.UPDATE_REWARD ? "auto_hidden"
                 : action == AuthoringMutationAction.UPDATE_QUEST_TRANSLATION ? "zh-CN" : "Title");

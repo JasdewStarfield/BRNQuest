@@ -14,6 +14,7 @@ enum AuthoringMutationAction {
     COPY_CHAPTER,
     UPDATE_CHAPTER,
     UPDATE_BOOK_PROPERTIES,
+    UPDATE_CANVAS,
     MOVE_CHAPTER,
     DELETE_CHAPTER,
     ADD_QUEST,

@@ -10,13 +10,15 @@ import java.util.function.Consumer;
 
 /** Book metadata and template remain local until the outer form is confirmed. */
 final class EditorBookPropertiesScreen extends Screen {
-    record Value(String fallback, QuestCreationDefaults defaults, Map<String, String> titles, BookSettings settings) {}
+    record Value(String fallback, QuestCreationDefaults defaults, Map<String, String> titles, BookSettings settings, CanvasScene backgrounds) {}
     private final Screen parent;
     private final Consumer<Value> selection;
     private final EditorLocalizedText text;
     private QuestCreationDefaults defaults;
     private String fallback;
     private BookSettings settings;
+    private CanvasScene backgrounds;
+    private final net.minecraft.resources.ResourceLocation bookId;
     private EditorTextField titleInput;
     private EditorTextField fallbackInput;
     private EditorButtonWidget done;
@@ -24,12 +26,12 @@ final class EditorBookPropertiesScreen extends Screen {
         super(Component.translatable("screen.brnquest.book.properties"));
         this.parent = parent; this.selection = selection;
         text = new EditorLocalizedText(book.localization(), "title", book.title(), locale);
-        settings = book.settings();
+        settings = book.settings(); backgrounds = book.canvasScene().backgrounds(); bookId = book.id();
         defaults = book.questDefaults(); fallback = book.localization().fallbackLocale();
     }
     @Override protected void init() {
         int panelWidth = Math.min(340, width - 24);
-        int left = (width - panelWidth) / 2, top = height / 2 - 90;
+        int left = (width - panelWidth) / 2, top = height / 2 - 107;
         if (titleInput == null) {
             titleInput = new EditorTextField(font, title, 256); titleInput.setValue(text.value());
             titleInput.setResponder(text::remember);
@@ -54,11 +56,20 @@ final class EditorBookPropertiesScreen extends Screen {
         addRenderableWidget(new EditorButtonWidget(left, top + 118, panelWidth, 20,
                 Component.translatable("screen.brnquest.book.settings"), button ->
                 minecraft.setScreen(new EditorBookSettingsScreen(this, settings, value -> settings = value))));
-        addRenderableWidget(new EditorButtonWidget(left, top + 156, panelWidth / 2 - 4, 20, Component.translatable("gui.cancel"), button -> onClose()));
-        done = addRenderableWidget(new EditorButtonWidget(left + panelWidth / 2 + 4, top + 156, panelWidth / 2 - 4, 20, Component.translatable("gui.done"), button -> {
-            selection.accept(new Value(BookLocalization.normalizeLocale(fallback.strip()), defaults, text.changes(), settings)); onClose();
+        // Background children edit this form's working copy, sharing its final save/cancel boundary.
+        var backgroundsButton = addRenderableWidget(new EditorButtonWidget(left, top + 144, panelWidth, 20,
+                EditorCanvasScreen.label("backgrounds"), button -> minecraft.setScreen(new EditorCanvasScreen(this,
+                "", bookId, true, backgrounds, 1, null, value -> { backgrounds = value.backgrounds(); return true; }))));
+        backgroundsButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(EditorCanvasScreen.label("backgrounds_help")));
+        addRenderableWidget(new EditorButtonWidget(left, top + 182, panelWidth / 2 - 4, 20, Component.translatable("gui.cancel"), button -> onClose()));
+        done = addRenderableWidget(new EditorButtonWidget(left + panelWidth / 2 + 4, top + 182, panelWidth / 2 - 4, 20, Component.translatable("gui.done"), button -> {
+            selection.accept(new Value(BookLocalization.normalizeLocale(fallback.strip()), defaults, text.changes(), settings, backgrounds)); onClose();
         }));
         done.active = EditorLocalizedText.validLocale(fallback);
+    }
+    /** Bypass this suspended opaque form while its background child previews the quest interface. */
+    void renderBackgroundPreview(GuiGraphics graphics, int width, int height, float partial, CanvasScene scene) {
+        if (parent instanceof QuestScreen quest) quest.renderBackgroundPreview(graphics, width, height, partial, scene, true);
     }
     @Override public void renderBackground(GuiGraphics graphics, int x, int y, float partial) {}
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
@@ -66,15 +77,15 @@ final class EditorBookPropertiesScreen extends Screen {
         graphics.pose().pushPose(); graphics.pose().translate(0, 0, 1000);
         try {
             int panelWidth = Math.min(340, width - 24);
-        int left = (width - panelWidth) / 2, top = height / 2 - 90;
+        int left = (width - panelWidth) / 2, top = height / 2 - 107;
             graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
-            GraystoneSurface.raised(graphics, new UiRect(left - 10, top, left + panelWidth + 10, top + 188), GraystonePalette.PANEL, true);
+            GraystoneSurface.raised(graphics, new UiRect(left - 10, top, left + panelWidth + 10, top + 214), GraystonePalette.PANEL, true);
             graphics.drawCenteredString(font, title, width / 2, top + 10, 0xFFFFFFFF);
             graphics.drawString(font, Component.translatable("screen.brnquest.editor.structure.title"), left, top + 36, GraystonePalette.SECONDARY, false);
             graphics.drawString(font, font.plainSubstrByWidth(Component.translatable("screen.brnquest.book.fallback").getString(), 80), left, top + 66, GraystonePalette.SECONDARY, false);
             titleInput.setSuggestion(titleInput.getValue().isEmpty() ? font.plainSubstrByWidth(text.placeholder(), titleInput.getWidth() - 8) : null);
             if (!done.active) graphics.drawCenteredString(font, Component.translatable("screen.brnquest.book.invalid_locale"),
-                    width / 2, top + 142, 0xFFFF8080);
+                    width / 2, top + 170, 0xFFFF8080);
             super.render(graphics, x, y, partial); graphics.flush();
         } finally { graphics.pose().popPose(); }
     }

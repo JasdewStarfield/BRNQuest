@@ -842,5 +842,16 @@
   "screen.brnquest.canvas.target_screen": "Editing: screen background (switch)",
   "screen.brnquest.canvas.order_inherit": "Order: inherit/default",
   "screen.brnquest.canvas.order_canvas": "Canvas above",
-  "screen.brnquest.canvas.order_screen": "Screen above"
+  "screen.brnquest.canvas.order_screen": "Screen above",
+  "screen.brnquest.canvas.import_png": "Import local PNG",
+  "screen.brnquest.canvas.import_help": "Import or drop one PNG. Stored locally; images are not uploaded with books.",
+  "screen.brnquest.canvas.import_busy": "Selecting or importing an image…",
+  "screen.brnquest.canvas.import_invalid_png": "Import failed: this is not a decodable PNG image.",
+  "screen.brnquest.canvas.import_too_large": "Import failed: PNG files must not exceed 8 MiB.",
+  "screen.brnquest.canvas.import_dimensions": "Import failed: each image dimension must not exceed 4096 pixels.",
+  "screen.brnquest.canvas.import_failed": "Cannot import the image. Check file/library permissions, or try dropping a PNG.",
+  "screen.brnquest.canvas.import_reload_failed": "Image saved, but the resource could not load. Try reloading resources or restarting the client.",
+  "screen.brnquest.canvas.import_success": "Imported locally. Click the entry to use it; image bytes are not uploaded.",
+  "screen.brnquest.canvas.import_reused": "Already imported; located the existing resource. Click the entry to use it.",
+  "screen.brnquest.canvas.import_single": "Import one PNG at a time."
 }

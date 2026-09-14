@@ -21,9 +21,11 @@ public final class LoadedTextures {
     private LoadedTextures() {}
     @SubscribeEvent public static void register(RegisterClientReloadListenersEvent event) {
         event.registerReloadListener((ResourceManagerReloadListener) manager -> {
-            catalog = null; sizes.clear(); generation++;
+            invalidate();
         });
     }
+    /** Newly imported files are visible through the mounted directory pack without reloading every resource. */
+    public static void invalidate() { catalog = null; sizes.clear(); generation++; }
     public static long generation() { return generation; }
     public static List<ResourceLocation> all() {
         if (catalog == null) catalog = Minecraft.getInstance().getResourceManager()

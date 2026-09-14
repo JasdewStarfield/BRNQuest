@@ -842,5 +842,16 @@
   "screen.brnquest.canvas.target_screen": "编辑目标：界面背景（点击切换）",
   "screen.brnquest.canvas.order_inherit": "层级：继承 / 默认",
   "screen.brnquest.canvas.order_canvas": "画布背景在上",
-  "screen.brnquest.canvas.order_screen": "界面背景在上"
+  "screen.brnquest.canvas.order_screen": "界面背景在上",
+  "screen.brnquest.canvas.import_png": "导入本地 PNG",
+  "screen.brnquest.canvas.import_help": "导入或拖入单张 PNG；仅保存在本机，不会随任务书上传。",
+  "screen.brnquest.canvas.import_busy": "正在选择或导入素材…",
+  "screen.brnquest.canvas.import_invalid_png": "导入失败：文件不是可正常解码的 PNG。",
+  "screen.brnquest.canvas.import_too_large": "导入失败：PNG 文件不得超过 8 MiB。",
+  "screen.brnquest.canvas.import_dimensions": "导入失败：图片每边不得超过 4096 像素。",
+  "screen.brnquest.canvas.import_failed": "无法导入素材，请检查文件和本地素材目录的读写权限；也可尝试拖入 PNG。",
+  "screen.brnquest.canvas.import_reload_failed": "素材已保存，但资源未能加载；请尝试重新加载资源或重启客户端。",
+  "screen.brnquest.canvas.import_success": "已导入本地素材。点击条目使用；图片不会上传。",
+  "screen.brnquest.canvas.import_reused": "该素材已存在，已定位到原资源。点击条目使用。",
+  "screen.brnquest.canvas.import_single": "请一次导入一张 PNG。"
 }

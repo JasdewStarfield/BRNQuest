@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- 贴图选择器支持选择或拖入本地 PNG，验证后复制到自动加载的本地素材库并按内容去重；任务书仍只保存资源地址，不上传图片。
+- Import or drop PNGs into the texture picker for a persistent, automatically mounted local library with content-based IDs. Books retain resource locations only; image bytes are not uploaded.
+
 - 修复界面背景在上时的 GUI 裁剪栈泄漏，避免任务界面关闭后边框残留与闪烁；背景与装饰使用独立、异常安全的裁剪/矩阵作用域。
 - Fixed leaked GUI scissor state with screen-background-first stacking, preventing stale borders and flicker after closing the quest UI. Background and decoration scopes now unwind safely.
 

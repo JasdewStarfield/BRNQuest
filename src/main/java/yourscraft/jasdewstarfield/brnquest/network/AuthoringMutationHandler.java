@@ -113,7 +113,8 @@ final class AuthoringMutationHandler {
                         : editor.updateQuestTranslation(player, sessionId, bookId,
                         wire.draftRevision(), requireId(targetId), wire.locale(),
                         wire.config().getOrDefault("title", ""), wire.config().getOrDefault("subtitle", ""),
-                        wire.config().getOrDefault("description", ""));
+                        wire.config().getOrDefault("description", ""),
+                        wire.config().get("description_format"));
                 case ADD_DEPENDENCY -> editor.addDependency(player, sessionId, bookId, wire.draftRevision(),
                         requireId(targetId), requireId(sourceId));
                 case REMOVE_DEPENDENCY -> editor.removeDependency(player, sessionId, bookId,
@@ -222,7 +223,7 @@ final class AuthoringMutationHandler {
                     reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward()));
         }
         return new QuestDefinition(book.id(), targetId, source.chapterId(), title, source.subtitle(),
-                source.description(), source.icon(), x, y, source.dependencies(), tasks, rewards, "",
+                source.description(), source.descriptionFormat(), source.icon(), x, y, source.dependencies(), tasks, rewards, "",
                 source.appearance(), source.behavior(), source.extensions());
     }
 

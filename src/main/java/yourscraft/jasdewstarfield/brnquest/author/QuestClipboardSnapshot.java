@@ -91,7 +91,8 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
             String title = QuestCopyTitles.title(source.title().isBlank() ? source.id().toString() : source.title(), result.localization().fallbackLocale(), number);
             var tasks = source.tasks().stream().map(t -> new TaskDefinition(book.id(), fresh(t.id()), t.typeId(), t.config(), t.optional())).toList();
             var rewards = source.rewards().stream().map(r -> new RewardDefinition(book.id(), fresh(r.id()), r.typeId(), r.config(), r.claimPolicy(), r.teamReward())).toList();
-            var copy = new QuestDefinition(book.id(), id, chapterId, title, source.subtitle(), source.description(), source.icon(),
+            var copy = new QuestDefinition(book.id(), id, chapterId, title, source.subtitle(), source.description(),
+                    source.descriptionFormat(), source.icon(),
                     x + source.x() - minX, y + source.y() - minY,
                     source.dependencies().stream().map(dep -> remap.getOrDefault(dep, dep)).toList(), tasks, rewards, "",
                     source.appearance(), source.behavior(), source.extensions());

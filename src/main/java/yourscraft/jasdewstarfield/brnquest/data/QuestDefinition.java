@@ -6,10 +6,11 @@ import net.minecraft.resources.ResourceLocation;
 
 import java.util.List;
 import java.util.Map;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 /** Immutable quest node including layout, dependencies, tasks and rewards. */
 public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
-                              String title, String subtitle, String description, String icon,
+                              String title, String subtitle, String description, DocumentFormat descriptionFormat, String icon,
                               double x, double y, List<ResourceLocation> dependencies,
                               List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId,
                               QuestAppearance appearance, QuestBehavior behavior, Map<String, String> extensions) {
@@ -28,6 +29,7 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
             Codec.STRING.optionalFieldOf("title", "").forGetter(QuestDefinition::title),
             Codec.STRING.optionalFieldOf("subtitle", "").forGetter(QuestDefinition::subtitle),
             Codec.STRING.optionalFieldOf("description", "").forGetter(QuestDefinition::description),
+            DocumentFormat.CODEC.optionalFieldOf("description_format", DocumentFormat.PLAIN).forGetter(QuestDefinition::descriptionFormat),
             Codec.STRING.optionalFieldOf("icon", "").forGetter(QuestDefinition::icon),
             Codec.DOUBLE.optionalFieldOf("x", 0.0).forGetter(QuestDefinition::x),
             Codec.DOUBLE.optionalFieldOf("y", 0.0).forGetter(QuestDefinition::y),
@@ -38,8 +40,8 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
             Metadata.CODEC.optionalFieldOf("metadata", new Metadata(
                     QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of()))
                     .forGetter(quest -> new Metadata(quest.appearance(), quest.behavior(), quest.extensions()))
-    ).apply(i, (bookId, id, chapterId, title, subtitle, description, icon, x, y, dependencies, tasks, rewards, legacyId, metadata) ->
-            new QuestDefinition(bookId, id, chapterId, title, subtitle, description, icon, x, y,
+    ).apply(i, (bookId, id, chapterId, title, subtitle, description, descriptionFormat, icon, x, y, dependencies, tasks, rewards, legacyId, metadata) ->
+            new QuestDefinition(bookId, id, chapterId, title, subtitle, description, descriptionFormat, icon, x, y,
                     dependencies, tasks, rewards, legacyId, metadata.appearance(), metadata.behavior(), metadata.extensions())));
 
     public QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
@@ -47,6 +49,14 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
                            double x, double y, List<ResourceLocation> dependencies,
                            List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId) {
         this(bookId, id, chapterId, title, subtitle, description, icon, x, y, dependencies,
+                tasks, rewards, legacyId, QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of());
+    }
+
+    public QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
+                           String title, String subtitle, String description, DocumentFormat descriptionFormat,
+                           String icon, double x, double y, List<ResourceLocation> dependencies,
+                           List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId) {
+        this(bookId, id, chapterId, title, subtitle, description, descriptionFormat, icon, x, y, dependencies,
                 tasks, rewards, legacyId, QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of());
     }
 
@@ -59,10 +69,21 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
                 tasks, rewards, legacyId, appearance, QuestBehavior.DEFAULT, extensions);
     }
 
+    /** Source-compatible constructor for existing plain-text callers. */
+    public QuestDefinition(ResourceLocation bookId, ResourceLocation id, ResourceLocation chapterId,
+                           String title, String subtitle, String description, String icon,
+                           double x, double y, List<ResourceLocation> dependencies,
+                           List<TaskDefinition> tasks, List<RewardDefinition> rewards, String legacyId,
+                           QuestAppearance appearance, QuestBehavior behavior, Map<String, String> extensions) {
+        this(bookId, id, chapterId, title, subtitle, description, DocumentFormat.PLAIN, icon, x, y,
+                dependencies, tasks, rewards, legacyId, appearance, behavior, extensions);
+    }
+
     public QuestDefinition {
         dependencies = List.copyOf(dependencies);
         tasks = List.copyOf(tasks);
         rewards = List.copyOf(rewards);
+        descriptionFormat = descriptionFormat == null ? DocumentFormat.PLAIN : descriptionFormat;
         appearance = appearance == null ? QuestAppearance.DEFAULT : appearance;
         behavior = behavior == null ? QuestBehavior.DEFAULT : behavior;
         extensions = Map.copyOf(extensions);

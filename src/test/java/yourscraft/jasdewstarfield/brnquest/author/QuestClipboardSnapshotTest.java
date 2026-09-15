@@ -10,7 +10,8 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuestClipboardSnapshotTest {
     private static ResourceLocation id(String s) { return ResourceLocation.parse("test:" + s); }
     private static QuestDefinition quest(String s, double x, double y, List<ResourceLocation> deps) {
-        return new QuestDefinition(id("book"), id(s), id("src"), s, "subtitle", "body", "", x, y, deps,
+        return new QuestDefinition(id("book"), id(s), id("src"), s, "subtitle", "body",
+                yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.MARKDOWN_V1, "", x, y, deps,
                 List.of(new TaskDefinition(id("book"), id(s + "/task"), id("opaque"), Map.of("custom", "test:a", "consume_items", "true"), true)),
                 List.of(new RewardDefinition(id("book"), id(s + "/reward"), id("opaque"), Map.of("nested", "{opaque}"), "auto_hidden", true)), "");
     }
@@ -19,7 +20,9 @@ class QuestClipboardSnapshotTest {
                 List.of(new ChapterDefinition(id("book"), id("src"), id("g"), "Source", "", 0,
                                 List.of(quest("a", -3, 5, List.of()), quest("b", 2, -1, List.of(id("a"), id("outside"))), quest("outside", 0, 0, List.of()))),
                         new ChapterDefinition(id("book"), id("dest"), id("g"), "Destination", "", 1, List.of(), Map.of(), new QuestCreationDefaults(Map.of("size", "4", "repeatable", "true")), false, null)),
-                Map.of(), new BookLocalization("en_us", Map.of("zh_cn", Map.of("quest.test:a.title", "甲", "quest.test:a.description", "原文"))), Map.of());
+                Map.of(), new BookLocalization("en_us", Map.of("zh_cn", Map.of("quest.test:a.title", "甲",
+                "quest.test:a.description", "原文", "quest.test:a.quest_desc", "**原文**",
+                "quest.test:a.quest_desc_format", "markdown_v1"))), Map.of());
     }
     @Test void frozenSourcesSurviveDeletionAndPastePreservesLayoutAndExplicitFields() {
         var original = book();
@@ -32,6 +35,9 @@ class QuestClipboardSnapshotTest {
         assertEquals(Set.of(a.id(), id("outside")), Set.copyOf(b.dependencies()));
         assertEquals("甲（副本）", BookText.quest(result, a, "zh_cn", "title", ""));
         assertEquals("原文", BookText.quest(result, a, "zh_cn", "description", ""));
+        assertEquals(yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.MARKDOWN_V1, a.descriptionFormat());
+        assertEquals("markdown_v1", result.localization().translations().get("zh_cn")
+                .get(BookText.questPrefix(a) + "quest_desc_format"));
         assertEquals(1.0, a.appearance().size()); assertFalse(a.behavior().repeatable());
         assertEquals("true", a.tasks().getFirst().config().get("consume_items")); assertTrue(a.tasks().getFirst().optional());
         assertEquals("auto_hidden", a.rewards().getFirst().claimPolicy()); assertTrue(a.rewards().getFirst().teamReward());

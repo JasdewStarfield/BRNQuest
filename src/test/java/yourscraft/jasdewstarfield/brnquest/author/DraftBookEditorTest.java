@@ -334,6 +334,23 @@ class DraftBookEditorTest {
                 .containsKey("quest.brnquest:root.title"));
     }
 
+    @Test void localizedDescriptionFormatUpdatesAtomicallyAndOmittedFormatIsPreserved() {
+        QuestBookDefinition book = bookWithDependency();
+        var markdown = yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.MARKDOWN_V1;
+        QuestBookDefinition localized = value(DraftBookEditor.updateQuestTranslation(book, id("root"),
+                "zh_cn", "根任务", "", "**正文**", markdown));
+        String prefix = BookText.questPrefix(localized.quests().stream().filter(q -> q.id().equals(id("root"))).findFirst().orElseThrow());
+        assertEquals("markdown_v1", localized.localization().translations().get("zh_cn")
+                .get(prefix + "quest_desc_format"));
+
+        QuestBookDefinition compatible = value(DraftBookEditor.updateQuestTranslation(localized, id("root"),
+                "zh_cn", "根任务", "", "**更新**"));
+        assertEquals(markdown, BookText.resolveQuestDescription(compatible,
+                compatible.quests().stream().filter(q -> q.id().equals(id("root"))).findFirst().orElseThrow(), "zh_cn").format());
+        assertFalse(DraftBookEditor.updateQuestTranslation(compatible, id("root"), "zh_cn", "", "", "x",
+                yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.parse("future_v2")).success());
+    }
+
     @Test void fallbackLocaleTextUsesNativeFieldsAndRemovesShadowingTranslations() {
         QuestBookDefinition book = bookWithDependency();
         QuestBookDefinition shadowed = new QuestBookDefinition(book.id(), book.schemaVersion(), book.title(),

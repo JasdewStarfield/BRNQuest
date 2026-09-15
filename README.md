@@ -29,7 +29,7 @@ The `docs/` directory contains only public user, administrator, and extension-au
 - 观察方块/实体与击杀目标：[`docs/ENCOUNTER_TASKS_zh.md`](docs/ENCOUNTER_TASKS_zh.md)
 - 探索目标、坐标区域与维度分组：[`docs/EXPLORATION_TASKS_zh.md`](docs/EXPLORATION_TASKS_zh.md)
 - 命令奖励、执行权限与异常处理：[`docs/COMMAND_REWARDS_zh.md`](docs/COMMAND_REWARDS_zh.md)
-- 作者文本、任务书翻译表与语言回退：[`docs/AUTHOR_TEXT_LOCALIZATION_zh.md`](docs/AUTHOR_TEXT_LOCALIZATION_zh.md)
+- 作者文本、任务书翻译表与语言回退 / Author text, translation tables, and locale fallback: [中文](docs/AUTHOR_TEXT_LOCALIZATION_zh.md) / [English](docs/AUTHOR_TEXT_LOCALIZATION.md)
 - Java 公共 API、稳定性等级和线程/权限边界：[`docs/PUBLIC_API_zh.md`](docs/PUBLIC_API_zh.md)
 - 作者 API 与高级草稿恢复工作流：[`docs/AUTHOR_API_zh.md`](docs/AUTHOR_API_zh.md)
 - 自定义 task/reward、客户端展示与编辑字段：[`docs/EXTENSION_API_zh.md`](docs/EXTENSION_API_zh.md)

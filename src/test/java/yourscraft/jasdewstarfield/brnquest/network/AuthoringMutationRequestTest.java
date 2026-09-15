@@ -196,12 +196,18 @@ class AuthoringMutationRequestTest {
 
     @Test void translationsKeepFullTextAndNormalizeOnlyLocale() {
         var json = request(AuthoringMutationAction.UPDATE_QUEST_TRANSLATION);
-        var config = new JsonObject(); config.addProperty("description", "中".repeat(32768)); json.add("config", config);
+        var config = new JsonObject(); config.addProperty("description", "中".repeat(32768));
+        config.addProperty("description_format", "markdown_v1"); json.add("config", config);
         var decoded = AuthoringRequestDecoder.mutation(json.toString());
         assertTrue(decoded.success()); assertEquals("zh_cn", decoded.value().locale());
         assertEquals(32768, decoded.value().config().get("description").length());
+        assertEquals("markdown_v1", decoded.value().config().get("description_format"));
         config.addProperty("description", "x".repeat(32769));
         assertFalse(AuthoringRequestDecoder.mutation(json.toString()).success());
+        config.addProperty("description", "valid"); config.addProperty("description_format", "future_v2");
+        var invalidFormat = AuthoringRequestDecoder.mutation(json.toString());
+        assertFalse(invalidFormat.success());
+        assertEquals("config.description_format", invalidFormat.failure().path());
     }
     @Test void malformedTypedConfigRetainsOriginalObjectAndFieldDiagnostic() {
         var json = request(AuthoringMutationAction.UPDATE_TASK);

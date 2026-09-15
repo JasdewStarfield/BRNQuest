@@ -14,7 +14,8 @@
         "chapter.example:intro.title": "起步",
         "quest.example:first.title": "第一个任务",
         "quest.example:first.quest_subtitle": "准备出发",
-        "quest.example:first.quest_desc": "第一行\n第二行"
+        "quest.example:first.quest_desc": "# 起步\n\n第一行\n第二行",
+        "quest.example:first.quest_desc_format": "markdown_v1"
       }
     }
   }
@@ -27,10 +28,12 @@
 
 - 任务书标题：`title`。
 - 章节组、章节标题：`chapter_group.<ID>.title`、`chapter.<ID>.title`。
-- 任务标题、副标题、正文：`quest.<ID>.title`、`quest.<ID>.quest_subtitle`、`quest.<ID>.quest_desc`。
+- 任务标题、副标题、正文：`quest.<ID>.title`、`quest.<ID>.quest_subtitle`、`quest.<ID>.quest_desc`；正文格式使用相邻的 `quest.<ID>.quest_desc_format`。
 - 原生任务使用完整命名空间 ID；导入任务继续使用非空 `legacy_id`。章节和章节组有历史 alias 时使用 alias；多个 alias 按字符串排序选择第一个，排除以 `@` 开头的内部映射。没有 alias 才使用原生 ID。
 
-每个字段按“客户端指定语言 → `fallback_locale` → 对象原文”读取；缺失或空白翻译会继续回退。语言代码统一小写并把 `-` 转成 `_`，例如 `zh-CN` 与 `zh_cn` 等价，不自动做 `zh_tw` 到 `zh_cn` 等语言推断。同义语言代码的不同键会合并；同一键存在不同值时拒绝加载候选，要求作者消除冲突，不静默覆盖。
+每个字段按“客户端指定语言 → `fallback_locale` → 对象原文”读取；缺失或空白翻译会继续回退。任务正文与格式作为一对从同一来源读取，不能从请求语言取得正文却从 fallback 语言继承格式。语言代码统一小写并把 `-` 转成 `_`，例如 `zh-CN` 与 `zh_cn` 等价，不自动做 `zh_tw` 到 `zh_cn` 等语言推断。同义语言代码的不同键会合并；同一键存在不同值时拒绝加载候选，要求作者消除冲突，不静默覆盖。
+
+原生任务正文的相邻字段为 `description_format`。字段缺失时一律是 `plain`，因此旧任务书中的 `*`、`_`、`[]()` 等字符仍按字面量处理；`markdown_v1` 是版本化的 BRNQuest 受控格式。未知格式会原样保存并安全降级为纯文本，作者请求不能新建未知格式。
 
 ## 编辑与保存
 

@@ -138,7 +138,7 @@ public final class DraftService {
         List<RewardDefinition> rewards = quest.rewards().stream().map(reward -> new RewardDefinition(bookId,
                 reward.id(), reward.typeId(), reward.config(), reward.claimPolicy(), reward.teamReward())).toList();
         return new QuestDefinition(bookId, quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
-                quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(), tasks, rewards,
+                quest.description(), quest.descriptionFormat(), quest.icon(), quest.x(), quest.y(), quest.dependencies(), tasks, rewards,
                 quest.legacyId(), quest.appearance(), quest.behavior(), quest.extensions());
     }
 

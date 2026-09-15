@@ -44,7 +44,7 @@ public final class QuestSelectionEdits {
             }
             // Internal edges follow the copied nodes; same-book external edges and opaque configs stay unchanged.
             var copy = new QuestDefinition(book.id(), id, destinationChapter == null ? source.chapterId() : destinationChapter, QuestCopyTitles.suggestedTitle(result, source),
-                    source.subtitle(), source.description(), source.icon(), source.x() + dx, source.y() + dy,
+                    source.subtitle(), source.description(), source.descriptionFormat(), source.icon(), source.x() + dx, source.y() + dy,
                     source.dependencies().stream().map(dep -> remap.getOrDefault(dep, dep)).toList(), tasks, rewards, "",
                     source.appearance(), source.behavior(), source.extensions());
             var change = DraftBookEditor.copyQuest(result, source.id(), copy);

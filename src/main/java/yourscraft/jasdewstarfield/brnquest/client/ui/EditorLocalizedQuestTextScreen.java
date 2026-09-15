@@ -13,6 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -22,7 +23,7 @@ import java.util.function.Consumer;
 
 /** Locale-switching quest text editor with a real multiline description field. */
 public final class EditorLocalizedQuestTextScreen extends Screen {
-    public record Value(String locale, String title, String subtitle, String description) {}
+    public record Value(String locale, String title, String subtitle, String description, DocumentFormat descriptionFormat) {}
 
     // Shared input feedback follows the same rendered geometry as every form button.
     private final EditorButtonInput buttons = new EditorButtonInput();
@@ -36,6 +37,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
     private EditBox subtitleEditor;
     private EditBox localeEditor;
     private MultiLineEditBox descriptionEditor;
+    private DocumentFormat descriptionFormat = DocumentFormat.PLAIN;
 
     public EditorLocalizedQuestTextScreen(Screen parent, BookLocalization localization, QuestDefinition quest,
                                           String clientLocale, Consumer<Value> consumer) {
@@ -134,7 +136,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         if (button == 0 && cancelBounds().contains(mouseX, mouseY)) { onClose(); return true; }
         if (button == 0 && applyBounds().contains(mouseX, mouseY)) {
             consumer.accept(new Value(locales.get(localeIndex), titleEditor.getValue(), subtitleEditor.getValue(),
-                    descriptionEditor.getValue()));
+                    descriptionEditor.getValue(), descriptionFormat));
             onClose();
             return true;
         }
@@ -184,6 +186,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         titleEditor.setValue(values.getOrDefault(prefix + "title", nativeFallback ? quest.title() : ""));
         subtitleEditor.setValue(values.getOrDefault(prefix + "quest_subtitle", nativeFallback ? quest.subtitle() : ""));
         descriptionEditor.setValue(values.getOrDefault(prefix + "quest_desc", nativeFallback ? quest.description() : ""));
+        descriptionFormat = nativeFallback ? quest.descriptionFormat()
+                : DocumentFormat.parse(values.get(prefix + "quest_desc_format"));
     }
 
     @Override public void onClose() { if (minecraft != null) minecraft.setScreen(parent); }

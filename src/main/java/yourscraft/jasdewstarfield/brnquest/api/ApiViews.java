@@ -57,7 +57,7 @@ public final class ApiViews {
 
     public static QuestView quest(QuestDefinition quest) {
         return new QuestView(quest.bookId(), quest.id(), quest.chapterId(), quest.title(), quest.subtitle(),
-                quest.description(), quest.icon(), quest.x(), quest.y(), quest.dependencies(),
+                quest.description(), quest.descriptionFormat().serializedName(), quest.icon(), quest.x(), quest.y(), quest.dependencies(),
                 quest.tasks().stream().map(ApiViews::task).toList(),
                 quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId(), behavior(quest));
     }
@@ -65,10 +65,11 @@ public final class ApiViews {
     public static QuestView quest(QuestBookSnapshot snapshot, QuestDefinition quest, String locale) {
         String prefix = BookText.questPrefix(quest);
         var localization = snapshot.book().localization();
+        var description = BookText.resolveQuestDescription(snapshot.book(), quest, locale);
         return new QuestView(quest.bookId(), quest.id(), quest.chapterId(),
                 localization.resolve(locale, prefix + "title", quest.title()),
                 localization.resolve(locale, prefix + "quest_subtitle", quest.subtitle()),
-                localization.resolve(locale, prefix + "quest_desc", quest.description()),
+                description.text(), description.format().serializedName(),
                 quest.icon(), quest.x(), quest.y(), quest.dependencies(),
                 quest.tasks().stream().map(ApiViews::task).toList(),
                 quest.rewards().stream().map(ApiViews::reward).toList(), quest.legacyId(), behavior(quest));

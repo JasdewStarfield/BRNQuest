@@ -264,7 +264,8 @@ public final class AuthoringHandlerGameTests {
 
         void apply(String action, String target, String parent, String source, Map<String, String> config) {
             String title = action.equals("ADD_REWARD") ? "" : action.equals("UPDATE_REWARD") ? "auto_hidden" : action.equals("UPDATE_QUEST_TRANSLATION") ? "zh_cn" : action;
-            if (action.equals("UPDATE_QUEST_TRANSLATION") && config.isEmpty()) config = Map.of("title", "本地化标题", "description", "描述");
+            if (action.equals("UPDATE_QUEST_TRANSLATION") && config.isEmpty()) config = Map.of(
+                    "title", "本地化标题", "description", "**描述**", "description_format", "markdown_v1");
             var positions = (action.equals("MOVE_QUESTS") || action.equals("COPY_QUESTS") || action.equals("DELETE_QUESTS")) ? List.of(new AuthoringNetwork.PositionWire(raw("q"), 12, -8)) : List.<AuthoringNetwork.PositionWire>of();
             int index = action.equals("UPDATE_TASK") || action.equals("UPDATE_REWARD") ? 1 : 0;
             var wire = new AuthoringNetwork.EditorMutationWire(token.toString(), book.toString(), revision, action,
@@ -385,6 +386,9 @@ public final class AuthoringHandlerGameTests {
             check(helper, BookText.quest(fixture.snapshot(),
                     fixture.quest("q_copy"), "zh_cn", "title", "").equals("本地化标题（副本）"),
                     "quest copy preserves server-owned localized text");
+            check(helper, BookText.resolveQuestDescription(fixture.snapshot(), fixture.quest("q_copy"), "zh_cn")
+                    .format().serializedName().equals("markdown_v1"),
+                    "quest copy preserves the localized description format with its text");
             String beforeUndo = fixture.revision;
             fixture.apply("UNDO", "", "", "");
             check(helper, fixture.snapshot().quests().stream().noneMatch(q -> q.id().equals(fixture.id("q_copy"))), "undo removes copied quest");

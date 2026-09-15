@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.data;
 import com.google.gson.*;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 import java.util.*;
 
@@ -102,6 +103,8 @@ public final class NativeBookJson {
         value.addProperty("title", quest.title());
         value.addProperty("subtitle", quest.subtitle());
         value.addProperty("description", quest.description());
+        if (!quest.descriptionFormat().equals(DocumentFormat.PLAIN))
+            value.addProperty("description_format", quest.descriptionFormat().serializedName());
         value.addProperty("icon", quest.icon());
         value.addProperty("x", quest.x());
         value.addProperty("y", quest.y());
@@ -192,7 +195,8 @@ public final class NativeBookJson {
         JsonObject appearance = value.has("appearance") ? value.getAsJsonObject("appearance") : new JsonObject();
         JsonObject behavior = value.has("behavior") ? value.getAsJsonObject("behavior") : new JsonObject();
         return new QuestDefinition(bookId, id(value.get("id").getAsString()), chapterId,
-                text(value, "title"), text(value, "subtitle"), text(value, "description"), text(value, "icon"),
+                text(value, "title"), text(value, "subtitle"), text(value, "description"),
+                DocumentFormat.parse(text(value, "description_format", "plain")), text(value, "icon"),
                 decimal(value, "x", 0.0), decimal(value, "y", 0.0), dependencies, tasks, rewards, text(value, "legacy_id"),
                 new QuestAppearance(text(appearance, "shape", "chamfer"), decimal(appearance, "size", 1.0),
                         decimal(appearance, "icon_scale", 1.0), decimal(appearance, "min_width", 0.0), optionalBoolean(value, "hide_dependency_lines")),

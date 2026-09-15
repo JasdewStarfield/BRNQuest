@@ -122,6 +122,8 @@ public final class QuestBookDiffer {
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "title", oldValue.title(), newValue.title());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "subtitle", oldValue.subtitle(), newValue.subtitle());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "description", oldValue.description(), newValue.description());
+        property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "description_format",
+                oldValue.descriptionFormat().serializedName(), newValue.descriptionFormat().serializedName());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "icon", oldValue.icon(), newValue.icon());
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "hide_dependency_lines", java.util.Objects.toString(oldValue.appearance().hideDependencyLines(), "default"), java.util.Objects.toString(newValue.appearance().hideDependencyLines(), "default"));
         property(entries, SemanticDiffEntry.ObjectKind.QUEST, id, "appearance.shape",

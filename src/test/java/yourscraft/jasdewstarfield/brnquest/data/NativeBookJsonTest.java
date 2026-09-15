@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -46,6 +47,35 @@ class NativeBookJsonTest {
         QuestDefinition decoded = NativeBookJson.decode(JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject()).quests().getFirst();
         assertEquals(List.of(firstTask.id(), secondTask.id()), decoded.tasks().stream().map(TaskDefinition::id).toList());
         assertEquals(List.of(firstReward.id(), secondReward.id()), decoded.rewards().stream().map(RewardDefinition::id).toList());
+    }
+
+    @Test void oldDescriptionsStayPlainWhileKnownAndUnknownFormatsRoundTrip() {
+        var oldJson = JsonParser.parseString("""
+                {"schema_version":1,"id":"test:book","title":"Book","chapter_groups":[],
+                 "chapters":[{"id":"test:chapter","group_id":"test:group","title":"Chapter","icon":"","order":0,
+                 "extensions":{},"quests":[{"id":"test:quest","title":"Quest","subtitle":"",
+                 "description":"*literal* [not a link](text)","icon":"","x":0,"y":0,"legacy_id":"",
+                 "appearance":{},"extensions":{},"dependencies":[],"tasks":[],"rewards":[]}]}],"legacy_ids":{}}
+                """).getAsJsonObject();
+        QuestDefinition oldQuest = NativeBookJson.decode(oldJson).quests().getFirst();
+        assertEquals(DocumentFormat.PLAIN, oldQuest.descriptionFormat());
+        assertFalse(NativeBookJson.encode(NativeBookJson.decode(oldJson)).contains("description_format"));
+
+        QuestDefinition markdown = new QuestDefinition(oldQuest.bookId(), oldQuest.id(), oldQuest.chapterId(),
+                oldQuest.title(), oldQuest.subtitle(), oldQuest.description(), DocumentFormat.MARKDOWN_V1,
+                oldQuest.icon(), oldQuest.x(), oldQuest.y(), oldQuest.dependencies(), oldQuest.tasks(),
+                oldQuest.rewards(), oldQuest.legacyId(), oldQuest.appearance(), oldQuest.behavior(), oldQuest.extensions());
+        var markdownBook = new QuestBookDefinition(oldQuest.bookId(), 1, "Book", List.of(),
+                List.of(new ChapterDefinition(oldQuest.bookId(), oldQuest.chapterId(), ResourceLocation.parse("test:group"),
+                        "Chapter", "", 0, List.of(markdown))), Map.of());
+        assertEquals(DocumentFormat.MARKDOWN_V1, NativeBookJson.decode(JsonParser.parseString(
+                NativeBookJson.encode(markdownBook)).getAsJsonObject()).quests().getFirst().descriptionFormat());
+
+        oldJson.getAsJsonArray("chapters").get(0).getAsJsonObject().getAsJsonArray("quests").get(0)
+                .getAsJsonObject().addProperty("description_format", "future_v7");
+        QuestBookDefinition unknown = NativeBookJson.decode(oldJson);
+        assertEquals("future_v7", unknown.quests().getFirst().descriptionFormat().serializedName());
+        assertTrue(NativeBookJson.encode(unknown).contains("\"description_format\": \"future_v7\""));
     }
 
     @Test void roundTripsLocalizationAppearanceExtensionsAndRewardPolicies() {

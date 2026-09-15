@@ -55,7 +55,7 @@ public final class LocalizedSingleLineEdits {
         var chapters = book.chapters().stream().map(c -> {
             var quests = c.quests().stream().map(q -> nativeValue != null && kind.equals("quest") && q.id().equals(id)
                     ? new QuestDefinition(q.bookId(), q.id(), q.chapterId(), field.equals("title") ? nativeValue : q.title(),
-                    field.equals("quest_subtitle") ? nativeValue : q.subtitle(), q.description(), q.icon(), q.x(), q.y(),
+                    field.equals("quest_subtitle") ? nativeValue : q.subtitle(), q.description(), q.descriptionFormat(), q.icon(), q.x(), q.y(),
                     q.dependencies(), q.tasks(), q.rewards(), q.legacyId(), q.appearance(), q.behavior(), q.extensions()) : q).toList();
             return new ChapterDefinition(c.bookId(), c.id(), c.groupId(), nativeValue != null && kind.equals("chapter") && c.id().equals(id)
                     ? nativeValue : c.title(), c.icon(), c.order(), quests, c.extensions(), c.questDefaults(), c.consumeItems(), c.autofocusQuestId(), c.defaultHideDependencyLines());

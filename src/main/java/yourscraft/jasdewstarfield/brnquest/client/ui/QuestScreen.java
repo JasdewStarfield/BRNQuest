@@ -2223,7 +2223,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private boolean submitLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {
         if (sendMutation("UPDATE_QUEST_TRANSLATION", questId, null, null, value.locale(), 0, 0, 0, List.of(),
-                Map.of("title", value.title(), "subtitle", value.subtitle(), "description", value.description()))) {
+                Map.of("title", value.title(), "subtitle", value.subtitle(), "description", value.description(),
+                        "description_format", value.descriptionFormat().serializedName()))) {
             editorSelectedQuest = questId;
             return true;
         }
@@ -4637,7 +4638,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : questEditorIconMode == IconEditorMode.TEXTURE ? yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.texture(ResourceLocation.parse(iconValue))
                 : "{id:\"" + iconValue + "\",count:1}";
         var replacement = new QuestDefinition(currentQuest.bookId(), replacementId, currentQuest.chapterId(),
-                currentQuest.title(), currentQuest.subtitle(), currentQuest.description(), previewIcon,
+                currentQuest.title(), currentQuest.subtitle(), currentQuest.description(), currentQuest.descriptionFormat(), previewIcon,
                 Double.parseDouble(questFields.field("x").getValue().strip()), Double.parseDouble(questFields.field("y").getValue().strip()),
                 currentQuest.dependencies(), currentQuest.tasks(), currentQuest.rewards(), currentQuest.legacyId(),
                 new yourscraft.jasdewstarfield.brnquest.data.QuestAppearance(questFields.field("shape").getValue().strip(),

@@ -43,7 +43,8 @@ public final class ClientEditPreview {
             case "REMOVE_DEPENDENCY" -> changed(DraftBookEditor.removeDependency(book, target, source));
             case "UPDATE_QUEST_TRANSLATION" -> config.containsKey(LocalizedSingleLineEdits.FIELD)
                     ? LocalizedSingleLineEdits.apply(book, "quest", target, config.get(LocalizedSingleLineEdits.FIELD), LocalizedSingleLineEdits.values(config))
-                    : changed(DraftBookEditor.updateQuestTranslation(book, target, w.title(), config.getOrDefault("title", ""), config.getOrDefault("subtitle", ""), config.getOrDefault("description", "")));
+                    : changed(DraftBookEditor.updateQuestTranslation(book, target, w.title(), config.getOrDefault("title", ""), config.getOrDefault("subtitle", ""), config.getOrDefault("description", ""),
+                    config.containsKey("description_format") ? yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.parse(config.get("description_format")) : null));
             case "ADD_TASK" -> changed(DraftBookEditor.addTask(book, parent, new TaskDefinition(book.id(), target, source,
                     EntryCreationPolicy.taskConfig(book, parent, source, config), false)));
             case "UPDATE_TASK", "COPY_TASK" -> {
@@ -111,7 +112,7 @@ public final class ClientEditPreview {
         var tasks = q.tasks().stream().map(t -> new TaskDefinition(book.id(), fresh(target), t.typeId(), t.config(), t.optional())).toList();
         var rewards = q.rewards().stream().map(r -> new RewardDefinition(book.id(), fresh(target), r.typeId(), r.config(), r.claimPolicy(), r.teamReward())).toList();
         return changed(DraftBookEditor.copyQuest(book, source, new QuestDefinition(book.id(), target, q.chapterId(), title, q.subtitle(), q.description(),
-                q.icon(), x, y, q.dependencies(), tasks, rewards, "", q.appearance(), q.behavior(), q.extensions())));
+                q.descriptionFormat(), q.icon(), x, y, q.dependencies(), tasks, rewards, "", q.appearance(), q.behavior(), q.extensions())));
     }
     private static ResourceLocation fresh(ResourceLocation base) { return ResourceLocation.fromNamespaceAndPath(base.getNamespace(), "preview_"+UUID.randomUUID().toString().replace("-", "")); }
     private static QuestDefinition quest(QuestBookDefinition book, ResourceLocation id) { return book.quests().stream().filter(q -> q.id().equals(id)).findFirst().orElseThrow(); }

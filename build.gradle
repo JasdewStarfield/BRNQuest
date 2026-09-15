@@ -265,6 +265,8 @@ configurations {
 }
 
 dependencies {
+    // P4-0 parser spike only: core has no transitive dependencies and is not packaged until P4a adopts it.
+    testImplementation('org.commonmark:commonmark:0.30.0') { transitive = false }
     // Exact audited optional API baseline; never bundle OPAC or load it in ordinary core tests.
     compileOnly("maven.modrinth:open-parties-and-claims:AzM8UF04") { transitive = false }
     if (includeOpac) {

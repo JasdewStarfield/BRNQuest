@@ -7,6 +7,7 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import java.util.List;
 import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 /** Covers the shared client/API contract with literal text and imported semantic keys. */
 class BookTextTest {
@@ -27,6 +28,33 @@ class BookTextTest {
         assertThrows(UnsupportedOperationException.class, () -> merged.translations().get("zh_cn").put("c", "丙"));
         assertThrows(IllegalArgumentException.class, () -> new BookLocalization("en_us",
                 Map.of("zh-CN", Map.of("a", "甲"), "zh_cn", Map.of("a", "乙"))));
+    }
+
+    @Test void descriptionTextAndFormatAlwaysResolveFromTheSameLocale() {
+        var bookId = id("book");
+        var quest = new QuestDefinition(bookId, id("quest"), id("chapter"), "Quest", "", "Fallback **body**",
+                DocumentFormat.MARKDOWN_V1, "", 0, 0, List.of(), List.of(), List.of(), "OLD",
+                QuestAppearance.DEFAULT, QuestBehavior.DEFAULT, Map.of());
+        var localization = new BookLocalization("en_us", Map.of(
+                "zh_cn", Map.of("quest.OLD.quest_desc", "中文 *字面*"),
+                "fr_fr", Map.of("quest.OLD.quest_desc", "Français **fort**",
+                        "quest.OLD.quest_desc_format", "markdown_v1")));
+        var book = new QuestBookDefinition(bookId, 1, "Book", List.of(),
+                List.of(new ChapterDefinition(bookId, id("chapter"), id("group"), "Chapter", "", 0, List.of(quest))),
+                Map.of(), localization, Map.of());
+
+        var chinese = BookText.resolveQuestDescription(book, quest, "zh-CN");
+        assertEquals("中文 *字面*", chinese.text());
+        assertEquals(DocumentFormat.PLAIN, chinese.format());
+        assertEquals("zh_cn", chinese.sourceLocale());
+        var french = BookText.resolveQuestDescription(book, quest, "fr_fr");
+        assertEquals(DocumentFormat.MARKDOWN_V1, french.format());
+        assertEquals("fr_fr", french.sourceLocale());
+        var fallback = BookText.resolveQuestDescription(book, quest, "ja_jp");
+        assertEquals("Fallback **body**", fallback.text());
+        assertEquals(DocumentFormat.MARKDOWN_V1, fallback.format());
+        assertEquals("en_us", fallback.sourceLocale());
+        assertEquals(DocumentFormat.PLAIN, BookText.questDescriptionForEditing(book, quest, "ja_jp").format());
     }
 
     @Test void localizedViewsPreserveSourceIdentityAndRoundTripAllLocales() {

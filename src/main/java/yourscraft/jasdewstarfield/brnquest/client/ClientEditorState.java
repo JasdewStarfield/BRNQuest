@@ -582,7 +582,7 @@ public final class ClientEditorState {
                     if (position == null) return quest;
                     applied[0]++;
                     return new QuestDefinition(quest.bookId(), quest.id(), quest.chapterId(), quest.title(),
-                            quest.subtitle(), quest.description(), quest.icon(), position.x(), position.y(),
+                            quest.subtitle(), quest.description(), quest.descriptionFormat(), quest.icon(), position.x(), position.y(),
                             quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(),
                             quest.appearance(), quest.behavior(), quest.extensions());
                 }).toList(), chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines())).toList();

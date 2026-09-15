@@ -371,6 +371,12 @@ final class AuthoringRequestDecoder {
                     text(config.getOrDefault("title", ""), "config.title", 256, true);
                     text(config.getOrDefault("subtitle", ""), "config.subtitle", 256, true);
                     text(config.getOrDefault("description", ""), "config.description", 32768, true);
+                    if (config.containsKey("description_format")) {
+                        var format = yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.parse(
+                                config.get("description_format"));
+                        if (!format.editable()) throw invalid("INVALID_DOCUMENT_FORMAT", "config.description_format",
+                                "Document format must be plain or markdown_v1");
+                    }
                 }
                 if (config.containsKey(yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits.FIELD)) {
                     String kind = switch (action) {

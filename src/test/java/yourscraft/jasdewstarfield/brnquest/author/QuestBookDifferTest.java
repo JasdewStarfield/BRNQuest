@@ -38,6 +38,26 @@ class QuestBookDifferTest {
         assertTrue(QuestBookDiffer.diff(book, decoded).empty());
     }
 
+    @Test void reportsDescriptionFormatSeparatelyFromText() {
+        QuestBookDefinition before = book("quest", "Quest", 0, List.of(),
+                new TaskDefinition(id("task"), id("task"), id("checkmark"), Map.of(), false));
+        QuestDefinition source = before.quests().getFirst();
+        QuestDefinition markdown = new QuestDefinition(source.bookId(), source.id(), source.chapterId(),
+                source.title(), source.subtitle(), source.description(),
+                yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.MARKDOWN_V1,
+                source.icon(), source.x(), source.y(), source.dependencies(), source.tasks(), source.rewards(),
+                source.legacyId(), source.appearance(), source.behavior(), source.extensions());
+        ChapterDefinition chapter = before.chapters().getFirst();
+        QuestBookDefinition after = new QuestBookDefinition(before.id(), before.schemaVersion(), before.title(),
+                before.chapterGroups(), List.of(new ChapterDefinition(chapter.bookId(), chapter.id(), chapter.groupId(),
+                chapter.title(), chapter.icon(), chapter.order(), List.of(markdown))), before.legacyIds());
+
+        var changes = QuestBookDiffer.diff(before, after).entries();
+        assertTrue(changes.stream().anyMatch(entry -> entry.path().equals("description_format")
+                && entry.before().equals("plain") && entry.after().equals("markdown_v1")));
+        assertFalse(changes.stream().anyMatch(entry -> entry.path().equals("description")));
+    }
+
     @Test void reportsLocalizationAppearanceAndExtensionChanges() {
         QuestBookDefinition before = book("quest", "Quest", 0, List.of(),
                 new TaskDefinition(id("task"), id("task"), id("checkmark"), Map.of(), false));

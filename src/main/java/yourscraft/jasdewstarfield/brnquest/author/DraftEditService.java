@@ -231,6 +231,19 @@ public final class DraftEditService {
                 book, questId, locale, title, subtitle, description));
     }
 
+    /** The format travels through the same revision-bound transaction as its description. */
+    public AuthorOperationResult<DraftEditResult> updateQuestTranslation(ServerPlayer player, UUID sessionId,
+                                                                          ResourceLocation bookId, String revision,
+                                                                          ResourceLocation questId, String locale,
+                                                                          String title, String subtitle,
+                                                                          String description,
+                                                                          String descriptionFormat) {
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateQuestTranslation(
+                book, questId, locale, title, subtitle, description,
+                descriptionFormat == null ? null
+                        : yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.parse(descriptionFormat)));
+    }
+
     public AuthorOperationResult<DraftEditResult> moveQuest(ServerPlayer player, UUID sessionId,
                                                              ResourceLocation bookId, String revision,
                                                              ResourceLocation questId, ResourceLocation chapterId,

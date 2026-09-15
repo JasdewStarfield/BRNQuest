@@ -1,5 +1,9 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.21 → experimental.22
+
+`QuestView.descriptionFormat()` 新增任务说明格式名，当前已知值为 `plain` 与 `markdown_v1`。本地化查询中的正文和格式始终来自同一个语言来源；未知格式名仍原样投影，调用方必须按纯文本安全降级。原有构造器继续存在并默认 `plain`。`DraftEditService.updateQuestTranslation(...)` 新增带字符串格式名的重载；省略格式的旧重载保留当前 locale 格式。依赖 record 组件反射、模式解构或生成的 `equals`／`toString` 的附属需要检查新增组件。
+
 ## experimental.20 → experimental.21
 
 `ChapterView` 新增 `defaultHideDependencyLines` 只读字段。保留此前构造器，旧构造器默认 false；依赖隐藏仅影响渲染，不改变任务依赖判定。
@@ -38,7 +42,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.21`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.22`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

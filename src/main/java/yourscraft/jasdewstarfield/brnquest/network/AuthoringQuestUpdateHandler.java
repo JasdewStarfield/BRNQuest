@@ -73,7 +73,7 @@ final class AuthoringQuestUpdateHandler {
                 behaviorInput.minimumRequiredDependencies(), behaviorInput.sequentialTasks(), behaviorInput.repeatable(),
                 behaviorInput.repeatCooldownSeconds(), behaviorInput.ignoreRewardBlocking());
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
-                wire.title(), wire.subtitle(), wire.description(), icon, replacementX, replacementY,
+                wire.title(), wire.subtitle(), wire.description(), quest.descriptionFormat(), icon, replacementX, replacementY,
                 quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior, quest.extensions());
         // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
         // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.

@@ -3,6 +3,8 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.component;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EditorSmoothScrollTest {
     @Test void wheelUsesPixelStepAndAccumulatesAtTheTarget() {
@@ -33,5 +35,27 @@ class EditorSmoothScrollTest {
 
         assertEquals(60, scroll.visual(), 0.000001);
         assertEquals(5, scroll.rowAt(150, 60, 180, 30, 10));
+    }
+
+    @Test void capturedThumbFollowsContinuouslyOutsideTheThreePixelTrack() {
+        EditorSmoothScroll scroll = new EditorSmoothScroll();
+        scroll.snap(100);
+
+        assertTrue(scroll.handleTrackClick(12, 25, 10, 0, 100, 500, 100));
+        assertTrue(scroll.dragging());
+        assertTrue(scroll.handleDrag(85, 0));
+        assertEquals(400, scroll.visual(), 0.000001);
+        assertTrue(scroll.handleRelease(0));
+        assertFalse(scroll.dragging());
+        assertFalse(scroll.handleDrag(20, 0));
+    }
+
+    @Test void grabbingTheRenderedThumbCancelsResidualWheelEasing() {
+        EditorSmoothScroll scroll = new EditorSmoothScroll();
+        scroll.scrollWheel(-1, 100, 500, 100);
+
+        assertTrue(scroll.handleTrackClick(11, 5, 10, 0, 100, 500, 100));
+        assertEquals(0, scroll.target(), 0.000001);
+        assertEquals(0, scroll.visual(), 0.000001);
     }
 }

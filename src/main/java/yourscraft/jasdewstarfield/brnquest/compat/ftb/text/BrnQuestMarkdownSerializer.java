@@ -6,23 +6,29 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Deterministically removes FTB runtime syntax by emitting only BRNQuest markdown_v1 constructs. */
 public final class BrnQuestMarkdownSerializer {
     public Result serialize(FtbRichTextParser.Result parsed) {
+        return serialize(parsed, ignored -> null);
+    }
+
+    public Result serialize(FtbRichTextParser.Result parsed, Function<String, String> questTargetResolver) {
         StringBuilder markdown = new StringBuilder();
         List<FtbTextDiagnostic> diagnostics = new ArrayList<>(parsed.diagnostics());
         int previousLine = -1;
         for (FtbTextNode node : parsed.nodes()) {
             if (previousLine >= 0 && node.source().line() > previousLine && !endsWithBlankLine(markdown))
                 markdown.append('\n');
-            append(node, markdown, diagnostics);
+            append(node, markdown, diagnostics, questTargetResolver);
             previousLine = Math.max(previousLine, node.source().line());
         }
         return new Result(markdown.toString(), diagnostics);
     }
 
-    private void append(FtbTextNode node, StringBuilder output, List<FtbTextDiagnostic> diagnostics) {
+    private void append(FtbTextNode node, StringBuilder output, List<FtbTextDiagnostic> diagnostics,
+                        Function<String, String> questTargetResolver) {
         if (node instanceof FtbTextNode.PageBreak pageBreak) {
             ensureBlankLine(output);
             diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.INFO, "BQF-TEXT-PAGEBREAK-FLATTENED",
@@ -42,12 +48,13 @@ public final class BrnQuestMarkdownSerializer {
         } else if (node instanceof FtbTextNode.Unknown unknown) {
             output.append(escape(unknown.sourceText()));
         } else if (node instanceof FtbTextNode.Text text) {
-            appendText(text, output, diagnostics);
+            appendText(text, output, diagnostics, questTargetResolver);
         }
     }
 
     private void appendText(FtbTextNode.Text node, StringBuilder output,
-                            List<FtbTextDiagnostic> diagnostics) {
+                            List<FtbTextDiagnostic> diagnostics,
+                            Function<String, String> questTargetResolver) {
         String label = escape(node.value());
         if (node.style().bold() && node.style().italic()) label = "***" + label + "***";
         else if (node.style().bold()) label = "**" + label + "**";
@@ -62,6 +69,17 @@ public final class BrnQuestMarkdownSerializer {
             return;
         }
         if (node.action().kind() == FtbTextNode.Action.Kind.CHANGE_PAGE) {
+            String target = questTargetResolver.apply(node.action().value());
+            if (target != null) {
+                if (!extended.isEmpty()) diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.WARN,
+                        "BQF-TEXT-LINK-STYLE", node.source(),
+                        "Extended color/decorations were dropped because markdown_v1 does not nest style and quest links"));
+                output.append('[').append(label).append("](brnquest:quest/").append(target).append(')');
+                if (node.action().value().contains("/"))
+                    diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.INFO, "BQF-TEXT-SUBPAGE-FLATTENED",
+                            node.source(), "FTB quest subpage was flattened to its single BRNQuest details view"));
+                return;
+            }
             diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.WARN, "BQF-TEXT-CHANGE-PAGE",
                     node.source(), "FTB object/page target requires a stable BRNQuest quest mapping"));
         }

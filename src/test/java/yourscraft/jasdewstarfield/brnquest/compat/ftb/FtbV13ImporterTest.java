@@ -404,6 +404,30 @@ class FtbV13ImporterTest {
                         && conversion.status() == FtbFieldConversion.Status.UNSUPPORTED));
     }
 
+    @Test void changePageMapsOnlyKnownQuestIdsToStableRuntimeLinks() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.createDirectories(temporary.resolve("lang"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/text.snbt"), """
+                {id:'1000000000000001',quests:[{id:'2000000000000001'},{id:'20000000000000AB'}]}
+                """, StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/en_us.snbt"), """
+                {quest.2000000000000001.quest_desc:[
+                "{\\\"text\\\":\\\"known\\\",\\\"clickEvent\\\":{\\\"action\\\":\\\"change_page\\\",\\\"value\\\":\\\"20000000000000AB/3\\\"}}",
+                "{\\\"text\\\":\\\"missing\\\",\\\"clickEvent\\\":{\\\"action\\\":\\\"change_page\\\",\\\"value\\\":\\\"3000000000000001\\\"}}"]}
+                """, StandardCharsets.UTF_8);
+
+        FtbImportResult result = new FtbV13Importer().importBook(temporary, "converted", "quest_links");
+        String description = result.book().quests().getFirst().description();
+
+        assertTrue(description.contains("[known](brnquest:quest/converted:legacy/20000000000000ab)"), description);
+        assertTrue(description.endsWith("missing"));
+        assertTrue(result.report().toJson().contains("BQF-TEXT-SUBPAGE-FLATTENED"));
+        assertTrue(result.report().toJson().contains("BQF-TEXT-CHANGE-PAGE"));
+        assertFalse(description.contains("3000000000000001"));
+    }
+
     @Test void mapsV13OptionalAutoPoliciesNamespacesLanguagesAndExtensions() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.createDirectories(temporary.resolve("lang"));

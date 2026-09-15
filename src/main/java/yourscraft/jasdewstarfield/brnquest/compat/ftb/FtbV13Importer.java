@@ -87,17 +87,18 @@ public final class FtbV13Importer {
             bookDefaults = importDefaults(data, defaultAppearance);
             fileExtensions.putAll(extensions(data, Set.of("version", "title", "default_autoclaim_rewards", "default_consume_items", "default_reward_team", "suppress_all_autoclaiming", "pause_game"),
                     "data.snbt", "data", conversions));
+            Path chapterDir = source.resolve("chapters");
+            Map<String, String> richTextQuestTargets = readRichTextQuestTargets(chapterDir, namespace);
             readAllTranslations(source.resolve("lang"), localeTranslations, localeDescriptionLines,
                     localeSourceFiles, report);
             convertRichDescriptions(localeTranslations, localeDescriptionLines, localeSourceFiles,
-                    fileExtensions, report, conversions);
+                    richTextQuestTargets, fileExtensions, report, conversions);
             String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
                     : localeTranslations.containsKey("zh_cn") ? "zh_cn"
                     : localeTranslations.isEmpty() ? fallbackLocale : localeTranslations.keySet().iterator().next();
             Map<String, String> translations = localeTranslations.getOrDefault(sourceTextLocale, Map.of());
             readGroups(reader.read(source.resolve("chapter_groups.snbt")), bookId, namespace, translations, aliases, groups, conversions);
 
-            Path chapterDir = source.resolve("chapters");
             String inheritedAutoClaim = defaultAutoClaim;
             InheritedAppearance inheritedAppearance = defaultAppearance;
             Map<String, InheritedAppearance> inheritedPresets = Map.copyOf(presets);
@@ -176,6 +177,7 @@ public final class FtbV13Importer {
     private void convertRichDescriptions(Map<String, Map<String, String>> translations,
                                          Map<String, Map<String, List<String>>> descriptionLines,
                                          Map<String, Map<String, String>> sourceFiles,
+                                         Map<String, String> questTargets,
                                          Map<String, String> fileExtensions,
                                          DiagnosticReport report, List<FtbFieldConversion> conversions) {
         FtbRichTextParser parser = new FtbRichTextParser();
@@ -186,7 +188,8 @@ public final class FtbV13Importer {
             for (var description : localeEntry.getValue().entrySet()) {
                 String key = description.getKey();
                 String file = sourceFiles.getOrDefault(locale, Map.of()).getOrDefault(key, locale + ".snbt");
-                var converted = serializer.serialize(parser.parse(description.getValue(), file, key, values));
+                var converted = serializer.serialize(parser.parse(description.getValue(), file, key, values),
+                        rawTarget -> questTargets.get(canonicalFtbTarget(rawTarget)));
                 values.put(key, converted.markdown());
                 values.put(key + "_format", DocumentFormat.MARKDOWN_V1.serializedName());
                 boolean unsupported = converted.diagnostics().stream()
@@ -207,6 +210,30 @@ public final class FtbV13Importer {
                 }
             }
         }
+    }
+
+    /** Scans only object IDs so change_page can never be guessed from a chapter, task or missing target. */
+    private Map<String, String> readRichTextQuestTargets(Path chapterDirectory, String namespace) throws Exception {
+        Map<String, String> result = new HashMap<>();
+        if (!Files.isDirectory(chapterDirectory)) return result;
+        try (var files = Files.list(chapterDirectory)) {
+            for (Path path : files.filter(file -> file.getFileName().toString().endsWith(".snbt")).sorted().toList()) {
+                ListTag quests = reader.read(path).getList("quests", Tag.TAG_COMPOUND);
+                for (int i = 0; i < quests.size(); i++) {
+                    String rawId = quests.getCompound(i).getString("id");
+                    String canonical = canonicalFtbTarget(rawId);
+                    if (canonical != null) result.putIfAbsent(canonical, QuestIds.normalize(namespace, rawId).toString());
+                }
+            }
+        }
+        return result;
+    }
+
+    private static String canonicalFtbTarget(String rawTarget) {
+        if (rawTarget == null) return null;
+        String objectId = rawTarget.split("/", 2)[0];
+        try { return String.format(Locale.ROOT, "%016X", Long.parseUnsignedLong(objectId, 16)); }
+        catch (IllegalArgumentException ignored) { return null; }
     }
 
     private static Diagnostic.Severity importSeverity(FtbTextDiagnostic.Severity severity) {

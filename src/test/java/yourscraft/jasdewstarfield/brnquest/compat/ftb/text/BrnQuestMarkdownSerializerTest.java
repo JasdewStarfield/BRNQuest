@@ -64,6 +64,20 @@ class BrnQuestMarkdownSerializerTest {
         assertEquals(2, converted.diagnostics().getLast().source().line());
     }
 
+    @Test void knownFtbQuestTargetBecomesStableInBookLinkAndFlattensOnlyItsSubpage() {
+        var parsed = parser.parse(List.of("{\"text\":\"jump\",\"clickEvent\":{"
+                        + "\"action\":\"change_page\",\"value\":\"000000000000ABCD/2\"}}"),
+                "en_us.snbt", "quest.A.quest_desc", Map.of());
+        var converted = serializer.serialize(parsed, raw -> raw.startsWith("000000000000ABCD")
+                ? "converted:000000000000abcd" : null);
+
+        assertEquals("[jump](brnquest:quest/converted:000000000000abcd)", converted.markdown());
+        assertTrue(converted.diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.code().equals("BQF-TEXT-SUBPAGE-FLATTENED")));
+        assertFalse(converted.diagnostics().stream()
+                .anyMatch(diagnostic -> diagnostic.code().equals("BQF-TEXT-CHANGE-PAGE")));
+    }
+
     @Test void unsafeActionsNeverBecomeMarkdownLinks() {
         var converted = convert(List.of("{\"text\":\"do not run\",\"clickEvent\":{"
                 + "\"action\":\"run_command\",\"value\":\"/op me\"}}"));

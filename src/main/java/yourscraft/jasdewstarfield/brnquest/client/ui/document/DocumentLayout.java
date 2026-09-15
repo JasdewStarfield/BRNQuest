@@ -45,5 +45,5 @@ public record DocumentLayout(List<Line> lines, List<LinkHit> links, List<Content
 
     public record LinkHit(URI destination, Bounds bounds) {}
 
-    public record ContentHit(RichDocument.ContentBlock content, Bounds bounds, boolean present) {}
+    public record ContentHit(RichDocument.Content content, Bounds bounds, boolean present) {}
 }

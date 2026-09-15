@@ -96,8 +96,16 @@ class MarkdownParserAdapterTest {
         assertEquals(RichDocument.ContentKind.ITEM, assertInstanceOf(RichDocument.ContentBlock.class,
                 item.blocks().getFirst()).kind());
 
+        RichDocument.FlowBlock inline = assertInstanceOf(RichDocument.FlowBlock.class,
+                parse("before ![item](item:minecraft:stone) after").blocks().getFirst());
+        RichDocument.ContentInline inlineItem = inline.inlines().stream()
+                .filter(RichDocument.ContentInline.class::isInstance)
+                .map(RichDocument.ContentInline.class::cast).findFirst().orElseThrow();
+        assertEquals(RichDocument.ContentKind.ITEM, inlineItem.kind());
+        assertEquals("minecraft:stone", inlineItem.id());
+
         for (String source : List.of("![remote](https://example.test/a.png)",
-                "![implicit](item:stone)", "before ![item](item:minecraft:stone) after")) {
+                "![implicit](item:stone)", "before ![implicit](texture:panel.png) after")) {
             RichDocument rejected = parse(source);
             assertFalse(rejected.diagnostics().isEmpty());
             assertTrue(rejected.blocks().getFirst() instanceof RichDocument.LiteralBlock
@@ -117,6 +125,7 @@ class MarkdownParserAdapterTest {
             else if (inline instanceof RichDocument.Emphasis emphasis) result.append(visibleText(emphasis.children()));
             else if (inline instanceof RichDocument.Strong strong) result.append(visibleText(strong.children()));
             else if (inline instanceof RichDocument.Link link) result.append(visibleText(link.label()));
+            else if (inline instanceof RichDocument.ContentInline content) result.append(content.alt());
             else if (inline instanceof RichDocument.LineBreak) result.append('\n');
         }
         return result.toString();

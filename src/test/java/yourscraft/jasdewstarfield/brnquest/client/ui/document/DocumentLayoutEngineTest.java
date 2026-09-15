@@ -113,7 +113,7 @@ class DocumentLayoutEngineTest {
         DocumentLayoutEngine.Metrics resources = new DocumentLayoutEngine.Metrics() {
             @Override public int width(String text, DocumentTextStyle style) { return text.length(); }
             @Override public int lineHeight(DocumentTextStyle style) { return 10; }
-            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.ContentBlock content) {
+            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.Content content) {
                 return new DocumentLayoutEngine.ContentSize(100, 1000, true);
             }
         };
@@ -124,6 +124,33 @@ class DocumentLayoutEngineTest {
         assertEquals(hit.bounds().bottom(), layout.contentHeight());
         assertEquals(hit, DocumentView.contentAt(layout, hit.bounds().left(), hit.bounds().top(), hit.bounds()));
         assertNull(DocumentView.contentAt(layout, hit.bounds().right(), hit.bounds().top(), hit.bounds()));
+    }
+
+    @Test void inlineContentWrapsAtomicallyAndSharesTheTextBaseline() {
+        RichDocument document = parser.parse(new ResolvedDocument(
+                "before ![stone](item:minecraft:stone) after ![wide](texture:brnquest:textures/wide.png) end",
+                DocumentFormat.MARKDOWN_V1, "en_us"));
+        DocumentLayoutEngine.Metrics resources = new DocumentLayoutEngine.Metrics() {
+            @Override public int width(String text, DocumentTextStyle style) { return text.length(); }
+            @Override public int lineHeight(DocumentTextStyle style) { return 10; }
+            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.Content content) {
+                return content.kind() == RichDocument.ContentKind.ITEM
+                        ? new DocumentLayoutEngine.ContentSize(16, 16, true)
+                        : new DocumentLayoutEngine.ContentSize(64, 16, true);
+            }
+        };
+
+        DocumentLayout layout = engine.layout(document, 30, resources);
+        assertEquals(2, layout.contents().size());
+        DocumentLayout.ContentHit item = layout.contents().getFirst();
+        DocumentLayout.ContentHit texture = layout.contents().getLast();
+        assertEquals(16, item.bounds().width());
+        assertEquals(16, item.bounds().height());
+        assertTrue(texture.bounds().width() <= 30);
+        assertTrue(texture.bounds().height() <= DocumentLayoutEngine.INLINE_CONTENT_HEIGHT);
+        assertTrue(layout.contents().stream().allMatch(hit -> hit.bounds().right() <= layout.width()));
+        assertTrue(layout.lines().stream().anyMatch(line -> line.baseline() == item.bounds().bottom()
+                && line.runs().stream().allMatch(run -> run.bounds().bottom() == line.baseline())));
     }
 
     private DocumentLayout layout(String source, int width) {

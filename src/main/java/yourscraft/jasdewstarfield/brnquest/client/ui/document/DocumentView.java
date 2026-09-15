@@ -55,7 +55,7 @@ public final class DocumentView {
                 return Math.max(1, Math.round(font.lineHeight * style.scale()));
             }
 
-            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.ContentBlock content) {
+            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.Content content) {
                 ResourceLocation id = ResourceLocation.tryParse(content.id());
                 if (id == null) return new DocumentLayoutEngine.ContentSize(24, 24, false);
                 if (content.kind() == RichDocument.ContentKind.ITEM) {
@@ -99,13 +99,20 @@ public final class DocumentView {
         ResourceLocation id = ResourceLocation.tryParse(hit.content().id());
         if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
             ItemStack stack = BuiltInRegistries.ITEM.get(id).getDefaultInstance();
-            if (!stack.isEmpty()) graphics.renderItem(stack, left, top);
+            if (!stack.isEmpty()) {
+                // Extremely narrow viewports can shrink an inline item below vanilla's fixed 16 px render size.
+                graphics.pose().pushPose();
+                graphics.pose().translate(left, top, 0);
+                graphics.pose().scale(width / 16.0F, height / 16.0F, 1.0F);
+                graphics.renderItem(stack, 0, 0);
+                graphics.pose().popPose();
+            }
             else drawMissingContent(graphics, font, hit.content(), left, top, width, height);
         } else drawMissingContent(graphics, font, hit.content(), left, top, width, height);
     }
 
     /** Missing client resources stay visible and keep their alt text available through hover. */
-    private static void drawMissingContent(GuiGraphics graphics, Font font, RichDocument.ContentBlock content,
+    private static void drawMissingContent(GuiGraphics graphics, Font font, RichDocument.Content content,
                                            int x, int y, int width, int height) {
         graphics.fill(x, y, x + width, y + height, 0xFF572958);
         graphics.renderOutline(x, y, width, height, 0xFFE3A8E3);

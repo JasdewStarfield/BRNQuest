@@ -36,8 +36,15 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
 
     public enum ContentKind { TEXTURE, ITEM }
 
+    /** Shared client-resolved payload for block and inline content nodes. */
+    public sealed interface Content permits ContentBlock, ContentInline {
+        ContentKind kind();
+        String id();
+        String alt();
+    }
+
     /** A content node stores only a validated identifier; resource resolution remains client-side. */
-    public record ContentBlock(ContentKind kind, String id, String alt) implements Block {
+    public record ContentBlock(ContentKind kind, String id, String alt) implements Block, Content {
         public ContentBlock {
             kind = Objects.requireNonNull(kind, "kind");
             id = Objects.requireNonNull(id, "id");
@@ -45,7 +52,16 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
         }
     }
 
-    public sealed interface Inline permits Text, Emphasis, Strong, Code, Link, LineBreak {}
+    public sealed interface Inline permits Text, Emphasis, Strong, Code, Link, LineBreak, ContentInline {}
+
+    /** Inline content is measured as one indivisible glyph-like atom during wrapping. */
+    public record ContentInline(ContentKind kind, String id, String alt) implements Inline, Content {
+        public ContentInline {
+            kind = Objects.requireNonNull(kind, "kind");
+            id = Objects.requireNonNull(id, "id");
+            alt = Objects.requireNonNullElse(alt, "");
+        }
+    }
 
     public record Text(String value) implements Inline {
         public Text { value = Objects.requireNonNullElse(value, ""); }

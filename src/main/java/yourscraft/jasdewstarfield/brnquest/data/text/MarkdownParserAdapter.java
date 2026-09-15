@@ -26,7 +26,7 @@ import java.util.Locale;
 
 /** Converts CommonMark's AST into BRNQuest's deliberately smaller markdown_v1 tree. */
 public final class MarkdownParserAdapter {
-    public static final int PARSER_VERSION = 1;
+    public static final int PARSER_VERSION = 2;
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_LINK_BUDGET = 128;
     public static final int DEFAULT_CONTENT_BUDGET = 64;
@@ -155,9 +155,13 @@ public final class MarkdownParserAdapter {
             if (node instanceof Emphasis) return new RichDocument.Emphasis(inlines(node));
             if (node instanceof StrongEmphasis) return new RichDocument.Strong(inlines(node));
             if (node instanceof Code code) return new RichDocument.Code(code.getLiteral());
-            if (node instanceof Image)
-                return literalInline(node, "CONTENT_REQUIRES_OWN_LINE",
-                        "Texture and item content must occupy their own paragraph");
+            if (node instanceof Image image) {
+                ContentTarget target = contentTarget(image.getDestination());
+                if (target != null)
+                    return new RichDocument.ContentInline(target.kind(), target.id(), altText(image));
+                return literalInline(node, "CONTENT_TARGET_UNSUPPORTED",
+                        "Only texture:namespace:path and item:namespace:id content targets are supported");
+            }
             if (node instanceof Link link) {
                 URI destination = safeHttpUri(link.getDestination());
                 if (destination != null) return new RichDocument.Link(inlines(node), destination);

@@ -32,14 +32,14 @@ class MarkdownSourceEditsTest {
         assertEquals("A`code`😀B", result.text());
     }
 
-    @Test void insertsContentAsItsOwnParagraphAndSelectsAltText() {
+    @Test void insertsContentAtTheSelectionAndSelectsAltText() {
         var result = MarkdownSourceEdits.insertContent("before after", 7, 12,
                 RichDocument.ContentKind.TEXTURE, "brnquest:textures/panel.png", "texture");
-        assertEquals("before \n\n![after](texture:brnquest:textures/panel.png)", result.text());
+        assertEquals("before ![after](texture:brnquest:textures/panel.png)", result.text());
         assertEquals("after", result.text().substring(result.selectionStart(), result.selectionEnd()));
 
         var middle = MarkdownSourceEdits.insertContent("one\ntwo", 4, 4,
                 RichDocument.ContentKind.ITEM, "minecraft:stone", "item");
-        assertEquals("one\n\n![item](item:minecraft:stone)\n\ntwo", middle.text());
+        assertEquals("one\n![item](item:minecraft:stone)two", middle.text());
     }
 }

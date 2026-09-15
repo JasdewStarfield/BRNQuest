@@ -32,24 +32,11 @@ final class MarkdownSourceEdits {
         int end = safeBoundary(text, Math.max(first, second));
         String selected = text.substring(start, end);
         String alt = selected.isEmpty() ? placeholder : selected.replace('\n', ' ').replace('\r', ' ');
-        String leading = paragraphBoundaryBefore(text, start);
-        String trailing = paragraphBoundaryAfter(text, end);
         String scheme = kind == RichDocument.ContentKind.TEXTURE ? "texture:" : "item:";
         String content = "![" + alt + "](" + scheme + id + ")";
-        String replacement = leading + content + trailing;
-        String changed = text.substring(0, start) + replacement + text.substring(end);
-        int selectionStart = start + leading.length() + 2;
+        String changed = text.substring(0, start) + content + text.substring(end);
+        int selectionStart = start + 2;
         return new Result(changed, selectionStart, selectionStart + alt.length());
-    }
-
-    private static String paragraphBoundaryBefore(String text, int index) {
-        if (index == 0 || text.substring(0, index).endsWith("\n\n")) return "";
-        return text.charAt(index - 1) == '\n' ? "\n" : "\n\n";
-    }
-
-    private static String paragraphBoundaryAfter(String text, int index) {
-        if (index == text.length() || text.substring(index).startsWith("\n\n")) return "";
-        return text.charAt(index) == '\n' ? "\n" : "\n\n";
     }
 
     private static Result inline(String text, int start, int end, String before, String content, String after) {

@@ -11,12 +11,14 @@ import java.util.Locale;
 /** Pure mixed-style layout engine; Minecraft font access is isolated behind {@link Metrics}. */
 public final class DocumentLayoutEngine {
     static final int MAX_CONTENT_HEIGHT = 160;
+    static final int INLINE_CONTENT_HEIGHT = 16;
+    static final int INLINE_TEXTURE_WIDTH = 32;
 
     public interface Metrics {
         int width(String text, DocumentTextStyle style);
         int lineHeight(DocumentTextStyle style);
         /** Missing resources keep deterministic geometry so restoring a pack cannot collapse the document. */
-        default ContentSize contentSize(RichDocument.ContentBlock content) {
+        default ContentSize contentSize(RichDocument.Content content) {
             return new ContentSize(24, 24, false);
         }
     }
@@ -38,14 +40,14 @@ public final class DocumentLayoutEngine {
                     default -> 0;
                 };
                 y = layoutAtoms(flatten(flow.inlines(), DocumentTextStyle.PLAIN.withHeading(heading)), 0,
-                        y, width, metrics, lines);
+                        y, width, metrics, lines, contents);
             } else if (block instanceof RichDocument.LiteralBlock literal) {
                 y = layoutLiteral(literal.text(), y, width, metrics, lines);
             } else if (block instanceof RichDocument.BulletListBlock list) {
                 for (List<RichDocument.Inline> item : list.items()) {
                     List<Atom> itemAtoms = new ArrayList<>(atoms("• ", DocumentTextStyle.PLAIN));
                     itemAtoms.addAll(flatten(item, DocumentTextStyle.PLAIN));
-                    y = layoutAtoms(itemAtoms, 10, y, width, metrics, lines);
+                    y = layoutAtoms(itemAtoms, 10, y, width, metrics, lines, contents);
                     y += 2;
                 }
                 y = Math.max(0, y - 2);
@@ -78,46 +80,65 @@ public final class DocumentLayoutEngine {
     }
 
     private static int layoutAtoms(List<Atom> source, int continuationIndent, int startY, int width,
-                                   Metrics metrics, List<DocumentLayout.Line> output) {
+                                   Metrics metrics, List<DocumentLayout.Line> output,
+                                   List<DocumentLayout.ContentHit> contents) {
         List<Atom> pending = new ArrayList<>();
         int y = startY;
         int indent = 0;
         for (Atom atom : source) {
             if (atom.text.equals("\n")) {
-                y = emit(pending, indent, y, width, metrics, output);
+                y = emit(pending, indent, y, width, metrics, output, contents);
                 pending.clear();
                 indent = Math.min(continuationIndent, Math.max(0, width - 1));
                 continue;
             }
             pending.add(atom);
-            while (indent + measure(pending, metrics) > width && pending.size() > 1) {
+            while (indent + measure(pending, metrics, width) > width && pending.size() > 1) {
                 int breakAt = bestBreak(pending);
                 if (breakAt <= 0) break;
                 List<Atom> line = new ArrayList<>(pending.subList(0, breakAt));
                 trimEnd(line);
-                y = emit(line, indent, y, width, metrics, output);
+                y = emit(line, indent, y, width, metrics, output, contents);
                 pending = new ArrayList<>(pending.subList(breakAt, pending.size()));
                 trimStart(pending);
                 // Indentation is geometry, not inserted text, so even a one-pixel viewport always advances.
                 indent = Math.min(continuationIndent, Math.max(0, width - 1));
             }
         }
-        return emit(pending, indent, y, width, metrics, output);
+        return emit(pending, indent, y, width, metrics, output, contents);
     }
 
     private static int emit(List<Atom> atoms, int indent, int y, int width, Metrics metrics,
                             List<DocumentLayout.Line> output) {
-        int height = atoms.stream().mapToInt(atom -> metrics.lineHeight(atom.style)).max().orElse(9);
+        return emit(atoms, indent, y, width, metrics, output, new ArrayList<>());
+    }
+
+    private static int emit(List<Atom> atoms, int indent, int y, int width, Metrics metrics,
+                            List<DocumentLayout.Line> output, List<DocumentLayout.ContentHit> contents) {
+        int height = atoms.stream().mapToInt(atom -> atom.content == null
+                ? metrics.lineHeight(atom.style) : inlineContentSize(atom.content, metrics, width).height()).max().orElse(9);
         int baseline = y + height;
         List<DocumentLayout.Run> runs = new ArrayList<>();
         int x = indent;
         for (int index = 0; index < atoms.size();) {
             Atom first = atoms.get(index);
+            if (first.content != null) {
+                ContentSize natural = metrics.contentSize(first.content);
+                ContentSize size = inlineContentSize(first.content, metrics, width);
+                var bounds = new DocumentLayout.Bounds(x, baseline - size.height(), x + size.width(), baseline);
+                contents.add(new DocumentLayout.ContentHit(first.content, bounds, natural.present()));
+                x += size.width();
+                index++;
+                continue;
+            }
             StringBuilder text = new StringBuilder(first.text);
             int next = index + 1;
-            while (next < atoms.size() && atoms.get(next).style.equals(first.style)) text.append(atoms.get(next++).text);
+            while (next < atoms.size() && atoms.get(next).content == null
+                    && atoms.get(next).style.equals(first.style)) text.append(atoms.get(next++).text);
             int runWidth = metrics.width(text.toString(), first.style);
-            var bounds = new DocumentLayout.Bounds(x, y, Math.min(width, x + Math.max(1, runWidth)), y + height);
+            int textHeight = metrics.lineHeight(first.style);
+            var bounds = new DocumentLayout.Bounds(x, baseline - textHeight,
+                    Math.min(width, x + Math.max(1, runWidth)), baseline);
             runs.add(new DocumentLayout.Run(text.toString(), first.style, bounds, baseline));
             x += runWidth;
             index = next;
@@ -133,16 +154,32 @@ public final class DocumentLayoutEngine {
         int legal = -1;
         for (int i = 1; i < atoms.size(); i++) {
             int offset = offsets[i];
+            if (atoms.get(i - 1).content != null || atoms.get(i).content != null) legal = i;
             if (MixedTextLayout.legalBoundary(text, offset)) legal = i;
             if (MixedTextLayout.preferredBoundary(text, offset)) preferred = i;
         }
         return preferred > 0 ? preferred : legal;
     }
 
-    private static int measure(List<Atom> atoms, Metrics metrics) {
-        int width = 0;
-        for (Atom atom : atoms) width += metrics.width(atom.text, atom.style);
-        return width;
+    private static int measure(List<Atom> atoms, Metrics metrics, int lineWidth) {
+        int used = 0;
+        for (Atom atom : atoms) used += atom.content == null ? metrics.width(atom.text, atom.style)
+                : inlineContentSize(atom.content, metrics, lineWidth).width();
+        return used;
+    }
+
+    /** Inline content behaves like one glyph and cannot make a line wider than its viewport. */
+    private static ContentSize inlineContentSize(RichDocument.Content content, Metrics metrics, int lineWidth) {
+        ContentSize natural = metrics.contentSize(content);
+        int naturalWidth = Math.max(1, natural.width());
+        int naturalHeight = Math.max(1, natural.height());
+        int kindWidth = content.kind() == RichDocument.ContentKind.ITEM
+                ? INLINE_CONTENT_HEIGHT : INLINE_TEXTURE_WIDTH;
+        int maximumWidth = Math.max(1, Math.min(lineWidth, kindWidth));
+        double scale = Math.min((double) maximumWidth / naturalWidth,
+                (double) INLINE_CONTENT_HEIGHT / naturalHeight);
+        return new ContentSize(Math.max(1, (int) Math.round(naturalWidth * scale)),
+                Math.max(1, (int) Math.round(naturalHeight * scale)), natural.present());
     }
 
     private static void trimStart(List<Atom> atoms) {
@@ -167,6 +204,8 @@ public final class DocumentLayoutEngine {
             else if (inline instanceof RichDocument.Strong strong) result.addAll(flatten(strong.children(), style.withBold()));
             else if (inline instanceof RichDocument.Link link) result.addAll(flatten(link.label(), style.withLink(link.destination())));
             else if (inline instanceof RichDocument.LineBreak) result.add(new Atom("\n", style));
+            else if (inline instanceof RichDocument.ContentInline content)
+                result.add(new Atom("\uFFFC", style, content));
         }
         normalizeBoundarySpacing(result);
         return result;
@@ -219,5 +258,7 @@ public final class DocumentLayoutEngine {
         return offsets;
     }
 
-    private record Atom(String text, DocumentTextStyle style) {}
+    private record Atom(String text, DocumentTextStyle style, RichDocument.ContentInline content) {
+        private Atom(String text, DocumentTextStyle style) { this(text, style, null); }
+    }
 }

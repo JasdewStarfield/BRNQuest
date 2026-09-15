@@ -383,7 +383,8 @@ class FtbV13ImporterTest {
 
     @Test void pinnedRichTextFixtureConvertsDeterministicallyForClientAcceptance() throws Exception {
         Path fixture = richTextFixture();
-        FtbImportResult result = new FtbV13Importer().importBook(fixture, "p4c_rich_text", "main");
+        FtbImportResult result = FtbImportService.withImportSource(
+                new FtbV13Importer().importBook(fixture, "p4c_rich_text", "main"), "p4c-rich-text");
         var sourceQuest = result.book().quests().stream()
                 .filter(quest -> quest.legacyId().equals("2000000000000001"))
                 .findFirst().orElseThrow();
@@ -399,8 +400,10 @@ class FtbV13ImporterTest {
         assertTrue(english.text().contains("brnquest:quest/p4c_rich_text:legacy/20000000000000ab"));
         assertTrue(result.report().toJson().contains("BQF-TEXT-PAGEBREAK-FLATTENED"));
         assertTrue(result.report().toJson().contains("BQF-TEXT-IMAGE-LAYOUT"));
+        assertEquals("p4c-rich-text", result.book().extensions().get("ftb.import_source"));
         assertEquals(NativeBookJson.encode(result.book()), NativeBookJson.encode(
-                new FtbV13Importer().importBook(fixture, "p4c_rich_text", "main").book()));
+                FtbImportService.withImportSource(new FtbV13Importer().importBook(
+                        fixture, "p4c_rich_text", "main"), "p4c-rich-text").book()));
     }
 
     @Test void dangerousRichTextActionIsReportedAndNeverImportedAsAnAction() throws Exception {

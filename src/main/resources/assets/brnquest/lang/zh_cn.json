@@ -175,6 +175,8 @@
   "screen.brnquest.editor.catalog.origin.workspace": "来源：工作区",
   "screen.brnquest.editor.catalog.origin.empty": "来源：空白草稿",
   "screen.brnquest.editor.catalog.origin.import": "来源：导入草稿",
+  "screen.brnquest.editor.catalog.ftb_source": "FTB · %1$s · %2$s",
+  "screen.brnquest.editor.catalog.ftb_source_tooltip": "FTB 导入来源：%s",
   "screen.brnquest.editor.catalog.origin.unknown": "来源：旧版草稿",
   "screen.brnquest.editor.edit_current": "编辑当前任务书",
   "screen.brnquest.editor.quest.edit": "编辑任务属性",

@@ -33,7 +33,8 @@ public final class ClientEditorState {
         CLOSING, ERROR
     }
 
-    public record CatalogEntry(ResourceLocation bookId, String title, String draftRevision, DraftOrigin origin) {}
+    public record CatalogEntry(ResourceLocation bookId, String title, String draftRevision, DraftOrigin origin,
+                               String importSource) {}
     public record LeaseRequest(UUID sessionId, String draftRevision) {}
 
     private Mode mode = Mode.VIEW;
@@ -107,7 +108,7 @@ public final class ClientEditorState {
                     DraftOrigin origin = parseOrigin(entry.origin());
                     if (id != null && entry.draftRevision() != null && !entry.draftRevision().isBlank()) {
                         decoded.add(new CatalogEntry(id, entry.title() == null ? "" : entry.title(),
-                                entry.draftRevision(), origin));
+                                entry.draftRevision(), origin, entry.importSource() == null ? "" : entry.importSource()));
                     }
                     if (decoded.size() >= BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES) break;
                 }
@@ -683,7 +684,7 @@ public final class ClientEditorState {
     }
 
     private static String catalogSearchText(CatalogEntry entry) {
-        return (entry.bookId() + " " + entry.title()).toLowerCase(Locale.ROOT);
+        return (entry.bookId() + " " + entry.title() + " " + entry.importSource()).toLowerCase(Locale.ROOT);
     }
 
     private void clearLease() {

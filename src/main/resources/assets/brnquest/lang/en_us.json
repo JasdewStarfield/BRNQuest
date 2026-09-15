@@ -175,6 +175,8 @@
   "screen.brnquest.editor.catalog.origin.workspace": "Created from the workspace",
   "screen.brnquest.editor.catalog.origin.empty": "Created as an empty draft",
   "screen.brnquest.editor.catalog.origin.import": "Imported draft",
+  "screen.brnquest.editor.catalog.ftb_source": "FTB · %1$s · %2$s",
+  "screen.brnquest.editor.catalog.ftb_source_tooltip": "FTB import source: %s",
   "screen.brnquest.editor.catalog.origin.unknown": "Legacy draft",
   "screen.brnquest.editor.edit_current": "Edit current book",
   "screen.brnquest.editor.quest.edit": "Edit quest properties",

@@ -141,7 +141,12 @@ public final class AuthoringNetwork {
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record CatalogEntryWire(String bookId, String title, String draftRevision, String origin) {}
+    public record CatalogEntryWire(String bookId, String title, String draftRevision, String origin,
+                                   String importSource) {
+        public CatalogEntryWire(String bookId, String title, String draftRevision, String origin) {
+            this(bookId, title, draftRevision, origin, "");
+        }
+    }
 
     public record CatalogResponseWire(String status, String code, String message, boolean allowed,
                                       List<CatalogEntryWire> entries) {}

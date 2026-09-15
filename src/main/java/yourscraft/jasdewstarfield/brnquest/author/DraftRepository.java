@@ -391,7 +391,8 @@ public final class DraftRepository {
         AuthorOperationResult<DraftSnapshot> loaded = readDirectoryAllowCanonicalDrift(directory, bookId);
         if (!loaded.success()) return null;
         DraftSnapshot draft = loaded.value();
-        return new DraftCatalogEntry(bookId, draft.book().title(), draft.draftRevision(), draft.origin());
+        return new DraftCatalogEntry(bookId, draft.book().title(), draft.draftRevision(), draft.origin(),
+                draft.book().extensions().getOrDefault("ftb.import_source", ""));
     }
 
     private static void writeDirectory(Path directory, DraftSnapshot draft) throws IOException {

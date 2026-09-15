@@ -3131,10 +3131,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         List<Component> tooltip = catalogPicker.render(graphics, font, searchText, catalogFilter.isBlank(), entry -> {
             Component title = Component.literal(entry.title().isBlank() ? entry.bookId().toString() : entry.title());
             Component id = Component.literal(entry.bookId().toString());
-            return new EditorPickerList.Entry(title, id, EditorPickerList.Tone.NORMAL,
-                    entry.bookId().equals(ClientEditorState.get().bookId()), List.of(title, id,
-                    Component.translatable("screen.brnquest.editor.catalog.origin." +
-                            entry.origin().name().toLowerCase(java.util.Locale.ROOT))));
+            Component origin = Component.translatable("screen.brnquest.editor.catalog.origin." +
+                    entry.origin().name().toLowerCase(java.util.Locale.ROOT));
+            Component detail = entry.importSource().isBlank() ? id
+                    : Component.translatable("screen.brnquest.editor.catalog.ftb_source",
+                            entry.importSource(), entry.bookId().toString());
+            List<Component> entryTooltip = entry.importSource().isBlank() ? List.of(title, id, origin)
+                    : List.of(title, id, origin, Component.translatable(
+                            "screen.brnquest.editor.catalog.ftb_source_tooltip", entry.importSource()));
+            return new EditorPickerList.Entry(title, detail, EditorPickerList.Tone.NORMAL,
+                    entry.bookId().equals(ClientEditorState.get().bookId()), entryTooltip);
         }, empty, mouseX, mouseY);
         if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
     }

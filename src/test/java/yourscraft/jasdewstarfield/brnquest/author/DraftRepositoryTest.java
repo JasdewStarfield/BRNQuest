@@ -188,6 +188,20 @@ class DraftRepositoryTest {
         assertEquals(DraftOrigin.EMPTY, result.value().getFirst().origin());
     }
 
+    @Test void catalogExposesFtbInboxNameWithoutAnAbsoluteSourcePath() {
+        DraftRepository repository = new DraftRepository();
+        Path drafts = tempDirectory.resolve("drafts");
+        QuestBookDefinition plain = book("test:ftb", "FTB import");
+        QuestBookDefinition imported = new QuestBookDefinition(plain.id(), plain.schemaVersion(), plain.title(),
+                plain.chapterGroups(), plain.chapters(), plain.legacyIds(), plain.localization(),
+                Map.of("ftb.import_source", "p4c-rich-text"), plain.questDefaults(), plain.settings());
+        assertTrue(repository.create(drafts, DraftSnapshot.from(imported, DraftOrigin.IMPORT, "")).success());
+
+        DraftCatalogEntry entry = repository.list(drafts).value().getFirst();
+
+        assertEquals("p4c-rich-text", entry.importSource());
+    }
+
     @Test void loadsVersionOneManifestAsUnknownOrigin() throws Exception {
         DraftRepository repository = new DraftRepository();
         QuestBookDefinition book = book("test:legacy", "Legacy");

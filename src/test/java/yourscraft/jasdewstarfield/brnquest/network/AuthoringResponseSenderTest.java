@@ -39,6 +39,16 @@ class AuthoringResponseSenderTest {
         assertTrue(wire.entries().stream().allMatch(e -> e.title().length() == 256));
     }
 
+    @Test void catalogCarriesBoundedFtbImportSource() {
+        var entry = new DraftCatalogEntry(ResourceLocation.parse("test:ftb"), "Imported", "revision",
+                DraftOrigin.IMPORT, "source".repeat(100));
+
+        sender.sendCatalog(AuthorOperationResult.success("DRAFT_CATALOG", "ok", List.of(entry)));
+
+        var wire = GSON.fromJson(((CatalogPayload) packets.getFirst()).json(), CatalogResponseWire.class);
+        assertEquals(256, wire.entries().getFirst().importSource().length());
+    }
+
     @Test void deniedCatalogAndFailureKeepTheirStatusAndBoundDiagnostics() {
         sender.sendCatalog(AuthorOperationResult.failure(AuthorOperationResult.Status.FORBIDDEN, "DENIED", "拒绝"));
         var catalog = GSON.fromJson(((CatalogPayload) packets.getFirst()).json(), CatalogResponseWire.class);

@@ -128,6 +128,16 @@ class ClientEditorStateTest {
                 .map(entry -> entry.bookId().toString()).toList());
     }
 
+    @Test void catalogCanFindAnFtbDraftByItsInboxSourceName() {
+        var response = new AuthoringNetwork.CatalogResponseWire("SUCCESS", "DRAFT_CATALOG", "ok", true,
+                List.of(new AuthoringNetwork.CatalogEntryWire("test:ftb", "Imported", "revision",
+                        DraftOrigin.IMPORT.name(), "p4c-rich-text")));
+        state.acceptCatalog(GSON.toJson(response));
+
+        assertEquals("test:ftb", state.filteredCatalog(null, "p4c-rich-text").getFirst().bookId().toString());
+        assertEquals("p4c-rich-text", state.filteredCatalog(null, "p4c-rich-text").getFirst().importSource());
+    }
+
     @Test void verifiedDraftBecomesSeparateEditableSnapshot() {
         ResourceLocation bookId = ResourceLocation.parse("test:editor");
         QuestBookDefinition book = new QuestBookDefinition(bookId, 1, "Editor book",

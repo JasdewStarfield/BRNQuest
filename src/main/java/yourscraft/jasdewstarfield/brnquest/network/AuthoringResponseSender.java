@@ -56,7 +56,7 @@ final class AuthoringResponseSender {
         List<CatalogEntryWire> initialEntries = result.success() ? result.value().stream()
                 .limit(BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES)
                 .map(entry -> new CatalogEntryWire(entry.bookId().toString(), boundedTitle(entry.title()),
-                        entry.draftRevision(), entry.origin().name()))
+                        entry.draftRevision(), entry.origin().name(), boundedTitle(entry.importSource())))
                 .toList() : List.of();
         List<CatalogEntryWire> entries = new java.util.ArrayList<>(initialEntries);
         String code = result.success() && result.value().size() > entries.size()

@@ -38,12 +38,25 @@ public final class FtbImportService {
             throw new IOException("Import source is outside the allowed root or does not exist: " + sourceName);
         }
         validateSourceTree(importRoot, source);
-        FtbImportResult result = new FtbV13Importer().importBook(source, namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT));
+        FtbImportResult result = withImportSource(new FtbV13Importer().importBook(source,
+                namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT)), sourceName);
         validateItems(server, result);
         String json = NativeBookJson.encode(result.book());
         AuthorOperationResult<DraftSnapshot> draft = null;
         if (!dryRun && !result.report().hasFatal()) draft = writeDraft(server, namespace, bookId, result);
         return new ImportExecution(result, json, dryRun, ImportTarget.DRAFT, draft);
+    }
+
+    /** Keeps the safe inbox name with the draft so catalog entries can distinguish separate FTB imports. */
+    static FtbImportResult withImportSource(FtbImportResult result, String sourceName) {
+        var sourceBook = result.book();
+        var extensions = new java.util.TreeMap<>(sourceBook.extensions());
+        extensions.put("ftb.import_source", sourceName);
+        var book = new yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition(sourceBook.id(),
+                sourceBook.schemaVersion(), sourceBook.title(), sourceBook.chapterGroups(), sourceBook.chapters(),
+                sourceBook.legacyIds(), sourceBook.localization(), extensions, sourceBook.questDefaults(), sourceBook.settings());
+        return new FtbImportResult(book, result.report(), result.chapterGroupCount(), result.chapterCount(),
+                result.questCount(), result.taskCount(), result.rewardCount(), result.fieldConversions());
     }
 
     private AuthorOperationResult<DraftSnapshot> writeDraft(MinecraftServer server, String namespace, String bookId,

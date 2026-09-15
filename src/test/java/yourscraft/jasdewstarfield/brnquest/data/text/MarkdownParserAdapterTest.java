@@ -1,0 +1,98 @@
+package yourscraft.jasdewstarfield.brnquest.data.text;
+
+import org.junit.jupiter.api.Test;
+
+import java.net.URI;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/** Locks BRNQuest's controlled syntax instead of inheriting CommonMark behavior accidentally. */
+class MarkdownParserAdapterTest {
+    private final MarkdownParserAdapter parser = new MarkdownParserAdapter();
+
+    @Test void parsesTheMarkdownV1WhitelistIntoOwnedNodes() {
+        RichDocument document = parse("# 标题\n\n正文 **粗体**、*斜体*、`code` 和 [链接](HTTPS://Example.Test/a/../b)。\n\n- 一\n- 二");
+
+        assertEquals(3, document.blocks().size());
+        assertEquals(RichDocument.FlowKind.HEADING_1,
+                assertInstanceOf(RichDocument.FlowBlock.class, document.blocks().getFirst()).kind());
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class, document.blocks().get(1));
+        assertTrue(paragraph.inlines().stream().anyMatch(RichDocument.Strong.class::isInstance));
+        assertTrue(paragraph.inlines().stream().anyMatch(RichDocument.Emphasis.class::isInstance));
+        assertTrue(paragraph.inlines().stream().anyMatch(RichDocument.Code.class::isInstance));
+        RichDocument.Link link = paragraph.inlines().stream().filter(RichDocument.Link.class::isInstance)
+                .map(RichDocument.Link.class::cast).findFirst().orElseThrow();
+        assertEquals(URI.create("https://example.test/b"), link.destination());
+        assertEquals(2, assertInstanceOf(RichDocument.BulletListBlock.class, document.blocks().getLast()).items().size());
+        assertTrue(document.diagnostics().isEmpty());
+    }
+
+    @Test void unsupportedBlocksAndSchemesKeepTheirExactSource() {
+        RichDocument ordered = parse("1. ordered");
+        assertEquals("1. ordered", assertInstanceOf(RichDocument.LiteralBlock.class,
+                ordered.blocks().getFirst()).text());
+        assertEquals("ORDERED_LIST_UNSUPPORTED", ordered.diagnostics().getFirst().code());
+
+        RichDocument unsafe = parse("[local](file:test)");
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class, unsafe.blocks().getFirst());
+        assertEquals("[local](file:test)", assertInstanceOf(RichDocument.Text.class,
+                paragraph.inlines().getFirst()).value());
+        assertEquals("LINK_SCHEME_UNSUPPORTED", unsafe.diagnostics().getFirst().code());
+
+        for (String source : List.of("#### level four", "> quote", "```\ncode\n```", "+ excluded marker",
+                "- parent\n  - nested")) {
+            RichDocument unsupported = parse(source);
+            assertEquals(source, assertInstanceOf(RichDocument.LiteralBlock.class,
+                    unsupported.blocks().getFirst()).text());
+            assertFalse(unsupported.diagnostics().isEmpty());
+        }
+    }
+
+    @Test void plainUnknownMalformedAndEscapedInputHaveStableFallbacks() {
+        String special = "literal **stars** [link](https://example.test)";
+        RichDocument plain = parser.parse(new ResolvedDocument(special, DocumentFormat.PLAIN, "en_us"));
+        assertEquals(special, assertInstanceOf(RichDocument.LiteralBlock.class, plain.blocks().getFirst()).text());
+
+        RichDocument unknown = parser.parse(new ResolvedDocument(special, DocumentFormat.parse("markdown_v2"), "en_us"));
+        assertEquals(special, assertInstanceOf(RichDocument.LiteralBlock.class, unknown.blocks().getFirst()).text());
+        assertEquals("UNSUPPORTED_FORMAT", unknown.diagnostics().getFirst().code());
+
+        RichDocument malformed = parse("unclosed ** emphasis [link](file:test)");
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class, malformed.blocks().getFirst());
+        assertTrue(visibleText(paragraph.inlines()).contains("**"));
+        assertEquals("*escaped*", visibleText(assertInstanceOf(RichDocument.FlowBlock.class,
+                parse("\\*escaped\\*").blocks().getFirst()).inlines()));
+    }
+
+    @Test void budgetsDegradeTheWholeDocumentBeforeProducingPartialOutput() {
+        RichDocument nodes = new MarkdownParserAdapter(3, 10).parse(
+                new ResolvedDocument("**one** and *two*", DocumentFormat.MARKDOWN_V1, "en_us"));
+        assertInstanceOf(RichDocument.LiteralBlock.class, nodes.blocks().getFirst());
+        assertEquals("NODE_BUDGET_EXCEEDED", nodes.diagnostics().getFirst().code());
+
+        RichDocument links = new MarkdownParserAdapter(100, 0).parse(
+                new ResolvedDocument("[one](https://example.test)", DocumentFormat.MARKDOWN_V1, "en_us"));
+        assertEquals("LINK_BUDGET_EXCEEDED", links.diagnostics().getFirst().code());
+    }
+
+    private RichDocument parse(String text) {
+        return parser.parse(new ResolvedDocument(text, DocumentFormat.MARKDOWN_V1, "zh_cn"));
+    }
+
+    private static String visibleText(List<RichDocument.Inline> inlines) {
+        StringBuilder result = new StringBuilder();
+        for (RichDocument.Inline inline : inlines) {
+            if (inline instanceof RichDocument.Text text) result.append(text.value());
+            else if (inline instanceof RichDocument.Code code) result.append(code.value());
+            else if (inline instanceof RichDocument.Emphasis emphasis) result.append(visibleText(emphasis.children()));
+            else if (inline instanceof RichDocument.Strong strong) result.append(visibleText(strong.children()));
+            else if (inline instanceof RichDocument.Link link) result.append(visibleText(link.label()));
+            else if (inline instanceof RichDocument.LineBreak) result.append('\n');
+        }
+        return result.toString();
+    }
+}

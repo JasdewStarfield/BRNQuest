@@ -31,7 +31,7 @@ public final class MixedTextLayout {
     /**
      * BRNTalk keeps a single space at a Chinese/Latin boundary visually present but unbreakable.
      */
-    static String normalizeInlineSpacing(String source) {
+    public static String normalizeInlineSpacing(String source) {
         if (source == null || source.isEmpty()) return "";
         String normalized = source.replace("\r\n", "\n").replace('\r', '\n');
         StringBuilder result = new StringBuilder(normalized.length());
@@ -54,7 +54,7 @@ public final class MixedTextLayout {
     }
 
     /** Pure wrapping core kept independent from Screen state so geometry can be regression tested. */
-    static List<String> wrap(String source, int maximumWidth, ToIntFunction<String> width) {
+    public static List<String> wrap(String source, int maximumWidth, ToIntFunction<String> width) {
         String normalized = normalizeInlineSpacing(source);
         int safeWidth = Math.max(1, maximumWidth);
         List<String> result = new ArrayList<>();
@@ -127,7 +127,8 @@ public final class MixedTextLayout {
         return cursor;
     }
 
-    private static boolean preferredBoundary(String text, int offset) {
+    /** Shared line-break preference used by mixed-style document layout. */
+    public static boolean preferredBoundary(String text, int offset) {
         if (!legalBoundary(text, offset) || offset <= 0 || offset >= text.length()) return false;
         int before = text.codePointBefore(offset);
         int after = text.codePointAt(offset);
@@ -136,7 +137,8 @@ public final class MixedTextLayout {
                 || contains(CLOSING_PUNCTUATION, before) || contains(OPENING_PUNCTUATION, after);
     }
 
-    private static boolean legalBoundary(String text, int offset) {
+    /** Rejects boundaries that strand opening or closing punctuation. */
+    public static boolean legalBoundary(String text, int offset) {
         if (offset <= 0 || offset >= text.length()) return true;
         int before = text.codePointBefore(offset);
         int after = text.codePointAt(offset);
@@ -144,7 +146,7 @@ public final class MixedTextLayout {
         return !contains(OPENING_PUNCTUATION, before) && !contains(CLOSING_PUNCTUATION, after);
     }
 
-    private static boolean breakableSpace(int codePoint) {
+    public static boolean breakableSpace(int codePoint) {
         return codePoint != NON_BREAKING_SPACE && Character.isWhitespace(codePoint);
     }
 

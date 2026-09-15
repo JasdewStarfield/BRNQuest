@@ -225,7 +225,11 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
     }
 }
 sourceSets.main.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')
-tasks.named('processResources').configure { dependsOn generateGameTestStructure }
+tasks.named('processResources').configure {
+    dependsOn generateGameTestStructure
+    // Ship the human-readable dependency notice beside the embedded library metadata.
+    from('THIRD_PARTY_NOTICES.md') { into 'META-INF' }
+}
 
 def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
     def replaceProperties = [
@@ -265,8 +269,15 @@ configurations {
 }
 
 dependencies {
-    // P4-0 parser spike only: core has no transitive dependencies and is not packaged until P4a adopts it.
-    testImplementation('org.commonmark:commonmark:0.30.0') { transitive = false }
+    // markdown_v1 uses only CommonMark core; Jar-in-Jar keeps dedicated servers self-contained.
+    jarJar(implementation('org.commonmark:commonmark:0.30.0') { transitive = false }) {
+        version {
+            strictly '[0.30.0]'
+            prefer '0.30.0'
+        }
+    }
+    // Minecraft 1.21.1 runs do not automatically expose ordinary embedded Java libraries.
+    additionalRuntimeClasspath('org.commonmark:commonmark:0.30.0') { transitive = false }
     // Exact audited optional API baseline; never bundle OPAC or load it in ordinary core tests.
     compileOnly("maven.modrinth:open-parties-and-claims:AzM8UF04") { transitive = false }
     if (includeOpac) {

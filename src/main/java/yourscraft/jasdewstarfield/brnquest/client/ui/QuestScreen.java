@@ -3164,7 +3164,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         ClientEditorState editor = ClientEditorState.get();
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
             UiRect catalogBounds = editorCatalogBounds();
-            if (catalogBounds.contains(mouseX, mouseY)) {
+            if (!catalogClickDismisses(catalogBounds, mouseX, mouseY, button)) {
                 if (catalogPicker.mouseClicked(mouseX, mouseY, button)) return true;
                 var chosen = catalogPicker.entryAt(mouseX, mouseY);
                 if (chosen.isPresent()) {
@@ -3183,8 +3183,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }
                 return true;
             }
+            // The open popup owns this click. Returning immediately prevents a
+            // title click from closing and reopening the catalog in one event.
             editorOverlays.close();
-            if (!editorTitleBounds().contains(mouseX, mouseY)) return true;
+            return true;
         }
         QuestEditorChrome.ClickResult result = editorChrome.click(currentFrameIdentity(), mouseX, mouseY);
         if (result.intent() != null) handleEditorChromeIntent(result.intent(), displayedBook);
@@ -5639,6 +5641,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return book.chapters().stream().filter(chapter -> chapter.id().equals(chapterId))
                 .map(chapter -> BookText.structureTitle(book, "chapter",
                         chapter.id(), minecraft.getLanguageManager().getSelected(), chapter.title())).findFirst().orElse("");
+    }
+
+    /** Left-clicking anywhere outside the popup dismisses it without activating the covered surface. */
+    static boolean catalogClickDismisses(UiRect catalogBounds, double mouseX, double mouseY, int button) {
+        return button == 0 && !catalogBounds.contains(mouseX, mouseY);
     }
 
     /** Hover resolves against the same live snapshot and visibility rules used by click navigation. */

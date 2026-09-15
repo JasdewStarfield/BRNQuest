@@ -15,8 +15,6 @@ import yourscraft.jasdewstarfield.brnquest.data.text.MarkdownParserAdapter;
 import yourscraft.jasdewstarfield.brnquest.data.text.ResolvedDocument;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
-import java.net.URI;
-
 /** Cached parser/layout bridge. Callers own viewport scissoring and scroll translation. */
 public final class DocumentView {
     private final MarkdownParserAdapter parser;
@@ -122,8 +120,8 @@ public final class DocumentView {
     }
 
     /** A link is active only when both its run and the pointer lie inside the actual viewport. */
-    public static URI linkAt(DocumentLayout layout, int documentX, int documentY,
-                             DocumentLayout.Bounds viewport) {
+    public static RichDocument.LinkDestination linkAt(DocumentLayout layout, int documentX, int documentY,
+                                                       DocumentLayout.Bounds viewport) {
         if (!viewport.contains(documentX, documentY)) return null;
         for (DocumentLayout.LinkHit link : layout.links())
             if (link.bounds().intersects(viewport) && link.bounds().contains(documentX, documentY))

@@ -118,7 +118,8 @@ class DocumentLayoutEngineTest {
         DocumentLayout layout = layout("[target](https://example.test)", 20);
         DocumentLayout.Bounds link = layout.links().getFirst().bounds();
         DocumentLayout.Bounds viewport = new DocumentLayout.Bounds(link.left(), link.top(), link.right(), link.bottom());
-        assertEquals(URI.create("https://example.test"), DocumentView.linkAt(layout, link.left(), link.top(), viewport));
+        assertEquals(new RichDocument.ExternalLink(URI.create("https://example.test")),
+                DocumentView.linkAt(layout, link.left(), link.top(), viewport));
         assertNull(DocumentView.linkAt(layout, link.left() - 1, link.top(), viewport));
         assertNull(DocumentView.linkAt(layout, link.right(), link.top(), viewport));
         assertNull(DocumentView.linkAt(layout, link.left(), link.top() - 1, viewport));

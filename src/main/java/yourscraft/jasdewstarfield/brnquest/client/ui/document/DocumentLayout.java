@@ -1,6 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui.document;
 
-import java.net.URI;
 import java.util.List;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
@@ -43,7 +42,7 @@ public record DocumentLayout(List<Line> lines, List<LinkHit> links, List<Content
         public Line { runs = List.copyOf(runs); }
     }
 
-    public record LinkHit(URI destination, Bounds bounds) {}
+    public record LinkHit(RichDocument.LinkDestination destination, Bounds bounds) {}
 
     public record ContentHit(RichDocument.Content content, Bounds bounds, boolean present) {}
 }

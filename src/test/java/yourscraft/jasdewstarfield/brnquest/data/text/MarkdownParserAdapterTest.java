@@ -26,7 +26,7 @@ class MarkdownParserAdapterTest {
         assertTrue(paragraph.inlines().stream().anyMatch(RichDocument.Code.class::isInstance));
         RichDocument.Link link = paragraph.inlines().stream().filter(RichDocument.Link.class::isInstance)
                 .map(RichDocument.Link.class::cast).findFirst().orElseThrow();
-        assertEquals(URI.create("https://example.test/b"), link.destination());
+        assertEquals(new RichDocument.ExternalLink(URI.create("https://example.test/b")), link.destination());
         assertEquals(2, assertInstanceOf(RichDocument.BulletListBlock.class, document.blocks().getLast()).items().size());
         assertTrue(document.diagnostics().isEmpty());
     }
@@ -157,6 +157,19 @@ class MarkdownParserAdapterTest {
         assertEquals("[bad](brnquest:style/color/not-a-color)", visibleText(assertInstanceOf(
                 RichDocument.FlowBlock.class, malformed.blocks().getFirst()).inlines()));
         assertEquals("STYLE_TARGET_UNSUPPORTED", malformed.diagnostics().getFirst().code());
+    }
+
+    @Test void questLinksUseStableNamespacedIdsAndRejectMalformedTargetsLiterally() {
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class,
+                parse("[下一任务](brnquest:quest/example:chapter/next_task)").blocks().getFirst());
+        RichDocument.Link link = assertInstanceOf(RichDocument.Link.class, paragraph.inlines().getFirst());
+
+        assertEquals(new RichDocument.QuestLink("example:chapter/next_task"), link.destination());
+
+        RichDocument malformed = parse("[坏目标](brnquest:quest/missing_namespace)");
+        assertEquals("[坏目标](brnquest:quest/missing_namespace)", visibleText(assertInstanceOf(
+                RichDocument.FlowBlock.class, malformed.blocks().getFirst()).inlines()));
+        assertEquals("QUEST_LINK_TARGET_INVALID", malformed.diagnostics().getFirst().code());
     }
 
     private RichDocument parse(String text) {

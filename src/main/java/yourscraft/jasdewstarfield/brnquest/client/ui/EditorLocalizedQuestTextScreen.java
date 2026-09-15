@@ -33,7 +33,6 @@ import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -171,8 +170,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 EditorButton.Definition.text(Component.translatable("gui.done"), null), true, false,
                 EditorButton.Tone.PRIMARY, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
-        URI link = previewLinkAt(mouseX, mouseY);
-        if (link != null) hovered = Component.literal(link.toString());
+        RichDocument.LinkDestination link = previewLinkAt(mouseX, mouseY);
+        if (link instanceof RichDocument.ExternalLink external) hovered = Component.literal(external.uri().toString());
+        else if (link instanceof RichDocument.QuestLink quest) hovered = Component.literal(quest.questId());
         ItemStack item = previewItemAt(mouseX, mouseY);
         if (!item.isEmpty()) graphics.renderTooltip(font, item, mouseX, mouseY);
         else if (hovered != null)
@@ -324,11 +324,13 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 return true;
             }
         }
-        URI link = button == 0 ? previewLinkAt(mouseX, mouseY) : null;
-        if (link != null) {
-            ConfirmLinkScreen.confirmLinkNow(this, link, true);
+        RichDocument.LinkDestination link = button == 0 ? previewLinkAt(mouseX, mouseY) : null;
+        if (link instanceof RichDocument.ExternalLink external) {
+            ConfirmLinkScreen.confirmLinkNow(this, external.uri(), true);
             return true;
         }
+        // In-book links stay inert in the child editor until the dedicated authoring route is installed.
+        if (link instanceof RichDocument.QuestLink) return true;
         if (button == 0 && cancelBounds().containsExclusive(mouseX, mouseY)) {
             onClose();
             return true;
@@ -512,7 +514,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         }
     }
 
-    private URI previewLinkAt(double mouseX, double mouseY) {
+    private RichDocument.LinkDestination previewLinkAt(double mouseX, double mouseY) {
         if (renderedPreview == null || renderedPreviewBounds == null
                 || !renderedPreviewBounds.containsExclusive(mouseX, mouseY)) return null;
         int localX = (int) Math.floor(mouseX) - renderedDocumentX;

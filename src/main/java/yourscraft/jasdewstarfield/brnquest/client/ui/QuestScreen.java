@@ -64,6 +64,7 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
@@ -1041,9 +1042,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_UPSTREAM -> openRelationsScreen(quest, true);
             case OPEN_DOWNSTREAM -> openRelationsScreen(quest, false);
             case OPEN_LINK -> {
-                if (intent.link() != null)
+                if (intent.link() instanceof RichDocument.ExternalLink external)
                     childLifecycle.openChild(() -> net.minecraft.client.gui.screens.ConfirmLinkScreen
-                            .confirmLinkNow(this, intent.link(), true));
+                            .confirmLinkNow(this, external.uri(), true));
             }
             case QUICK_EDIT_TEXT -> {
                 if (ClientEditorState.get().editing() && intent.textArea() != null) {

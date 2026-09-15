@@ -2,8 +2,8 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,13 +18,14 @@ final class QuestDetailsInteraction {
         EDIT_PROPERTIES, EDIT_TASKS, EDIT_REWARDS, EDIT_DEPENDENCIES, OPEN_LINK
     }
 
-    record Intent(Action action, ResourceLocation questId, ResourceLocation targetId, String textArea, URI link) {}
+    record Intent(Action action, ResourceLocation questId, ResourceLocation targetId, String textArea,
+                  RichDocument.LinkDestination link) {}
     record ClickResult(boolean consumed, Intent intent) {
         static ClickResult ignored() { return new ClickResult(false, null); }
         static ClickResult consumed(Intent intent) { return new ClickResult(true, intent); }
     }
     record TaskTarget(ResourceLocation taskId, UiRect action, UiRect candidates, Action rowAction) {}
-    record LinkTarget(URI destination, UiRect bounds) {}
+    record LinkTarget(RichDocument.LinkDestination destination, UiRect bounds) {}
     record Frame(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
                  UiRect panel, UiRect close, UiRect complete, UiRect track,
                  Map<String, UiRect> textAreas, Map<Action, UiRect> editorActions,
@@ -169,7 +170,8 @@ final class QuestDetailsInteraction {
         return intent(action, targetId, textArea, null);
     }
 
-    private ClickResult intent(Action action, ResourceLocation targetId, String textArea, URI link) {
+    private ClickResult intent(Action action, ResourceLocation targetId, String textArea,
+                               RichDocument.LinkDestination link) {
         return ClickResult.consumed(action == null ? null : new Intent(action, frame.questId(), targetId, textArea, link));
     }
 

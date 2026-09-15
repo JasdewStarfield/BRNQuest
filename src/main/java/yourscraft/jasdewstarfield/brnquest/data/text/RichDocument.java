@@ -101,8 +101,20 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
         public Code { value = Objects.requireNonNullElse(value, ""); }
     }
 
-    /** Only normalized HTTP(S) destinations can reach the client interaction layer. */
-    public record Link(List<Inline> label, URI destination) implements Inline {
+    /** Keeps external navigation and in-book navigation distinct through layout and input handling. */
+    public sealed interface LinkDestination permits ExternalLink, QuestLink {}
+
+    /** The parser guarantees that only normalized HTTP(S) URIs reach this node. */
+    public record ExternalLink(URI uri) implements LinkDestination {
+        public ExternalLink { uri = Objects.requireNonNull(uri, "uri"); }
+    }
+
+    /** Stable namespaced BRNQuest ID; live visibility and existence are resolved only when activated. */
+    public record QuestLink(String questId) implements LinkDestination {
+        public QuestLink { questId = Objects.requireNonNull(questId, "questId"); }
+    }
+
+    public record Link(List<Inline> label, LinkDestination destination) implements Inline {
         public Link {
             label = List.copyOf(label);
             destination = Objects.requireNonNull(destination, "destination");

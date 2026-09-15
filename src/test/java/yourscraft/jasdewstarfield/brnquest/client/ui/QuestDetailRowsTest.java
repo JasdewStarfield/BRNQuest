@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import org.junit.jupiter.api.Test;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentLayout;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 import java.net.URI;
 import java.util.List;
@@ -32,7 +33,8 @@ class QuestDetailRowsTest {
     }
 
     @Test void documentLinksExposeOnlyTheirVisibleIntersection() {
-        URI destination = URI.create("https://example.test");
+        RichDocument.LinkDestination destination = new RichDocument.ExternalLink(
+                URI.create("https://example.test"));
         DocumentLayout document = new DocumentLayout(List.of(), List.of(
                 new DocumentLayout.LinkHit(destination, new DocumentLayout.Bounds(0, 0, 20, 10)),
                 new DocumentLayout.LinkHit(destination, new DocumentLayout.Bounds(0, 30, 20, 40))), 40, 20);

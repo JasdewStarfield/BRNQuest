@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 import java.net.URI;
 import java.util.List;
@@ -91,7 +92,8 @@ class QuestDetailsInteractionTest {
     @Test void documentLinksWinLeftClickWithoutStealingTheAuthorRightClick() {
         QuestDetailsInteraction interaction = frame(true, true);
         UiRect description = new UiRect(620, 80, 780, 110);
-        URI destination = URI.create("https://example.test/path");
+        RichDocument.LinkDestination destination = new RichDocument.ExternalLink(
+                URI.create("https://example.test/path"));
         interaction.textAreas(Map.of("DESCRIPTION", description));
         interaction.links(List.of(new QuestDetailsInteraction.LinkTarget(destination,
                 new UiRect(650, 84, 720, 98))));

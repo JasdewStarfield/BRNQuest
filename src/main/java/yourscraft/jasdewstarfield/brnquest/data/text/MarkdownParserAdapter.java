@@ -26,7 +26,7 @@ import java.util.Locale;
 
 /** Converts CommonMark's AST into BRNQuest's deliberately smaller markdown_v1 tree. */
 public final class MarkdownParserAdapter {
-    public static final int PARSER_VERSION = 4;
+    public static final int PARSER_VERSION = 5;
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_LINK_BUDGET = 128;
     public static final int DEFAULT_CONTENT_BUDGET = 64;
@@ -166,8 +166,14 @@ public final class MarkdownParserAdapter {
                 if (style != null) return new RichDocument.StyleSpan(inlines(node), style);
                 if (isStyleTarget(link.getDestination())) return literalInline(node, "STYLE_TARGET_UNSUPPORTED",
                         "Unsupported BRNQuest Markdown style target");
+                String questId = questTarget(link.getDestination());
+                if (questId != null)
+                    return new RichDocument.Link(inlines(node), new RichDocument.QuestLink(questId));
+                if (isQuestTarget(link.getDestination())) return literalInline(node, "QUEST_LINK_TARGET_INVALID",
+                        "BRNQuest quest links require a namespaced quest ID");
                 URI destination = safeHttpUri(link.getDestination());
-                if (destination != null) return new RichDocument.Link(inlines(node), destination);
+                if (destination != null)
+                    return new RichDocument.Link(inlines(node), new RichDocument.ExternalLink(destination));
                 return literalInline(node, "LINK_SCHEME_UNSUPPORTED", "Only HTTP and HTTPS links are interactive");
             }
             return literalInline(node, "INLINE_UNSUPPORTED", "Unsupported Markdown inline rendered literally");
@@ -213,8 +219,20 @@ public final class MarkdownParserAdapter {
     private record ContentTarget(RichDocument.ContentKind kind, String id) {}
 
     private static final String STYLE_PREFIX = "brnquest:style/";
+    private static final String QUEST_PREFIX = "brnquest:quest/";
     private static boolean isStyleTarget(String destination) {
         return destination != null && destination.toLowerCase(Locale.ROOT).startsWith(STYLE_PREFIX);
+    }
+
+    private static boolean isQuestTarget(String destination) {
+        return destination != null && destination.toLowerCase(Locale.ROOT).startsWith(QUEST_PREFIX);
+    }
+
+    /** Quest targets are intentionally full IDs so imports and reordered chapters cannot retarget a link. */
+    private static String questTarget(String destination) {
+        if (!isQuestTarget(destination)) return null;
+        String id = destination.substring(QUEST_PREFIX.length());
+        return id.matches("[a-z0-9_.-]+:[a-z0-9/._-]+") ? id : null;
     }
 
     /** Style links reuse CommonMark's nested label parsing but never enter the clickable-link layer. */

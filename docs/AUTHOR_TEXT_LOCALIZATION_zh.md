@@ -39,11 +39,19 @@
 
 任务链接写作 `[标签](brnquest:quest/namespace:quest_id)`。目标必须是完整、稳定的 BRNQuest 任务 ID；FTB 原始 ID 不会成为运行时链接目标。激活可见目标会打开对应任务，也支持跨章节跳转，并在点击时针对当前任务书快照重新解析 ID。缺失或对玩家隐藏的目标保持不可用，也不会泄露隐藏任务文本。
 
-基础 Markdown 没有的 Minecraft 样式使用有作用域的 BRNQuest 目标：`[文字](brnquest:style/underline)`、`[文字](brnquest:style/strikethrough)`、`[文字](brnquest:style/obfuscated)` 与 `[文字](brnquest:style/color/red)`。颜色接受 16 个小写原版颜色名，或 `brnquest:style/color/12abef` 这样的六位不透明 RGB；标签中仍可嵌套普通粗体或斜体。这些目标只应用样式，不是可点击链接；无效目标按字面显示并产生诊断。
+基础 Markdown 没有的 Minecraft 样式使用有作用域的 BRNQuest 目标：`[文字](brnquest:style/underline)`、`[文字](brnquest:style/strikethrough)`、`[文字](brnquest:style/obfuscated)` 与 `[文字](brnquest:style/color/red)`。颜色接受 16 个小写原版颜色名，或 `brnquest:style/color/12abef` 这样的六位不透明 RGB。多个扩展样式用一个 `+` 连接的目标表示，例如 `[文字](brnquest:style/color/red+underline+strikethrough)`；重复颜色或未知部分会让整个目标按字面显示。标签中仍可嵌套普通粗体或斜体。这些目标只应用样式，不是可点击链接。
 
 已加载纹理和注册物品使用 Markdown 图片语法：`![替代文字](texture:namespace:textures/path.png)` 与 `![替代文字](item:namespace:item_id)`。必须写出命名空间。节点独占整个段落时按块内容渲染；前后存在文字时作为不可拆分、与文字基线对齐的行内图标参与换行。行内物品限制在 16×16 逻辑像素内，行内纹理保持比例并限制在 32×16 内；块级纹理保持宽高比并受正文宽度和最大高度限制。客户端只读取已有资源包纹理或注册表物品，不下载远程内容，也不接受物品 SNBT／数据组件。缺失资源显示尺寸稳定的可恢复占位。物品使用原版 Tooltip；安装 JEI 时，Tooltip 会显示当前配方／用途快捷键，并可在图标上直接使用这些快捷键。贴图内容不显示悬停 Tooltip。两类内容都没有普通点击、提交或游戏状态副作用。`brnquest_local:` 纹理仅存在于导入它的本机，不随任务书或服务器分发。
 
 任务详情把链接显示为带下划线的可交互文本。外部 HTTP／HTTPS 链接先进入 Minecraft 自带确认界面，取消不会产生外部动作；任务链接则直接在任务书内导航。链接点击优先于同一像素下的任务／奖励动作，并且裁剪视口以外不能命中。
+
+## FTB Quests v13 富文本导入
+
+FTB Quests 始终只是只读 SNBT 导入源，不是运行时依赖。每个语言的 `quest_desc` 列表按 FTB Quests v2101.1.34 与 FTB Library 2101.1.35 的固定行为独立解析，再保存为普通 BRNQuest 源码及 `quest_desc_format=markdown_v1`。
+
+旧式 `&`／`§` 调色板和装饰代码、`&#RRGGBB`、reset、同语言翻译 substitution、安全 HTTP／HTTPS 链接、raw JSON 文本／样式及带命名空间的 FTB 图片 substitution 会转换为原生 Markdown 结构。独占列表项的 `{@pagebreak}` 转成段落边界。只有十六进制目标确实对应导入源中的任务时，`change_page` 才转成任务书内部链接；子页后缀降级为打开该任务唯一的 BRNQuest 详情视图。FTB 显式图片尺寸／对齐会由 BRNQuest 固有尺寸适配替代并报告。
+
+动态彩虹色、hover text、无法解析的 substitution、畸形输入、不安全 URL、命令／插入／未知点击事件、非任务 page 目标及不支持的 JSON 内容会尽量保留可见标签或源码，并产生带源位置的诊断；动作本身会被删除，绝不会写进 Markdown。不能等价转换的原始描述还会保存在任务书的 `ftb.rich_text_source.*` 来源扩展中，而运行时文档不含 FTB 语法或类依赖。导入报告逐项将描述标为 `MAPPED` 或 `UNSUPPORTED`，不会把“保留源数据”误报成行为兼容。
 
 ## 编辑与保存
 

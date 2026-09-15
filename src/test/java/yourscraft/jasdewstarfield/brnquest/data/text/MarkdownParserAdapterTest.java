@@ -128,6 +128,37 @@ class MarkdownParserAdapterTest {
         }
     }
 
+    @Test void parsesScopedMinecraftStylesWithoutTurningThemIntoLinks() {
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class, parse(
+                "[**红色粗体**](brnquest:style/color/red) "
+                        + "[RGB](brnquest:style/color/12AbEf) [下划线](brnquest:style/underline) "
+                        + "[删除](brnquest:style/strikethrough) [混淆](brnquest:style/obfuscated)")
+                .blocks().getFirst());
+        List<RichDocument.StyleSpan> styles = paragraph.inlines().stream()
+                .filter(RichDocument.StyleSpan.class::isInstance).map(RichDocument.StyleSpan.class::cast).toList();
+
+        assertEquals(5, styles.size());
+        assertEquals(0xFF5555, styles.getFirst().style().color());
+        assertInstanceOf(RichDocument.Strong.class, styles.getFirst().children().getFirst());
+        assertEquals(0x12ABEF, styles.get(1).style().color());
+        assertTrue(styles.get(2).style().underlined());
+        assertTrue(styles.get(3).style().strikethrough());
+        assertTrue(styles.get(4).style().obfuscated());
+    }
+
+    @Test void malformedStyleTargetsDegradeLiterallyAndDoNotSpendTheExternalLinkBudget() {
+        RichDocument styled = new MarkdownParserAdapter(100, 0).parse(new ResolvedDocument(
+                "[red](brnquest:style/color/red)", DocumentFormat.MARKDOWN_V1, "en_us"));
+        assertInstanceOf(RichDocument.StyleSpan.class,
+                assertInstanceOf(RichDocument.FlowBlock.class, styled.blocks().getFirst()).inlines().getFirst());
+        assertTrue(styled.diagnostics().isEmpty());
+
+        RichDocument malformed = parse("[bad](brnquest:style/color/not-a-color)");
+        assertEquals("[bad](brnquest:style/color/not-a-color)", visibleText(assertInstanceOf(
+                RichDocument.FlowBlock.class, malformed.blocks().getFirst()).inlines()));
+        assertEquals("STYLE_TARGET_UNSUPPORTED", malformed.diagnostics().getFirst().code());
+    }
+
     private RichDocument parse(String text) {
         return parser.parse(new ResolvedDocument(text, DocumentFormat.MARKDOWN_V1, "zh_cn"));
     }

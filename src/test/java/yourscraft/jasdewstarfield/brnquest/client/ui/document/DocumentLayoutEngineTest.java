@@ -61,6 +61,18 @@ class DocumentLayoutEngineTest {
         assertTrue(runs.stream().anyMatch(run -> run.text().equals("F") && run.style().color() == null));
     }
 
+    @Test void markdownStyleExtensionsComposeWithStandardEmphasis() {
+        DocumentLayout layout = layout(
+                "[**important**](brnquest:style/underline) [warning](brnquest:style/color/ffaa00)", 40);
+        List<DocumentLayout.Run> runs = layout.lines().getFirst().runs();
+
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("important")
+                && run.style().bold() && run.style().underlined()));
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("warning")
+                && Integer.valueOf(0xFFAA00).equals(run.style().color())));
+        assertTrue(layout.links().isEmpty());
+    }
+
     @Test void punctuationEmojiAndLongIdentifiersAlwaysAdvanceAtSafeBoundaries() {
         DocumentLayout layout = layout("甲乙，丙（丁） 👨‍👩‍👧‍👦 brnquest:very_long_identifier", 8);
         List<String> lines = layout.lines().stream().map(line -> line.runs().stream()

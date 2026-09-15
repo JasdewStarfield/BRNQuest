@@ -23,10 +23,11 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /** Converts CommonMark's AST into BRNQuest's deliberately smaller markdown_v1 tree. */
 public final class MarkdownParserAdapter {
-    public static final int PARSER_VERSION = 3;
+    public static final int PARSER_VERSION = 4;
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_LINK_BUDGET = 128;
     public static final int DEFAULT_CONTENT_BUDGET = 64;
@@ -85,7 +86,7 @@ public final class MarkdownParserAdapter {
 
     private static void count(Node node, Counter counter) {
         counter.nodes++;
-        if (node instanceof Link) counter.links++;
+        if (node instanceof Link link && !isStyleTarget(link.getDestination())) counter.links++;
         if (node instanceof Image) counter.contents++;
         for (Node child = node.getFirstChild(); child != null; child = child.getNext()) count(child, counter);
     }
@@ -162,6 +163,10 @@ public final class MarkdownParserAdapter {
                         "Only texture:namespace:path and item:namespace:id content targets are supported");
             }
             if (node instanceof Link link) {
+                RichDocument.InlineStyle style = markdownStyle(link.getDestination());
+                if (style != null) return new RichDocument.StyleSpan(inlines(node), style);
+                if (isStyleTarget(link.getDestination())) return literalInline(node, "STYLE_TARGET_UNSUPPORTED",
+                        "Unsupported BRNQuest Markdown style target");
                 URI destination = safeHttpUri(link.getDestination());
                 if (destination != null) return new RichDocument.Link(inlines(node), destination);
                 return literalInline(node, "LINK_SCHEME_UNSUPPORTED", "Only HTTP and HTTPS links are interactive");
@@ -207,6 +212,40 @@ public final class MarkdownParserAdapter {
 
     private record Slice(int offset, String text) {}
     private record ContentTarget(RichDocument.ContentKind kind, String id) {}
+
+    private static final String STYLE_PREFIX = "brnquest:style/";
+    private static final Map<String, Integer> NAMED_COLORS = Map.ofEntries(
+            Map.entry("black", 0x000000), Map.entry("dark_blue", 0x0000AA),
+            Map.entry("dark_green", 0x00AA00), Map.entry("dark_aqua", 0x00AAAA),
+            Map.entry("dark_red", 0xAA0000), Map.entry("dark_purple", 0xAA00AA),
+            Map.entry("gold", 0xFFAA00), Map.entry("gray", 0xAAAAAA),
+            Map.entry("dark_gray", 0x555555), Map.entry("blue", 0x5555FF),
+            Map.entry("green", 0x55FF55), Map.entry("aqua", 0x55FFFF),
+            Map.entry("red", 0xFF5555), Map.entry("light_purple", 0xFF55FF),
+            Map.entry("yellow", 0xFFFF55), Map.entry("white", 0xFFFFFF));
+
+    private static boolean isStyleTarget(String destination) {
+        return destination != null && destination.toLowerCase(Locale.ROOT).startsWith(STYLE_PREFIX);
+    }
+
+    /** Style links reuse CommonMark's nested label parsing but never enter the clickable-link layer. */
+    private static RichDocument.InlineStyle markdownStyle(String destination) {
+        if (!isStyleTarget(destination)) return null;
+        String target = destination.substring(STYLE_PREFIX.length()).toLowerCase(Locale.ROOT);
+        return switch (target) {
+            case "underline" -> new RichDocument.InlineStyle(null, false, false, true, false, false);
+            case "strikethrough" -> new RichDocument.InlineStyle(null, false, false, false, true, false);
+            case "obfuscated" -> new RichDocument.InlineStyle(null, false, false, false, false, true);
+            default -> {
+                if (!target.startsWith("color/")) yield null;
+                String value = target.substring("color/".length());
+                Integer color = NAMED_COLORS.get(value);
+                if (color == null && value.matches("[0-9a-f]{6}")) color = Integer.parseInt(value, 16);
+                yield color == null ? null
+                        : new RichDocument.InlineStyle(color, false, false, false, false, false);
+            }
+        };
+    }
 
     private static ContentTarget contentTarget(String destination) {
         if (destination == null) return null;

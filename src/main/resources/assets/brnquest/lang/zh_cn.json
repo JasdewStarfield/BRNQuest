@@ -223,6 +223,8 @@
   "screen.brnquest.editor.markdown.placeholder.list": "列表项",
   "screen.brnquest.editor.markdown.placeholder.code": "代码",
   "screen.brnquest.editor.markdown.placeholder.link": "链接文本",
+  "screen.brnquest.markdown.quest_link.open": "打开任务：%s · %s",
+  "screen.brnquest.markdown.quest_link.unavailable": "该任务当前不可用",
   "screen.brnquest.editor.markdown.placeholder.texture": "纹理",
   "screen.brnquest.editor.markdown.placeholder.item": "物品",
   "screen.brnquest.editor.markdown.placeholder.underline": "下划线文本",

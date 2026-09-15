@@ -847,7 +847,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         hideText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
                         description, locale,
                         status, statusText, statusColor(status),
-                        editing, gameplayAllowed(), canSubmit(quest, status), displaySnapshot().book().settings().suppressAutoClaim()), new QuestDetailsPanel.Rows() {
+                        editing, gameplayAllowed(), canSubmit(quest, status),
+                        displaySnapshot().book().settings().suppressAutoClaim(), this::documentLinkHint),
+                new QuestDetailsPanel.Rows() {
                     public int relations(int x, int y, int rowWidth) {
                         return renderQuestRelations(graphics, quest, x, y, rowWidth, content, mouseX, mouseY);
                     }
@@ -1045,6 +1047,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (intent.link() instanceof RichDocument.ExternalLink external)
                     childLifecycle.openChild(() -> net.minecraft.client.gui.screens.ConfirmLinkScreen
                             .confirmLinkNow(this, external.uri(), true));
+                else if (intent.link() instanceof RichDocument.QuestLink target) {
+                    ResourceLocation targetId = ResourceLocation.tryParse(target.questId());
+                    if (targetId != null) navigateToQuest(targetId);
+                }
             }
             case QUICK_EDIT_TEXT -> {
                 if (ClientEditorState.get().editing() && intent.textArea() != null) {
@@ -5588,6 +5594,24 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return book.chapters().stream().filter(chapter -> chapter.id().equals(chapterId))
                 .map(chapter -> BookText.structureTitle(book, "chapter",
                         chapter.id(), minecraft.getLanguageManager().getSelected(), chapter.title())).findFirst().orElse("");
+    }
+
+    /** Hover resolves against the same live snapshot and visibility rules used by click navigation. */
+    private Component documentLinkHint(RichDocument.LinkDestination destination) {
+        if (destination instanceof RichDocument.ExternalLink external)
+            return Component.literal(external.uri().toString());
+        if (!(destination instanceof RichDocument.QuestLink questLink))
+            return Component.translatable("screen.brnquest.markdown.quest_link.unavailable");
+        ResourceLocation targetId = ResourceLocation.tryParse(questLink.questId());
+        QuestBookSnapshot snapshot = displaySnapshot();
+        QuestDefinition target = snapshot == null || targetId == null ? null : snapshot.quests().get(targetId);
+        if (target == null || !questVisible(target))
+            return Component.translatable("screen.brnquest.markdown.quest_link.unavailable");
+        boolean hideText = !ClientEditorState.get().editing() && target.behavior().hideTextUntilComplete()
+                && !isCompleted(status(target));
+        String title = hideText ? "???" : questTitle(target);
+        return Component.translatable("screen.brnquest.markdown.quest_link.open", title,
+                chapterTitle(snapshot.book(), target.chapterId()));
     }
 
     private QuestBookSnapshot displaySnapshot() {

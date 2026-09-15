@@ -223,6 +223,8 @@
   "screen.brnquest.editor.markdown.placeholder.list": "list item",
   "screen.brnquest.editor.markdown.placeholder.code": "code",
   "screen.brnquest.editor.markdown.placeholder.link": "link text",
+  "screen.brnquest.markdown.quest_link.open": "Open quest: %s · %s",
+  "screen.brnquest.markdown.quest_link.unavailable": "This quest is unavailable",
   "screen.brnquest.editor.markdown.placeholder.texture": "texture",
   "screen.brnquest.editor.markdown.placeholder.item": "item",
   "screen.brnquest.editor.markdown.placeholder.underline": "underlined text",

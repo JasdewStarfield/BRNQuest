@@ -107,6 +107,18 @@ class QuestDetailsInteractionTest {
                 interaction.click(identity("r1", 800), 680, 90, 1).intent().action());
     }
 
+    @Test void documentQuestLinksKeepTheirSemanticTargetThroughHitTesting() {
+        QuestDetailsInteraction interaction = frame(false, true);
+        RichDocument.QuestLink destination = new RichDocument.QuestLink("test:other_chapter/target");
+        interaction.links(List.of(new QuestDetailsInteraction.LinkTarget(destination,
+                new UiRect(650, 84, 720, 98))));
+        interaction.finish();
+
+        QuestDetailsInteraction.Intent link = interaction.click(identity("r1", 800), 680, 90, 0).intent();
+        assertEquals(QuestDetailsInteraction.Action.OPEN_LINK, link.action());
+        assertEquals(destination, link.link());
+    }
+
     private static QuestDetailsInteraction frame(boolean editing, boolean gameplay) {
         QuestDetailsInteraction interaction = new QuestDetailsInteraction();
         interaction.begin(identity("r1", 800), QUEST, editing, gameplay, PANEL,

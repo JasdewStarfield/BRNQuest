@@ -16,6 +16,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 /** Detail section composition. The caller supplies row renderers; this panel owns text flow and scrolling. */
 final class QuestDetailsPanel {
@@ -26,7 +28,8 @@ final class QuestDetailsPanel {
     record Layout(UiRect content, UiRect clip, int trackX) {}
     record Model(QuestDefinition quest, String title, String subtitle, ResolvedDocument description, String locale,
                  QuestStatus status, Component statusText,
-                 int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim) {}
+                 int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim,
+                 Function<RichDocument.LinkDestination, Component> linkHint) {}
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
         default int relations(int x, int y, int width) { return y; }
@@ -162,7 +165,7 @@ final class QuestDetailsPanel {
             documentLinks.addAll(visibleDocumentLinks(prepared.layout(), contentLeft, descriptionTop, layout.content()));
             for (QuestDetailsInteraction.LinkTarget link : documentLinks) {
                 if (link.bounds().containsExclusive(mouseX, mouseY)) {
-                    hint = Component.literal(link.destination().toString());
+                    hint = model.linkHint().apply(link.destination());
                     break;
                 }
             }

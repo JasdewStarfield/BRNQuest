@@ -354,7 +354,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 case CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
                         QUICK_TEXT, PUBLISH_CONFIRMATION -> true;
                 default -> false;
-            }) || (!editor.allowed() && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
+            // A non-editing catalog refresh temporarily clears allowed while its
+            // authoritative response is in flight. Keep the requested overlay open
+            // during that state; close it only after a completed denial or failure.
+            }) || (catalogAuthorizationDenied(editor.mode(), editor.allowed())
+                    && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
             closeActiveEditorOverlay();
         }
         editor.pollPublishReview().ifPresent(review -> {
@@ -2259,6 +2263,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         openChildScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
                 minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value),
                 recovery, () -> discardLocalizedQuestText(quest.id())));
+    }
+
+    /** An in-flight permission refresh is undecided, not a denial that should dismiss its own overlay. */
+    static boolean catalogAuthorizationDenied(ClientEditorState.Mode mode, boolean allowed) {
+        return mode != ClientEditorState.Mode.CATALOG_LOADING && !allowed;
     }
 
     private boolean dragOverlayScroll(double y, int button) {

@@ -45,8 +45,9 @@ class PublicApiSnapshotTest {
                 String className = classes.relativize(path).toString()
                         .replace('\\', '.').replace('/', '.').replaceAll("\\.class$", "");
                 if (!className.startsWith(ROOT_PACKAGE)) continue;
-                // Optional integration entry points deliberately have foreign supertypes and are not core API.
-                if (className.startsWith(ROOT_PACKAGE + "compat.jei.")
+                // Mixin definitions cannot be loaded directly; neither they nor optional foreign entry points are API.
+                if (className.startsWith(ROOT_PACKAGE + "client.mixin.")
+                        || className.startsWith(ROOT_PACKAGE + "compat.jei.")
                         || className.startsWith(ROOT_PACKAGE + "compat.kubejs.")
                         || className.startsWith(ROOT_PACKAGE + "compat.opac.")) continue;
                 Class<?> type = Class.forName(className, false, PublicApiSnapshotTest.class.getClassLoader());

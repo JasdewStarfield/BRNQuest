@@ -167,6 +167,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             .define("group_description", "screen.brnquest.editor.group.description", 2048);
     private EditorTextField quickTextField;
     private EditorLocalizedText quickLocalizedText;
+    private record PendingLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {}
+    private PendingLocalizedQuestText pendingLocalizedQuestText;
     private EditorLocalizedText structureLocalizedTitle;
     private Boolean structureConsumeItems;
     private boolean structureHideDependencyLines;
@@ -444,6 +446,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void reconcileModeSelection(ClientEditorState editor) {
         reconcilePendingEditUi(editor);
+        reconcileLocalizedQuestText(editor);
         boolean nextEditorMode = editor.draft().isPresent();
         boolean modeChanged = nextEditorMode != editorSelectionMode;
         QuestBookSnapshot target = nextEditorMode
@@ -2230,8 +2233,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (snapshot == null || minecraft == null || ClientEditorState.get().busy()) return;
         // This is the same suspended-parent transition as item and raw-config editors. Without
         // the token, Screen.removed() may close a clean server lease before Apply is dispatched.
+        EditorLocalizedQuestTextScreen.Value recovery = pendingLocalizedQuestText != null
+                && pendingLocalizedQuestText.questId().equals(quest.id()) ? pendingLocalizedQuestText.value() : null;
         openChildScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
-                minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value)));
+                minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value),
+                recovery, () -> discardLocalizedQuestText(quest.id())));
     }
 
     private boolean submitLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {
@@ -2239,9 +2245,27 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 Map.of("title", value.title(), "subtitle", value.subtitle(), "description", value.description(),
                         "description_format", value.descriptionFormat().serializedName()))) {
             editorSelectedQuest = questId;
+            // Keep the exact submitted buffer until the verified server draft agrees; rejection can reopen it.
+            pendingLocalizedQuestText = new PendingLocalizedQuestText(questId, value);
             return true;
         }
         return false;
+    }
+
+    private void discardLocalizedQuestText(ResourceLocation questId) {
+        if (pendingLocalizedQuestText != null && pendingLocalizedQuestText.questId().equals(questId))
+            pendingLocalizedQuestText = null;
+    }
+
+    /** Accepted replacements clear recovery; retryable server rejection deliberately leaves it available. */
+    private void reconcileLocalizedQuestText(ClientEditorState editor) {
+        if (pendingLocalizedQuestText == null || editor.busy() || editor.mode() == ClientEditorState.Mode.ERROR) return;
+        QuestBookSnapshot snapshot = editor.draft().orElse(null);
+        if (snapshot == null) return;
+        QuestDefinition quest = snapshot.quests().get(pendingLocalizedQuestText.questId());
+        if (quest == null) return;
+        if (LocalizedQuestTextRecovery.matches(snapshot.book(), quest, pendingLocalizedQuestText.value()))
+            pendingLocalizedQuestText = null;
     }
 
     private void renderQuickTextEditor(GuiGraphics graphics, int mouseX, int mouseY) {

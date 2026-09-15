@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "yourscraft.jasdewstarfield.brnquest.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "MultiLineEditBoxAccessor",
+    "MultilineTextFieldAccessor"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

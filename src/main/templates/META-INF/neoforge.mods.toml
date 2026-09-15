@@ -44,6 +44,9 @@ side = "BOTH"
 [[mixins]]
 config = "brnquest.opac.mixins.json"
 
+[[mixins]]
+config = "brnquest.client.mixins.json"
+
 # Unsupported versions remain loadable but the provider stays personal-only.
 [[dependencies."${mod_id}"]]
 modId = "openpartiesandclaims"

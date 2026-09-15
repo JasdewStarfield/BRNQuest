@@ -38,6 +38,12 @@ Updating a fallback-locale description writes the native text and format and rem
 
 Copying quests preserves native and localized formats. Native JSON saves, draft recovery, publishing, undo/redo, and semantic diffs treat the description and its format as one revision-bound edit.
 
+## Source editor and preview
+
+The quest text editor provides an explicit Plain/Markdown v1 format selector. Switching to Markdown warns that punctuation may gain display semantics; switching back changes only interpretation and does not remove Markdown markers from the source. Wide windows show source and live preview side by side, while narrow windows use Source and Preview tabs. The preview and task details use the same parser, line breaking, and renderer.
+
+The Markdown toolbar inserts heading, bold, italic, unordered-list, inline-code, and HTTP/HTTPS link skeletons. It wraps an existing selection or inserts and selects replaceable placeholder text. Unsaved buffers remain independent for each locale across locale changes and window resize. Apply starts one server edit request; Cancel sends none. If the server rejects a submitted edit, reopening the same quest restores that submitted buffer for correction and retry.
+
 ## Java API
 
 Locale-aware `BrnQuestApi` queries return immutable projections for the requested language. `QuestView.description()` and `descriptionFormat()` are a pair and use the same locale source. Queries without a locale continue to return native source values. Extensions may use `getTranslations()` for the complete table or `resolveText(locale, key, fallback)` for their own text keys without modifying the active book or revision.

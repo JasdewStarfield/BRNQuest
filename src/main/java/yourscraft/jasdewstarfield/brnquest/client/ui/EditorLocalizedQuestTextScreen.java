@@ -8,12 +8,15 @@ import net.minecraft.client.gui.components.MultilineTextField;
 import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultiLineEditBoxAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultilineTextFieldAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
@@ -42,6 +45,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
 
     private static final int WIDE_LAYOUT_MINIMUM = 620;
     private static final MarkdownSourceEdits.Tool[] TOOLS = MarkdownSourceEdits.Tool.values();
+    private static final int CONTENT_TOOL_COUNT = 2;
+    private static final EditorIcon TEXTURE_TOOL_ICON = QuestActionIcons.named("search");
+    private static final EditorIcon ITEM_TOOL_ICON = EditorIcon.sprite(
+            ResourceLocation.parse("brnquest:editor/type/item"));
     private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final Predicate<Value> consumer;
@@ -67,6 +74,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
     private int renderedDocumentX;
     private int renderedDocumentY;
     private long lastRenderMillis;
+    private int reopenSelectionStart = -1;
+    private int reopenSelectionEnd = -1;
+    private Component reopenNotice;
 
     /** Compatibility constructor for callers that do not need retry recovery. */
     public EditorLocalizedQuestTextScreen(Screen parent, BookLocalization localization, QuestDefinition quest,
@@ -123,6 +133,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         addRenderableWidget(localeEditor);
         addRenderableWidget(descriptionEditor);
         loadLocale(true);
+        restoreChildSelection();
         updateSourceVisibility();
         setFocused(sourceVisible() ? descriptionEditor : titleEditor);
     }
@@ -214,6 +225,16 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                         descriptionFormat.equals(DocumentFormat.MARKDOWN_V1), false,
                         EditorButton.Tone.NEUTRAL, mouseX, mouseY)) hovered = tooltip;
             }
+            Component textureTooltip = Component.translatable("screen.brnquest.editor.markdown.tool.texture");
+            if (buttons.render(graphics, font, contentToolBounds(0), EditorButton.Definition.iconOnly(
+                            textureTooltip, textureTooltip, TEXTURE_TOOL_ICON),
+                    descriptionFormat.equals(DocumentFormat.MARKDOWN_V1), false,
+                    EditorButton.Tone.NEUTRAL, mouseX, mouseY)) hovered = textureTooltip;
+            Component itemTooltip = Component.translatable("screen.brnquest.editor.markdown.tool.item");
+            if (buttons.render(graphics, font, contentToolBounds(1), EditorButton.Definition.iconOnly(
+                            itemTooltip, itemTooltip, ITEM_TOOL_ICON),
+                    descriptionFormat.equals(DocumentFormat.MARKDOWN_V1), false,
+                    EditorButton.Tone.NEUTRAL, mouseX, mouseY)) hovered = itemTooltip;
         }
         return hovered;
     }
@@ -292,6 +313,14 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                     applyTool(tool);
                     return true;
                 }
+            }
+            if (contentToolBounds(0).containsExclusive(mouseX, mouseY)) {
+                minecraft.setScreen(new EditorTextureBrowserScreen(this, this::insertTexture));
+                return true;
+            }
+            if (contentToolBounds(1).containsExclusive(mouseX, mouseY)) {
+                minecraft.setScreen(new EditorItemSelectorScreen(this, this::insertItem));
+                return true;
             }
         }
         URI link = button == 0 ? previewLinkAt(mouseX, mouseY) : null;
@@ -416,6 +445,34 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         String placeholder = Component.translatable(toolPlaceholder(tool)).getString();
         MarkdownSourceEdits.Result result = MarkdownSourceEdits.apply(descriptionEditor.getValue(),
                 selection.brnquest$cursor(), selection.brnquest$selectCursor(), tool, placeholder);
+        applySourceEdit(field, result);
+    }
+
+    private void insertTexture(String id) {
+        insertContent(RichDocument.ContentKind.TEXTURE, id,
+                Component.translatable("screen.brnquest.editor.markdown.placeholder.texture").getString());
+        if (id.startsWith("brnquest_local:"))
+            reopenNotice = Component.translatable("screen.brnquest.editor.markdown.local_texture_warning");
+    }
+
+    private void insertItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return;
+        insertContent(RichDocument.ContentKind.ITEM, BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(),
+                Component.translatable("screen.brnquest.editor.markdown.placeholder.item").getString());
+    }
+
+    private void insertContent(RichDocument.ContentKind kind, String id, String placeholder) {
+        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
+        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        MarkdownSourceEdits.Result result = MarkdownSourceEdits.insertContent(descriptionEditor.getValue(),
+                selection.brnquest$cursor(), selection.brnquest$selectCursor(), kind, id, placeholder);
+        applySourceEdit(field, result);
+        // Child pickers reinitialize this screen on return; restore the inserted alt-text selection afterwards.
+        reopenSelectionStart = result.selectionStart();
+        reopenSelectionEnd = result.selectionEnd();
+    }
+
+    private void applySourceEdit(MultilineTextField field, MarkdownSourceEdits.Result result) {
         descriptionEditor.setValue(result.text());
         // Recreate the selection through vanilla cursor methods so scrolling and selection painting stay synchronized.
         field.setSelecting(false);
@@ -424,6 +481,22 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         field.seekCursor(Whence.ABSOLUTE, result.selectionEnd());
         field.setSelecting(false);
         setFocused(descriptionEditor);
+    }
+
+    private void restoreChildSelection() {
+        if (reopenSelectionStart < 0) return;
+        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
+        field.setSelecting(false);
+        field.seekCursor(Whence.ABSOLUTE, reopenSelectionStart);
+        field.setSelecting(true);
+        field.seekCursor(Whence.ABSOLUTE, reopenSelectionEnd);
+        field.setSelecting(false);
+        reopenSelectionStart = -1;
+        reopenSelectionEnd = -1;
+        if (reopenNotice != null) {
+            formatNotice = reopenNotice;
+            reopenNotice = null;
+        }
     }
 
     private URI previewLinkAt(double mouseX, double mouseY) {
@@ -497,12 +570,18 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         return new UiRect(controlsCenter+2,p.top()+96,p.right()-12,p.top()+116);
     }
     private UiRect toolBounds(MarkdownSourceEdits.Tool tool) {
+        return toolbarCell(tool.ordinal());
+    }
+    private UiRect contentToolBounds(int index) {
+        return toolbarCell(TOOLS.length + index);
+    }
+    private UiRect toolbarCell(int index) {
         UiRect area = sourceColumn();
         int gap = 3;
-        int width = Math.max(18, (area.width() - gap * (TOOLS.length - 1)) / TOOLS.length);
-        int index = tool.ordinal();
+        int count = TOOLS.length + CONTENT_TOOL_COUNT;
+        int width = Math.max(18, (area.width() - gap * (count - 1)) / count);
         int left = area.left() + index * (width + gap);
-        return new UiRect(left, panelBounds().top()+120, index == TOOLS.length-1 ? area.right() : left+width,
+        return new UiRect(left, panelBounds().top()+120, index == count-1 ? area.right() : left+width,
                 panelBounds().top()+140);
     }
     private UiRect sourceColumn() {

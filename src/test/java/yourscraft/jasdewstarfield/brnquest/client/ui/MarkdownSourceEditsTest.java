@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -29,5 +30,16 @@ class MarkdownSourceEditsTest {
         var result = MarkdownSourceEdits.apply("A😀B", 2, 2,
                 MarkdownSourceEdits.Tool.CODE, "code");
         assertEquals("A`code`😀B", result.text());
+    }
+
+    @Test void insertsContentAsItsOwnParagraphAndSelectsAltText() {
+        var result = MarkdownSourceEdits.insertContent("before after", 7, 12,
+                RichDocument.ContentKind.TEXTURE, "brnquest:textures/panel.png", "texture");
+        assertEquals("before \n\n![after](texture:brnquest:textures/panel.png)", result.text());
+        assertEquals("after", result.text().substring(result.selectionStart(), result.selectionEnd()));
+
+        var middle = MarkdownSourceEdits.insertContent("one\ntwo", 4, 4,
+                RichDocument.ContentKind.ITEM, "minecraft:stone", "item");
+        assertEquals("one\n\n![item](item:minecraft:stone)\n\ntwo", middle.text());
     }
 }

@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
+
 /** Pure selection edits used by the Markdown toolbar and covered without a running client. */
 final class MarkdownSourceEdits {
     enum Tool { HEADING, BOLD, ITALIC, LIST, CODE, LINK }
@@ -21,6 +23,33 @@ final class MarkdownSourceEdits {
             case HEADING -> prefixLines(text, start, end, "## ", content);
             case LIST -> prefixLines(text, start, end, "- ", content);
         };
+    }
+
+    static Result insertContent(String source, int first, int second, RichDocument.ContentKind kind,
+                                String id, String placeholder) {
+        String text = source == null ? "" : source;
+        int start = safeBoundary(text, Math.min(first, second));
+        int end = safeBoundary(text, Math.max(first, second));
+        String selected = text.substring(start, end);
+        String alt = selected.isEmpty() ? placeholder : selected.replace('\n', ' ').replace('\r', ' ');
+        String leading = paragraphBoundaryBefore(text, start);
+        String trailing = paragraphBoundaryAfter(text, end);
+        String scheme = kind == RichDocument.ContentKind.TEXTURE ? "texture:" : "item:";
+        String content = "![" + alt + "](" + scheme + id + ")";
+        String replacement = leading + content + trailing;
+        String changed = text.substring(0, start) + replacement + text.substring(end);
+        int selectionStart = start + leading.length() + 2;
+        return new Result(changed, selectionStart, selectionStart + alt.length());
+    }
+
+    private static String paragraphBoundaryBefore(String text, int index) {
+        if (index == 0 || text.substring(0, index).endsWith("\n\n")) return "";
+        return text.charAt(index - 1) == '\n' ? "\n" : "\n\n";
+    }
+
+    private static String paragraphBoundaryAfter(String text, int index) {
+        if (index == text.length() || text.substring(index).startsWith("\n\n")) return "";
+        return text.charAt(index) == '\n' ? "\n" : "\n\n";
     }
 
     private static Result inline(String text, int start, int end, String before, String content, String after) {

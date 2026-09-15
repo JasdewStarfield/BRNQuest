@@ -25,6 +25,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.jetbrains.annotations.Nullable;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.client.ui.EditorItemSelectorScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.EditorLocalizedQuestTextScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ItemChoiceScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.ItemSubmissionScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
@@ -66,6 +67,8 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
         // Global clickable ingredients are queried only for JEI-managed screens. QuestScreen is
         // full-width, so registration activates recipe/use input without reserving overlay space.
         registration.addGuiScreenHandler(QuestScreen.class, BrnQuestJeiPlugin::questProperties);
+        registration.addGuiScreenHandler(EditorLocalizedQuestTextScreen.class,
+                BrnQuestJeiPlugin::localizedTextProperties);
         registration.addGhostIngredientHandler(EditorItemSelectorScreen.class, new ItemSelectorGhostHandler());
         registration.addGhostIngredientHandler(ItemChoiceScreen.class, new ItemChoiceGhostHandler());
         registration.addGlobalGuiHandler(new BrnQuestClickableItemHandler());
@@ -159,6 +162,14 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
     private static IGuiProperties questProperties(QuestScreen screen) {
         if (!hasValidDimensions(screen)) return null;
         return new ScreenGuiProperties(QuestScreen.class, 0, 0, screen.width, screen.height,
+                screen.width, screen.height);
+    }
+
+    @Nullable
+    private static IGuiProperties localizedTextProperties(EditorLocalizedQuestTextScreen screen) {
+        if (!hasValidDimensions(screen)) return null;
+        // Full-screen bounds activate recipe/use keys without placing JEI's ingredient list over the editor.
+        return new ScreenGuiProperties(EditorLocalizedQuestTextScreen.class, 0, 0, screen.width, screen.height,
                 screen.width, screen.height);
     }
 

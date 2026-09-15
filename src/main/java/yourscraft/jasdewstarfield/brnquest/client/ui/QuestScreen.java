@@ -864,7 +864,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         detailsInteraction.textAreas(result.textAreas());
         detailsInteraction.links(result.links());
         if (result.hint() != null) hoveredComponentTooltip = List.of(result.hint());
-        if (!result.hoveredItem().isEmpty()) hoveredDetailStack = result.hoveredItem();
+        if (result.hoveredLookup() != null) {
+            hoveredRecipeLookupTarget = result.hoveredLookup();
+            hoveredDetailStack = result.hoveredLookup().stack();
+        }
         if (result.lockedStatusHovered()) hoveredComponentTooltip = dependencyTooltip(quest);
         if (editing) {
             renderDetailEditorEntry(graphics, questPropertyButtonBounds(), "✎",

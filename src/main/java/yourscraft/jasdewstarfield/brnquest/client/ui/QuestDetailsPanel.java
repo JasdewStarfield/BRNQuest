@@ -34,7 +34,7 @@ final class QuestDetailsPanel {
         default int rewardWidth(RewardDefinition reward) { return QuestViewportMath.REWARD_ROW_HEIGHT; }
     }
     record Result(Map<String, UiRect> textAreas, UiRect completeAction, UiRect trackAction,
-                  List<QuestDetailsInteraction.LinkTarget> links, Component hint, ItemStack hoveredItem,
+                  List<QuestDetailsInteraction.LinkTarget> links, Component hint, RecipeLookupTarget hoveredLookup,
                   boolean lockedStatusHovered) {}
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
     private final DocumentView documentView = new DocumentView();
@@ -53,7 +53,7 @@ final class QuestDetailsPanel {
         Map<String, UiRect> textAreas = new LinkedHashMap<>();
         List<QuestDetailsInteraction.LinkTarget> documentLinks = new ArrayList<>();
         Component hint = null;
-        ItemStack hoveredItem = ItemStack.EMPTY;
+        RecipeLookupTarget hoveredLookup = null;
         boolean descriptionVisible = editing || !model.description().text().isBlank();
         boolean descriptionPlaceholder = descriptionVisible && model.description().text().isBlank();
         ResolvedDocument displayedDescription = descriptionPlaceholder
@@ -148,12 +148,16 @@ final class QuestDetailsPanel {
             int documentMouseY = mouseY - descriptionTop;
             var hoveredContent = DocumentView.contentAt(prepared.layout(), documentMouseX, documentMouseY,
                     documentViewport);
-            if (hoveredContent != null) {
-                hoveredItem = DocumentView.itemAt(prepared.layout(), documentMouseX, documentMouseY,
+            if (hoveredContent != null && hoveredContent.content().kind()
+                    == yourscraft.jasdewstarfield.brnquest.data.text.RichDocument.ContentKind.ITEM) {
+                ItemStack item = DocumentView.itemAt(prepared.layout(), documentMouseX, documentMouseY,
                         documentViewport);
-                if (hoveredItem.isEmpty()) hint = Component.translatable(
-                        "screen.brnquest.markdown.content_tooltip", hoveredContent.content().alt(),
-                        hoveredContent.content().id());
+                UiRect itemBounds = new UiRect(contentLeft + hoveredContent.bounds().left(),
+                        descriptionTop + hoveredContent.bounds().top(), contentLeft + hoveredContent.bounds().right(),
+                        descriptionTop + hoveredContent.bounds().bottom());
+                // JEI and the native Tooltip must agree with the final scissored icon pixels.
+                hoveredLookup = RecipeLookupTarget.clipped(item, itemBounds, clip)
+                        .filter(target -> target.contains(mouseX, mouseY)).orElse(null);
             }
             documentLinks.addAll(visibleDocumentLinks(prepared.layout(), contentLeft, descriptionTop, layout.content()));
             for (QuestDetailsInteraction.LinkTarget link : documentLinks) {
@@ -214,7 +218,7 @@ final class QuestDetailsPanel {
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();
         return new Result(Map.copyOf(textAreas), completeAction, trackAction, List.copyOf(documentLinks), hint,
-                hoveredItem, locked);
+                hoveredLookup, locked);
     }
 
     /** Converts document-local link runs to clipped frame geometry used by the input snapshot. */

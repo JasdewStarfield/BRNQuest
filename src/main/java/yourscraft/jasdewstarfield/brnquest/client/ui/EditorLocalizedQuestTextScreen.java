@@ -22,6 +22,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRendere
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentView;
@@ -35,11 +37,12 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /** Locale-safe source editor whose preview uses the same parser, layout engine and renderer as quest details. */
-public final class EditorLocalizedQuestTextScreen extends Screen {
+public final class EditorLocalizedQuestTextScreen extends Screen implements RecipeLookupSource {
     public record Value(String locale, String title, String subtitle, String description,
                         DocumentFormat descriptionFormat) {}
 
@@ -171,13 +174,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         if (link != null) hovered = Component.literal(link.toString());
         ItemStack item = previewItemAt(mouseX, mouseY);
         if (!item.isEmpty()) graphics.renderTooltip(font, item, mouseX, mouseY);
-        else {
-            DocumentLayout.ContentHit content = previewContentAt(mouseX, mouseY);
-            if (content != null) hovered = Component.translatable("screen.brnquest.markdown.content_tooltip",
-                    content.content().alt(), content.content().id());
-            if (hovered != null)
-                graphics.renderTooltip(font, font.split(hovered, Math.min(280, width - 20)), mouseX, mouseY);
-        }
+        else if (hovered != null)
+            graphics.renderTooltip(font, font.split(hovered, Math.min(280, width - 20)), mouseX, mouseY);
     }
 
     private void renderHeader(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
@@ -522,6 +520,19 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
                 || !renderedPreviewBounds.containsExclusive(mouseX, mouseY)) return ItemStack.EMPTY;
         return DocumentView.itemAt(renderedPreview.layout(), (int) Math.floor(mouseX) - renderedDocumentX,
                 (int) Math.floor(mouseY) - renderedDocumentY, previewViewport());
+    }
+
+    @Override
+    public Optional<RecipeLookupTarget> recipeLookupTargetAt(double mouseX, double mouseY) {
+        DocumentLayout.ContentHit content = previewContentAt(mouseX, mouseY);
+        if (content == null || content.content().kind() != RichDocument.ContentKind.ITEM) return Optional.empty();
+        ItemStack item = previewItemAt(mouseX, mouseY);
+        UiRect bounds = new UiRect(renderedDocumentX + content.bounds().left(),
+                renderedDocumentY + content.bounds().top(), renderedDocumentX + content.bounds().right(),
+                renderedDocumentY + content.bounds().bottom());
+        // Keep JEI shortcuts on the exact visible part of an item clipped by preview scrolling.
+        return RecipeLookupTarget.clipped(item, bounds, renderedPreviewBounds)
+                .filter(target -> target.contains(mouseX, mouseY));
     }
 
     private DocumentLayout.Bounds previewViewport() {

@@ -132,6 +132,7 @@ class OptionalIntegrationBoundaryTest {
         assertTrue(source.contains("addGuiScreenHandler(EditorItemSelectorScreen.class"));
         assertTrue(source.contains("addGuiScreenHandler(ItemChoiceScreen.class"));
         assertTrue(source.contains("addGuiScreenHandler(QuestScreen.class"));
+        assertTrue(source.contains("addGuiScreenHandler(EditorLocalizedQuestTextScreen.class"));
         assertTrue(source.contains("addGhostIngredientHandler(ItemChoiceScreen.class"));
         assertTrue(source.contains("addGlobalGuiHandler"));
     }
@@ -147,5 +148,12 @@ class OptionalIntegrationBoundaryTest {
         // Returning null is part of JEI's IScreenHandler contract and lets its next update retry.
         assertTrue(method >= 0 && guard > method && properties > guard,
                 "QuestScreen dimensions must be validated before JEI receives GUI properties");
+
+        int editorMethod = source.indexOf("private static IGuiProperties localizedTextProperties");
+        int editorGuard = source.indexOf("if (!hasValidDimensions(screen)) return null;", editorMethod);
+        int editorProperties = source.indexOf("new ScreenGuiProperties(EditorLocalizedQuestTextScreen.class",
+                editorMethod);
+        assertTrue(editorMethod >= 0 && editorGuard > editorMethod && editorProperties > editorGuard,
+                "Localized text editor dimensions must be validated before JEI receives GUI properties");
     }
 }

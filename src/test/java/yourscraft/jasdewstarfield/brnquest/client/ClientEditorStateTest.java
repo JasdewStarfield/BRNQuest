@@ -122,6 +122,9 @@ class ClientEditorStateTest {
 
         assertEquals(List.of("test:current", "test:alpha", "test:zeta", "test:backup_old", "test:old_cn"),
                 state.orderedCatalog(displayed).stream().map(entry -> entry.bookId().toString()).toList());
+        assertEquals(List.of("test:current", "test:alpha", "test:zeta", "test:backup_old", "test:old_cn"),
+                state.filteredCatalog(displayed, "").stream().map(entry -> entry.bookId().toString()).toList(),
+                "An empty Advanced drafts search must retain the complete catalog");
         assertEquals(List.of("test:old_cn"), state.filteredCatalog(displayed, "备份").stream()
                 .map(entry -> entry.bookId().toString()).toList());
         assertEquals(List.of("test:backup_old"), state.filteredCatalog(displayed, "BACKUP_OLD").stream()

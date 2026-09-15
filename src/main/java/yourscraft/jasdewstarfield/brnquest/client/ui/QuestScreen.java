@@ -5661,12 +5661,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private List<ClientEditorState.CatalogEntry> editorCatalogEntries() {
         QuestBookSnapshot snapshot = displaySnapshot();
         ResourceLocation displayedBookId = snapshot == null ? null : snapshot.book().id();
-        List<ClientEditorState.CatalogEntry> entries = ClientEditorState.get()
-                .filteredCatalog(displayedBookId, catalogFilter);
-        if (!catalogFilter.isBlank() || displayedBookId == null) return entries;
-        // An unopened menu answers the common question first: which draft matches
-        // the book currently on screen? Historical drafts remain searchable above.
-        return entries.stream().filter(entry -> displayedBookId.equals(entry.bookId())).toList();
+        // This is an explicit "Advanced drafts" catalog: show every draft by default.
+        // ClientEditorState still ranks the currently displayed book first, while
+        // the search field can narrow the complete server-authoritative list.
+        return ClientEditorState.get().filteredCatalog(displayedBookId, catalogFilter);
     }
 
     private void ensureViewportBook(ResourceLocation bookId) {

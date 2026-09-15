@@ -1562,6 +1562,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 boolean opening = !editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG);
                 closeActiveEditorOverlay();
                 if (opening) {
+                    // Imports can create server drafts while this screen remains open.
+                    // Refresh on every explicit catalog open instead of showing the init-time snapshot.
+                    editor.beginCatalogRequest();
+                    AuthoringNetwork.requestCatalog();
                     editorOverlays.show(EditorOverlayHost.Kind.CATALOG);
                     catalogFilter = "";
                     catalogPicker.reset();

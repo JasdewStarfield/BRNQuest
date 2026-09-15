@@ -6,6 +6,8 @@ import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -339,6 +341,67 @@ class FtbV13ImporterTest {
         var conflict = new FtbV13Importer().importBook(temporary, "test", "main");
         assertTrue(conflict.report().hasFatal());
         assertTrue(conflict.report().toJson().contains("BQF-106"));
+    }
+
+    @Test void richDescriptionsConvertPerLocaleWithFormatsDiagnosticsAndSourceRecovery() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.createDirectories(temporary.resolve("lang"));
+        Files.writeString(temporary.resolve("data.snbt"),
+                "{version:13,fallback_locale:'en_us'}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/text.snbt"),
+                "{id:'1000000000000001',quests:[{id:'2000000000000001'}]}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/en_us.snbt"), """
+                {quest.2000000000000001.title:"Text",quest.2000000000000001.quest_desc:[
+                "literal * marker &cRed&r", "{@pagebreak}",
+                "{\\\"text\\\":\\\"Docs\\\",\\\"clickEvent\\\":{\\\"action\\\":\\\"open_url\\\",\\\"value\\\":\\\"https://example.com\\\"}}"]}
+                """, StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/zh_cn.snbt"),
+                "{quest.2000000000000001.quest_desc:[\"中文 &n下划线&r\"]}", StandardCharsets.UTF_8);
+
+        FtbImportResult result = new FtbV13Importer().importBook(temporary, "converted", "rich_text");
+        var quest = result.book().quests().getFirst();
+        var chinese = BookText.resolveQuestDescription(result.book(), quest, "zh_cn");
+
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        assertEquals(DocumentFormat.MARKDOWN_V1, quest.descriptionFormat());
+        assertTrue(quest.description().contains("literal \\* marker"));
+        assertTrue(quest.description().contains("brnquest:style/color/ff5555"));
+        assertTrue(quest.description().contains("[Docs](<https://example.com>)"));
+        assertEquals(DocumentFormat.MARKDOWN_V1, chinese.format());
+        assertTrue(chinese.text().contains("brnquest:style/underline"));
+        assertTrue(result.report().toJson().contains("BQF-TEXT-PAGEBREAK-FLATTENED"));
+        assertTrue(result.book().extensions().keySet().stream()
+                .anyMatch(key -> key.startsWith("ftb.rich_text_source.en_us.")));
+        assertTrue(result.fieldConversions().stream().anyMatch(conversion ->
+                conversion.sourceField().endsWith("quest_desc")
+                        && conversion.targetField().endsWith("quest_desc_format")
+                        && conversion.status() == FtbFieldConversion.Status.MAPPED));
+        assertEquals(result.book(), NativeBookJson.decode(com.google.gson.JsonParser.parseString(
+                NativeBookJson.encode(result.book())).getAsJsonObject()));
+    }
+
+    @Test void dangerousRichTextActionIsReportedAndNeverImportedAsAnAction() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.createDirectories(temporary.resolve("lang"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/text.snbt"),
+                "{id:'1000000000000001',quests:[{id:'2000000000000001'}]}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/en_us.snbt"), """
+                {quest.2000000000000001.quest_desc:[
+                "{\\\"text\\\":\\\"Visible\\\",\\\"clickEvent\\\":{\\\"action\\\":\\\"run_command\\\",\\\"value\\\":\\\"/op @s\\\"}}"]}
+                """, StandardCharsets.UTF_8);
+
+        FtbImportResult result = new FtbV13Importer().importBook(temporary, "converted", "unsafe_text");
+
+        assertTrue(result.report().hasErrors());
+        assertTrue(result.report().toJson().contains("BQF-TEXT-UNSAFE-ACTION"));
+        assertEquals("Visible", result.book().quests().getFirst().description());
+        assertFalse(result.book().quests().getFirst().description().contains("/op"));
+        assertTrue(result.fieldConversions().stream().anyMatch(conversion ->
+                conversion.sourceField().endsWith("quest_desc")
+                        && conversion.status() == FtbFieldConversion.Status.UNSUPPORTED));
     }
 
     @Test void mapsV13OptionalAutoPoliciesNamespacesLanguagesAndExtensions() throws Exception {

@@ -8,6 +8,10 @@ import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
+import yourscraft.jasdewstarfield.brnquest.compat.ftb.text.BrnQuestMarkdownSerializer;
+import yourscraft.jasdewstarfield.brnquest.compat.ftb.text.FtbRichTextParser;
+import yourscraft.jasdewstarfield.brnquest.compat.ftb.text.FtbTextDiagnostic;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.io.IOException;
@@ -39,6 +43,8 @@ public final class FtbV13Importer {
         List<ChapterDefinition> chapters = new ArrayList<>();
         Map<String, ResourceLocation> aliases = new TreeMap<>();
         Map<String, Map<String, String>> localeTranslations = new TreeMap<>();
+        Map<String, Map<String, List<String>>> localeDescriptionLines = new TreeMap<>();
+        Map<String, Map<String, String>> localeSourceFiles = new TreeMap<>();
         List<FtbFieldConversion> conversions = new ArrayList<>();
         String fallbackLocale = "en_us";
         String defaultAutoClaim = "disabled";
@@ -81,7 +87,10 @@ public final class FtbV13Importer {
             bookDefaults = importDefaults(data, defaultAppearance);
             fileExtensions.putAll(extensions(data, Set.of("version", "title", "default_autoclaim_rewards", "default_consume_items", "default_reward_team", "suppress_all_autoclaiming", "pause_game"),
                     "data.snbt", "data", conversions));
-            readAllTranslations(source.resolve("lang"), localeTranslations, report);
+            readAllTranslations(source.resolve("lang"), localeTranslations, localeDescriptionLines,
+                    localeSourceFiles, report);
+            convertRichDescriptions(localeTranslations, localeDescriptionLines, localeSourceFiles,
+                    fileExtensions, report, conversions);
             String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
                     : localeTranslations.containsKey("zh_cn") ? "zh_cn"
                     : localeTranslations.isEmpty() ? fallbackLocale : localeTranslations.keySet().iterator().next();
@@ -118,6 +127,8 @@ public final class FtbV13Importer {
     }
 
     private void readAllTranslations(Path directory, Map<String, Map<String, String>> target,
+                                     Map<String, Map<String, List<String>>> descriptionLines,
+                                     Map<String, Map<String, String>> sourceFiles,
                                      DiagnosticReport report) throws IOException {
         if (!Files.isDirectory(directory)) return;
         try (var files = Files.list(directory)) {
@@ -127,7 +138,8 @@ public final class FtbV13Importer {
                 String locale = BookLocalization.normalizeLocale(filename.substring(0, filename.length() - 5));
                 Map<String, String> translations = new TreeMap<>();
                 try {
-                    readTranslations(reader.read(path), translations);
+                    CompoundTag language = reader.read(path);
+                    readTranslations(language, translations);
                     // Multiple source filenames may normalize to one locale; do not overwrite a whole table.
                     Map<String, String> merged = new TreeMap<>(target.getOrDefault(locale, Map.of()));
                     translations.forEach((key, value) -> {
@@ -138,12 +150,77 @@ public final class FtbV13Importer {
                         }
                     });
                     target.put(locale, merged);
+                    Map<String, List<String>> mergedLines = new TreeMap<>(descriptionLines.getOrDefault(locale, Map.of()));
+                    Map<String, String> mergedFiles = new TreeMap<>(sourceFiles.getOrDefault(locale, Map.of()));
+                    for (String key : language.getAllKeys()) {
+                        Tag value = language.get(key);
+                        if (!(value instanceof ListTag lines) || !key.endsWith(".quest_desc")) continue;
+                        List<String> rawLines = java.util.stream.IntStream.range(0, lines.size())
+                                .mapToObj(lines::getString).toList();
+                        String joined = String.join("\n", rawLines);
+                        if (joined.equals(merged.get(key))) {
+                            mergedLines.putIfAbsent(key, rawLines);
+                            mergedFiles.putIfAbsent(key, filename);
+                        }
+                    }
+                    descriptionLines.put(locale, mergedLines);
+                    sourceFiles.put(locale, mergedFiles);
                 } catch (Exception exception) {
                     report.add(problem(Diagnostic.Severity.ERROR, "BQF-105", filename, "", "",
                             "Language file could not be read: " + exception.getMessage()));
                 }
             }
         }
+    }
+
+    private void convertRichDescriptions(Map<String, Map<String, String>> translations,
+                                         Map<String, Map<String, List<String>>> descriptionLines,
+                                         Map<String, Map<String, String>> sourceFiles,
+                                         Map<String, String> fileExtensions,
+                                         DiagnosticReport report, List<FtbFieldConversion> conversions) {
+        FtbRichTextParser parser = new FtbRichTextParser();
+        BrnQuestMarkdownSerializer serializer = new BrnQuestMarkdownSerializer();
+        for (var localeEntry : descriptionLines.entrySet()) {
+            String locale = localeEntry.getKey();
+            Map<String, String> values = translations.get(locale);
+            for (var description : localeEntry.getValue().entrySet()) {
+                String key = description.getKey();
+                String file = sourceFiles.getOrDefault(locale, Map.of()).getOrDefault(key, locale + ".snbt");
+                var converted = serializer.serialize(parser.parse(description.getValue(), file, key, values));
+                values.put(key, converted.markdown());
+                values.put(key + "_format", DocumentFormat.MARKDOWN_V1.serializedName());
+                boolean unsupported = converted.diagnostics().stream()
+                        .anyMatch(diagnostic -> diagnostic.severity() == FtbTextDiagnostic.Severity.ERROR);
+                conversions.add(new FtbFieldConversion(file, key, key,
+                        key + " + " + key + "_format",
+                        unsupported ? FtbFieldConversion.Status.UNSUPPORTED : FtbFieldConversion.Status.MAPPED,
+                        "Converted FTB rich text to markdown_v1; diagnostics=" + converted.diagnostics().size()));
+                for (FtbTextDiagnostic diagnostic : converted.diagnostics()) {
+                    report.add(new Diagnostic(importSeverity(diagnostic.severity()), diagnostic.code(),
+                            diagnostic.source().file(), key + "[" + diagnostic.source().line() + ":"
+                            + diagnostic.source().column() + "]", questIdFromTranslationKey(key), diagnostic.message()));
+                }
+                if (!converted.diagnostics().isEmpty()) {
+                    // Non-equivalent source remains available even after the runtime-safe Markdown replaces it.
+                    fileExtensions.put("ftb.rich_text_source." + locale + "." + key,
+                            new com.google.gson.Gson().toJson(description.getValue()));
+                }
+            }
+        }
+    }
+
+    private static Diagnostic.Severity importSeverity(FtbTextDiagnostic.Severity severity) {
+        return switch (severity) {
+            case INFO -> Diagnostic.Severity.INFO;
+            case WARN -> Diagnostic.Severity.WARN;
+            case ERROR -> Diagnostic.Severity.ERROR;
+        };
+    }
+
+    private static String questIdFromTranslationKey(String key) {
+        if (!key.startsWith("quest.")) return "";
+        int end = key.indexOf('.', "quest.".length());
+        return end < 0 ? "" : key.substring("quest.".length(), end);
     }
 
     private void readTranslations(CompoundTag tag, Map<String, String> target) {
@@ -293,6 +370,7 @@ public final class FtbV13Importer {
                 title,
                 translations.getOrDefault("quest." + legacy + ".quest_subtitle", ""),
                 translations.getOrDefault("quest." + legacy + ".quest_desc", ""),
+                DocumentFormat.parse(translations.get("quest." + legacy + ".quest_desc_format")),
                 raw.contains("icon") ? raw.get("icon").toString() : "", raw.getDouble("x"), raw.getDouble("y"),
                 dependencies, tasks, rewards, legacy, appearance, behavior,
                 extensions(raw, Set.of("id", "title", "subtitle", "description", "icon", "x", "y",

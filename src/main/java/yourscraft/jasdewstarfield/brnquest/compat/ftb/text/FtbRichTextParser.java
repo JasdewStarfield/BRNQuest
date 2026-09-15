@@ -64,15 +64,21 @@ public final class FtbRichTextParser {
         if ((trimmed.startsWith("{") && trimmed.endsWith("}"))
                 || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
             try {
+                int start = context.nodes.size();
                 parseJson(JsonParser.parseString(unescapeUnicode(trimmed)), FtbTextStyle.EMPTY,
                         FtbTextNode.Action.NONE, source, context, depth);
+                if (context.nodes.size() == start)
+                    context.add(new FtbTextNode.Text("", FtbTextStyle.EMPTY, FtbTextNode.Action.NONE, source));
                 return;
             } catch (JsonParseException ignored) {
                 // FTB deliberately falls back to its concise legacy parser when JSON parsing fails.
             }
         }
+        int start = context.nodes.size();
         parseLegacy(unescapeUnicode(raw).replace("\\n", "\n"), source, FtbTextStyle.EMPTY,
                 FtbTextNode.Action.NONE, context, depth);
+        if (context.nodes.size() == start)
+            context.add(new FtbTextNode.Text("", FtbTextStyle.EMPTY, FtbTextNode.Action.NONE, source));
     }
 
     private void parseLegacy(String value, FtbTextSource source, FtbTextStyle initialStyle,

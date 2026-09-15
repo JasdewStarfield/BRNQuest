@@ -11,6 +11,7 @@ import java.net.URI;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -71,6 +72,19 @@ class DocumentLayoutEngineTest {
         assertTrue(runs.stream().anyMatch(run -> run.text().equals("warning")
                 && Integer.valueOf(0xFFAA00).equals(run.style().color())));
         assertTrue(layout.links().isEmpty());
+    }
+
+    @Test void combinedStyleExtensionAvoidsUnsupportedNestedLinks() {
+        RichDocument document = parser.parse(new ResolvedDocument(
+                "[alert](brnquest:style/color/red+underline+strikethrough+obfuscated)",
+                DocumentFormat.MARKDOWN_V1, "en_us"));
+
+        var block = assertInstanceOf(RichDocument.FlowBlock.class, document.blocks().getFirst());
+        var span = assertInstanceOf(RichDocument.StyleSpan.class, block.inlines().getFirst());
+        assertEquals(0xFF5555, span.style().color());
+        assertTrue(span.style().underlined());
+        assertTrue(span.style().strikethrough());
+        assertTrue(span.style().obfuscated());
     }
 
     @Test void finalFontSequenceNeverReinterpretsLiteralSectionSigns() {

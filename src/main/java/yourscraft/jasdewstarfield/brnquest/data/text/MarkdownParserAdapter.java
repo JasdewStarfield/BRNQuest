@@ -239,20 +239,26 @@ public final class MarkdownParserAdapter {
     private static RichDocument.InlineStyle markdownStyle(String destination) {
         if (!isStyleTarget(destination)) return null;
         String target = destination.substring(STYLE_PREFIX.length()).toLowerCase(Locale.ROOT);
-        return switch (target) {
-            case "underline" -> new RichDocument.InlineStyle(null, false, false, true, false, false);
-            case "strikethrough" -> new RichDocument.InlineStyle(null, false, false, false, true, false);
-            case "obfuscated" -> new RichDocument.InlineStyle(null, false, false, false, false, true);
-            default -> {
-                if (!target.startsWith("color/")) yield null;
-                String value = target.substring("color/".length());
+        Integer color = null;
+        boolean underlined = false;
+        boolean strikethrough = false;
+        boolean obfuscated = false;
+        for (String part : target.split("\\+")) {
+            if (part.equals("underline")) underlined = true;
+            else if (part.equals("strikethrough")) strikethrough = true;
+            else if (part.equals("obfuscated")) obfuscated = true;
+            else if (part.startsWith("color/")) {
+                if (color != null) return null;
+                String value = part.substring("color/".length());
                 MinecraftTextColor named = MinecraftTextColor.byName(value);
-                Integer color = named == null ? null : named.rgb();
+                color = named == null ? null : named.rgb();
                 if (color == null && value.matches("[0-9a-f]{6}")) color = Integer.parseInt(value, 16);
-                yield color == null ? null
-                        : new RichDocument.InlineStyle(color, false, false, false, false, false);
-            }
-        };
+                if (color == null) return null;
+            } else return null;
+        }
+        RichDocument.InlineStyle style = new RichDocument.InlineStyle(color, false, false,
+                underlined, strikethrough, obfuscated);
+        return style.isEmpty() ? null : style;
     }
 
     private static ContentTarget contentTarget(String destination) {

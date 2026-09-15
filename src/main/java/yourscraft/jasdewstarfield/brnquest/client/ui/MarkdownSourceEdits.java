@@ -4,7 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 /** Pure selection edits used by the Markdown toolbar and covered without a running client. */
 final class MarkdownSourceEdits {
-    enum Tool { HEADING, BOLD, ITALIC, LIST, CODE, LINK, UNDERLINE, STRIKETHROUGH, OBFUSCATED, COLOR }
+    enum Tool { HEADING, BOLD, ITALIC, LIST, CODE, LINK, QUEST_LINK, UNDERLINE, STRIKETHROUGH, OBFUSCATED, COLOR }
     record Result(String text, int selectionStart, int selectionEnd) {}
 
     private MarkdownSourceEdits() {}
@@ -20,6 +20,7 @@ final class MarkdownSourceEdits {
             case ITALIC -> inline(text, start, end, "*", content, "*");
             case CODE -> inline(text, start, end, "`", content, "`");
             case LINK -> inline(text, start, end, "[", content, "](https://example.com)");
+            case QUEST_LINK -> throw new IllegalArgumentException("Quest link requires a selected target ID");
             case HEADING -> prefixLines(text, start, end, "## ", content);
             case LIST -> prefixLines(text, start, end, "- ", content);
             case UNDERLINE -> style(text, start, end, content, "underline");
@@ -51,6 +52,18 @@ final class MarkdownSourceEdits {
         String changed = text.substring(0, start) + content + text.substring(end);
         int selectionStart = start + 2;
         return new Result(changed, selectionStart, selectionStart + alt.length());
+    }
+
+    /** Inserts the stable BRNQuest target while keeping the visible label selected for immediate editing. */
+    static Result insertQuestLink(String source, int first, int second, String questId, String placeholder) {
+        if (questId == null || !questId.matches("[a-z0-9_.-]+:[a-z0-9/._-]+"))
+            throw new IllegalArgumentException("Quest link requires a namespaced target ID");
+        String text = source == null ? "" : source;
+        int start = safeBoundary(text, Math.min(first, second));
+        int end = safeBoundary(text, Math.max(first, second));
+        String selected = text.substring(start, end);
+        String label = (selected.isEmpty() ? placeholder : selected).replace('\n', ' ').replace('\r', ' ');
+        return inline(text, start, end, "[", label, "](brnquest:quest/" + questId + ")");
     }
 
     private static Result inline(String text, int start, int end, String before, String content, String after) {

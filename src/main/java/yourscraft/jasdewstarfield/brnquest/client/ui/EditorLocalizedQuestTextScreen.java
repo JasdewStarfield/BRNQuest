@@ -12,6 +12,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
+import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultiLineEditBoxAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultilineTextFieldAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
@@ -28,6 +30,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentView;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
+import yourscraft.jasdewstarfield.brnquest.data.BookText;
+import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
@@ -46,7 +50,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                         DocumentFormat descriptionFormat) {}
 
     private static final int WIDE_LAYOUT_MINIMUM = 620;
-    private static final int TOOLBAR_COLUMNS = 6;
+    private static final int TOOLBAR_COLUMNS = 7;
     private static final MarkdownSourceEdits.Tool[] TOOLS = MarkdownSourceEdits.Tool.values();
     private static final int CONTENT_TOOL_COUNT = 2;
     private static final EditorIcon TEXTURE_TOOL_ICON = QuestActionIcons.named("search");
@@ -56,6 +60,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private final Screen parent;
     private final Predicate<Value> consumer;
     private final Runnable discardRecovery;
+    private final ResourceLocation editedQuestId;
     private final List<String> locales;
     private final LocalizedQuestTextDrafts drafts;
     private final DocumentView documentView = new DocumentView();
@@ -97,6 +102,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         this.parent = parent;
         this.consumer = consumer;
         this.discardRecovery = discardRecovery == null ? () -> {} : discardRecovery;
+        this.editedQuestId = quest.id();
         this.drafts = new LocalizedQuestTextDrafts(localization, quest);
         this.drafts.seed(recovery);
         LinkedHashSet<String> available = new LinkedHashSet<>();
@@ -171,8 +177,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 EditorButton.Tone.PRIMARY, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
         RichDocument.LinkDestination link = previewLinkAt(mouseX, mouseY);
-        if (link instanceof RichDocument.ExternalLink external) hovered = Component.literal(external.uri().toString());
-        else if (link instanceof RichDocument.QuestLink quest) hovered = Component.literal(quest.questId());
+        if (link != null) hovered = previewLinkHint(link);
         ItemStack item = previewItemAt(mouseX, mouseY);
         if (!item.isEmpty()) graphics.renderTooltip(font, item, mouseX, mouseY);
         else if (hovered != null)
@@ -311,6 +316,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 if (toolBounds(tool).containsExclusive(mouseX, mouseY)) {
                     if (tool == MarkdownSourceEdits.Tool.COLOR)
                         minecraft.setScreen(new EditorMarkdownColorScreen(this, this::insertColor));
+                    else if (tool == MarkdownSourceEdits.Tool.QUEST_LINK) openQuestLinkPicker();
                     else applyTool(tool);
                     return true;
                 }
@@ -329,8 +335,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             ConfirmLinkScreen.confirmLinkNow(this, external.uri(), true);
             return true;
         }
-        // In-book links stay inert in the child editor until the dedicated authoring route is installed.
-        if (link instanceof RichDocument.QuestLink) return true;
+        if (link instanceof RichDocument.QuestLink) {
+            // Keep the unsaved localized buffer open; navigation belongs to the task-book details screen.
+            formatNotice = Component.translatable("screen.brnquest.editor.markdown.quest_link.preview_only");
+            return true;
+        }
         if (button == 0 && cancelBounds().containsExclusive(mouseX, mouseY)) {
             onClose();
             return true;
@@ -476,6 +485,44 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 Component.translatable("screen.brnquest.editor.markdown.placeholder.item").getString());
     }
 
+    private void openQuestLinkPicker() {
+        rememberWidgets();
+        var snapshot = ClientEditorState.get().displayDraft()
+                .orElseGet(() -> ClientQuestState.get().book().orElse(null));
+        if (snapshot == null) {
+            formatNotice = Component.translatable("screen.brnquest.editor.markdown.quest_link.unavailable");
+            return;
+        }
+        String locale = locales.get(localeIndex);
+        List<EditorChoiceScreen.Choice> choices = new ArrayList<>();
+        for (ChapterDefinition chapter : snapshot.book().chapters()) {
+            String chapterTitle = BookText.structureTitle(snapshot.book(), "chapter", chapter.id(), locale,
+                    chapter.title());
+            if (chapterTitle.isBlank()) chapterTitle = chapter.id().toString();
+            for (QuestDefinition quest : chapter.quests()) {
+                if (quest.id().equals(editedQuestId)) continue;
+                String questTitle = BookText.quest(snapshot.book(), quest, locale, "title", quest.title());
+                if (questTitle.isBlank()) questTitle = quest.id().toString();
+                choices.add(new EditorChoiceScreen.Choice(quest.id().toString(),
+                        Component.literal(questTitle + " · " + chapterTitle)));
+            }
+        }
+        minecraft.setScreen(new EditorChoiceScreen(this,
+                Component.translatable("screen.brnquest.editor.markdown.quest_link.select"), choices, "",
+                this::insertQuestLink));
+    }
+
+    private void insertQuestLink(String questId) {
+        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
+        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        MarkdownSourceEdits.Result result = MarkdownSourceEdits.insertQuestLink(descriptionEditor.getValue(),
+                selection.brnquest$cursor(), selection.brnquest$selectCursor(), questId,
+                Component.translatable(toolPlaceholder(MarkdownSourceEdits.Tool.QUEST_LINK)).getString());
+        applySourceEdit(field, result);
+        reopenSelectionStart = result.selectionStart();
+        reopenSelectionEnd = result.selectionEnd();
+    }
+
     private void insertContent(RichDocument.ContentKind kind, String id, String placeholder) {
         MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
         MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
@@ -523,6 +570,24 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         DocumentLayout.Bounds viewport = new DocumentLayout.Bounds(0, viewportTop,
                 renderedPreviewBounds.width(), viewportTop + renderedPreviewBounds.height());
         return DocumentView.linkAt(renderedPreview.layout(), localX, localY, viewport);
+    }
+
+    private Component previewLinkHint(RichDocument.LinkDestination destination) {
+        if (destination instanceof RichDocument.ExternalLink external)
+            return Component.literal(external.uri().toString());
+        if (!(destination instanceof RichDocument.QuestLink questLink))
+            return Component.translatable("screen.brnquest.markdown.quest_link.unavailable");
+        ResourceLocation targetId = ResourceLocation.tryParse(questLink.questId());
+        var snapshot = ClientEditorState.get().displayDraft()
+                .orElseGet(() -> ClientQuestState.get().book().orElse(null));
+        QuestDefinition target = snapshot == null || targetId == null ? null : snapshot.quests().get(targetId);
+        if (target == null) return Component.translatable("screen.brnquest.markdown.quest_link.unavailable");
+        String locale = locales.get(localeIndex);
+        String title = BookText.quest(snapshot.book(), target, locale, "title", target.title());
+        if (title.isBlank()) title = target.id().toString();
+        String chapter = BookText.structureTitle(snapshot.book(), "chapter", target.chapterId(), locale,
+                target.chapterId().toString());
+        return Component.translatable("screen.brnquest.markdown.quest_link.open", title, chapter);
     }
 
     private DocumentLayout.ContentHit previewContentAt(double mouseX, double mouseY) {
@@ -640,6 +705,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             case LIST -> "•";
             case CODE -> "`";
             case LINK -> "↗";
+            case QUEST_LINK -> "Q→";
             case UNDERLINE -> "U";
             case STRIKETHROUGH -> "S";
             case OBFUSCATED -> "K";

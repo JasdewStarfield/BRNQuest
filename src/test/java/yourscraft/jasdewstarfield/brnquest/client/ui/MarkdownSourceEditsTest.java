@@ -54,6 +54,14 @@ class MarkdownSourceEditsTest {
         assertEquals("😀", color.text().substring(color.selectionStart(), color.selectionEnd()));
     }
 
+    @Test void insertsAStableQuestTargetAndKeepsTheVisibleLabelSelected() {
+        var result = MarkdownSourceEdits.insertQuestLink("before next after", 7, 11,
+                "example:chapter/target", "quest");
+
+        assertEquals("before [next](brnquest:quest/example:chapter/target) after", result.text());
+        assertEquals("next", result.text().substring(result.selectionStart(), result.selectionEnd()));
+    }
+
     @Test void colorPickerAcceptsOnlyNamedPaletteOrOpaqueRgb() {
         assertEquals("dark_red", EditorMarkdownColorScreen.normalizeColor(" DARK_RED "));
         assertEquals("12abef", EditorMarkdownColorScreen.normalizeColor("#12AbEf"));

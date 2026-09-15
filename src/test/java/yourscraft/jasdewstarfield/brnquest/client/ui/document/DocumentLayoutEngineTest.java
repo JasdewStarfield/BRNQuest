@@ -73,6 +73,14 @@ class DocumentLayoutEngineTest {
         assertTrue(layout.links().isEmpty());
     }
 
+    @Test void finalFontSequenceNeverReinterpretsLiteralSectionSigns() {
+        StringBuilder visible = new StringBuilder();
+        DocumentView.styled("literal §x and §", DocumentTextStyle.PLAIN).accept(
+                (index, style, codePoint) -> { visible.appendCodePoint(codePoint); return true; });
+
+        assertEquals("literal §x and §", visible.toString());
+    }
+
     @Test void punctuationEmojiAndLongIdentifiersAlwaysAdvanceAtSafeBoundaries() {
         DocumentLayout layout = layout("甲乙，丙（丁） 👨‍👩‍👧‍👦 brnquest:very_long_identifier", 8);
         List<String> lines = layout.lines().stream().map(line -> line.runs().stream()

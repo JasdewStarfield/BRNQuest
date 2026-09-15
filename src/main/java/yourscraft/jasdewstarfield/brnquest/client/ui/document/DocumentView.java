@@ -6,6 +6,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.LoadedTextures;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
@@ -149,7 +150,8 @@ public final class DocumentView {
         return BuiltInRegistries.ITEM.get(id).getDefaultInstance();
     }
 
-    private static Component styled(String text, DocumentTextStyle documentStyle) {
+    /** Uses an already-styled sequence so literal section signs cannot be interpreted a second time by Font. */
+    static FormattedCharSequence styled(String text, DocumentTextStyle documentStyle) {
         Style style = Style.EMPTY.withBold(documentStyle.bold()).withItalic(documentStyle.italic())
                 .withUnderlined(documentStyle.underlined()).withStrikethrough(documentStyle.strikethrough())
                 .withObfuscated(documentStyle.obfuscated());
@@ -159,7 +161,7 @@ public final class DocumentView {
             style = style.withUnderlined(true);
             if (documentStyle.color() == null) style = style.withColor(0x68BDE8);
         }
-        return Component.literal(text).withStyle(style);
+        return FormattedCharSequence.forward(text, style);
     }
 
     public record Prepared(RichDocument document, DocumentLayout layout) {}

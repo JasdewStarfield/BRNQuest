@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.text.MarkdownParserAdapter;
 import yourscraft.jasdewstarfield.brnquest.data.text.ResolvedDocument;
@@ -59,7 +60,7 @@ public final class DocumentView {
             for (DocumentLayout.Run run : line.runs()) {
                 float scale = run.style().scale();
                 if (run.style().code()) graphics.fill(x + run.bounds().left() - 1, y + run.bounds().top() - 1,
-                        x + run.bounds().right() + 1, y + run.bounds().bottom(), 0x663A4148);
+                        x + run.bounds().right() + 1, y + run.bounds().bottom(), GraystonePalette.INLINE_CODE);
                 graphics.pose().pushPose();
                 graphics.pose().translate(x + run.bounds().left(), y + run.bounds().top(), 0);
                 graphics.pose().scale(scale, scale, 1.0F);

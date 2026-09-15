@@ -191,12 +191,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
             hovered = Component.translatable("screen.brnquest.editor.markdown.format_hint");
         }
         if (!wideLayout()) {
-            buttons.render(graphics, font, sourceTabBounds(), EditorButton.Definition.text(
-                    Component.translatable("screen.brnquest.editor.markdown.source"), null), true,
-                    !previewTab, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-            buttons.render(graphics, font, previewTabBounds(), EditorButton.Definition.text(
-                    Component.translatable("screen.brnquest.editor.markdown.preview"), null), true,
-                    previewTab, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            Component viewLabel = Component.translatable(previewTab
+                    ? "screen.brnquest.editor.markdown.preview" : "screen.brnquest.editor.markdown.source");
+            buttons.render(graphics, font, viewToggleBounds(), EditorButton.Definition.text(viewLabel,
+                            Component.translatable("screen.brnquest.editor.markdown.view_toggle_hint")),
+                    true, previewTab, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
         if (sourceVisible()) {
             for (MarkdownSourceEdits.Tool tool : TOOLS) {
@@ -272,16 +271,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
             toggleFormat();
             return true;
         }
-        if (!wideLayout() && button == 0 && sourceTabBounds().containsExclusive(mouseX, mouseY)) {
-            previewTab = false;
+        if (!wideLayout() && button == 0 && viewToggleBounds().containsExclusive(mouseX, mouseY)) {
+            previewTab = !previewTab;
             updateSourceVisibility();
-            setFocused(descriptionEditor);
-            return true;
-        }
-        if (!wideLayout() && button == 0 && previewTabBounds().containsExclusive(mouseX, mouseY)) {
-            previewTab = true;
-            updateSourceVisibility();
-            setFocused(null);
+            setFocused(previewTab ? null : descriptionEditor);
             return true;
         }
         if (button == 0 && sourceVisible() && descriptionFormat.equals(DocumentFormat.MARKDOWN_V1)) {
@@ -463,9 +456,17 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
     private UiRect localeBounds() { UiRect p = panelBounds(); return new UiRect(p.left()+88,p.top()+22,p.centerX()-4,p.top()+42); }
     private UiRect newLocaleBounds() { UiRect p = panelBounds(); return new UiRect(p.centerX()+4,p.top()+22,p.right()-38,p.top()+42); }
     private UiRect addLocaleBounds() { UiRect p = panelBounds(); return new UiRect(p.right()-34,p.top()+22,p.right()-12,p.top()+42); }
-    private UiRect formatBounds() { UiRect p=panelBounds(); return new UiRect(p.left()+88,p.top()+96,p.left()+194,p.top()+116); }
-    private UiRect sourceTabBounds() { UiRect p=panelBounds(); return new UiRect(p.left()+198,p.top()+96,p.centerX()-2,p.top()+116); }
-    private UiRect previewTabBounds() { UiRect p=panelBounds(); return new UiRect(p.centerX()+2,p.top()+96,p.right()-12,p.top()+116); }
+    private UiRect formatBounds() {
+        UiRect p=panelBounds();
+        int controlsCenter = (p.left()+88 + p.right()-12) / 2;
+        return new UiRect(p.left()+88,p.top()+96,wideLayout() ? p.left()+194 : controlsCenter-2,p.top()+116);
+    }
+    /** Narrow mode presents format and view as one pair of equally weighted binary controls. */
+    private UiRect viewToggleBounds() {
+        UiRect p=panelBounds();
+        int controlsCenter = (p.left()+88 + p.right()-12) / 2;
+        return new UiRect(controlsCenter+2,p.top()+96,p.right()-12,p.top()+116);
+    }
     private UiRect toolBounds(MarkdownSourceEdits.Tool tool) {
         UiRect area = sourceColumn();
         int gap = 3;

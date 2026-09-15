@@ -150,9 +150,15 @@ public final class DocumentView {
     }
 
     private static Component styled(String text, DocumentTextStyle documentStyle) {
-        Style style = Style.EMPTY.withBold(documentStyle.bold()).withItalic(documentStyle.italic());
+        Style style = Style.EMPTY.withBold(documentStyle.bold()).withItalic(documentStyle.italic())
+                .withUnderlined(documentStyle.underlined()).withStrikethrough(documentStyle.strikethrough())
+                .withObfuscated(documentStyle.obfuscated());
+        if (documentStyle.color() != null) style = style.withColor(documentStyle.color());
         if (documentStyle.code()) style = style.withFont(ResourceLocation.withDefaultNamespace("uniform"));
-        if (documentStyle.link() != null) style = style.withUnderlined(true).withColor(0x68BDE8);
+        if (documentStyle.link() != null) {
+            style = style.withUnderlined(true);
+            if (documentStyle.color() == null) style = style.withColor(0x68BDE8);
+        }
         return Component.literal(text).withStyle(style);
     }
 

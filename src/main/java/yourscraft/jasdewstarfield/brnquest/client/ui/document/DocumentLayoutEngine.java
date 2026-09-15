@@ -202,6 +202,8 @@ public final class DocumentLayoutEngine {
             else if (inline instanceof RichDocument.Code code) result.addAll(atoms(code.value(), style.withCode()));
             else if (inline instanceof RichDocument.Emphasis emphasis) result.addAll(flatten(emphasis.children(), style.withItalic()));
             else if (inline instanceof RichDocument.Strong strong) result.addAll(flatten(strong.children(), style.withBold()));
+            else if (inline instanceof RichDocument.StyleSpan span)
+                result.addAll(flatten(span.children(), style.withInlineStyle(span.style())));
             else if (inline instanceof RichDocument.Link link) result.addAll(flatten(link.label(), style.withLink(link.destination())));
             else if (inline instanceof RichDocument.LineBreak) result.add(new Atom("\n", style));
             else if (inline instanceof RichDocument.ContentInline content)

@@ -52,7 +52,7 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
         }
     }
 
-    public sealed interface Inline permits Text, Emphasis, Strong, Code, Link, LineBreak, ContentInline {}
+    public sealed interface Inline permits Text, Emphasis, Strong, StyleSpan, Code, Link, LineBreak, ContentInline {}
 
     /** Inline content is measured as one indivisible glyph-like atom during wrapping. */
     public record ContentInline(ContentKind kind, String id, String alt) implements Inline, Content {
@@ -73,6 +73,28 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
 
     public record Strong(List<Inline> children) implements Inline {
         public Strong { children = List.copyOf(children); }
+    }
+
+    /** Renderer-neutral Minecraft text decorations shared by legacy text and Markdown extensions. */
+    public record InlineStyle(Integer color, boolean bold, boolean italic, boolean underlined,
+                              boolean strikethrough, boolean obfuscated) {
+        public static final InlineStyle EMPTY = new InlineStyle(null, false, false, false, false, false);
+
+        public InlineStyle {
+            if (color != null) color &= 0xFFFFFF;
+        }
+
+        public boolean isEmpty() {
+            return color == null && !bold && !italic && !underlined && !strikethrough && !obfuscated;
+        }
+    }
+
+    /** Applies additive text decorations without exposing Minecraft client classes to the document tree. */
+    public record StyleSpan(List<Inline> children, InlineStyle style) implements Inline {
+        public StyleSpan {
+            children = List.copyOf(children);
+            style = Objects.requireNonNullElse(style, InlineStyle.EMPTY);
+        }
     }
 
     public record Code(String value) implements Inline {

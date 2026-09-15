@@ -47,6 +47,20 @@ class DocumentLayoutEngineTest {
         assertEquals(MixedTextLayout.wrap(source, 10, text -> text.codePointCount(0, text.length())), actual);
     }
 
+    @Test void legacyCodesDoNotOccupyLayoutWidthAndColorResetsEarlierDecorations() {
+        RichDocument document = parser.parse(new ResolvedDocument(
+                "A§lBC§cD§nE§rF", DocumentFormat.PLAIN, "en_us"));
+        DocumentLayout layout = engine.layout(document, 20, METRICS);
+        List<DocumentLayout.Run> runs = layout.lines().getFirst().runs();
+
+        assertEquals("ABCDEF", runs.stream().map(DocumentLayout.Run::text).reduce("", String::concat));
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("BC") && run.style().bold()));
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("D")
+                && Integer.valueOf(0xFF5555).equals(run.style().color()) && !run.style().bold()));
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("E") && run.style().underlined()));
+        assertTrue(runs.stream().anyMatch(run -> run.text().equals("F") && run.style().color() == null));
+    }
+
     @Test void punctuationEmojiAndLongIdentifiersAlwaysAdvanceAtSafeBoundaries() {
         DocumentLayout layout = layout("甲乙，丙（丁） 👨‍👩‍👧‍👦 brnquest:very_long_identifier", 8);
         List<String> lines = layout.lines().stream().map(line -> line.runs().stream()

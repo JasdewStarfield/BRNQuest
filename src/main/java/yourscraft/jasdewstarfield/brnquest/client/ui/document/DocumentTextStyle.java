@@ -2,15 +2,33 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.document;
 
 import java.net.URI;
 
-/** Renderer-neutral style state inherited while flattening rich inline nodes. */
-public record DocumentTextStyle(boolean bold, boolean italic, boolean code, int headingLevel, URI link) {
-    public static final DocumentTextStyle PLAIN = new DocumentTextStyle(false, false, false, 0, null);
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
-    public DocumentTextStyle withBold() { return new DocumentTextStyle(true, italic, code, headingLevel, link); }
-    public DocumentTextStyle withItalic() { return new DocumentTextStyle(bold, true, code, headingLevel, link); }
-    public DocumentTextStyle withCode() { return new DocumentTextStyle(bold, italic, true, headingLevel, link); }
-    public DocumentTextStyle withHeading(int level) { return new DocumentTextStyle(bold, italic, code, level, link); }
-    public DocumentTextStyle withLink(URI destination) { return new DocumentTextStyle(bold, italic, code, headingLevel, destination); }
+/** Renderer-neutral style state inherited while flattening rich inline nodes. */
+public record DocumentTextStyle(boolean bold, boolean italic, boolean underlined, boolean strikethrough,
+                                boolean obfuscated, Integer color, boolean code, int headingLevel, URI link) {
+    public static final DocumentTextStyle PLAIN = new DocumentTextStyle(
+            false, false, false, false, false, null, false, 0, null);
+
+    public DocumentTextStyle withBold() { return copy(true, italic, underlined, strikethrough, obfuscated, color, code, headingLevel, link); }
+    public DocumentTextStyle withItalic() { return copy(bold, true, underlined, strikethrough, obfuscated, color, code, headingLevel, link); }
+    public DocumentTextStyle withCode() { return copy(bold, italic, underlined, strikethrough, obfuscated, color, true, headingLevel, link); }
+    public DocumentTextStyle withHeading(int level) { return copy(bold, italic, underlined, strikethrough, obfuscated, color, code, level, link); }
+    public DocumentTextStyle withLink(URI destination) { return copy(bold, italic, underlined, strikethrough, obfuscated, color, code, headingLevel, destination); }
+
+    /** Style spans are additive so Markdown emphasis can safely wrap color and decoration extensions. */
+    public DocumentTextStyle withInlineStyle(RichDocument.InlineStyle addition) {
+        return copy(bold || addition.bold(), italic || addition.italic(), underlined || addition.underlined(),
+                strikethrough || addition.strikethrough(), obfuscated || addition.obfuscated(),
+                addition.color() == null ? color : addition.color(), code, headingLevel, link);
+    }
+
+    private static DocumentTextStyle copy(boolean bold, boolean italic, boolean underlined,
+                                          boolean strikethrough, boolean obfuscated, Integer color,
+                                          boolean code, int headingLevel, URI link) {
+        return new DocumentTextStyle(bold, italic, underlined, strikethrough, obfuscated,
+                color, code, headingLevel, link);
+    }
 
     public float scale() {
         return switch (headingLevel) {

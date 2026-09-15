@@ -26,7 +26,7 @@ import java.util.Locale;
 
 /** Converts CommonMark's AST into BRNQuest's deliberately smaller markdown_v1 tree. */
 public final class MarkdownParserAdapter {
-    public static final int PARSER_VERSION = 2;
+    public static final int PARSER_VERSION = 3;
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_LINK_BUDGET = 128;
     public static final int DEFAULT_CONTENT_BUDGET = 64;
@@ -54,8 +54,7 @@ public final class MarkdownParserAdapter {
 
     public RichDocument parse(ResolvedDocument source) {
         String text = source.text();
-        if (source.format().equals(DocumentFormat.PLAIN))
-            return new RichDocument(List.of(new RichDocument.LiteralBlock(text)), List.of());
+        if (source.format().equals(DocumentFormat.PLAIN)) return MinecraftLegacyTextParser.parse(text);
         if (!source.format().equals(DocumentFormat.MARKDOWN_V1)) {
             return literalDocument(text, "UNSUPPORTED_FORMAT", 0, text.length(),
                     "Unknown document format " + source.format().serializedName());

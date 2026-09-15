@@ -68,6 +68,21 @@ class MarkdownParserAdapterTest {
                 parse("\\*escaped\\*").blocks().getFirst()).inlines()));
     }
 
+    @Test void plainTextParsesVanillaSectionCodesWithoutLosingUnknownText() {
+        RichDocument document = parser.parse(new ResolvedDocument(
+                "普通 §l粗体 §C红色§n下划线 §r重置 §x未知 §", DocumentFormat.PLAIN, "zh_cn"));
+        RichDocument.FlowBlock paragraph = assertInstanceOf(RichDocument.FlowBlock.class,
+                document.blocks().getFirst());
+
+        assertEquals("普通 粗体 红色下划线 重置 §x未知 §", visibleText(paragraph.inlines()));
+        List<RichDocument.StyleSpan> styles = paragraph.inlines().stream()
+                .filter(RichDocument.StyleSpan.class::isInstance).map(RichDocument.StyleSpan.class::cast).toList();
+        assertTrue(styles.stream().anyMatch(span -> span.style().bold()));
+        assertTrue(styles.stream().anyMatch(span -> Integer.valueOf(0xFF5555).equals(span.style().color())
+                && span.style().underlined() && !span.style().bold()));
+        assertTrue(document.diagnostics().isEmpty());
+    }
+
     @Test void budgetsDegradeTheWholeDocumentBeforeProducingPartialOutput() {
         RichDocument nodes = new MarkdownParserAdapter(3, 10).parse(
                 new ResolvedDocument("**one** and *two*", DocumentFormat.MARKDOWN_V1, "en_us"));
@@ -124,6 +139,7 @@ class MarkdownParserAdapterTest {
             else if (inline instanceof RichDocument.Code code) result.append(code.value());
             else if (inline instanceof RichDocument.Emphasis emphasis) result.append(visibleText(emphasis.children()));
             else if (inline instanceof RichDocument.Strong strong) result.append(visibleText(strong.children()));
+            else if (inline instanceof RichDocument.StyleSpan span) result.append(visibleText(span.children()));
             else if (inline instanceof RichDocument.Link link) result.append(visibleText(link.label()));
             else if (inline instanceof RichDocument.ContentInline content) result.append(content.alt());
             else if (inline instanceof RichDocument.LineBreak) result.append('\n');

@@ -1,0 +1,16 @@
+{
+	title: "P4c FTB 富文本"
+	chapter.1000000000000001.title: "富文本转换"
+	quest.2000000000000001.title: "FTB 来源文档"
+	quest.2000000000000001.subtitle: "运行时无需安装 FTB"
+	quest.2000000000000001.quest_desc: [
+		"旧式代码：&c&l红色粗体&r、&n下划线&r、&m删除线&r 与 &#55FFFF自定义青色&r。"
+		"{\"text\":\"安全外链\",\"color\":\"gold\",\"clickEvent\":{\"action\":\"open_url\",\"value\":\"https://example.com/brnquest-p4c\"}}"
+		"{\"text\":\"打开目标任务\",\"underlined\":true,\"clickEvent\":{\"action\":\"change_page\",\"value\":\"20000000000000AB/2\"}}"
+		"{image:minecraft:textures/item/book.png width:64 height:64 align:right}"
+		"{@pagebreak}"
+		"FTB 分页符后的文本仍保留在同一份可滚动的 BRNQuest 文档中。"
+	]
+	quest.20000000000000AB.title: "导入后的链接目标"
+	quest.20000000000000AB.quest_desc: ["来源任务链接已跳转到这个稳定的 BRNQuest 任务 ID。"]
+}

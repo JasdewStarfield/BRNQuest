@@ -1,0 +1,16 @@
+{
+	title: "P4c FTB rich text"
+	chapter.1000000000000001.title: "Rich text conversion"
+	quest.2000000000000001.title: "FTB source document"
+	quest.2000000000000001.subtitle: "Imported without an FTB runtime"
+	quest.2000000000000001.quest_desc: [
+		"Legacy codes: &c&lred bold&r, &nunderlined&r, &mstruck&r and &#55FFFFcustom cyan&r."
+		"{\"text\":\"Safe external link\",\"color\":\"gold\",\"clickEvent\":{\"action\":\"open_url\",\"value\":\"https://example.com/brnquest-p4c\"}}"
+		"{\"text\":\"Open the target quest\",\"underlined\":true,\"clickEvent\":{\"action\":\"change_page\",\"value\":\"20000000000000AB/2\"}}"
+		"{image:minecraft:textures/item/book.png width:64 height:64 align:right}"
+		"{@pagebreak}"
+		"Text after the FTB page break remains in the same scrollable BRNQuest document."
+	]
+	quest.20000000000000AB.title: "Imported link target"
+	quest.20000000000000AB.quest_desc: ["The source quest link reached this stable BRNQuest quest ID."]
+}

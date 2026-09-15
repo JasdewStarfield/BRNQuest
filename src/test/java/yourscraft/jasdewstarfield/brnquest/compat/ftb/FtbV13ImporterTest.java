@@ -381,6 +381,28 @@ class FtbV13ImporterTest {
                 NativeBookJson.encode(result.book())).getAsJsonObject()));
     }
 
+    @Test void pinnedRichTextFixtureConvertsDeterministicallyForClientAcceptance() throws Exception {
+        Path fixture = richTextFixture();
+        FtbImportResult result = new FtbV13Importer().importBook(fixture, "p4c_rich_text", "main");
+        var sourceQuest = result.book().quests().stream()
+                .filter(quest -> quest.legacyId().equals("2000000000000001"))
+                .findFirst().orElseThrow();
+        var english = BookText.resolveQuestDescription(result.book(), sourceQuest, "en_us");
+        var chinese = BookText.resolveQuestDescription(result.book(), sourceQuest, "zh_cn");
+
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        assertEquals(DocumentFormat.MARKDOWN_V1, english.format());
+        assertEquals(DocumentFormat.MARKDOWN_V1, chinese.format());
+        assertTrue(english.text().contains("brnquest:style/color/ff5555"));
+        assertTrue(chinese.text().contains("brnquest:style/underline"));
+        assertTrue(english.text().contains("texture:minecraft:textures/item/book.png"));
+        assertTrue(english.text().contains("brnquest:quest/p4c_rich_text:legacy/20000000000000ab"));
+        assertTrue(result.report().toJson().contains("BQF-TEXT-PAGEBREAK-FLATTENED"));
+        assertTrue(result.report().toJson().contains("BQF-TEXT-IMAGE-LAYOUT"));
+        assertEquals(NativeBookJson.encode(result.book()), NativeBookJson.encode(
+                new FtbV13Importer().importBook(fixture, "p4c_rich_text", "main").book()));
+    }
+
     @Test void dangerousRichTextActionIsReportedAndNeverImportedAsAnAction() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.createDirectories(temporary.resolve("lang"));
@@ -530,5 +552,9 @@ class FtbV13ImporterTest {
 
     private Path fixture() throws URISyntaxException {
         return Path.of(getClass().getResource("/fixtures/ftb_v13/eow/data.snbt").toURI()).getParent();
+    }
+
+    private Path richTextFixture() throws URISyntaxException {
+        return Path.of(getClass().getResource("/fixtures/ftb_v13/rich_text/data.snbt").toURI()).getParent();
     }
 }

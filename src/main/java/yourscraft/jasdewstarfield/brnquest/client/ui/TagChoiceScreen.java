@@ -123,6 +123,8 @@ public final class TagChoiceScreen extends Screen {
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
+    public boolean mouseDragged(double x,double y,int button,double dx,double dy) { return list.mouseDragged(y,button) || super.mouseDragged(x,y,button,dx,dy); }
+    public boolean mouseReleased(double x,double y,int button) { return list.mouseReleased(button) || super.mouseReleased(x,y,button); }
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {

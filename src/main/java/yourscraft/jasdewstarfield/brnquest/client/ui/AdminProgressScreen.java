@@ -305,6 +305,16 @@ public final class AdminProgressScreen extends Screen {
         return false;
     }
 
+    @Override public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        boolean handled = page == Page.PLAYERS ? playerList.mouseDragged(y, button) : scroll.handleDrag(y, button);
+        return handled || super.mouseDragged(x, y, button, dx, dy);
+    }
+
+    @Override public boolean mouseReleased(double x, double y, int button) {
+        boolean handled = page == Page.PLAYERS ? playerList.mouseReleased(button) : scroll.handleRelease(button);
+        return handled || super.mouseReleased(x, y, button);
+    }
+
     /** A pending/failed filtered query must not make old choices look like results for the new text. */
     private boolean playerListInputReady() {
         return page == Page.PLAYERS && !busy && !failed && search.getValue().equals(lastFilter);

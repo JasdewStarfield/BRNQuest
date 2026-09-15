@@ -132,6 +132,8 @@ public final class EditorPickerList<K> {
     public Optional<EditorListPanel.Row<K>> focusedRow() { return list.focusedRow(); }
     public Optional<K> entryAt(double x, double y) { return list.rowAt(x, y).map(EditorListPanel.Row::key); }
     public boolean mouseClicked(double x, double y, int button) { return list.mouseClicked(x, y, button); }
+    public boolean mouseDragged(double y, int button) { return list.mouseDragged(y, button); }
+    public boolean mouseReleased(int button) { return list.mouseReleased(button); }
     public boolean mouseScrolled(double x, double y, double delta, double step) { return list.mouseScrolled(x, y, delta, step); }
     public void reset() { list.reset(); bounds = null; }
     public void invalidate() { list.invalidate(); bounds = null; }

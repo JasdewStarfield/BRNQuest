@@ -118,12 +118,12 @@ class EditorListPanelTest {
     @Test void roundedVisualOffsetOwnsTheFractionalScrollBoundary() {
         EditorListPanel<Integer> panel = new EditorListPanel<>();
         frame(panel, BOUNDS, 10);
-        // Track location maps to 0.6px: visible rows round to one pixel and input must use that same value.
-        assertTrue(panel.mouseClicked(212, 40 + 12 + 0.6 / 285 * 71, 0));
+        // Click below the initial thumb; 100.6px rounds to 101 for both visible rows and input mapping.
+        assertTrue(panel.mouseClicked(212, 40 + 12 + 100.6 / 285 * 71, 0));
         var next = panel.advance(BOUNDS, SCREEN, 212, 38, 2, 10, i -> i, 0, 12);
-        assertEquals(1, next.pixelScroll());
-        assertEquals(1, panel.rowAt(20, 77).orElseThrow().key());
-        assertTrue(panel.rowAt(20, 76.99).isEmpty());
+        assertEquals(101, next.pixelScroll());
+        assertEquals(3, panel.rowAt(20, 53).orElseThrow().key());
+        assertTrue(panel.rowAt(20, 52.99).isEmpty());
     }
 
     @Test void trackClickUsesExclusiveEdgesAndOnlyAffectsNextFrame() {
@@ -135,6 +135,19 @@ class EditorListPanelTest {
         assertTrue(panel.mouseClicked(212, 100, 0));
         assertEquals(0, panel.rowAt(20, 50).orElseThrow().key());
         assertTrue(frame(panel, BOUNDS, 10).pixelScroll() > 0);
+    }
+
+    @Test void thumbCaptureDragsTheSharedListToTheLastVisibleRows() {
+        EditorListPanel<Integer> panel = new EditorListPanel<>();
+        frame(panel, BOUNDS, 10);
+
+        assertTrue(panel.mouseClicked(212, 50, 0));
+        assertTrue(panel.mouseDragged(134, 0));
+        assertTrue(panel.mouseReleased(0));
+
+        EditorListPanel.Frame<Integer> dragged = frame(panel, BOUNDS, 10);
+        assertEquals(dragged.contentHeight() - dragged.bounds().height(), dragged.pixelScroll());
+        assertEquals(9, panel.rowAt(20, 130).orElseThrow().key());
     }
 
     @Test void resizeAndContentRemovalClampScrollBeforeGeneratingRows() {

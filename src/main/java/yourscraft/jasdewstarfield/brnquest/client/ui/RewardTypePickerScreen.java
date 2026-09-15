@@ -72,6 +72,9 @@ final class RewardTypePickerScreen extends RewardEditorScreen {
         return super.mouseClicked(x, y, button);
     }
 
+    @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy) { return picker.mouseDragged(y,button) || super.mouseDragged(x,y,button,dx,dy); }
+    @Override public boolean mouseReleased(double x,double y,int button) { return picker.mouseReleased(button) || super.mouseReleased(x,y,button); }
+
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         return picker.mouseScrolled(x, y, vertical, scrollStep()) || super.mouseScrolled(x, y, horizontal, vertical);
     }

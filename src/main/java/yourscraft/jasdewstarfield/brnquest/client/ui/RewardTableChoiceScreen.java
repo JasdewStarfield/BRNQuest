@@ -170,6 +170,8 @@ public final class RewardTableChoiceScreen extends Screen implements RecipeLooku
         if(button==0 && row.isPresent() && !waiting && !selectionSent) { selected=entries.get(row.get().key()).get("id").getAsString(); return true; }
         return super.mouseClicked(x,y,button);
     }
+    public boolean mouseDragged(double x,double y,int button,double dx,double dy) { return list.mouseDragged(y,button) || super.mouseDragged(x,y,button,dx,dy); }
+    public boolean mouseReleased(double x,double y,int button) { return list.mouseReleased(button) || super.mouseReleased(x,y,button); }
     public boolean mouseScrolled(double x,double y,double dx,double dy) {
         return list.mouseScrolled(x,y,dy,BrnQuestClientConfig.VALUES.scrollStep.get()) || super.mouseScrolled(x,y,dx,dy);
     }

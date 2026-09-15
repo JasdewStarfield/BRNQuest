@@ -236,6 +236,17 @@ public final class EditorQuestBehaviorScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
     }
 
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        return scroll.handleDrag(mouseY, button)
+                || super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        return scroll.handleRelease(button) || super.mouseReleased(mouseX, mouseY, button);
+    }
+
     private boolean valid() {
         return parse(visibleAfterTasks) != null && parse(minimumDependencies) != null
                 && parse(cooldownSeconds) != null;

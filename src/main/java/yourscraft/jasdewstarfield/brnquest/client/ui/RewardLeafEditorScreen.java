@@ -177,6 +177,9 @@ final class RewardLeafEditorScreen extends RewardEditorScreen {
         return body().containsExclusive(x, y) && super.mouseClicked(x, y, button);
     }
 
+    @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy) { return list.mouseDragged(y,button) || super.mouseDragged(x,y,button,dx,dy); }
+    @Override public boolean mouseReleased(double x,double y,int button) { return list.mouseReleased(button) || super.mouseReleased(x,y,button); }
+
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (choiceLayout != null) return true;
         return list.mouseScrolled(x, y, vertical, scrollStep()) || super.mouseScrolled(x, y, horizontal, vertical);

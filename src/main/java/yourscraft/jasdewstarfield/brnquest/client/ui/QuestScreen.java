@@ -1245,11 +1245,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 currentFrameIdentity(), mouseX, mouseY, button);
         if (navigationClick.intent() != null) handleNavigationIntent(navigationClick.intent(), snapshot.book());
         if (navigationClick.consumed()) return true;
-        if (detailsPanelAcceptsPointer(mouseX) && mouseX >= width - 12
-                && detailsPanel.contentHeight() > detailViewportHeight()
-                && mouseY >= detailContentTop() && mouseY <= detailContentBottom()) {
-            detailsPanel.scroll().snapFromTrack(mouseY, detailContentTop(), detailContentBottom(),
-                    detailsPanel.contentHeight(), detailViewportHeight());
+        if (button == 0 && detailsPanelAcceptsPointer(mouseX)
+                && detailsPanel.scroll().handleTrackClick(mouseX, mouseY, width - 8,
+                detailContentTop(), detailContentBottom(), detailsPanel.contentHeight(), detailViewportHeight())) {
             return true;
         }
 
@@ -1293,7 +1291,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseReleased(double x, double y, int button) {
+        if (releaseOverlayScroll(button)) return true;
         if (editorOverlays.mouseReleased(x, y, button, super::mouseReleased)) return true;
+        if (propertyScroll.handleRelease(button) || detailsPanel.scroll().handleRelease(button)
+                || navigationPanel.releaseScroll(button) || dependencyList.mouseReleased(button)
+                || typedEntryList.mouseReleased(button)) return true;
         if (button == 0 && canvasArtwork.dragging()) {
             var replacement = canvasArtwork.release(currentFrameIdentity(), currentChapterId());
             if (replacement != null) sendCanvas(currentChapterId(), replacement);
@@ -1314,7 +1316,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        if (dragOverlayScroll(y, button)) return true;
         if (editorOverlays.mouseDragged(x, y, button, dx, dy, super::mouseDragged)) return true;
+        if (propertyScroll.handleDrag(y, button) || detailsPanel.scroll().handleDrag(y, button)
+                || navigationPanel.dragScroll(y, button) || dependencyList.mouseDragged(y, button)
+                || typedEntryList.mouseDragged(y, button)) return true;
         if (canvasArtwork.drag(currentFrameIdentity(), x, y, button)) return true;
         if (navigationPanel.drag(currentFrameIdentity(), x, y, button)) return true;
         QuestCanvasController.GestureResult result = canvasController.mouseDragged(
@@ -2249,6 +2255,26 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         openChildScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
                 minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value),
                 recovery, () -> discardLocalizedQuestText(quest.id())));
+    }
+
+    private boolean dragOverlayScroll(double y, int button) {
+        return switch (editorOverlays.active()) {
+            case CATALOG -> catalogPicker.mouseDragged(y, button);
+            case DEPENDENCY_PICKER -> dependencyPicker.mouseDragged(y, button);
+            case TYPED_TYPE_PICKER -> typedTypePicker.mouseDragged(y, button);
+            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseDragged(y, button);
+            default -> false;
+        };
+    }
+
+    private boolean releaseOverlayScroll(int button) {
+        return switch (editorOverlays.active()) {
+            case CATALOG -> catalogPicker.mouseReleased(button);
+            case DEPENDENCY_PICKER -> dependencyPicker.mouseReleased(button);
+            case TYPED_TYPE_PICKER -> typedTypePicker.mouseReleased(button);
+            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseReleased(button);
+            default -> false;
+        };
     }
 
     private boolean submitLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {

@@ -65,6 +65,9 @@ final class QuestPublishReviewSection {
                 layout.list().height());
     }
 
+    boolean mouseDragged(double y, int button) { return scroll.handleDrag(y, button); }
+    boolean mouseReleased(int button) { return scroll.handleRelease(button); }
+
     RenderResult render(GuiGraphics graphics, Font font, QuestScreenLayout screen,
                         double elapsedSeconds, double smoothSpeed, int mouseX, int mouseY) {
         if (review == null) return new RenderResult(List.of());

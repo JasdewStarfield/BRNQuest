@@ -126,10 +126,18 @@ public final class EditorListPanel<K> {
         if (button == 0 && frame != null && frame.viewport().containsExclusive(x,y)) clearFocus();
         if (frame == null || button != 0 || frame.contentHeight() <= frame.bounds().height()
                 || !frame.track().containsExclusive(x, y)) return false;
-        scroll.snapFromTrack(y, frame.bounds().top(), frame.bounds().bottom(),
+        scroll.handleTrackClick(x, y, frame.track().left(), frame.bounds().top(), frame.bounds().bottom(),
                 frame.contentHeight(), frame.bounds().height());
         // The clicked track updates the next frame; the old displayed row positions remain authoritative until then.
         return true;
+    }
+
+    public boolean mouseDragged(double y, int button) {
+        return scroll.handleDrag(y, button);
+    }
+
+    public boolean mouseReleased(int button) {
+        return scroll.handleRelease(button);
     }
 
     public void reset() {
@@ -139,7 +147,7 @@ public final class EditorListPanel<K> {
     }
 
     /** Discards old input geometry after resize/data replacement without losing the scroll position. */
-    public void invalidate() { frame = null; }
+    public void invalidate() { frame = null; scroll.handleRelease(0); }
 
     public void clearFocus() { focusedIndex = -1; focusedKey = null; }
     public boolean hasFocus() { return focusedIndex >= 0; }

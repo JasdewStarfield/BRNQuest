@@ -182,6 +182,14 @@ final class EditorCreationDefaultsScreen extends Screen {
         return super.mouseScrolled(x, y, horizontal, vertical);
     }
 
+    @Override public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        return scroll.handleDrag(y, button) || super.mouseDragged(x, y, button, dx, dy);
+    }
+
+    @Override public boolean mouseReleased(double x, double y, int button) {
+        return scroll.handleRelease(button) || super.mouseReleased(x, y, button);
+    }
+
     private UiRect panel() {
         int w = Math.min(680, width - 24), h = Math.min(500, height - 24);
         int left = (width - w) / 2, top = (height - h) / 2;

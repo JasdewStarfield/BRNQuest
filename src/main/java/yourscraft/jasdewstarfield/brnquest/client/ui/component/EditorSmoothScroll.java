@@ -69,7 +69,7 @@ public final class EditorSmoothScroll {
     /** A captured thumb keeps following vertically even when the pointer leaves the narrow track. */
     public boolean handleDrag(double mouseY, int button) {
         if (!dragging || button != 0) return false;
-        snap(EditorScrollbar.scrollFromThumb(mouseY, dragGrabOffset, dragTop, dragBottom,
+        snapCaptured(EditorScrollbar.scrollFromThumb(mouseY, dragGrabOffset, dragTop, dragBottom,
                 dragContentHeight, dragViewportHeight));
         return true;
     }
@@ -90,6 +90,11 @@ public final class EditorSmoothScroll {
     }
 
     public void snap(double value) {
+        dragging = false;
+        snapCaptured(value);
+    }
+
+    private void snapCaptured(double value) {
         motion.snap(value);
         visual = value;
     }

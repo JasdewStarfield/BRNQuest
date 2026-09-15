@@ -192,7 +192,7 @@ final class QuestNavigationPanel {
         if (!stableOpen || x < 0 || x >= layout.visibleRight() || y < layout.top() || y >= layout.bottom()) {
             return ClickResult.ignored();
         }
-        if (scroll.handleTrackClick(x, y, layout.width() + 2, layout.top(), layout.listBottom(),
+        if (button == 0 && scroll.handleTrackClick(x, y, layout.width() + 2, layout.top(), layout.listBottom(),
                 contentHeight, Math.max(1, layout.listBottom() - layout.top()))) {
             return ClickResult.consumed(null);
         }
@@ -231,6 +231,9 @@ final class QuestNavigationPanel {
         if (Math.hypot(x - pressX, y - pressY) >= 4) dragging = true;
         return true;
     }
+
+    boolean dragScroll(double y, int button) { return scroll.handleDrag(y, button); }
+    boolean releaseScroll(int button) { return scroll.handleRelease(button); }
 
     boolean hasDrag() { return pressedChapter != null; }
     boolean cancelDrag() {

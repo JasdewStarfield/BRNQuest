@@ -290,6 +290,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         buttons.clicked(mouseX, mouseY, button);
+        UiRect previewBounds = previewBounds();
+        if (button == 0 && previewVisible() && renderedPreview != null
+                && previewScroll.handleTrackClick(mouseX, mouseY, previewBounds.right() - 4,
+                previewBounds.top() + 2, previewBounds.bottom() - 2,
+                renderedPreview.layout().contentHeight(), Math.max(1, previewBounds.height() - 10))) return true;
         if (button == 0 && localeBounds().containsExclusive(mouseX, mouseY)) {
             rememberWidgets();
             localeIndex = (localeIndex + 1) % locales.size();
@@ -354,6 +359,17 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        return previewScroll.handleDrag(mouseY, button)
+                || super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        return previewScroll.handleRelease(button) || super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override

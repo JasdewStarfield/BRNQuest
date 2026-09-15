@@ -125,6 +125,9 @@ final class QuestTypedEntryListSection {
         return accepts(current, questId, kind) && inputAllowed && entries.list().mouseScrolled(x, y, delta, step);
     }
 
+    boolean mouseDragged(double y, int button) { return entries.list().mouseDragged(y, button); }
+    boolean mouseReleased(int button) { return entries.list().mouseReleased(button); }
+
     boolean focusNext(QuestScreenFrameIdentity current, ResourceLocation questId, QuestTypedEntryKind kind,
                       boolean inputAllowed, boolean backwards) {
         if (!accepts(current, questId, kind) || !inputAllowed) return false;

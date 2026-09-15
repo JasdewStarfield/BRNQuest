@@ -30,6 +30,10 @@ Resolution checks the requested locale, then `fallback_locale`, then the native 
 - `markdown_v1` identifies BRNQuest's versioned, controlled Markdown subset. It does not promise full CommonMark compatibility.
 - Unknown values are preserved when reading and writing, but clients must render them as plain text. Author mutations cannot create unknown values.
 
+`markdown_v1` supports paragraphs and explicit line breaks, level 1-3 headings, one-level unordered lists using `-` or `*`, bold, emphasis, inline code, and links with an absolute HTTP or HTTPS destination. Ordered or nested lists, the `+` list marker, block quotes, fenced code, HTML, images, commands, and other URL schemes are not enabled. Unsupported or malformed constructs remain visible as literal source and may produce an author diagnostic.
+
+Task details render links as underlined interactive text. Activating one always opens Minecraft's confirmation screen; cancelling performs no external action. Link clicks take priority over task/reward actions beneath the same pixels and cannot be activated outside the clipped document viewport.
+
 Updating a fallback-locale description writes the native text and format and removes duplicate translation keys. Updating another locale writes its text and format atomically in the translation table. Compatibility callers that omit the format preserve that locale's current format.
 
 Copying quests preserves native and localized formats. Native JSON saves, draft recovery, publishing, undo/redo, and semantic diffs treat the description and its format as one revision-bound edit.

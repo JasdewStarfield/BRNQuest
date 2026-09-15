@@ -3,6 +3,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,26 +15,28 @@ final class QuestDetailsInteraction {
         OPEN_UPSTREAM, OPEN_DOWNSTREAM,
         CLOSE, COMPLETE_QUEST, TOGGLE_TRACKED, SUBMIT_TASK, OPEN_SUBMISSION_CHOICES,
         OPEN_ITEM_SLOT_SELECTION, CLAIM_REWARD, OPEN_REWARD_OPTIONS, QUICK_EDIT_TEXT,
-        EDIT_PROPERTIES, EDIT_TASKS, EDIT_REWARDS, EDIT_DEPENDENCIES
+        EDIT_PROPERTIES, EDIT_TASKS, EDIT_REWARDS, EDIT_DEPENDENCIES, OPEN_LINK
     }
 
-    record Intent(Action action, ResourceLocation questId, ResourceLocation targetId, String textArea) {}
+    record Intent(Action action, ResourceLocation questId, ResourceLocation targetId, String textArea, URI link) {}
     record ClickResult(boolean consumed, Intent intent) {
         static ClickResult ignored() { return new ClickResult(false, null); }
         static ClickResult consumed(Intent intent) { return new ClickResult(true, intent); }
     }
     record TaskTarget(ResourceLocation taskId, UiRect action, UiRect candidates, Action rowAction) {}
+    record LinkTarget(URI destination, UiRect bounds) {}
     record Frame(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
                  UiRect panel, UiRect close, UiRect complete, UiRect track,
                  Map<String, UiRect> textAreas, Map<Action, UiRect> editorActions,
                  List<TaskTarget> tasks, Map<ResourceLocation, UiRect> rewards,
-                 Map<Action, UiRect> relationToggles) {
+                 Map<Action, UiRect> relationToggles, List<LinkTarget> links) {
         Frame {
             textAreas = Map.copyOf(textAreas);
             editorActions = Map.copyOf(editorActions);
             tasks = List.copyOf(tasks);
             rewards = Map.copyOf(rewards);
             relationToggles = Map.copyOf(relationToggles);
+            links = List.copyOf(links);
         }
     }
 
@@ -52,6 +55,7 @@ final class QuestDetailsInteraction {
     private Frame frame;
     private final Map<Action, UiRect> relationToggles = new LinkedHashMap<>();
     private final Map<ResourceLocation,UiRect> rewardOptions = new LinkedHashMap<>();
+    private final List<LinkTarget> links = new ArrayList<>();
 
     void begin(QuestScreenFrameIdentity identity, ResourceLocation questId, boolean editing, boolean gameplay,
                UiRect panel, UiRect close) {
@@ -68,6 +72,7 @@ final class QuestDetailsInteraction {
         tasks.clear();
         rewards.clear();
         rewardOptions.clear();
+        links.clear();
         relationToggles.clear();
         frame = null;
     }
@@ -80,6 +85,8 @@ final class QuestDetailsInteraction {
     void textAreas(Map<String, UiRect> areas) {
         textAreas.putAll(areas);
     }
+
+    void links(List<LinkTarget> targets) { links.addAll(targets); }
 
     void editorAction(Action action, UiRect bounds) {
         if (action != null && bounds != null) editorActions.put(action, bounds);
@@ -103,7 +110,7 @@ final class QuestDetailsInteraction {
 
     Frame finish() {
         frame = new Frame(identity, questId, editing, gameplay, panel, close, complete, track,
-                textAreas, editorActions, tasks, rewards, relationToggles);
+                textAreas, editorActions, tasks, rewards, relationToggles, links);
         return frame;
     }
 
@@ -114,6 +121,10 @@ final class QuestDetailsInteraction {
     ClickResult click(QuestScreenFrameIdentity current, double x, double y, int button) {
         if (!accepts(current) || !frame.panel().contains(x, y)) return ClickResult.ignored();
         if (frame.close() != null && frame.close().contains(x, y)) return intent(Action.CLOSE, null, null);
+        if (button == 0) {
+            for (LinkTarget link : frame.links())
+                if (link.bounds().containsExclusive(x, y)) return intent(Action.OPEN_LINK, null, null, link.destination());
+        }
         if (frame.editing() && button == 1) {
             for (Map.Entry<String, UiRect> entry : frame.textAreas().entrySet()) {
                 if (entry.getValue().contains(x, y)) return intent(Action.QUICK_EDIT_TEXT, null, entry.getKey());
@@ -155,7 +166,11 @@ final class QuestDetailsInteraction {
     }
 
     private ClickResult intent(Action action, ResourceLocation targetId, String textArea) {
-        return ClickResult.consumed(action == null ? null : new Intent(action, frame.questId(), targetId, textArea));
+        return intent(action, targetId, textArea, null);
+    }
+
+    private ClickResult intent(Action action, ResourceLocation targetId, String textArea, URI link) {
+        return ClickResult.consumed(action == null ? null : new Intent(action, frame.questId(), targetId, textArea, link));
     }
 
     private boolean accepts(QuestScreenFrameIdentity current) {

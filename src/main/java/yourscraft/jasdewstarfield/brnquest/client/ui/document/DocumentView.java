@@ -58,6 +58,8 @@ public final class DocumentView {
         for (DocumentLayout.Line line : layout.lines()) {
             for (DocumentLayout.Run run : line.runs()) {
                 float scale = run.style().scale();
+                if (run.style().code()) graphics.fill(x + run.bounds().left() - 1, y + run.bounds().top() - 1,
+                        x + run.bounds().right() + 1, y + run.bounds().bottom(), 0x663A4148);
                 graphics.pose().pushPose();
                 graphics.pose().translate(x + run.bounds().left(), y + run.bounds().top(), 0);
                 graphics.pose().scale(scale, scale, 1.0F);

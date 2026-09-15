@@ -4,6 +4,8 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -84,6 +86,23 @@ class QuestDetailsInteractionTest {
                 interaction.click(identity("r1",800),650,160,0).intent().action());
         assertNull(interaction.click(identity("r1",800),650,160,1).intent());
         assertFalse(interaction.click(identity("r2",800),650,160,0).consumed());
+    }
+
+    @Test void documentLinksWinLeftClickWithoutStealingTheAuthorRightClick() {
+        QuestDetailsInteraction interaction = frame(true, true);
+        UiRect description = new UiRect(620, 80, 780, 110);
+        URI destination = URI.create("https://example.test/path");
+        interaction.textAreas(Map.of("DESCRIPTION", description));
+        interaction.links(List.of(new QuestDetailsInteraction.LinkTarget(destination,
+                new UiRect(650, 84, 720, 98))));
+        interaction.task(TASK, description, null, QuestDetailsInteraction.Action.SUBMIT_TASK);
+        interaction.finish();
+
+        QuestDetailsInteraction.Intent link = interaction.click(identity("r1", 800), 680, 90, 0).intent();
+        assertEquals(QuestDetailsInteraction.Action.OPEN_LINK, link.action());
+        assertEquals(destination, link.link());
+        assertEquals(QuestDetailsInteraction.Action.QUICK_EDIT_TEXT,
+                interaction.click(identity("r1", 800), 680, 90, 1).intent().action());
     }
 
     private static QuestDetailsInteraction frame(boolean editing, boolean gameplay) {

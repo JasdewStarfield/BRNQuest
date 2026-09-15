@@ -5,8 +5,13 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.*;
+import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentLayout;
+import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentView;
 import yourscraft.jasdewstarfield.brnquest.data.*;
+import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
+import yourscraft.jasdewstarfield.brnquest.data.text.ResolvedDocument;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +23,7 @@ final class QuestDetailsPanel {
     private static final EditorIcon REWARD_SECTION_ICON = EditorIcon.sprite(
             net.minecraft.resources.ResourceLocation.parse("brnquest:editor/type/reward_table"));
     record Layout(UiRect content, UiRect clip, int trackX) {}
-    record Model(QuestDefinition quest, String title, String subtitle, String description,
+    record Model(QuestDefinition quest, String title, String subtitle, ResolvedDocument description, String locale,
                  QuestStatus status, Component statusText,
                  int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim) {}
     interface Rows {
@@ -28,13 +33,15 @@ final class QuestDetailsPanel {
         default int rewardWidth(RewardDefinition reward) { return QuestViewportMath.REWARD_ROW_HEIGHT; }
     }
     record Result(Map<String, UiRect> textAreas, UiRect completeAction, UiRect trackAction,
-                  Component hint, boolean lockedStatusHovered) {}
+                  List<QuestDetailsInteraction.LinkTarget> links, Component hint, boolean lockedStatusHovered) {}
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
+    private final DocumentView documentView = new DocumentView();
     private int contentHeight;
     private double drawnScroll;
+    private DocumentIdentity documentIdentity;
     EditorSmoothScroll scroll() { return scroll; }
     int contentHeight() { return contentHeight; }
-    void reset() { scroll.snap(0); contentHeight = 0; }
+    void reset() { scroll.snap(0); contentHeight = 0; documentIdentity = null; }
 
     Result render(GuiGraphics graphics, Font font, Layout layout, Model model, Rows rows,
                   int mouseX, int mouseY, double seconds, double speed) {
@@ -42,7 +49,20 @@ final class QuestDetailsPanel {
         QuestStatus status = model.status();
         boolean editing = model.editing();
         Map<String, UiRect> textAreas = new LinkedHashMap<>();
+        List<QuestDetailsInteraction.LinkTarget> documentLinks = new ArrayList<>();
         Component hint = null;
+        boolean descriptionVisible = editing || !model.description().text().isBlank();
+        boolean descriptionPlaceholder = descriptionVisible && model.description().text().isBlank();
+        ResolvedDocument displayedDescription = descriptionPlaceholder
+                ? new ResolvedDocument(Component.translatable("screen.brnquest.editor.quick_edit.empty_description").getString(),
+                DocumentFormat.PLAIN, model.description().sourceLocale()) : model.description();
+        DocumentIdentity nextIdentity = descriptionVisible ? new DocumentIdentity(quest.id(), model.locale(),
+                displayedDescription.sourceLocale(), displayedDescription.format(), displayedDescription.text()) : null;
+        if (!java.util.Objects.equals(nextIdentity, documentIdentity)) {
+            // A previous task's scroll must never leak into a different text/language/format identity.
+            scroll.snap(0);
+            documentIdentity = nextIdentity;
+        }
         int contentLeft = layout.content().left();
         int contentWidth = layout.content().width();
         int viewportHeight = Math.max(1, layout.content().height());
@@ -110,13 +130,22 @@ final class QuestDetailsPanel {
         }
         y = Math.max(y + font.lineHeight, statusBottom) + 8;
 
-        if (editing || !model.description().isBlank()) {
+        if (descriptionVisible) {
             int descriptionTop = y;
-            String description = model.description().isBlank()
-                    ? Component.translatable("screen.brnquest.editor.quick_edit.empty_description").getString()
-                    : model.description();
-            y = EditorTextRenderer.drawWrapped(graphics, font, description, contentLeft, y, contentWidth,
-                    model.description().isBlank() ? GraystonePalette.DISABLED : GraystonePalette.TEXT);
+            var minecraft = net.minecraft.client.Minecraft.getInstance();
+            var prepared = documentView.prepare(displayedDescription, model.locale(), contentWidth,
+                    System.identityHashCode(font), Double.doubleToLongBits(minecraft.getWindow().getGuiScale()),
+                    LoadedTextures.generation(), DocumentView.minecraftMetrics(font));
+            DocumentView.render(graphics, font, prepared.layout(), contentLeft, descriptionTop,
+                    descriptionPlaceholder ? GraystonePalette.DISABLED : GraystonePalette.TEXT);
+            documentLinks.addAll(visibleDocumentLinks(prepared.layout(), contentLeft, descriptionTop, layout.content()));
+            for (QuestDetailsInteraction.LinkTarget link : documentLinks) {
+                if (link.bounds().containsExclusive(mouseX, mouseY)) {
+                    hint = Component.literal(link.destination().toString());
+                    break;
+                }
+            }
+            y += prepared.layout().contentHeight();
             if (editing) addTextArea(textAreas, layout.content(), "DESCRIPTION",
                     contentLeft, descriptionTop, contentWidth, y);
             y += 8;
@@ -167,8 +196,24 @@ final class QuestDetailsPanel {
                 && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();
-        return new Result(Map.copyOf(textAreas), completeAction, trackAction, hint, locked);
+        return new Result(Map.copyOf(textAreas), completeAction, trackAction, List.copyOf(documentLinks), hint, locked);
     }
+
+    /** Converts document-local link runs to clipped frame geometry used by the input snapshot. */
+    static List<QuestDetailsInteraction.LinkTarget> visibleDocumentLinks(DocumentLayout document, int x, int y,
+                                                                         UiRect viewport) {
+        List<QuestDetailsInteraction.LinkTarget> result = new ArrayList<>();
+        for (DocumentLayout.LinkHit link : document.links()) {
+            UiRect visible = new UiRect(x + link.bounds().left(), y + link.bounds().top(),
+                    x + link.bounds().right(), y + link.bounds().bottom()).intersection(viewport);
+            if (visible.width() > 0 && visible.height() > 0)
+                result.add(new QuestDetailsInteraction.LinkTarget(link.destination(), visible));
+        }
+        return List.copyOf(result);
+    }
+
+    private record DocumentIdentity(net.minecraft.resources.ResourceLocation questId, String requestedLocale,
+                                    String sourceLocale, DocumentFormat format, String text) {}
 
     /** Compact section landmarks reuse existing sprites without introducing item interaction semantics. */
     private static int renderSection(GuiGraphics graphics, Font font, String title, String icon,

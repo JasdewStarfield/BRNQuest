@@ -830,11 +830,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         UiRect content = new UiRect(left + 10, detailContentTop(), left + 10 + detailsWidth() - 24, detailContentBottom());
         UiRect clip = new UiRect(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
                 Math.min(width, width - 10 + detailsDrawerOffsetX()), detailContentBottom());
+        String locale = minecraft.getLanguageManager().getSelected();
+        boolean hideText = !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status);
+        // Hidden descriptions stay empty here so Markdown is not parsed before the quest reveals its text.
+        var description = hideText
+                ? new yourscraft.jasdewstarfield.brnquest.data.text.ResolvedDocument("",
+                yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat.PLAIN, locale)
+                : BookText.resolveQuestDescription(displaySnapshot().book(), quest, locale);
         var result = detailsPanel.render(graphics, font, new QuestDetailsPanel.Layout(content, clip, width - 8),
                 new QuestDetailsPanel.Model(quest,
-                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "???" : questTitle(quest),
-                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
-                        !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status) ? "" : localizedQuestText(quest, "quest_desc", quest.description()),
+                        hideText ? "???" : questTitle(quest),
+                        hideText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
+                        description, locale,
                         status, statusText, statusColor(status),
                         editing, gameplayAllowed(), canSubmit(quest, status), displaySnapshot().book().settings().suppressAutoClaim()), new QuestDetailsPanel.Rows() {
                     public int relations(int x, int y, int rowWidth) {
@@ -852,6 +859,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }, mouseX, mouseY, motionFrameSeconds, scrollSmoothSpeed());
         detailsInteraction.statusActions(result.completeAction(), result.trackAction());
         detailsInteraction.textAreas(result.textAreas());
+        detailsInteraction.links(result.links());
         if (result.hint() != null) hoveredComponentTooltip = List.of(result.hint());
         if (result.lockedStatusHovered()) hoveredComponentTooltip = dependencyTooltip(quest);
         if (editing) {
@@ -1025,6 +1033,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case CLOSE -> { }
             case OPEN_UPSTREAM -> openRelationsScreen(quest, true);
             case OPEN_DOWNSTREAM -> openRelationsScreen(quest, false);
+            case OPEN_LINK -> {
+                if (intent.link() != null)
+                    childLifecycle.openChild(() -> net.minecraft.client.gui.screens.ConfirmLinkScreen
+                            .confirmLinkNow(this, intent.link(), true));
+            }
             case QUICK_EDIT_TEXT -> {
                 if (ClientEditorState.get().editing() && intent.textArea() != null) {
                     openQuickTextEditor(quest, QuickTextKind.valueOf(intent.textArea()));

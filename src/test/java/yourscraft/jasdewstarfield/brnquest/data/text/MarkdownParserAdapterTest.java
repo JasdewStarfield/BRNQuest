@@ -77,6 +77,32 @@ class MarkdownParserAdapterTest {
         RichDocument links = new MarkdownParserAdapter(100, 0).parse(
                 new ResolvedDocument("[one](https://example.test)", DocumentFormat.MARKDOWN_V1, "en_us"));
         assertEquals("LINK_BUDGET_EXCEEDED", links.diagnostics().getFirst().code());
+
+        RichDocument contents = new MarkdownParserAdapter(100, 10, 0).parse(
+                new ResolvedDocument("![stone](item:minecraft:stone)", DocumentFormat.MARKDOWN_V1, "en_us"));
+        assertInstanceOf(RichDocument.LiteralBlock.class, contents.blocks().getFirst());
+        assertEquals("CONTENT_BUDGET_EXCEEDED", contents.diagnostics().getFirst().code());
+    }
+
+    @Test void acceptsOnlyExplicitNamespacedTextureAndItemContent() {
+        RichDocument texture = parse("![panel](texture:brnquest:textures/gui/panel.png)");
+        RichDocument.ContentBlock textureNode = assertInstanceOf(RichDocument.ContentBlock.class,
+                texture.blocks().getFirst());
+        assertEquals(RichDocument.ContentKind.TEXTURE, textureNode.kind());
+        assertEquals("brnquest:textures/gui/panel.png", textureNode.id());
+        assertEquals("panel", textureNode.alt());
+
+        RichDocument item = parse("![stone](item:minecraft:stone)");
+        assertEquals(RichDocument.ContentKind.ITEM, assertInstanceOf(RichDocument.ContentBlock.class,
+                item.blocks().getFirst()).kind());
+
+        for (String source : List.of("![remote](https://example.test/a.png)",
+                "![implicit](item:stone)", "before ![item](item:minecraft:stone) after")) {
+            RichDocument rejected = parse(source);
+            assertFalse(rejected.diagnostics().isEmpty());
+            assertTrue(rejected.blocks().getFirst() instanceof RichDocument.LiteralBlock
+                    || rejected.blocks().getFirst() instanceof RichDocument.FlowBlock);
+        }
     }
 
     private RichDocument parse(String text) {

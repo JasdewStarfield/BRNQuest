@@ -9,6 +9,7 @@ import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultiLineEditBoxAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.mixin.MultilineTextFieldAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
@@ -157,7 +158,15 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         super.render(graphics, mouseX, mouseY, partialTick);
         URI link = previewLinkAt(mouseX, mouseY);
         if (link != null) hovered = Component.literal(link.toString());
-        if (hovered != null) graphics.renderTooltip(font, font.split(hovered, Math.min(280, width - 20)), mouseX, mouseY);
+        ItemStack item = previewItemAt(mouseX, mouseY);
+        if (!item.isEmpty()) graphics.renderTooltip(font, item, mouseX, mouseY);
+        else {
+            DocumentLayout.ContentHit content = previewContentAt(mouseX, mouseY);
+            if (content != null) hovered = Component.translatable("screen.brnquest.markdown.content_tooltip",
+                    content.content().alt(), content.content().id());
+            if (hovered != null)
+                graphics.renderTooltip(font, font.split(hovered, Math.min(280, width - 20)), mouseX, mouseY);
+        }
     }
 
     private void renderHeader(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
@@ -426,6 +435,26 @@ public final class EditorLocalizedQuestTextScreen extends Screen {
         DocumentLayout.Bounds viewport = new DocumentLayout.Bounds(0, viewportTop,
                 renderedPreviewBounds.width(), viewportTop + renderedPreviewBounds.height());
         return DocumentView.linkAt(renderedPreview.layout(), localX, localY, viewport);
+    }
+
+    private DocumentLayout.ContentHit previewContentAt(double mouseX, double mouseY) {
+        if (renderedPreview == null || renderedPreviewBounds == null
+                || !renderedPreviewBounds.containsExclusive(mouseX, mouseY)) return null;
+        return DocumentView.contentAt(renderedPreview.layout(), (int) Math.floor(mouseX) - renderedDocumentX,
+                (int) Math.floor(mouseY) - renderedDocumentY, previewViewport());
+    }
+
+    private ItemStack previewItemAt(double mouseX, double mouseY) {
+        if (renderedPreview == null || renderedPreviewBounds == null
+                || !renderedPreviewBounds.containsExclusive(mouseX, mouseY)) return ItemStack.EMPTY;
+        return DocumentView.itemAt(renderedPreview.layout(), (int) Math.floor(mouseX) - renderedDocumentX,
+                (int) Math.floor(mouseY) - renderedDocumentY, previewViewport());
+    }
+
+    private DocumentLayout.Bounds previewViewport() {
+        int viewportTop = renderedPreviewBounds.top() - renderedDocumentY;
+        return new DocumentLayout.Bounds(0, viewportTop, renderedPreviewBounds.width(),
+                viewportTop + renderedPreviewBounds.height());
     }
 
     private void updateSourceVisibility() {

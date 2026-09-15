@@ -12,7 +12,7 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
     }
 
     /** A block owns vertical spacing; inline styles never depend on a Screen instance. */
-    public sealed interface Block permits FlowBlock, BulletListBlock, LiteralBlock {}
+    public sealed interface Block permits FlowBlock, BulletListBlock, LiteralBlock, ContentBlock {}
 
     public enum FlowKind { PARAGRAPH, HEADING_1, HEADING_2, HEADING_3 }
 
@@ -32,6 +32,17 @@ public record RichDocument(List<Block> blocks, List<Diagnostic> diagnostics) {
     /** Literal blocks are the lossless fallback for plain text and unsupported Markdown. */
     public record LiteralBlock(String text) implements Block {
         public LiteralBlock { text = Objects.requireNonNullElse(text, ""); }
+    }
+
+    public enum ContentKind { TEXTURE, ITEM }
+
+    /** A content node stores only a validated identifier; resource resolution remains client-side. */
+    public record ContentBlock(ContentKind kind, String id, String alt) implements Block {
+        public ContentBlock {
+            kind = Objects.requireNonNull(kind, "kind");
+            id = Objects.requireNonNull(id, "id");
+            alt = Objects.requireNonNullElse(alt, "");
+        }
     }
 
     public sealed interface Inline permits Text, Emphasis, Strong, Code, Link, LineBreak {}

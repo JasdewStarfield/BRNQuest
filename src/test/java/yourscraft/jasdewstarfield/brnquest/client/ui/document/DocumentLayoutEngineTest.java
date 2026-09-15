@@ -107,6 +107,25 @@ class DocumentLayoutEngineTest {
         assertNotSame(scale, view.prepare(source, "zh_cn", 19, 2, 2, 2, METRICS));
     }
 
+    @Test void contentUsesMeasuredAspectRatioBoundedHeightAndViewportHits() {
+        RichDocument document = parser.parse(new ResolvedDocument(
+                "![tall](texture:brnquest:textures/tall.png)", DocumentFormat.MARKDOWN_V1, "en_us"));
+        DocumentLayoutEngine.Metrics resources = new DocumentLayoutEngine.Metrics() {
+            @Override public int width(String text, DocumentTextStyle style) { return text.length(); }
+            @Override public int lineHeight(DocumentTextStyle style) { return 10; }
+            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.ContentBlock content) {
+                return new DocumentLayoutEngine.ContentSize(100, 1000, true);
+            }
+        };
+        DocumentLayout layout = engine.layout(document, 400, resources);
+        DocumentLayout.ContentHit hit = layout.contents().getFirst();
+        assertEquals(16, hit.bounds().width());
+        assertEquals(DocumentLayoutEngine.MAX_CONTENT_HEIGHT, hit.bounds().height());
+        assertEquals(hit.bounds().bottom(), layout.contentHeight());
+        assertEquals(hit, DocumentView.contentAt(layout, hit.bounds().left(), hit.bounds().top(), hit.bounds()));
+        assertNull(DocumentView.contentAt(layout, hit.bounds().right(), hit.bounds().top(), hit.bounds()));
+    }
+
     private DocumentLayout layout(String source, int width) {
         RichDocument document = parser.parse(new ResolvedDocument(source, DocumentFormat.MARKDOWN_V1, "zh_cn"));
         return engine.layout(document, width, METRICS);

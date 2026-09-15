@@ -2,14 +2,22 @@ package yourscraft.jasdewstarfield.brnquest.client.ui.document;
 
 import java.net.URI;
 import java.util.List;
+import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 /** Immutable geometry consumed by both drawing and hit testing. Coordinates are document-local. */
-public record DocumentLayout(List<Line> lines, List<LinkHit> links, int contentHeight, int width) {
+public record DocumentLayout(List<Line> lines, List<LinkHit> links, List<ContentHit> contents,
+                             int contentHeight, int width) {
     public DocumentLayout {
         lines = List.copyOf(lines);
         links = List.copyOf(links);
+        contents = List.copyOf(contents);
         contentHeight = Math.max(0, contentHeight);
         width = Math.max(1, width);
+    }
+
+    /** Compatibility constructor for text-only callers and fixtures. */
+    public DocumentLayout(List<Line> lines, List<LinkHit> links, int contentHeight, int width) {
+        this(lines, links, List.of(), contentHeight, width);
     }
 
     public record Bounds(int left, int top, int right, int bottom) {
@@ -36,4 +44,6 @@ public record DocumentLayout(List<Line> lines, List<LinkHit> links, int contentH
     }
 
     public record LinkHit(URI destination, Bounds bounds) {}
+
+    public record ContentHit(RichDocument.ContentBlock content, Bounds bounds, boolean present) {}
 }

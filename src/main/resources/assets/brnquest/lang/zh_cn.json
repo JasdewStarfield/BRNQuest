@@ -202,6 +202,7 @@
   "screen.brnquest.editor.markdown.source": "源码",
   "screen.brnquest.editor.markdown.preview": "预览",
   "screen.brnquest.editor.markdown.view_toggle_hint": "在源码与预览之间切换",
+  "screen.brnquest.markdown.content_tooltip": "%1$s · %2$s",
   "screen.brnquest.editor.markdown.plain_to_markdown_warning": "Markdown 标点现在会影响渲染；应用前请检查预览。",
   "screen.brnquest.editor.markdown.apply_unavailable": "编辑请求暂不可用；输入仍保留在当前界面。",
   "screen.brnquest.editor.markdown.diagnostic": "警告 %1$s:%2$s · %3$s · 共 %4$s 项诊断",

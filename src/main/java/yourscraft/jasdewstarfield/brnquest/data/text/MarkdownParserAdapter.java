@@ -5,6 +5,7 @@ import org.commonmark.node.Code;
 import org.commonmark.node.Emphasis;
 import org.commonmark.node.HardLineBreak;
 import org.commonmark.node.Heading;
+import org.commonmark.node.Image;
 import org.commonmark.node.Link;
 import org.commonmark.node.ListItem;
 import org.commonmark.node.Node;
@@ -28,18 +29,25 @@ public final class MarkdownParserAdapter {
     public static final int PARSER_VERSION = 1;
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_LINK_BUDGET = 128;
+    public static final int DEFAULT_CONTENT_BUDGET = 64;
 
     private final Parser parser;
     private final int nodeBudget;
     private final int linkBudget;
+    private final int contentBudget;
 
     public MarkdownParserAdapter() {
-        this(DEFAULT_NODE_BUDGET, DEFAULT_LINK_BUDGET);
+        this(DEFAULT_NODE_BUDGET, DEFAULT_LINK_BUDGET, DEFAULT_CONTENT_BUDGET);
     }
 
     public MarkdownParserAdapter(int nodeBudget, int linkBudget) {
+        this(nodeBudget, linkBudget, DEFAULT_CONTENT_BUDGET);
+    }
+
+    public MarkdownParserAdapter(int nodeBudget, int linkBudget, int contentBudget) {
         this.nodeBudget = Math.max(1, nodeBudget);
         this.linkBudget = Math.max(0, linkBudget);
+        this.contentBudget = Math.max(0, contentBudget);
         // Source spans are required for exact literal degradation of unsupported constructs.
         this.parser = Parser.builder().includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES).build();
     }
@@ -60,6 +68,9 @@ public final class MarkdownParserAdapter {
             return literalDocument(text, "NODE_BUDGET_EXCEEDED", 0, text.length(), "Markdown node budget exceeded");
         if (counter.links > linkBudget)
             return literalDocument(text, "LINK_BUDGET_EXCEEDED", 0, text.length(), "Markdown link budget exceeded");
+        if (counter.contents > contentBudget)
+            return literalDocument(text, "CONTENT_BUDGET_EXCEEDED", 0, text.length(),
+                    "Markdown content node budget exceeded");
 
         Conversion conversion = new Conversion(text);
         List<RichDocument.Block> blocks = new ArrayList<>();
@@ -76,12 +87,14 @@ public final class MarkdownParserAdapter {
     private static void count(Node node, Counter counter) {
         counter.nodes++;
         if (node instanceof Link) counter.links++;
+        if (node instanceof Image) counter.contents++;
         for (Node child = node.getFirstChild(); child != null; child = child.getNext()) count(child, counter);
     }
 
     private static final class Counter {
         private int nodes;
         private int links;
+        private int contents;
     }
 
     private static final class Conversion {
@@ -91,6 +104,13 @@ public final class MarkdownParserAdapter {
         private Conversion(String source) { this.source = source; }
 
         private RichDocument.Block block(Node node) {
+            if (node instanceof Paragraph && node.getFirstChild() instanceof Image image
+                    && node.getFirstChild() == node.getLastChild()) {
+                ContentTarget target = contentTarget(image.getDestination());
+                if (target != null) return new RichDocument.ContentBlock(target.kind(), target.id(), altText(image));
+                return literalBlock(node, "CONTENT_TARGET_UNSUPPORTED",
+                        "Only texture:namespace:path and item:namespace:id content targets are supported");
+            }
             if (node instanceof Paragraph)
                 return new RichDocument.FlowBlock(RichDocument.FlowKind.PARAGRAPH, inlines(node));
             if (node instanceof Heading heading && heading.getLevel() <= 3) {
@@ -135,12 +155,29 @@ public final class MarkdownParserAdapter {
             if (node instanceof Emphasis) return new RichDocument.Emphasis(inlines(node));
             if (node instanceof StrongEmphasis) return new RichDocument.Strong(inlines(node));
             if (node instanceof Code code) return new RichDocument.Code(code.getLiteral());
+            if (node instanceof Image)
+                return literalInline(node, "CONTENT_REQUIRES_OWN_LINE",
+                        "Texture and item content must occupy their own paragraph");
             if (node instanceof Link link) {
                 URI destination = safeHttpUri(link.getDestination());
                 if (destination != null) return new RichDocument.Link(inlines(node), destination);
                 return literalInline(node, "LINK_SCHEME_UNSUPPORTED", "Only HTTP and HTTPS links are interactive");
             }
             return literalInline(node, "INLINE_UNSUPPORTED", "Unsupported Markdown inline rendered literally");
+        }
+
+        private static String altText(Node image) {
+            StringBuilder result = new StringBuilder();
+            appendAltText(image, result);
+            return result.toString();
+        }
+
+        private static void appendAltText(Node parent, StringBuilder output) {
+            for (Node child = parent.getFirstChild(); child != null; child = child.getNext()) {
+                if (child instanceof Text text) output.append(text.getLiteral());
+                else if (child instanceof Code code) output.append(code.getLiteral());
+                else appendAltText(child, output);
+            }
         }
 
         private RichDocument.LiteralBlock literalBlock(Node node, String code, String message) {
@@ -166,6 +203,23 @@ public final class MarkdownParserAdapter {
     }
 
     private record Slice(int offset, String text) {}
+    private record ContentTarget(RichDocument.ContentKind kind, String id) {}
+
+    private static ContentTarget contentTarget(String destination) {
+        if (destination == null) return null;
+        RichDocument.ContentKind kind;
+        String id;
+        if (destination.startsWith("texture:")) {
+            kind = RichDocument.ContentKind.TEXTURE;
+            id = destination.substring("texture:".length());
+        } else if (destination.startsWith("item:")) {
+            kind = RichDocument.ContentKind.ITEM;
+            id = destination.substring("item:".length());
+        } else return null;
+        // Requiring an explicit namespace keeps resource interpretation deterministic on every client.
+        if (!id.matches("[a-z0-9_.-]+:[a-z0-9/._-]+")) return null;
+        return new ContentTarget(kind, id);
+    }
 
     private static URI safeHttpUri(String raw) {
         try {

@@ -4,7 +4,10 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.Style;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
+import yourscraft.jasdewstarfield.brnquest.client.ui.LoadedTextures;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import yourscraft.jasdewstarfield.brnquest.data.text.MarkdownParserAdapter;
@@ -51,6 +54,18 @@ public final class DocumentView {
             @Override public int lineHeight(DocumentTextStyle style) {
                 return Math.max(1, Math.round(font.lineHeight * style.scale()));
             }
+
+            @Override public DocumentLayoutEngine.ContentSize contentSize(RichDocument.ContentBlock content) {
+                ResourceLocation id = ResourceLocation.tryParse(content.id());
+                if (id == null) return new DocumentLayoutEngine.ContentSize(24, 24, false);
+                if (content.kind() == RichDocument.ContentKind.ITEM) {
+                    boolean present = BuiltInRegistries.ITEM.containsKey(id);
+                    return new DocumentLayoutEngine.ContentSize(present ? 16 : 24, present ? 16 : 24, present);
+                }
+                LoadedTextures.Size size = LoadedTextures.size(id);
+                return new DocumentLayoutEngine.ContentSize(size.present() ? size.width() : 24,
+                        size.present() ? size.height() : 24, size.present());
+            }
         };
     }
 
@@ -68,6 +83,34 @@ public final class DocumentView {
                 graphics.pose().popPose();
             }
         }
+        for (DocumentLayout.ContentHit hit : layout.contents()) renderContent(graphics, font, hit, x, y);
+    }
+
+    private static void renderContent(GuiGraphics graphics, Font font, DocumentLayout.ContentHit hit, int x, int y) {
+        int left = x + hit.bounds().left();
+        int top = y + hit.bounds().top();
+        int width = hit.bounds().width();
+        int height = hit.bounds().height();
+        if (hit.content().kind() == RichDocument.ContentKind.TEXTURE) {
+            LoadedTextures.draw(graphics, hit.content().id(), left, top, width, height, 1.0);
+            if (!hit.present()) drawMissingContent(graphics, font, hit.content(), left, top, width, height);
+            return;
+        }
+        ResourceLocation id = ResourceLocation.tryParse(hit.content().id());
+        if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+            ItemStack stack = BuiltInRegistries.ITEM.get(id).getDefaultInstance();
+            if (!stack.isEmpty()) graphics.renderItem(stack, left, top);
+            else drawMissingContent(graphics, font, hit.content(), left, top, width, height);
+        } else drawMissingContent(graphics, font, hit.content(), left, top, width, height);
+    }
+
+    /** Missing client resources stay visible and keep their alt text available through hover. */
+    private static void drawMissingContent(GuiGraphics graphics, Font font, RichDocument.ContentBlock content,
+                                           int x, int y, int width, int height) {
+        graphics.fill(x, y, x + width, y + height, 0xFF572958);
+        graphics.renderOutline(x, y, width, height, 0xFFE3A8E3);
+        graphics.drawCenteredString(font, Component.literal("?"), x + width / 2,
+                y + Math.max(1, (height - font.lineHeight) / 2), 0xFFFFFFFF);
     }
 
     /** A link is active only when both its run and the pointer lie inside the actual viewport. */
@@ -78,6 +121,25 @@ public final class DocumentView {
             if (link.bounds().intersects(viewport) && link.bounds().contains(documentX, documentY))
                 return link.destination();
         return null;
+    }
+
+    public static DocumentLayout.ContentHit contentAt(DocumentLayout layout, int documentX, int documentY,
+                                                       DocumentLayout.Bounds viewport) {
+        if (!viewport.contains(documentX, documentY)) return null;
+        for (DocumentLayout.ContentHit content : layout.contents())
+            if (content.bounds().intersects(viewport) && content.bounds().contains(documentX, documentY))
+                return content;
+        return null;
+    }
+
+    /** Item content has native hover information but deliberately exposes no click action. */
+    public static ItemStack itemAt(DocumentLayout layout, int documentX, int documentY,
+                                   DocumentLayout.Bounds viewport) {
+        DocumentLayout.ContentHit hit = contentAt(layout, documentX, documentY, viewport);
+        if (hit == null || hit.content().kind() != RichDocument.ContentKind.ITEM) return ItemStack.EMPTY;
+        ResourceLocation id = ResourceLocation.tryParse(hit.content().id());
+        if (id == null || !BuiltInRegistries.ITEM.containsKey(id)) return ItemStack.EMPTY;
+        return BuiltInRegistries.ITEM.get(id).getDefaultInstance();
     }
 
     private static Component styled(String text, DocumentTextStyle documentStyle) {

@@ -202,6 +202,7 @@
   "screen.brnquest.editor.markdown.source": "Source",
   "screen.brnquest.editor.markdown.preview": "Preview",
   "screen.brnquest.editor.markdown.view_toggle_hint": "Switch between source and preview",
+  "screen.brnquest.markdown.content_tooltip": "%1$s · %2$s",
   "screen.brnquest.editor.markdown.plain_to_markdown_warning": "Markdown punctuation will now affect rendering; review the preview before applying.",
   "screen.brnquest.editor.markdown.apply_unavailable": "The edit request is not available yet; your input remains here.",
   "screen.brnquest.editor.markdown.diagnostic": "Warning at %1$s:%2$s · %3$s · %4$s diagnostic(s)",

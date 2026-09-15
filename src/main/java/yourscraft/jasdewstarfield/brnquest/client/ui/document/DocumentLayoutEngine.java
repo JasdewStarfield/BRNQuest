@@ -10,14 +10,23 @@ import java.util.Locale;
 
 /** Pure mixed-style layout engine; Minecraft font access is isolated behind {@link Metrics}. */
 public final class DocumentLayoutEngine {
+    static final int MAX_CONTENT_HEIGHT = 160;
+
     public interface Metrics {
         int width(String text, DocumentTextStyle style);
         int lineHeight(DocumentTextStyle style);
+        /** Missing resources keep deterministic geometry so restoring a pack cannot collapse the document. */
+        default ContentSize contentSize(RichDocument.ContentBlock content) {
+            return new ContentSize(24, 24, false);
+        }
     }
+
+    public record ContentSize(int width, int height, boolean present) {}
 
     public DocumentLayout layout(RichDocument document, int maximumWidth, Metrics metrics) {
         int width = Math.max(1, maximumWidth);
         List<DocumentLayout.Line> lines = new ArrayList<>();
+        List<DocumentLayout.ContentHit> contents = new ArrayList<>();
         int y = 0;
         for (int blockIndex = 0; blockIndex < document.blocks().size(); blockIndex++) {
             RichDocument.Block block = document.blocks().get(blockIndex);
@@ -40,11 +49,22 @@ public final class DocumentLayoutEngine {
                     y += 2;
                 }
                 y = Math.max(0, y - 2);
+            } else if (block instanceof RichDocument.ContentBlock content) {
+                ContentSize natural = metrics.contentSize(content);
+                int naturalWidth = Math.max(1, natural.width());
+                int naturalHeight = Math.max(1, natural.height());
+                double scale = Math.min(1.0, Math.min((double) width / naturalWidth,
+                        (double) MAX_CONTENT_HEIGHT / naturalHeight));
+                int renderedWidth = Math.max(1, (int) Math.round(naturalWidth * scale));
+                int renderedHeight = Math.max(1, (int) Math.round(naturalHeight * scale));
+                var bounds = new DocumentLayout.Bounds(0, y, renderedWidth, y + renderedHeight);
+                contents.add(new DocumentLayout.ContentHit(content, bounds, natural.present()));
+                y += renderedHeight;
             }
             if (blockIndex + 1 < document.blocks().size()) y += block instanceof RichDocument.FlowBlock flow
                     && flow.kind() != RichDocument.FlowKind.PARAGRAPH ? 5 : 4;
         }
-        return new DocumentLayout(lines, collectLinks(lines), y, width);
+        return new DocumentLayout(lines, collectLinks(lines), contents, y, width);
     }
 
     private static int layoutLiteral(String text, int startY, int width, Metrics metrics,

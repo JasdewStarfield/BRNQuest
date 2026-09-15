@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.*;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.document.DocumentView;
@@ -33,7 +34,8 @@ final class QuestDetailsPanel {
         default int rewardWidth(RewardDefinition reward) { return QuestViewportMath.REWARD_ROW_HEIGHT; }
     }
     record Result(Map<String, UiRect> textAreas, UiRect completeAction, UiRect trackAction,
-                  List<QuestDetailsInteraction.LinkTarget> links, Component hint, boolean lockedStatusHovered) {}
+                  List<QuestDetailsInteraction.LinkTarget> links, Component hint, ItemStack hoveredItem,
+                  boolean lockedStatusHovered) {}
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
     private final DocumentView documentView = new DocumentView();
     private int contentHeight;
@@ -51,6 +53,7 @@ final class QuestDetailsPanel {
         Map<String, UiRect> textAreas = new LinkedHashMap<>();
         List<QuestDetailsInteraction.LinkTarget> documentLinks = new ArrayList<>();
         Component hint = null;
+        ItemStack hoveredItem = ItemStack.EMPTY;
         boolean descriptionVisible = editing || !model.description().text().isBlank();
         boolean descriptionPlaceholder = descriptionVisible && model.description().text().isBlank();
         ResolvedDocument displayedDescription = descriptionPlaceholder
@@ -138,6 +141,20 @@ final class QuestDetailsPanel {
                     LoadedTextures.generation(), DocumentView.minecraftMetrics(font));
             DocumentView.render(graphics, font, prepared.layout(), contentLeft, descriptionTop,
                     descriptionPlaceholder ? GraystonePalette.DISABLED : GraystonePalette.TEXT);
+            DocumentLayout.Bounds documentViewport = new DocumentLayout.Bounds(0,
+                    Math.max(0, layout.content().top() - descriptionTop), contentWidth,
+                    Math.max(0, layout.content().bottom() - descriptionTop));
+            int documentMouseX = mouseX - contentLeft;
+            int documentMouseY = mouseY - descriptionTop;
+            var hoveredContent = DocumentView.contentAt(prepared.layout(), documentMouseX, documentMouseY,
+                    documentViewport);
+            if (hoveredContent != null) {
+                hoveredItem = DocumentView.itemAt(prepared.layout(), documentMouseX, documentMouseY,
+                        documentViewport);
+                if (hoveredItem.isEmpty()) hint = Component.translatable(
+                        "screen.brnquest.markdown.content_tooltip", hoveredContent.content().alt(),
+                        hoveredContent.content().id());
+            }
             documentLinks.addAll(visibleDocumentLinks(prepared.layout(), contentLeft, descriptionTop, layout.content()));
             for (QuestDetailsInteraction.LinkTarget link : documentLinks) {
                 if (link.bounds().containsExclusive(mouseX, mouseY)) {
@@ -196,7 +213,8 @@ final class QuestDetailsPanel {
                 && mouseX >= contentLeft && mouseX <= contentLeft + statusWidth
                 && mouseY >= statusTop && mouseY <= statusTop + font.lineHeight
                 && statusTop >= layout.content().top() && statusTop < layout.content().bottom();
-        return new Result(Map.copyOf(textAreas), completeAction, trackAction, List.copyOf(documentLinks), hint, locked);
+        return new Result(Map.copyOf(textAreas), completeAction, trackAction, List.copyOf(documentLinks), hint,
+                hoveredItem, locked);
     }
 
     /** Converts document-local link runs to clipped frame geometry used by the input snapshot. */

@@ -4,7 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 
 /** Pure selection edits used by the Markdown toolbar and covered without a running client. */
 final class MarkdownSourceEdits {
-    enum Tool { HEADING, BOLD, ITALIC, LIST, CODE, LINK }
+    enum Tool { HEADING, BOLD, ITALIC, LIST, CODE, LINK, UNDERLINE, STRIKETHROUGH, OBFUSCATED, COLOR }
     record Result(String text, int selectionStart, int selectionEnd) {}
 
     private MarkdownSourceEdits() {}
@@ -22,7 +22,21 @@ final class MarkdownSourceEdits {
             case LINK -> inline(text, start, end, "[", content, "](https://example.com)");
             case HEADING -> prefixLines(text, start, end, "## ", content);
             case LIST -> prefixLines(text, start, end, "- ", content);
+            case UNDERLINE -> style(text, start, end, content, "underline");
+            case STRIKETHROUGH -> style(text, start, end, content, "strikethrough");
+            case OBFUSCATED -> style(text, start, end, content, "obfuscated");
+            case COLOR -> throw new IllegalArgumentException("Color requires a selected palette or RGB value");
         };
+    }
+
+    static Result applyColor(String source, int first, int second, String color, String placeholder) {
+        String normalized = EditorMarkdownColorScreen.normalizeColor(color);
+        if (normalized == null) throw new IllegalArgumentException("Unsupported Markdown color: " + color);
+        String text = source == null ? "" : source;
+        int start = safeBoundary(text, Math.min(first, second));
+        int end = safeBoundary(text, Math.max(first, second));
+        String selected = text.substring(start, end);
+        return style(text, start, end, selected.isEmpty() ? placeholder : selected, "color/" + normalized);
     }
 
     static Result insertContent(String source, int first, int second, RichDocument.ContentKind kind,
@@ -43,6 +57,10 @@ final class MarkdownSourceEdits {
         String replacement = before + content + after;
         String changed = text.substring(0, start) + replacement + text.substring(end);
         return new Result(changed, start + before.length(), start + before.length() + content.length());
+    }
+
+    private static Result style(String text, int start, int end, String content, String target) {
+        return inline(text, start, end, "[", content, "](brnquest:style/" + target + ")");
     }
 
     private static Result prefixLines(String text, int start, int end, String prefix, String placeholder) {

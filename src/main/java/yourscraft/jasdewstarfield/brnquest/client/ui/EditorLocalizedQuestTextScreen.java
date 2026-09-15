@@ -47,6 +47,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                         DocumentFormat descriptionFormat) {}
 
     private static final int WIDE_LAYOUT_MINIMUM = 620;
+    private static final int TOOLBAR_COLUMNS = 6;
     private static final MarkdownSourceEdits.Tool[] TOOLS = MarkdownSourceEdits.Tool.values();
     private static final int CONTENT_TOOL_COUNT = 2;
     private static final EditorIcon TEXTURE_TOOL_ICON = QuestActionIcons.named("search");
@@ -308,7 +309,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         if (button == 0 && sourceVisible() && descriptionFormat.equals(DocumentFormat.MARKDOWN_V1)) {
             for (MarkdownSourceEdits.Tool tool : TOOLS) {
                 if (toolBounds(tool).containsExclusive(mouseX, mouseY)) {
-                    applyTool(tool);
+                    if (tool == MarkdownSourceEdits.Tool.COLOR)
+                        minecraft.setScreen(new EditorMarkdownColorScreen(this, this::insertColor));
+                    else applyTool(tool);
                     return true;
                 }
             }
@@ -444,6 +447,18 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         MarkdownSourceEdits.Result result = MarkdownSourceEdits.apply(descriptionEditor.getValue(),
                 selection.brnquest$cursor(), selection.brnquest$selectCursor(), tool, placeholder);
         applySourceEdit(field, result);
+    }
+
+    private void insertColor(String color) {
+        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
+        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        MarkdownSourceEdits.Result result = MarkdownSourceEdits.applyColor(descriptionEditor.getValue(),
+                selection.brnquest$cursor(), selection.brnquest$selectCursor(), color,
+                Component.translatable(toolPlaceholder(MarkdownSourceEdits.Tool.COLOR)).getString());
+        applySourceEdit(field, result);
+        // Color selection is a child screen, so preserve the wrapped selection through reinitialization.
+        reopenSelectionStart = result.selectionStart();
+        reopenSelectionEnd = result.selectionEnd();
     }
 
     private void insertTexture(String id) {
@@ -590,22 +605,27 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         UiRect area = sourceColumn();
         int gap = 3;
         int count = TOOLS.length + CONTENT_TOOL_COUNT;
-        int width = Math.max(18, (area.width() - gap * (count - 1)) / count);
-        int left = area.left() + index * (width + gap);
-        return new UiRect(left, panelBounds().top()+120, index == count-1 ? area.right() : left+width,
-                panelBounds().top()+140);
+        int columns = Math.min(TOOLBAR_COLUMNS, count);
+        int width = Math.max(18, (area.width() - gap * (columns - 1)) / columns);
+        int column = index % columns;
+        int row = index / columns;
+        int left = area.left() + column * (width + gap);
+        int right = column == columns - 1 ? area.right() : left + width;
+        int top = panelBounds().top() + 120 + row * 23;
+        return new UiRect(left, top, right, top + 20);
     }
     private UiRect sourceColumn() {
         UiRect p=panelBounds();
         int left=p.left()+12, right=p.right()-12;
         if (wideLayout()) right=p.centerX()-4;
-        return new UiRect(left,p.top()+144,right,p.bottom()-66);
+        int rows = (TOOLS.length + CONTENT_TOOL_COUNT + TOOLBAR_COLUMNS - 1) / TOOLBAR_COLUMNS;
+        return new UiRect(left,p.top()+121 + rows*23,right,p.bottom()-66);
     }
     private UiRect sourceBounds() { return sourceColumn(); }
     private UiRect previewBounds() {
         UiRect p=panelBounds();
         return wideLayout() ? new UiRect(p.centerX()+4,p.top()+120,p.right()-12,p.bottom()-66)
-                : new UiRect(p.left()+12,p.top()+144,p.right()-12,p.bottom()-66);
+                : new UiRect(p.left()+12,sourceColumn().top(),p.right()-12,p.bottom()-66);
     }
     private UiRect cancelBounds() { UiRect p=panelBounds(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
     private UiRect applyBounds() { UiRect p=panelBounds(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
@@ -618,6 +638,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             case LIST -> "•";
             case CODE -> "`";
             case LINK -> "↗";
+            case UNDERLINE -> "U";
+            case STRIKETHROUGH -> "S";
+            case OBFUSCATED -> "K";
+            case COLOR -> "C";
         };
     }
 

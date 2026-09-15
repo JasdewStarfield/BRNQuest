@@ -42,4 +42,22 @@ class MarkdownSourceEditsTest {
                 RichDocument.ContentKind.ITEM, "minecraft:stone", "item");
         assertEquals("one\n![item](item:minecraft:stone)two", middle.text());
     }
+
+    @Test void wrapsMinecraftOnlyMarkdownStylesAndNormalizesRgbColors() {
+        var underline = MarkdownSourceEdits.apply("text", 0, 4,
+                MarkdownSourceEdits.Tool.UNDERLINE, "underlined");
+        assertEquals("[text](brnquest:style/underline)", underline.text());
+        assertEquals("text", underline.text().substring(underline.selectionStart(), underline.selectionEnd()));
+
+        var color = MarkdownSourceEdits.applyColor("A😀B", 1, 3, "#FfAa00", "colored");
+        assertEquals("A[😀](brnquest:style/color/ffaa00)B", color.text());
+        assertEquals("😀", color.text().substring(color.selectionStart(), color.selectionEnd()));
+    }
+
+    @Test void colorPickerAcceptsOnlyNamedPaletteOrOpaqueRgb() {
+        assertEquals("dark_red", EditorMarkdownColorScreen.normalizeColor(" DARK_RED "));
+        assertEquals("12abef", EditorMarkdownColorScreen.normalizeColor("#12AbEf"));
+        assertEquals(null, EditorMarkdownColorScreen.normalizeColor("#abcd"));
+        assertEquals(null, EditorMarkdownColorScreen.normalizeColor("transparent"));
+    }
 }

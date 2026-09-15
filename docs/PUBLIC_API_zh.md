@@ -57,7 +57,7 @@
 `QuestView.behavior()` 返回实验性的不可变 `QuestBehaviorView`。依赖判定以稳定字符串
 `all_completed`、`one_completed`、`all_started`、`one_started` 表示，避免公共 API 暴露内部存储枚举；其余字段可用于扩展显示任务的可见性、顺序目标和重复周期配置。客户端可见集合及实际可操作状态仍由服务端权威进度决定，扩展不能只按该定义视图自行授权操作。
 
-`QuestView.descriptionFormat()` 与 `description()` 成对投影任务说明。`plain` 必须字面显示；`markdown_v1` 只表示 BRNQuest 版本化的受控语法，不承诺完整 CommonMark。未知值必须保留并按纯文本降级，不能据此启用 HTML、命令或客户端事件。本地化查询保证正文与格式来自同一 locale 来源。
+`QuestView.descriptionFormat()` 与 `description()` 成对投影任务说明。`plain` 中 Markdown 标点按字面显示，但合法的 Minecraft `§` legacy 格式码具有原版样式语义；`markdown_v1` 只表示 BRNQuest 版本化的受控语法，不承诺完整 CommonMark。未知值必须保留并按纯文本安全降级，不能据此启用 HTML、命令或客户端事件。本地化查询保证正文与格式来自同一 locale 来源。
 
 任务书定义快照可以安全读取；owner 和进度存储只允许在服务端线程读取。因此 `getProgressOwner` / `getProgress` 在玩家无服务器、调用线程错误或无法安全解析 owner 时返回空结果。`ProgressView` 显式携带本次投影对应的 `ProgressOwnerId`。
 

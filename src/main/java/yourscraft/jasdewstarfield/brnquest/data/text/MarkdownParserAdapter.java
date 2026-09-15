@@ -23,7 +23,6 @@ import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /** Converts CommonMark's AST into BRNQuest's deliberately smaller markdown_v1 tree. */
 public final class MarkdownParserAdapter {
@@ -214,16 +213,6 @@ public final class MarkdownParserAdapter {
     private record ContentTarget(RichDocument.ContentKind kind, String id) {}
 
     private static final String STYLE_PREFIX = "brnquest:style/";
-    private static final Map<String, Integer> NAMED_COLORS = Map.ofEntries(
-            Map.entry("black", 0x000000), Map.entry("dark_blue", 0x0000AA),
-            Map.entry("dark_green", 0x00AA00), Map.entry("dark_aqua", 0x00AAAA),
-            Map.entry("dark_red", 0xAA0000), Map.entry("dark_purple", 0xAA00AA),
-            Map.entry("gold", 0xFFAA00), Map.entry("gray", 0xAAAAAA),
-            Map.entry("dark_gray", 0x555555), Map.entry("blue", 0x5555FF),
-            Map.entry("green", 0x55FF55), Map.entry("aqua", 0x55FFFF),
-            Map.entry("red", 0xFF5555), Map.entry("light_purple", 0xFF55FF),
-            Map.entry("yellow", 0xFFFF55), Map.entry("white", 0xFFFFFF));
-
     private static boolean isStyleTarget(String destination) {
         return destination != null && destination.toLowerCase(Locale.ROOT).startsWith(STYLE_PREFIX);
     }
@@ -239,7 +228,8 @@ public final class MarkdownParserAdapter {
             default -> {
                 if (!target.startsWith("color/")) yield null;
                 String value = target.substring("color/".length());
-                Integer color = NAMED_COLORS.get(value);
+                MinecraftTextColor named = MinecraftTextColor.byName(value);
+                Integer color = named == null ? null : named.rgb();
                 if (color == null && value.matches("[0-9a-f]{6}")) color = Integer.parseInt(value, 16);
                 yield color == null ? null
                         : new RichDocument.InlineStyle(color, false, false, false, false, false);

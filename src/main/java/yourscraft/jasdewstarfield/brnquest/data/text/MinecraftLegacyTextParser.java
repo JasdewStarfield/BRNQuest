@@ -5,13 +5,6 @@ import java.util.List;
 
 /** Converts vanilla section-sign formatting into owned style spans before layout and measurement. */
 final class MinecraftLegacyTextParser {
-    private static final int[] COLORS = {
-            0x000000, 0x0000AA, 0x00AA00, 0x00AAAA,
-            0xAA0000, 0xAA00AA, 0xFFAA00, 0xAAAAAA,
-            0x555555, 0x5555FF, 0x55FF55, 0x55FFFF,
-            0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF
-    };
-
     private MinecraftLegacyTextParser() {}
 
     static RichDocument parse(String source) {
@@ -53,10 +46,10 @@ final class MinecraftLegacyTextParser {
     }
 
     private static RichDocument.InlineStyle apply(char code, RichDocument.InlineStyle current) {
-        int color = Character.digit(code, 16);
-        if (color >= 0) {
+        MinecraftTextColor color = MinecraftTextColor.byLegacyCode(code);
+        if (color != null) {
             // Vanilla legacy colors clear all decorations before applying the new palette color.
-            return new RichDocument.InlineStyle(COLORS[color], false, false, false, false, false);
+            return new RichDocument.InlineStyle(color.rgb(), false, false, false, false, false);
         }
         return switch (code) {
             case 'k' -> new RichDocument.InlineStyle(current.color(), current.bold(), current.italic(),

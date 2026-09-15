@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $versionRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $fixtureRoot = Join-Path $versionRoot 'src\test\resources\fixtures\ftb_v13\rich_text'
-$targetRoot = Join-Path $versionRoot 'run\config\brnquest\workspace\imports\p4c-rich-text'
+$targetRoot = Join-Path $versionRoot 'run\config\brnquest\imports\p4c-rich-text'
 
 # Replace only this disposable import source; author drafts and other import sources stay untouched.
 if ((Test-Path -LiteralPath $targetRoot) -and

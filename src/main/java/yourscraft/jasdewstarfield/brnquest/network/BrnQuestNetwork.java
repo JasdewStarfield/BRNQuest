@@ -157,7 +157,7 @@ public final class BrnQuestNetwork {
                     syncProgress(player, true);
                     return;
                 }
-                BrnQuestApi.completeTaskResult(OperationContext.self(player), player,
+                BrnQuestApi.submitTaskResult(OperationContext.self(player), player,
                         questId.toString(), taskId.toString(), selection);
             }
         });

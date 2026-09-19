@@ -16,11 +16,33 @@ public interface TaskType<TConfig> {
     Codec<TConfig> configCodec();
     /** Pure author-write normalization. Preserve keys the type does not own; never perform side effects. */
     default java.util.Map<String, String> normalizeConfig(java.util.Map<String, String> config) { return config; }
+
+    /**
+     * Normalizes owned fields with the current registry lookup when available. The default invokes
+     * the legacy hook exactly once, keeping existing implementations source and binary compatible.
+     * Keep this operation pure and repeatable; throw IllegalArgumentException for invalid input.
+     * Return owned changes only or a full map: authoring merges them over the original opaque keys.
+     */
+    default java.util.Map<String, String> normalizeConfig(
+            yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext context,
+            java.util.Map<String, String> config) {
+        return normalizeConfig(config);
+    }
+
     /** Pure creation-time defaults. Ignore hints the type does not own and preserve explicit config values. */
     default Map<String, String> creationConfig(Map<String, String> config, Map<String, String> defaults) { return config; }
     /** Optional server polling. Zero disables polling; samples may only increase persistent progress. */
     default int pollingIntervalTicks() { return 0; }
     default long sampledProgress(TaskContext context, TConfig config) { return context.progress(); }
+    /**
+     * Pure response to actual server crafting output. Return a cumulative progress sample; the core
+     * applies only increases inside the owner transaction. The stack is a defensive copy, not inventory.
+     * Default ignores crafting. Do not write ledgers, consume resources or retain player/event state.
+     */
+    default long craftedProgress(TaskContext context, TConfig config, net.minecraft.world.item.ItemStack crafted) {
+        return context.progress();
+    }
+
     /** Clear player-local transient state after an explicit reset, including when saved progress was zero.
      * Called for each online player sharing the reset owner; must not write persistent progress. */
     default void resetTransientState(TaskContext context) {}
@@ -45,8 +67,7 @@ public interface TaskType<TConfig> {
         return TaskSubmissionResult.accepted();
     }
 
-    /** Player-selected child entries are advisory until this server-side method validates them. */
-    @ApiStatus(ApiStability.INTERNAL)
+    /** Ordered main-inventory slots are advisory; validate live stacks before consuming. Old types delegate to submit(context, config). */
     default TaskSubmissionResult submit(TaskContext context, TConfig config, TaskSubmissionSelection selection) {
         return submit(context, config);
     }

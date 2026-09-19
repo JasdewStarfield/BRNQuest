@@ -21,6 +21,12 @@ public final class TaskTypeExecutor {
                 .map(config -> type.sampledProgress(context, config)).orElse(context.progress());
     }
 
+    /** Each extension sees its own copy of the event output and cannot alter another type's sample. */
+    public static <T> long craftedProgress(TaskType<T> type, TaskContext context, net.minecraft.world.item.ItemStack crafted) {
+        return decode(type, context.task()).result()
+                .map(config -> type.craftedProgress(context, config, crafted.copy())).orElse(context.progress());
+    }
+
     public static boolean satisfied(TaskType<?> type, TaskContext context) {
         return execute(type, context, Invocation.SATISFIED).orElse(false);
     }

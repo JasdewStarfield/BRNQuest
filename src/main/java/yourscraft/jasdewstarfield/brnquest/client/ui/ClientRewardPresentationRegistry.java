@@ -134,6 +134,11 @@ public final class ClientRewardPresentationRegistry {
     private static ClientRewardPresentation experience(boolean levels) {
         return new ClientRewardPresentation() {
             public String symbol(RewardView reward) { return "✦"; }
+            public java.util.Optional<Component> contentSummary(RewardView reward) {
+                // XP units and config keys belong to this type, not the shared reward layout.
+                String key = levels ? "xp_levels" : "xp";
+                return java.util.Optional.of(typeName(reward).copy().append(" × " + reward.config().getOrDefault(key, "0")));
+            }
             public Component typeName(RewardView reward) {
                 return Component.translatable(levels ? "screen.brnquest.type.reward.xp_levels" : "screen.brnquest.type.reward.xp");
             }

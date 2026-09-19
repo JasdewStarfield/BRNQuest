@@ -3,9 +3,17 @@
   "screen.brnquest_example.reward.experience.title": "%s 点经验值",
   "screen.brnquest_example.task.marker": "服务端标记条件",
   "screen.brnquest_example.task.signal": "信号条件",
+  "screen.brnquest_example.task.checkmark": "确认条件",
+  "screen.brnquest_example.field.confirmation_title": "确认标题",
+  "screen.brnquest_example.field.confirmation_title.help": "手动确认目标的可选标题",
   "screen.brnquest_example.reward.guarded_tag": "受条件控制的标记",
   "screen.brnquest_example.field.tag": "标记名称",
   "screen.brnquest_example.field.mode": "示例模式",
   "screen.brnquest_example.mode.explicit": "固定示例",
-  "screen.brnquest_example.mode.player": "玩家示例"
+  "screen.brnquest_example.mode.player": "玩家示例",
+  "screen.brnquest_example.task.item": "示例物品目标",
+  "screen.brnquest_example.task.item.title": "准备 %s 个 %s",
+  "screen.brnquest_example.item.select": "选择要提交的物品",
+  "screen.brnquest_example.item.submit": "提交",
+  "screen.brnquest_example.item.selected": "已选 %s / 需要 %s"
 }

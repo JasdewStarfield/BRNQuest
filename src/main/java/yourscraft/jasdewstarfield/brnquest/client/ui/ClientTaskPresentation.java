@@ -35,6 +35,19 @@ public interface ClientTaskPresentation {
     default boolean interactive(TaskView task) { return false; }
     default boolean acceptsQuestCompletionIntent(TaskView task) { return false; }
 
+    /** Optional type-owned submission page; empty retains direct submission for existing presentations. */
+    default java.util.Optional<TaskSubmissionInteraction> submissionInteraction(TaskPresentationContext context) {
+        return java.util.Optional.empty();
+    }
+
+    /** Read-only candidate browser. Existing resolved-options presentations keep their default browser. */
+    default java.util.Optional<net.minecraft.client.gui.screens.Screen> candidateScreen(
+            net.minecraft.client.gui.screens.Screen parent, TaskPresentationContext context) {
+        return resolvedOptions(context.task()).map(options -> new ResolvedOptionsScreen(parent,
+                () -> resolvedOptions(context.task()).orElse(List.of())));
+    }
+
+
     /** Interpret only the server ledger, independently of inventory readiness or historical quest status. */
     default boolean confirmed(TaskView task, long storedProgress) { return storedProgress >= 1; }
 

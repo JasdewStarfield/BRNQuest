@@ -75,6 +75,27 @@ public final class BrnQuestApi {
                         selection));
     }
 
+    /** Submit one objective; success/changed describes its receipt, not whole-quest readiness. */
+    public static OperationResult submitTaskResult(OperationContext context, ServerPlayer player,
+                                                   String questId, String taskId) {
+        return submitTaskResult(context, player, questId, taskId, TaskSubmissionSelection.AUTOMATIC);
+    }
+
+    /** Bounded slot intent is revalidated by the type against live inventory inside the owner lock. */
+    public static OperationResult submitTaskResult(OperationContext context, ServerPlayer player,
+                                                   String questId, String taskId, TaskSubmissionSelection selection) {
+        OperationResult readiness = validateWriteContext(context, player);
+        if (readiness != null) return audited(context, player, "submit_task", taskId, readiness);
+        if (selection == null) return audited(context, player, "submit_task", taskId,
+                OperationResult.invalid("INVALID_SELECTION", "Task selection is required"));
+        var resolvedQuest = resolve(questId);
+        var resolvedTask = resolve(taskId);
+        if (resolvedQuest.isEmpty()) return audited(context, player, "submit_task", questId, invalidId("quest", questId));
+        if (resolvedTask.isEmpty()) return audited(context, player, "submit_task", taskId, invalidId("task", taskId));
+        return audited(context, player, "submit_task", taskId, ProgressEngine.get().submitTask(player,
+                resolvedQuest.orElseThrow(), resolvedTask.orElseThrow(), selection));
+    }
+
     public static boolean isQuestCompleted(ServerPlayer player, String questId) {
         return getProgress(player, questId)
                 .map(ProgressView::status)

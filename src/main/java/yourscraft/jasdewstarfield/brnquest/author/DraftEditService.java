@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import yourscraft.jasdewstarfield.brnquest.data.BookSettings;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -113,7 +115,7 @@ public final class DraftEditService {
     public AuthorOperationResult<DraftEditResult> copyChapter(ServerPlayer player, UUID sessionId,
                                                                ResourceLocation bookId, String revision,
                                                                ResourceLocation sourceId, ChapterDefinition copy) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.copyChapter(book, sourceId, copy));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.copyChapter(book, sourceId, copy, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     /** Shared artwork uses the same permission, lease, revision, validation and undo boundary as quests. */
@@ -159,7 +161,7 @@ public final class DraftEditService {
     public AuthorOperationResult<DraftEditResult> createQuest(ServerPlayer player, UUID sessionId,
             ResourceLocation bookId, String revision, ResourceLocation chapterId, QuestDefinition quest,
             QuestCreationDefaults explicit) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.createQuest(book, chapterId, quest, explicit));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.createQuest(book, chapterId, quest, explicit, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     /** Backgrounds and metadata are one revision and one undo operation. */
@@ -191,13 +193,13 @@ public final class DraftEditService {
     public AuthorOperationResult<DraftEditResult> addQuest(ServerPlayer player, UUID sessionId,
                                                             ResourceLocation bookId, String revision,
                                                             ResourceLocation chapterId, QuestDefinition quest) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addQuest(book, chapterId, quest));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addQuest(book, chapterId, quest, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> copyQuest(ServerPlayer player, UUID sessionId,
                                                              ResourceLocation bookId, String revision,
                                                              ResourceLocation sourceId, QuestDefinition copy) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.copyQuest(book, sourceId, copy));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.copyQuest(book, sourceId, copy, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> updateQuest(ServerPlayer player, UUID sessionId,
@@ -284,13 +286,13 @@ public final class DraftEditService {
             ResourceLocation bookId, String revision, ResourceLocation questId, TaskDefinition task) {
         return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addTask(book, questId,
                 new TaskDefinition(task.bookId(), task.id(), task.typeId(),
-                        EntryCreationPolicy.taskConfig(book, questId, task.typeId(), task.config()), task.optional())));
+                        EntryCreationPolicy.taskConfig(book, questId, task.typeId(), task.config()), task.optional()), ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> addTask(ServerPlayer player, UUID sessionId,
                                                            ResourceLocation bookId, String revision,
                                                            ResourceLocation questId, TaskDefinition task) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addTask(book, questId, task));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addTask(book, questId, task, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> copyTask(ServerPlayer player, UUID sessionId,
@@ -298,14 +300,14 @@ public final class DraftEditService {
                                                             ResourceLocation questId, ResourceLocation sourceId,
                                                             TaskDefinition copy) {
         return apply(player, sessionId, bookId, revision,
-                book -> DraftBookEditor.copyTask(book, questId, sourceId, copy));
+                book -> DraftBookEditor.copyTask(book, questId, sourceId, copy, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> updateTask(ServerPlayer player, UUID sessionId,
                                                               ResourceLocation bookId, String revision,
                                                               ResourceLocation questId, ResourceLocation taskId,
                                                               TaskDefinition task) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateTask(book, questId, taskId, task));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateTask(book, questId, taskId, task, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> removeTask(ServerPlayer player, UUID sessionId,
@@ -324,7 +326,7 @@ public final class DraftEditService {
     public AuthorOperationResult<DraftEditResult> addReward(ServerPlayer player, UUID sessionId,
                                                              ResourceLocation bookId, String revision,
                                                              ResourceLocation questId, RewardDefinition reward) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addReward(book, questId, reward));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.addReward(book, questId, reward, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> copyReward(ServerPlayer player, UUID sessionId,
@@ -332,14 +334,14 @@ public final class DraftEditService {
                                                               ResourceLocation questId, ResourceLocation sourceId,
                                                               RewardDefinition copy) {
         return apply(player, sessionId, bookId, revision,
-                book -> DraftBookEditor.copyReward(book, questId, sourceId, copy));
+                book -> DraftBookEditor.copyReward(book, questId, sourceId, copy, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> updateReward(ServerPlayer player, UUID sessionId,
                                                                 ResourceLocation bookId, String revision,
                                                                 ResourceLocation questId, ResourceLocation rewardId,
                                                                 RewardDefinition reward) {
-        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateReward(book, questId, rewardId, reward));
+        return apply(player, sessionId, bookId, revision, book -> DraftBookEditor.updateReward(book, questId, rewardId, reward, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     public AuthorOperationResult<DraftEditResult> removeReward(ServerPlayer player, UUID sessionId,
@@ -372,13 +374,13 @@ public final class DraftEditService {
     /** Frozen definitions still pass through normal permissions, revision checks and whole-book validation. */
     public AuthorOperationResult<DraftEditResult> pasteQuestClipboard(ServerPlayer player, UUID sessionId,
             ResourceLocation bookId, String revision, ResourceLocation chapterId, QuestClipboardSnapshot snapshot, double x, double y) {
-        return apply(player, sessionId, bookId, revision, book -> snapshot.paste(book, chapterId, x, y));
+        return apply(player, sessionId, bookId, revision, book -> snapshot.paste(book, chapterId, x, y, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     /** Copy the complete chapter through the same permission/revision/validation/history transaction. */
     public AuthorOperationResult<DraftEditResult> duplicateChapter(ServerPlayer player, UUID sessionId,
             ResourceLocation bookId, String revision, ResourceLocation sourceId) {
-        return apply(player, sessionId, bookId, revision, book -> ChapterCopyEdits.copy(book, sourceId));
+        return apply(player, sessionId, bookId, revision, book -> ChapterCopyEdits.copy(book, sourceId, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     /** Selection edits share the existing revision, validation and atomic undo boundary. */
@@ -386,7 +388,7 @@ public final class DraftEditService {
             ResourceLocation bookId, String revision, java.util.Set<ResourceLocation> ids, boolean copy, double dx, double dy) {
         var frozenIds = java.util.Set.copyOf(ids);
         return apply(player, sessionId, bookId, revision, book -> copy
-                ? QuestSelectionEdits.copy(book, frozenIds, dx, dy) : DraftBookEditor.removeQuestSelection(book, frozenIds));
+                ? QuestSelectionEdits.copy(book, frozenIds, dx, dy, ConfigNormalizationContext.withRegistries(player.registryAccess())) : DraftBookEditor.removeQuestSelection(book, frozenIds));
     }
 
     /** Mixed artwork/node edits have one revision, permission check and undo boundary. */
@@ -394,7 +396,7 @@ public final class DraftEditService {
             ResourceLocation bookId, String revision, ResourceLocation chapter, String action,
             Map<ResourceLocation, DraftBookEditor.Position> positions, double dx, double dy) {
         var frozen = Map.copyOf(positions);
-        return apply(player, sessionId, bookId, revision, book -> CanvasSelectionEdits.edit(book, chapter, action, frozen, dx, dy));
+        return apply(player, sessionId, bookId, revision, book -> CanvasSelectionEdits.edit(book, chapter, action, frozen, dx, dy, ConfigNormalizationContext.withRegistries(player.registryAccess())));
     }
 
     private AuthorOperationResult<DraftEditResult> apply(ServerPlayer player, UUID sessionId,

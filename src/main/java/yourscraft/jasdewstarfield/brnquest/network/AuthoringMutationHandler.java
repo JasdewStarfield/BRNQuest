@@ -14,8 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.util.UUID;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 /** Server-authoritative authoring use cases; requests are parsed before entering this boundary. */
 final class AuthoringMutationHandler {
@@ -270,10 +268,10 @@ final class AuthoringMutationHandler {
                         requireId(parentId), TypedEntrySnapshot.decode(wire.config().get("snapshot")).reward(requireId(targetId)));
                 case ADD_TASK -> editor.addTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), new TaskDefinition(bookId, requireId(targetId), requireId(sourceId),
-                                taskMutationConfig(player, sourceId, yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.taskConfig(
+                                AuthoringRequestDecoder.boundedConfig(yourscraft.jasdewstarfield.brnquest.author.EntryCreationPolicy.taskConfig(
                                         book, parentId, sourceId, wire.config())), false));
                 case UPDATE_TASK -> editor.updateTask(player, sessionId, bookId, wire.draftRevision(),
-                        requireId(parentId), requireId(sourceId), taskReplacement(player, book,
+                        requireId(parentId), requireId(sourceId), taskReplacement(book,
                                 parentId, sourceId, requireId(targetId), wire.config(), wire.targetIndex() != 0));
                 case COPY_TASK -> editor.copyTask(player, sessionId, bookId, wire.draftRevision(),
                         requireId(parentId), requireId(sourceId), taskCopy(book,
@@ -326,24 +324,7 @@ final class AuthoringMutationHandler {
                 .orElseThrow(() -> new IllegalArgumentException("Selected quest no longer exists"));
     }
 
-    private static Map<String, String> taskMutationConfig(ServerPlayer player, ResourceLocation typeId,
-                                                           Map<String, String> config) {
-        Map<String, String> bounded = AuthoringRequestDecoder.boundedConfig(config);
-        if (TaskTypes.ITEM.equals(typeId) || TaskTypes.ITEM_CHOICE.equals(typeId)) {
-            Map<String, String> canonical = ItemChoiceMatcher.canonicalEditorConfig(bounded);
-            var normalizedResult = ItemChoiceMatcher.normalizeConfig(player.registryAccess(), canonical);
-            ItemChoiceMatcher.Spec normalized = normalizedResult.result().orElseThrow(() ->
-                    new IllegalArgumentException(normalizedResult.error()
-                            .map(error -> error.message()).orElse("Item matcher is invalid")));
-            Map<String, String> normalizedConfig = new LinkedHashMap<>(canonical);
-            normalizedConfig.put("matcher", normalized.encode());
-            normalizedConfig.put("required_entries", Integer.toString(normalized.requiredEntries()));
-            return Map.copyOf(normalizedConfig);
-        }
-        return bounded;
-    }
-
-    private static TaskDefinition taskReplacement(ServerPlayer player, QuestBookDefinition book,
+    private static TaskDefinition taskReplacement(QuestBookDefinition book,
                                                   ResourceLocation questId, ResourceLocation sourceId,
                                                   ResourceLocation replacementId, Map<String, String> config,
                                                   boolean optional) {
@@ -351,7 +332,7 @@ final class AuthoringMutationHandler {
         TaskDefinition source = quest.tasks().stream().filter(task -> task.id().equals(sourceId)).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Selected task no longer exists"));
         return new TaskDefinition(book.id(), replacementId, source.typeId(),
-                taskMutationConfig(player, source.typeId(), config), optional);
+                AuthoringRequestDecoder.boundedConfig(config), optional);
     }
 
     static RewardDefinition rewardReplacement(QuestBookDefinition book,

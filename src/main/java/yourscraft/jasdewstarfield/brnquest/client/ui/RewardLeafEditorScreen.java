@@ -28,7 +28,12 @@ final class RewardLeafEditorScreen extends RewardEditorScreen {
         this(parent, ClientRewardPresentationRegistry.get(type).typeName(new RewardView(type, type, type, values, "manual", false)),
                 ConfigEditorSchemas.forReward(new RewardView(type, type, type, values, "manual", false)), config -> {
                     var registered = RewardTypeRegistry.get(type);
-                    var normalized = registered.normalizeConfig(config);
+                    // Client validation is advisory; the server repeats normalization with its own lookup.
+                    var level = net.minecraft.client.Minecraft.getInstance().level;
+                    var context = level == null ? ConfigNormalizationContext.withoutRegistries()
+                            : ConfigNormalizationContext.withRegistries(level.registryAccess());
+                    var normalized = new java.util.TreeMap<>(config);
+                    normalized.putAll(registered.normalizeConfig(context, config));
                     StringMapConfigCodec.decode(registered.configCodec(), normalized).getOrThrow();
                     return normalized;
                 }, commit);

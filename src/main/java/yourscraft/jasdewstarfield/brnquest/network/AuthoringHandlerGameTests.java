@@ -256,7 +256,8 @@ public final class AuthoringHandlerGameTests {
         }
 
         ResourceLocation id(String path) { return ResourceLocation.parse("brnquest:" + path); }
-        String raw(String path) { return path.isEmpty() ? "" : id(path).toString(); }
+        // Explicit namespaced values let the same fixture exercise independently registered add-on types.
+        String raw(String path) { return path.isEmpty() || path.contains(":") ? path : id(path).toString(); }
         QuestBookDefinition snapshot() { return EditSessionService.get().snapshot(player, token, book, revision).value().book(); }
         QuestDefinition quest(String path) { return snapshot().quests().stream().filter(q -> q.id().equals(id(path))).findFirst().orElseThrow(); }
 
@@ -334,6 +335,59 @@ public final class AuthoringHandlerGameTests {
             check(helper, last(packets).code().equals("QUEST_NOT_FOUND"), "disappeared quest keeps stable error");
         }
     }
+    /** Real wire requests and direct author APIs share type normalization, history and disk persistence. */
+    @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringNormalization")
+    @PrefixGameTestTemplate(false)
+    public static void registryNormalizationAndExternalTypesShareAuthorTransactions(GameTestHelper helper) {
+        if (!net.neoforged.fml.ModList.get().isLoaded("brnquest_example")) { helper.succeed(); return; }
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        try {
+            var f = new MutationFixture(helper, admin);
+            f.apply("ADD_GROUP", "g", "", ""); f.apply("ADD_CHAPTER", "c", "g", ""); f.apply("ADD_QUEST", "q", "c", "");
+            f.apply("ADD_TASK", "confirm", "q", "brnquest_example:checkmark", Map.of("title", "  Confirm  ", "opaque", "keep"));
+            f.apply("ADD_REWARD", "experience", "q", "brnquest_example:experience", Map.of("amount", " 007 ", "opaque", "keep"));
+            check(helper, f.quest("q").tasks().getFirst().config().get("title").equals("Confirm"), "external task normalized through wire path");
+            check(helper, f.quest("q").rewards().getFirst().config().get("amount").equals("7"), "external reward normalized through wire path");
+            var legacy = Map.of("item", "{id:\"minecraft:stone\",count:3,components:{\"minecraft:custom_name\":'\"Keepsake\"'}}",
+                    "count", "2", "consume", "true", "private_ref", "brnquest:q");
+            // Bypass the network on purpose: this used to miss registry normalization entirely.
+            var added = AuthorApi.editor().addTask(admin, f.token, f.book, f.revision, f.id("q"),
+                    new TaskDefinition(f.book, f.id("item"), ResourceLocation.parse("brnquest:item"), legacy, false));
+            check(helper, added.success(), "direct API item insertion: " + added.message());
+            f.revision = added.value().snapshot().draftRevision();
+            var canonical = f.quest("q").tasks().get(1).config();
+            check(helper, canonical.get("matcher").contains("Keepsake") && canonical.get("consume_items").equals("true"),
+                    "live registry normalization preserves item components and legacy consume");
+            f.apply("ADD_TASK", "choice", "q", "item_choice", Map.of("matcher", "{\"mode\":\"tag\",\"tag\":\"minecraft:planks\"}", "opaque", "keep"));
+            f.apply("COPY_TASK", "item_copy", "q", "item");
+            check(helper, f.quest("q").tasks().getLast().config().equals(canonical), "individual copy normalizes idempotently");
+            String beforeCopy = f.revision;
+            f.apply("COPY_QUEST", "q_copy", "", "q");
+            String copiedRevision = f.revision;
+            var copied = f.snapshot();
+            f.apply("UNDO", "", "", ""); check(helper, f.revision.equals(beforeCopy), "one undo restores normalized source");
+            f.apply("REDO", "", "", ""); check(helper, f.revision.equals(copiedRevision), "redo restores exact IDs and config");
+            var stale = AuthorApi.editor().copyTask(admin, f.token, f.book, beforeCopy, f.id("q"), f.id("item"),
+                    new TaskDefinition(f.book, f.id("stale"), ResourceLocation.parse("brnquest:item"), legacy, false));
+            check(helper, stale.code().equals("STALE_DRAFT_REVISION"), "stale copy rejected before normalization");
+            var invalidWire = new AuthoringNetwork.EditorMutationWire(f.token.toString(), f.book.toString(), f.revision,
+                    "UPDATE_TASK", f.raw("item"), f.raw("q"), f.raw("item"), "", 0, 0, 0, List.of(),
+                    Map.of("item", "{id:\"missing:unknown\",count:1}"));
+            f.handler.mutate(AuthoringRequestDecoder.mutation(GSON.toJson(invalidWire)).value());
+            check(helper, last(f.packets).code().equals("INVALID_EDITOR_MUTATION"), "invalid registry values return editor diagnostics");
+            check(helper, f.snapshot().equals(copied), "rejected normalization changes no draft state");
+            f.apply("COPY_CHAPTER", "c", "", "");
+            var saved = EditSessionService.get().snapshot(admin, f.token, f.book, f.revision).value();
+            var diskBefore = new DraftRepository().load(admin.getServer(), f.book).value();
+            check(helper, new DraftRepository().save(admin.getServer(), saved, diskBefore.draftRevision()).success(), "normalized draft saves");
+            var loaded = new DraftRepository().load(admin.getServer(), f.book).value();
+            check(helper, loaded.draftRevision().equals(f.revision), "native disk round trip preserves normalized revision");
+            check(helper, loaded.book().quests().stream().allMatch(q -> q.tasks().get(1).config().get("private_ref").equals("brnquest:q")
+                    && q.rewards().getFirst().config().get("opaque").equals("keep")), "all copies preserve opaque config without remapping private strings");
+            helper.succeed();
+        } finally { release(admin); }
+    }
+
     @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerMutations")
     @PrefixGameTestTemplate(false)
     public static void everyMutationAndQuestUpdateUsesAuthoritativeSnapshots(GameTestHelper helper) {

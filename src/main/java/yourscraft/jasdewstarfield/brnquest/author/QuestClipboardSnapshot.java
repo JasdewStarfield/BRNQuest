@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
@@ -68,6 +70,11 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
     }
     /** Builds a whole candidate before the session validates/publishes it as one history step. */
     public AuthorOperationResult<DraftChange> paste(QuestBookDefinition book, ResourceLocation chapterId, double x, double y) {
+        return paste(book, chapterId, x, y, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Passes the current registry lookup through the complete atomic copy. */
+    public AuthorOperationResult<DraftChange> paste(QuestBookDefinition book, ResourceLocation chapterId, double x, double y, ConfigNormalizationContext context) {
         requireDestination(book.id());
         if (!Double.isFinite(x) || !Double.isFinite(y) || book.chapters().stream().noneMatch(c -> c.id().equals(chapterId)))
             return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST, "INVALID_PASTE_DESTINATION", "Paste requires an existing chapter and finite coordinates");
@@ -96,7 +103,7 @@ public record QuestClipboardSnapshot(QuestBookDefinition content) {
                     x + source.x() - minX, y + source.y() - minY,
                     source.dependencies().stream().map(dep -> remap.getOrDefault(dep, dep)).toList(), tasks, rewards, "",
                     source.appearance(), source.behavior(), source.extensions());
-            var added = DraftBookEditor.addQuest(result, chapterId, copy);
+            var added = DraftBookEditor.addQuest(result, chapterId, copy, context);
             if (!added.success()) return added;
             result = added.value().book(); affected.addAll(added.value().affectedObjects());
             var locales = new TreeMap<String, Map<String, String>>(result.localization().translations());

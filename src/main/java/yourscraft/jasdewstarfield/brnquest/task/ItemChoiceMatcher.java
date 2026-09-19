@@ -175,15 +175,15 @@ public final class ItemChoiceMatcher {
     }
 
     /** Registry-normalizes every child entry and writes the target-level required count into the matcher. */
-    public static DataResult<Spec> normalizeConfig(RegistryAccess registries, Map<String, String> config) {
+    public static DataResult<Spec> normalizeConfig(net.minecraft.core.HolderLookup.Provider registries, Map<String, String> config) {
         return parseConfig(config).flatMap(spec -> normalize(registries, spec));
     }
 
-    public static DataResult<Spec> normalize(RegistryAccess registries, String raw) {
+    public static DataResult<Spec> normalize(net.minecraft.core.HolderLookup.Provider registries, String raw) {
         return parse(raw).flatMap(spec -> normalize(registries, spec));
     }
 
-    public static DataResult<Spec> normalize(RegistryAccess registries, Spec spec) {
+    public static DataResult<Spec> normalize(net.minecraft.core.HolderLookup.Provider registries, Spec spec) {
         try {
             List<Entry> normalized = new ArrayList<>();
             Set<String> unique = new LinkedHashSet<>();
@@ -195,7 +195,8 @@ public final class ItemChoiceMatcher {
                     value = Entry.item(stack.copyWithCount(1).save(registries).toString(), entry.requiredCount());
                 } else {
                     ResourceLocation tagId = ResourceLocation.tryParse(entry.value());
-                    if (tagId == null || tagItems(tagId).isEmpty()) {
+                    if (tagId == null || registries.lookupOrThrow(Registries.ITEM)
+                            .get(TagKey.create(Registries.ITEM, tagId)).filter(tag -> tag.size() > 0).isEmpty()) {
                         return DataResult.error(() -> "Item tag is missing or empty: " + entry.value());
                     }
                     value = Entry.tag(tagId, entry.requiredCount());
@@ -475,7 +476,7 @@ public final class ItemChoiceMatcher {
         return List.copyOf(stacks);
     }
 
-    private static ItemStack parseStack(RegistryAccess registries, String snbt) {
+    private static ItemStack parseStack(net.minecraft.core.HolderLookup.Provider registries, String snbt) {
         try {
             return ItemStack.parseOptional(registries, TagParser.parseTag(snbt));
         } catch (Exception ignored) {

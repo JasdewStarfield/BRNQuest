@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import java.util.*;
@@ -9,12 +11,18 @@ public final class CanvasSelectionEdits {
     private CanvasSelectionEdits() {}
     public static AuthorOperationResult<DraftChange> edit(QuestBookDefinition book, ResourceLocation chapterId,
             String action, Map<ResourceLocation, DraftBookEditor.Position> positions, double dx, double dy) {
+        return edit(book, chapterId, action, positions, dx, dy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Passes the current registry lookup through the complete atomic copy. */
+    public static AuthorOperationResult<DraftChange> edit(QuestBookDefinition book, ResourceLocation chapterId,
+            String action, Map<ResourceLocation, DraftBookEditor.Position> positions, double dx, double dy, ConfigNormalizationContext context) {
         var chapter = book.chapters().stream().filter(c -> c.id().equals(chapterId)).findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         var quests = CanvasSelectionKey.ids(positions.keySet(), false);
         var decorations = CanvasSelectionKey.ids(positions.keySet(), true);
         // Resolve every ID before changing anything, including the decoration-only case.
         var captured = QuestClipboardSnapshot.capture(book, chapterId, quests, decorations);
-        if (action.equals("COPY_CANVAS_SELECTION")) return captured.paste(book, chapterId, captured.minX()+dx, captured.minY()+dy);
+        if (action.equals("COPY_CANVAS_SELECTION")) return captured.paste(book, chapterId, captured.minX()+dx, captured.minY()+dy, context);
         if (!action.equals("MOVE_CANVAS_SELECTION") && !action.equals("DELETE_CANVAS_SELECTION"))
             throw new IllegalArgumentException("Unknown canvas selection operation");
         if (chapter.canvasScene().decorations().stream().anyMatch(d -> decorations.contains(d.id()) && d.locked()))

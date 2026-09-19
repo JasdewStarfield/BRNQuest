@@ -36,6 +36,8 @@ public final class BrnQuestExampleAddon {
     public static final String MOD_ID = "brnquest_example";
     public static final ResourceLocation MARKER_TASK = id("marker");
     public static final ResourceLocation SIGNAL_TASK = id("signal");
+    public static final ResourceLocation CHECKMARK_TASK = id("checkmark");
+    public static final ResourceLocation ITEM_TASK = id("item");
     public static final ResourceLocation EXPERIENCE_REWARD = id("experience");
     public static final ResourceLocation GUARDED_TAG_REWARD = id("guarded_tag");
     public static final ResourceLocation PLUGIN_ID = id("core");
@@ -58,7 +60,9 @@ public final class BrnQuestExampleAddon {
                         tags.size(), player.getTags().contains(selected) ? 1 : 0, "", "");
             });
             registrar.task(MARKER_TASK, new MarkerTask())
-                    .task(SIGNAL_TASK, new SignalTask());
+                    .task(SIGNAL_TASK, new SignalTask())
+                    .task(CHECKMARK_TASK, new CheckmarkTask())
+                    .task(ITEM_TASK, new ExampleItemTask());
             registrar.reward(EXPERIENCE_REWARD, new ExperienceReward())
                     .reward(GUARDED_TAG_REWARD, new GuardedTagReward());
         }
@@ -119,9 +123,51 @@ public final class BrnQuestExampleAddon {
         public Component describe(TaskView task, SignalConfig config) { return Component.literal(config.title()); }
     }
 
+    /** Manual confirmation accepts both objective clicks and the public whole-quest intent. */
+    private static final class CheckmarkTask implements TaskType<java.util.Map<String, String>> {
+        public java.util.Map<String, String> normalizeConfig(
+                yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext context,
+                java.util.Map<String, String> config) {
+            // Return only owned edits: the shared author transaction retains unknown extension fields.
+            return config.containsKey("title") ? java.util.Map.of("title", config.get("title").strip()) : java.util.Map.of();
+        }
+
+        public Codec<java.util.Map<String, String>> configCodec() {
+            return Codec.unboundedMap(Codec.STRING, Codec.STRING);
+        }
+        public boolean satisfied(TaskContext context, java.util.Map<String, String> config) {
+            return context.progress() >= 1;
+        }
+        public boolean allowsManualSubmission(java.util.Map<String, String> config) { return true; }
+        public boolean acceptsQuestCompletionIntent(java.util.Map<String, String> config) { return true; }
+        public TaskSubmissionResult submit(TaskContext context, java.util.Map<String, String> config) {
+            // Core checks availability and persists completion; the extension never edits its ledger.
+            return TaskSubmissionResult.accepted();
+        }
+        public List<ConfigFieldDescriptor> configFields() {
+            return List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT)
+                    .withLabel("screen.brnquest_example.field.confirmation_title")
+                    .withHelp("screen.brnquest_example.field.confirmation_title.help"));
+        }
+        public Component describe(TaskView task, java.util.Map<String, String> config) {
+            String title = config.getOrDefault("title", "");
+            return title.isBlank() ? Component.translatable("screen.brnquest_example.task.checkmark") : Component.literal(title);
+        }
+    }
+
     private record ExperienceConfig(int amount) {}
 
     private static final class ExperienceReward implements RewardType<ExperienceConfig> {
+        public java.util.Map<String, String> normalizeConfig(
+                yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext context,
+                java.util.Map<String, String> config) {
+            // This type needs no registry data; other types can resolve resources through context.registries().
+            if (!config.containsKey("amount")) return java.util.Map.of();
+            int amount = Integer.parseInt(config.get("amount").strip());
+            if (amount <= 0) throw new IllegalArgumentException("Experience amount must be positive");
+            return java.util.Map.of("amount", Integer.toString(amount));
+        }
+
         // Schema 1 stores every config leaf as text. External codecs should decode
         // that documented wire shape explicitly instead of expecting a JSON number.
         private static final Codec<Integer> STRING_INTEGER = Codec.STRING.comapFlatMap(value -> {

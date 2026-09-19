@@ -7,7 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 
 /** Bounded player intent; task types must still validate every selected inventory slot on the server. */
-@ApiStatus(ApiStability.INTERNAL)
+@ApiStatus(ApiStability.EXPERIMENTAL)
 public record TaskSubmissionSelection(List<Integer> inventorySlots) {
     public static final int MAX_SELECTED_SLOTS = 36;
     public static final TaskSubmissionSelection AUTOMATIC = new TaskSubmissionSelection(List.of());

@@ -31,6 +31,15 @@ public interface ClientRewardPresentation {
     /** Player-facing fallback stays localizable; authoring technical details retain the full type ID separately. */
     default Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.unknown"); }
 
+    /**
+     * Configuration-only contents for live rows, author previews and frozen choices.
+     * Omit the configured title: the shared layout adds it once. Do not query claim state
+     * or send requests here. Empty preserves the legacy item/title fallback.
+     */
+    default java.util.Optional<Component> contentSummary(RewardView reward) {
+        return java.util.Optional.empty();
+    }
+
     default Component title(RewardPresentationContext context) {
         String configured = context.reward().config().getOrDefault("title", "");
         if (!configured.isBlank()) return Component.literal(configured);

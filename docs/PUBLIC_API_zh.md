@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.22`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.25`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -23,16 +23,18 @@
 | `api.*View` | `EXPERIMENTAL` | 不可变任务书、章节、任务、task、reward 和进度投影。 |
 | `api.OperationResult` / `OperationStatus` | `EXPERIMENTAL` | 结构化区分成功、幂等无变化、拒绝、非法请求、未就绪、无权限和 revision 过期。 |
 | `task.TaskType` / `TaskTypeRegistry` | `EXPERIMENTAL` | 服务端任务类型及构造期注册；`resetTransientState` 清理显式重置后各在线成员的临时目标状态。 |
+| `task.TaskSubmissionSelection` | `EXPERIMENTAL` | 有界、有序主背包槽位意图，类型在服务器重新校验。 |
+| `client.ui.TaskSubmissionInteraction` | `EXPERIMENTAL` | 类型拥有的客户端提交页工厂，仅通过核心提供的回调发送意图。 |
 | `reward.RewardType` / `RewardTypeRegistry` | `EXPERIMENTAL` | 服务端幂等奖励类型及构造期注册。 |
 | `extension.BrnQuestPlugin` / `BrnQuestPlugins` | `EXPERIMENTAL` | 由附属模组拥有的原子 common 扩展注册入口。 |
 | KubeJS `BRNQuest` / `BRNQuestEvents` | `EXPERIMENTAL` | 仅在 server scripts 中提供不可变投影、权威写操作、观察事件和受控脚本类型。 |
 | `client.ui.ClientTaskPresentation*` | `EXPERIMENTAL` | 可选客户端 task 展示。 |
-| `client.ui.ClientRewardPresentation*` | `EXPERIMENTAL` | 可选客户端 reward 展示。 |
+| `client.ui.ClientRewardPresentation*` | `EXPERIMENTAL` | 可选客户端 reward 展示；`contentSummary(RewardView)` 提供与领取状态无关的配置内容摘要。 |
 | `api.OperationContext` | `EXPERIMENTAL` | 显式描述玩家自助、管理员、集成或系统调用的 actor、authority 和审计来源。 |
 | `event.BrnQuestEvents` / `BrnQuestEvent` | `EXPERIMENTAL` | 逐监听器隔离的只读服务端观察事件。 |
 | `owner.ProgressOwner*` | `EXPERIMENTAL` | 稳定 owner 身份、成员、生命周期、归档投影及构造期 provider 注册。 |
 | `editor.ServerFieldSources` / `Entry` / `Result` / `Source` | `EXPERIMENTAL` | 构造期注册的只读作者字段查询；插件门面 fieldSource 支持原子批次。 |
-| `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断和无描述类型的原始配置后备投影。 |
+| `editor.Config*` | `EXPERIMENTAL` | task/reward 字段描述、字段诊断、原始配置后备投影；`ConfigNormalizationContext` 提供规范化所需的可选只读注册表查找器。 |
 | `runtime.ExtensionRegistrationLifecycle.RegistrationState` | `EXPERIMENTAL` | common/client/script 注册窗口的只读诊断状态；关闭窗口的方法为内部 loader 操作。 |
 
 除 `AuthorApi` 签名明确返回或接收的实验性作者契约外，`data`、`author`、`progress`、`network`、`workspace`、`compat`、`command` 和 `platform` 包，以及 `runtime` 中除上表只读生命周期状态外的类型，当前全部是 `INTERNAL`。特别是 `PlayerProgress`、`QuestProgressData`、`ProgressEngine` 和 `QuestBookManager` 不得被集成代码持有或修改。
@@ -88,11 +90,14 @@
 
 - `completeQuestResult`；
 - `completeTaskResult`；
+- `submitTaskResult`（含可选槽位选择重载）；
 - `addTaskProgressResult`；
 - `claimRewardResult`；
 - `claimAllRewardsResult`；
 - `toggleTrackedResult`；
 - `openQuestScreenResult`。
+
+`submitTaskResult` 报告单目标提交：记录目标后返回 `SUCCESS/TASK_SUBMITTED`，重复请求返回 `NO_CHANGE`，同任务其它目标可以仍未完成。旧 `completeTaskResult` 保留整任务完成结果，因此可能在目标已记录后返回 `UNSATISFIED`。选择是有界槽位意图，服务端类型必须重新检查库存；客户端页面使用现有 revision 受控网络入口。
 
 `claimAllRewardsResult` 逐项复用单奖励幂等事务。若中途失败，已经成功领取的奖励不会回滚，结果使用 `PARTIAL_FAILURE` 明确报告事务边界。
 

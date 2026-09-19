@@ -31,7 +31,6 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.*;
@@ -278,6 +277,17 @@ public final class ProgressEngine {
     /** Applies a bounded child-entry selection that the task type revalidates inside the owner lock. */
     public OperationResult completeTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
                                         TaskSubmissionSelection selection) {
+        return submitTask(player, questId, taskId, selection, false);
+    }
+
+    /** Reports the committed row independently from whether the enclosing quest can finish yet. */
+    public OperationResult submitTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
+                                      TaskSubmissionSelection selection) {
+        return submitTask(player, questId, taskId, selection, true);
+    }
+
+    private OperationResult submitTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
+                                       TaskSubmissionSelection selection, boolean reportSubmission) {
         OperationResult result = synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
@@ -307,7 +317,14 @@ public final class ProgressEngine {
             }
             List<net.minecraft.world.item.ItemStack> inventoryBeforeSubmit = player.getInventory().items.stream()
                     .map(net.minecraft.world.item.ItemStack::copy).toList();
-            var submission = TaskTypeExecutor.submit(type, context, selection);
+            yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionResult submission;
+            try {
+                submission = TaskTypeExecutor.submit(type, context, selection);
+            } catch (RuntimeException failure) {
+                // A faulty type cannot leave a partially consumed main inventory without a submission receipt.
+                restoreMainInventory(player, inventoryBeforeSubmit);
+                return OperationResult.failure("TASK_SUBMISSION_FAILED", "Task submission failed: " + task.id());
+            }
             if (!submission.success()) {
                 restoreMainInventory(player, inventoryBeforeSubmit);
                 return OperationResult.failure(submission.code(), submission.message() + ": " + task.id());
@@ -315,7 +332,10 @@ public final class ProgressEngine {
             changeTaskProgress(player, quest, task, progress, 1);
             QuestProgressData.get(player.getServer()).setDirty();
 
-            return complete(player, questId, false);
+            var completion = complete(player, questId, false);
+            // Legacy callers keep their whole-quest result. New callers get the fact already committed above.
+            return reportSubmission ? new OperationResult(yourscraft.jasdewstarfield.brnquest.api.OperationStatus.SUCCESS,
+                    "TASK_SUBMITTED", "Task submitted") : completion;
         });
         // A response is sent for both accepted and rejected intents so the client can clear
         // its pending-click guard. Full inventory state avoids stale counts on paused screens.
@@ -371,18 +391,20 @@ public final class ProgressEngine {
                 if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE)
                         || !dependenciesComplete(quest, progress)) continue;
                 for (TaskDefinition task : quest.tasks()) {
-                    if (!TaskTypes.ITEM.equals(task.typeId()) && !TaskTypes.ITEM_CHOICE.equals(task.typeId())) continue;
-                    if (!booleanConfig(task.config(), "only_from_crafting") || !taskIsCurrent(player, quest, task, progress)) continue;
-                    ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
-                    // A single progress counter cannot losslessly represent several independent alternatives.
-                    if (spec == null || spec.entries().size() != 1 || spec.requiredEntries() != 1
-                            || !ItemChoiceMatcher.accepts(player.registryAccess(), spec, crafted)) continue;
-                    long required = spec.entries().stream().filter(entry -> acceptsEntry(player, entry, crafted))
-                            .mapToLong(ItemChoiceMatcher.Entry::requiredCount).min().orElse(1L);
+                    var type = TaskTypeRegistry.get(task.typeId());
+                    if (type == null || !taskIsCurrent(player, quest, task, progress)) continue;
+                    var context = taskContext(player, quest, task, progress);
+                    long sampled;
+                    try {
+                        sampled = TaskTypeExecutor.craftedProgress(type, context, crafted);
+                    } catch (RuntimeException failure) {
+                        // Ignore a broken observer; no progress has been written and other types still receive the event.
+                        continue;
+                    }
                     long previous = progress.taskProgress(task.id().toString());
-                    if (previous < required) changeTaskProgress(player, quest, task, progress,
-                            Math.min((long) crafted.getCount(), required - previous));
-                    if (progress.taskProgress(task.id().toString()) >= required) {
+                    if (sampled <= previous) continue;
+                    changeTaskProgress(player, quest, task, progress, sampled - previous);
+                    if (TaskTypeExecutor.satisfied(type, taskContext(player, quest, task, progress))) {
                         complete(player, quest.id(), false);
                         break;
                     }
@@ -653,13 +675,6 @@ public final class ProgressEngine {
         }
         memo.put(quest.id(), true);
         return true;
-    }
-
-    private boolean acceptsEntry(ServerPlayer player, ItemChoiceMatcher.Entry entry, ItemStack stack) {
-        try {
-            ItemChoiceMatcher.Spec one = new ItemChoiceMatcher.Spec(List.of(entry), 1);
-            return ItemChoiceMatcher.accepts(player.registryAccess(), one, stack);
-        } catch (IllegalArgumentException ignored) { return false; }
     }
 
     private boolean booleanConfig(Map<String, String> config, String key) {

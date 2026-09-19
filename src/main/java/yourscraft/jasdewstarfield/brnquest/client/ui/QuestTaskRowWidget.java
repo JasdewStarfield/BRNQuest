@@ -12,11 +12,11 @@ import java.util.Objects;
 
 /** Reusable task-row widget that keeps presentation, geometry and semantic action selection together. */
 final class QuestTaskRowWidget {
-    enum Action { SUBMIT_TASK, COMPLETE_QUEST, OPEN_ITEM_SLOT_SELECTION }
+    enum Action { SUBMIT_TASK, COMPLETE_QUEST, OPEN_TASK_INTERACTION }
 
     record Model(TaskDefinition task, ClientTaskPresentation presentation,
                  TaskPresentationContext presentationContext, TaskDisplayState displayState,
-                 boolean taskSatisfied, boolean questCanSubmit, boolean manualItemSelection) {
+                 boolean taskSatisfied, boolean questCanSubmit, boolean customSubmissionInteraction) {
         Model {
             Objects.requireNonNull(task, "task");
             Objects.requireNonNull(presentation, "presentation");
@@ -47,15 +47,15 @@ final class QuestTaskRowWidget {
     /** Chooses a semantic action only; the screen still revalidates and sends the authoritative request. */
     static Action action(Model model) {
         return action(model.presentation().interactive(model.presentationContext().task()),
-                model.taskSatisfied(), model.questCanSubmit(), model.manualItemSelection());
+                model.taskSatisfied(), model.questCanSubmit(), model.customSubmissionInteraction());
     }
 
     /** Pure decision boundary used by the client widget and headless regression tests alike. */
     static Action action(boolean interactive, boolean taskSatisfied, boolean questCanSubmit,
-                         boolean manualItemSelection) {
+                         boolean customSubmissionInteraction) {
         if (!interactive && taskSatisfied && questCanSubmit) {
             return Action.COMPLETE_QUEST;
         }
-        return manualItemSelection ? Action.OPEN_ITEM_SLOT_SELECTION : Action.SUBMIT_TASK;
+        return customSubmissionInteraction ? Action.OPEN_TASK_INTERACTION : Action.SUBMIT_TASK;
     }
 }

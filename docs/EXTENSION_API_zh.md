@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.22` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.25` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -40,12 +40,25 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 任务书 reload 成功后，BRNQuest 会在服务器线程重新对账所有在线玩家，并发送新定义和完整进度快照。新增的无前置任务因此应立即进入 `AVAILABLE`，而不是等待玩家重登。
 
+## 类型交互与事件进度（experimental.25）
+
+`submissionInteraction(context)` 返回可选的 `TaskSubmissionInteraction` 工厂。返回空时沿用直接提交；返回工厂时，页面在客户端线程创建，关闭返回 parent，通过提供的回调至多提交一次 `TaskSubmissionSelection`。创建页面不得立即提交。核心仅接受当前页面、当前玩家/世界及原 revision 的回调，并使用待处理标记抑制重复请求。选择包含有序、不重复的主背包索引 0–35，最多 36 个，空列表表示自动选择；不传输客户端物品副本或匹配结论。
+
+`TaskType.submit(context, config, selection)` 在服务器 owner 锁内校验实时库存。旧实现默认委托两参数方法。拒绝或抛出运行时异常时核心恢复主背包快照；这只覆盖主背包，扩展不能把外部 IO、其他容器、经验或世界副作用当作可回滚事务。成功后核心记账，重复请求不再执行该目标。Java 调用方使用 `BrnQuestApi.submitTaskResult` 获取目标提交结果；旧 `completeTaskResult` 保留整任务完成语义。
+
+`candidateScreen(parent, context)` 只创建候选查看页；默认继续显示 `resolvedOptions`。它不接收提交回调。服务端仍独立决定所有提交是否合法。
+
+`craftedProgress(context, config, crafted)` 是累计进度采样：接收真实玩家合成事件的产出副本，默认返回原进度，仅较大值会入账。类型只计算、不消耗、不调用写 API、不保留上下文。核心负责可用任务、顺序目标、owner 锁、完成检查及同步。已有背包重评估通过事件脏标记每 20 tick 调度，覆盖登录、拾取、合成、销毁等事件；它不检测任意模组直接改背包的行为。需要常规观察的类型可使用已有轮询接口。
+
+类型注册实例跨玩家、reload 和重连复用，不能把每个任务的进度存到实例字段。累计进度使用核心账本；显式 reset 调用 `resetTransientState` 清理在线 owner 成员的类型临时状态。重复周期沿用核心进度清理。离线、错误线程和权限不足的公共写请求仍由 API 边界拒绝。
+
 ## 客户端展示
 
 客户端 presentation 只负责图标、符号、标题、进度文本、客户端预览和交互提示，不能成为进度权威来源。未注册展示的任务与奖励使用占位符，仍保留完整类型 ID 和服务端诊断。
 
 - `ClientTaskPresentation` 的静态展示方法接收不可变 `TaskView`；标题、进度和提示方法接收 `TaskPresentationContext`，其中的物品栈已防御性复制。
 - `ClientRewardPresentation` 接收不可变 `RewardView` 或 `RewardPresentationContext`，可根据仅供显示的 claimable/claimed 状态生成提示。
+- `ClientRewardPresentation.contentSummary(RewardView)` 可返回纯配置内容摘要（例如经验单位和数量），供普通奖励、作者预览及冻结选择项共用。不要包含配置中的 `title`，通用布局会统一组合；不要查询领取状态或发送请求。默认返回空，保持旧物品数量/标题后备行为。返回摘要不会改变物品图标、查询或领取语义。
 - `interactive` 和 `acceptsQuestCompletionIntent` 仅控制客户端是否建立点击入口；服务端仍会按注册的 `TaskType`、当前库存、权限和 revision 重新校验。
 - `objectiveTitle` 可为详情目标行补充“需求/持有”等显示语义；`readyForSubmission` 默认保持既有 interactive 行可点击，只有能从客户端可靠观察前置条件的 presentation 才应收窄它。它只控制黄色可提交提示与本地命中，不能替代服务端校验。
 - `displayedItem` 可从当前只读上下文选出紧凑行代表物品；`acceptedItems` 与 `hasCandidateMenu` 可声明一个只读候选列表入口。三个方法都有兼容默认值，返回的物品仅用于显示、Tooltip 与可选 JEI 查询，不能把客户端选择发送给服务器作为匹配结论。
@@ -69,7 +82,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 字段描述是编辑器提示而不是新的配置 Codec。BRNQuest 始终保留完整 raw Map，未知字段不会因表单保存而自动删除；最终发布仍调用原有 `configCodec()`。返回空列表表示类型只支持原始配置后备视图，适合开放式或尚未冻结的外部配置。
 
-内置 `ITEM_MATCHER` 字段会打开下属物品属性 Screen，`brnquest:item` 与兼容保留的 `brnquest:item_choice` 共用该能力。规范 matcher 是 version 2 entries JSON：每个条目保存自己的物品展示栈或 tag 与需求数量，目标所需条目数由上层 `required_entries` 编辑；物品条目按物品类型接受组件不同的同类栈，玩家提交时再选择具体背包格。旧单物品及旧 tag/list matcher 会投影到相同表单；多 tag 物品通过二级列表明确选择。完成子级编辑后才一次性回填，取消不会修改原配置。该能力及带玩家背包槽位选择的提交重载均为内部实现边界；扩展自己的 matcher 仍必须由服务端 Codec 和提交事务重新校验，不能信任客户端槽位、ItemStack 或库存快照。
+内置 `ITEM_MATCHER` 字段会打开下属物品属性 Screen，`brnquest:item` 与兼容保留的 `brnquest:item_choice` 共用该能力。规范 matcher 是 version 2 entries JSON：每个条目保存自己的物品展示栈或 tag 与需求数量，目标所需条目数由上层 `required_entries` 编辑；物品条目按物品类型接受组件不同的同类栈，玩家提交时再选择具体背包格。旧单物品及旧 tag/list matcher 会投影到相同表单；多 tag 物品通过二级列表明确选择。完成子级编辑后才一次性回填，取消不会修改原配置。该内置编辑控件属于内部实现边界；槽位选择提交使用上述公共实验接口；扩展自己的 matcher 仍必须由服务端 Codec 和提交事务重新校验，不能信任客户端槽位、ItemStack 或库存快照。
 
 内置 `brnquest:xp` 目标用 `value` 与 `points` 区分提交原始经验值或完整等级；`brnquest:xp`、`brnquest:xp_levels` 奖励分别发放原始经验值和完整等级。物品目标的 `only_from_crafting=true` 不接受手动背包提交，只统计服务端收到的玩家合成产出事件，并要求恰好一个匹配条目。
 
@@ -84,7 +97,9 @@ common 插件门面与 Java task/reward/owner provider 在首次服务端资源 
 新增任务或奖励应由具体实现、注册、客户端 presentation 和语言资源完成接入。`QuestScreen`、`DraftBookEditor`、`ProgressEngine` 不应增加按新类型 ID、字段名或枚举值判断的业务分支。需要新能力时，先补最小通用入口，再让具体类型接入；新控件属于通用编辑器能力，FTB 字段转换属于导入适配器，不放进通用 Screen。
 
 - 字段标题使用 `ConfigFieldDescriptor.withLabel(translationKey)`；枚举显示使用 `withValueLabels(Map.of(rawValue, translationKey))`。类型负责提供对应语言资源。界面只翻译显示文本，配置仍保存原始键和值；没有枚举翻译时显示原值。旧字段描述构造器及内置字段标签后备继续兼容。新类型应显式声明标签，不能扩充 Screen 的旧标签 switch。
-- `TaskType.normalizeConfig` / `RewardType.normalizeConfig` 是作者新增、更新及复制时的纯函数入口，默认原样返回。输入不可变；不得读写世界或执行奖励。只规范化自己拥有的字段，必须保留未知扩展数据。作者协调器会把返回值合并到原始 Map，未返回的键不会被删除；格式错误仍交由 Codec/发布校验报告。运行时也应兼容历史配置。
+- `TaskType.normalizeConfig(context, config)` / `RewardType.normalizeConfig(context, config)` 是作者新增、更新及复制时的纯函数入口，包括整任务、剪贴板和整章复制；默认委托旧 `normalizeConfig(config)` 一次。`ConfigNormalizationContext.registries()` 提供可选的只读 `HolderLookup.Provider`，服务器写入使用当前注册表，离线入口无注册表。无查找器时保留不能解析的资源值，不缓存查找器跨 reload。
+- 规范化只处理类型拥有的字段，不读写世界、不执行奖励；必须可重复。作者协调器把返回值合并到原始 Map，未返回的键不会被删除。非法输入可抛出 `IllegalArgumentException`，失败候选不会提交；Codec/发布校验仍独立执行，运行时仍需兼容历史配置。奖励表叶子的服务器预检使用同一上下文，客户端表单预检仅作提示。
+- 复制由核心分配对象 ID 并重映射任务依赖；类型配置中的私有引用和未知字符串保持原值，当前没有公共 config-remap SPI。撤销和重做直接恢复快照，不重复规范化。
 - `RewardType.claimHandler()` 默认为空，继续调用既有 `execute`。需要预检、独立尝试记录或等待结果时，返回 `RewardClaimHandler`。该接口在服务端线程、owner 锁内、完成/成员/重复领取检查之后调用，接收 `RewardClaimContext`（既有 RewardContext、owner 身份、完成周期、完整重置代号 claimGeneration）。不暴露可变账本。
 - handler 返回 `RewardClaimResult`：`SUCCESS` 才写入普通领取记录、发出领取事件并推进周期；`PENDING` 不改领取记录，返回成功但未变化；`FAILURE` 不改领取记录并报告失败。code/message 为诊断，不用消息前缀判断状态。handler 自己负责配置预检、失败后恢复、重入与重复调用安全；抛异常会报告 `CLAIM_HANDLER_FAILED`，核心不会伪造成功。任意非幂等副作用必须有类型自己的持久化策略，不能把此接口当成通用事务保证。
 - 异步结果若需完成领取，回到服务器线程，通过公共 `BrnQuestApi.claimRewardResult` 重走资格检查；类型必须核对原 owner、周期、claimGeneration 和奖励身份，读取自己的结果记录，返回成功而不重放副作用。禁止从异步线程改进度，禁止直接写普通领取账本。

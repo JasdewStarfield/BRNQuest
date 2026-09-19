@@ -13,7 +13,7 @@ class QuestTaskRowWidgetTest {
 
     @Test
     void interactiveConsumeTaskCanRequestInventorySelection() {
-        assertEquals(QuestTaskRowWidget.Action.OPEN_ITEM_SLOT_SELECTION,
+        assertEquals(QuestTaskRowWidget.Action.OPEN_TASK_INTERACTION,
                 QuestTaskRowWidget.action(true, false, true, true));
     }
 

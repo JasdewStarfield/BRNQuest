@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
@@ -126,6 +128,12 @@ public final class DraftBookEditor {
 
     public static AuthorOperationResult<DraftChange> copyChapter(QuestBookDefinition book, ResourceLocation sourceId,
                                                                   ChapterDefinition copy) {
+        return copyChapter(book, sourceId, copy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> copyChapter(QuestBookDefinition book, ResourceLocation sourceId,
+                                                                  ChapterDefinition copy, ConfigNormalizationContext context) {
         if (chapter(book, sourceId) == null) return notFound("CHAPTER_NOT_FOUND", sourceId);
         if (copy == null || copy.id().equals(sourceId) || !copy.bookId().equals(book.id())) {
             return invalid("COPY_ID_REQUIRED", "Chapter copy requires a new stable ID in the same book");
@@ -134,7 +142,9 @@ public final class DraftBookEditor {
         if (copy.quests().stream().anyMatch(quest -> !quest.bookId().equals(book.id()) || !quest.chapterId().equals(copy.id()))) {
             return invalid("QUEST_CONTAINER_MISMATCH", "Copied quests must belong to the copied chapter");
         }
-        return changed(withChapters(book, append(book.chapters(), copy)), containedIds(copy));
+        return changed(withChapters(book, append(book.chapters(), new ChapterDefinition(copy.bookId(), copy.id(), copy.groupId(),
+                copy.title(), copy.icon(), copy.order(), copy.quests().stream().map(q -> normalizeQuest(q, context)).toList(),
+                copy.extensions(), copy.questDefaults(), copy.consumeItems(), copy.autofocusQuestId(), copy.defaultHideDependencyLines()))), containedIds(copy));
     }
 
     public static AuthorOperationResult<DraftChange> updateChapter(QuestBookDefinition book, ResourceLocation chapterId,
@@ -224,13 +234,19 @@ public final class DraftBookEditor {
     /** Resolve a sparse template once, before insertion; copy/move and explicit addQuest remain unchanged. */
     public static AuthorOperationResult<DraftChange> createQuest(QuestBookDefinition book, ResourceLocation chapterId,
             QuestDefinition source, QuestCreationDefaults explicit) {
+        return createQuest(book, chapterId, source, explicit, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> createQuest(QuestBookDefinition book, ResourceLocation chapterId,
+            QuestDefinition source, QuestCreationDefaults explicit, ConfigNormalizationContext context) {
         var chapter = chapter(book, chapterId);
         if (chapter == null) return notFound("CHAPTER_NOT_FOUND", chapterId);
         var defaults = book.questDefaults().overlay(chapter.questDefaults()).overlay(explicit);
         var quest = new QuestDefinition(source.bookId(), source.id(), source.chapterId(), source.title(), source.subtitle(),
                 source.description(), source.descriptionFormat(), source.icon(), source.x(), source.y(), source.dependencies(), source.tasks(), source.rewards(),
                 source.legacyId(), defaults.appearance(), defaults.behavior(), source.extensions());
-        return addQuest(book, chapterId, quest);
+        return addQuest(book, chapterId, quest, context);
     }
 
     /** Book settings are shared author data and participate in the normal revision/undo transaction. */
@@ -270,22 +286,34 @@ public final class DraftBookEditor {
 
     public static AuthorOperationResult<DraftChange> addQuest(QuestBookDefinition book, ResourceLocation chapterId,
                                                                QuestDefinition quest) {
+        return addQuest(book, chapterId, quest, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> addQuest(QuestBookDefinition book, ResourceLocation chapterId,
+                                                               QuestDefinition quest, ConfigNormalizationContext context) {
         if (quest == null || !quest.bookId().equals(book.id()) || !quest.chapterId().equals(chapterId)) {
             return invalid("QUEST_CONTAINER_MISMATCH", "Quest ownership does not match its chapter");
         }
         if (quest(book, quest.id()) != null) return conflict("DUPLICATE_QUEST_ID", quest.id());
         if (questLegacySourceExists(book, quest.id())) return retiredQuestId(quest.id());
         return replaceChapter(book, chapterId, chapter -> new ChapterDefinition(chapter.bookId(), chapter.id(),
-                chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), quest),
+                chapter.groupId(), chapter.title(), chapter.icon(), chapter.order(), append(chapter.quests(), normalizeQuest(quest, context)),
                 chapter.extensions(), chapter.questDefaults(), chapter.consumeItems(), chapter.autofocusQuestId(), chapter.defaultHideDependencyLines()),
                 questObjectIds(quest));
     }
 
     public static AuthorOperationResult<DraftChange> copyQuest(QuestBookDefinition book, ResourceLocation sourceId,
                                                                 QuestDefinition copy) {
+        return copyQuest(book, sourceId, copy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> copyQuest(QuestBookDefinition book, ResourceLocation sourceId,
+                                                                QuestDefinition copy, ConfigNormalizationContext context) {
         if (quest(book, sourceId) == null) return notFound("QUEST_NOT_FOUND", sourceId);
         if (copy == null || copy.id().equals(sourceId)) return invalid("COPY_ID_REQUIRED", "Quest copy requires a new stable ID");
-        AuthorOperationResult<DraftChange> added = addQuest(book, copy.chapterId(), copy);
+        AuthorOperationResult<DraftChange> added = addQuest(book, copy.chapterId(), copy, context);
         if (!added.success()) return added;
         // Copy every locale and extension text suffix to the new identity; later edits stay independent.
         String sourcePrefix = BookText.questPrefix(quest(book, sourceId));
@@ -542,23 +570,40 @@ public final class DraftBookEditor {
     }
 
     public static AuthorOperationResult<DraftChange> addTask(QuestBookDefinition book, ResourceLocation questId, TaskDefinition task) {
+        return addTask(book, questId, task, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> addTask(QuestBookDefinition book, ResourceLocation questId, TaskDefinition task, ConfigNormalizationContext context) {
         if (task == null || !task.bookId().equals(book.id())) return invalid("TASK_BOOK_MISMATCH", "Task belongs to another book");
         if (typedIdExists(book, task.id())) return conflict("DUPLICATE_TYPED_ID", task.id());
         if (typedLegacySourceExists(book, task.id())) return retiredTypedId(task.id());
-        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), append(quest.tasks(), normalizeTask(task)), quest.rewards()), task.id());
+        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), append(quest.tasks(), normalizeTask(task, context)), quest.rewards()), task.id());
     }
 
     public static AuthorOperationResult<DraftChange> copyTask(QuestBookDefinition book, ResourceLocation questId,
                                                                ResourceLocation sourceId, TaskDefinition copy) {
+        return copyTask(book, questId, sourceId, copy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> copyTask(QuestBookDefinition book, ResourceLocation questId,
+                                                               ResourceLocation sourceId, TaskDefinition copy, ConfigNormalizationContext context) {
         QuestDefinition quest = quest(book, questId);
         if (quest == null) return notFound("QUEST_NOT_FOUND", questId);
         if (quest.tasks().stream().noneMatch(task -> task.id().equals(sourceId))) return notFound("TASK_NOT_FOUND", sourceId);
         if (copy == null || copy.id().equals(sourceId)) return invalid("COPY_ID_REQUIRED", "Task copy requires a new stable ID");
-        return addTask(book, questId, copy);
+        return addTask(book, questId, copy, context);
     }
 
     public static AuthorOperationResult<DraftChange> updateTask(QuestBookDefinition book, ResourceLocation questId,
                                                                  ResourceLocation taskId, TaskDefinition replacement) {
+        return updateTask(book, questId, taskId, replacement, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> updateTask(QuestBookDefinition book, ResourceLocation questId,
+                                                                 ResourceLocation taskId, TaskDefinition replacement, ConfigNormalizationContext context) {
         if (replacement == null || !replacement.bookId().equals(book.id())) {
             return invalid("TASK_BOOK_MISMATCH", "Task belongs to another book");
         }
@@ -568,7 +613,7 @@ public final class DraftBookEditor {
         if (!replacement.id().equals(taskId) && typedLegacySourceExists(book, replacement.id())) {
             return retiredTypedId(replacement.id());
         }
-        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, normalizeTask(replacement), true);
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, taskId, normalizeTask(replacement, context), true);
         return renamedTyped(updated, "@task:", taskId, replacement.id());
     }
 
@@ -582,40 +627,64 @@ public final class DraftBookEditor {
     }
 
     public static AuthorOperationResult<DraftChange> addReward(QuestBookDefinition book, ResourceLocation questId, RewardDefinition reward) {
+        return addReward(book, questId, reward, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> addReward(QuestBookDefinition book, ResourceLocation questId, RewardDefinition reward, ConfigNormalizationContext context) {
         if (reward == null || !reward.bookId().equals(book.id())) return invalid("REWARD_BOOK_MISMATCH", "Reward belongs to another book");
         if (typedIdExists(book, reward.id())) return conflict("DUPLICATE_TYPED_ID", reward.id());
         if (typedLegacySourceExists(book, reward.id())) return retiredTypedId(reward.id());
-        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), normalizeReward(reward))), reward.id());
+        return editQuest(book, questId, quest -> copyQuest(quest, quest.dependencies(), quest.tasks(), append(quest.rewards(), normalizeReward(reward, context))), reward.id());
+    }
+
+    /** Whole-quest insertion normalizes each copied child once, including clipboard and chapter copies. */
+    private static QuestDefinition normalizeQuest(QuestDefinition quest, ConfigNormalizationContext context) {
+        return copyQuest(quest, quest.dependencies(),
+                quest.tasks().stream().map(task -> normalizeTask(task, context)).toList(),
+                quest.rewards().stream().map(reward -> normalizeReward(reward, context)).toList());
     }
 
     /** Types normalize only their own fields; opaque keys remain available for future extensions. */
-    private static RewardDefinition normalizeReward(RewardDefinition reward) {
+    private static RewardDefinition normalizeReward(RewardDefinition reward, ConfigNormalizationContext context) {
         var type = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId());
         if (type == null) return reward;
         Map<String, String> config = new java.util.TreeMap<>(reward.config());
-        config.putAll(type.normalizeConfig(reward.config()));
+        config.putAll(type.normalizeConfig(context, reward.config()));
         return new RewardDefinition(reward.bookId(), reward.id(), reward.typeId(), config, reward.claimPolicy(), reward.teamReward());
     }
 
-    private static TaskDefinition normalizeTask(TaskDefinition task) {
+    private static TaskDefinition normalizeTask(TaskDefinition task, ConfigNormalizationContext context) {
         var type = yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry.get(task.typeId());
         if (type == null) return task;
         Map<String, String> config = new java.util.TreeMap<>(task.config());
-        config.putAll(type.normalizeConfig(task.config()));
+        config.putAll(type.normalizeConfig(context, task.config()));
         return new TaskDefinition(task.bookId(), task.id(), task.typeId(), config, task.optional());
     }
 
     public static AuthorOperationResult<DraftChange> copyReward(QuestBookDefinition book, ResourceLocation questId,
                                                                  ResourceLocation sourceId, RewardDefinition copy) {
+        return copyReward(book, questId, sourceId, copy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> copyReward(QuestBookDefinition book, ResourceLocation questId,
+                                                                 ResourceLocation sourceId, RewardDefinition copy, ConfigNormalizationContext context) {
         QuestDefinition quest = quest(book, questId);
         if (quest == null) return notFound("QUEST_NOT_FOUND", questId);
         if (quest.rewards().stream().noneMatch(reward -> reward.id().equals(sourceId))) return notFound("REWARD_NOT_FOUND", sourceId);
         if (copy == null || copy.id().equals(sourceId)) return invalid("COPY_ID_REQUIRED", "Reward copy requires a new stable ID");
-        return addReward(book, questId, copy);
+        return addReward(book, questId, copy, context);
     }
 
     public static AuthorOperationResult<DraftChange> updateReward(QuestBookDefinition book, ResourceLocation questId,
                                                                    ResourceLocation rewardId, RewardDefinition replacement) {
+        return updateReward(book, questId, rewardId, replacement, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Registry-aware variant used by authoritative draft writes. */
+    public static AuthorOperationResult<DraftChange> updateReward(QuestBookDefinition book, ResourceLocation questId,
+                                                                   ResourceLocation rewardId, RewardDefinition replacement, ConfigNormalizationContext context) {
         if (replacement == null || !replacement.bookId().equals(book.id())) {
             return invalid("REWARD_BOOK_MISMATCH", "Reward belongs to another book");
         }
@@ -625,7 +694,7 @@ public final class DraftBookEditor {
         if (!replacement.id().equals(rewardId) && typedLegacySourceExists(book, replacement.id())) {
             return retiredTypedId(replacement.id());
         }
-        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, normalizeReward(replacement), false);
+        AuthorOperationResult<DraftChange> updated = editTyped(book, questId, rewardId, normalizeReward(replacement, context), false);
         return renamedTyped(updated, "@reward:", rewardId, replacement.id());
     }
 

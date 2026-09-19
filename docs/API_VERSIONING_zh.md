@@ -1,5 +1,29 @@
 # BRNQuest API 版本与兼容策略
 
+## experimental.24 → experimental.25
+
+`TaskSubmissionSelection` 及 `TaskType.submit(context, config, selection)` 成为公共实验接口。选择只包含主背包 0–35 的有序、不重复槽位，最多 36 个；空选择表示自动提交。服务端类型必须重新检查实时库存。旧的两参数 `submit` 继续由默认重载调用。
+
+客户端 `submissionInteraction(context)` 可返回 `TaskSubmissionInteraction` 页面工厂，默认空值保持直接提交。工厂只使用核心提供的回调发送一次选择意图；核心检查页面、玩家、世界、revision 和待处理状态。`candidateScreen(parent, context)` 提供只读候选页，默认复用旧 `resolvedOptions`。这些默认方法无需旧 presentation 重新实现。
+
+`TaskType.craftedProgress(context, config, crafted)` 接收真实服务端合成产出的副本，返回累计进度；默认返回原进度。该方法必须无副作用，核心负责当前目标筛选、owner 锁、单调进度与完成判定。重置、重复周期和 reload 继续使用现有账本生命周期。
+
+新增 `BrnQuestApi.submitTaskResult` 明确返回目标提交事实：提交并记账后返回 `SUCCESS/TASK_SUBMITTED`，即使同任务其它目标尚未完成；重复提交返回无变化。旧 `completeTaskResult` 和 KubeJS 对应入口保留整任务完成结果，仍可能在目标已经记账后返回 `UNSATISFIED`。任务书 schema、网络字段和模组安装方式不变。
+
+## experimental.23 → experimental.24
+
+`TaskType` 与 `RewardType` 新增 `normalizeConfig(ConfigNormalizationContext, Map<String, String>)` 默认重载，默认调用旧 `normalizeConfig(Map)` 一次。旧实现无需修改。上下文只公开可选的 `HolderLookup.Provider`；服务器作者写入和奖励表叶子预检使用当前注册表，离线纯编辑入口没有注册表，类型应保留无法解析的资源值，不能用空注册表代替服务器状态。
+
+新增、更新、单项复制、整任务复制、剪贴板粘贴和章节复制统一调用该入口；类型只规范化自己拥有的字段，核心将返回值合并到原始配置以保留不透明键。规范化必须无副作用、可重复，不保留查找器跨 reload；非法配置可抛出 `IllegalArgumentException`，作者事务不会提交部分候选或写入撤销历史。撤销/重做恢复已保存快照，不重复执行规范化。
+
+内置 `item` / `item_choice` 通过此入口解析旧配置、组件和 tag，网络入口不再专门识别这两种类型。没有注册表的旧纯编辑入口保留物品原配置。复制仍只由核心重映射对象身份和依赖；配置中的未知字符串和私有引用保持原值。尚未引入配置引用 remap SPI。任务书 schema、网络协议和安装方式保持不变。
+
+## experimental.22 → experimental.23
+
+[English migration note](API_MIGRATION.md)
+
+`ClientRewardPresentation.contentSummary(RewardView)` 是客户端纯配置内容摘要的可选默认方法，默认返回空并保留既有物品/标题后备行为。摘要不包含配置标题，不查询领取状态，不发送请求；通用布局负责组合标题，图标、物品查询及服务端领取语义不变。内置 XP/等级和示例 XP 使用同一入口。旧 presentation 无需实现新方法；兼容测试把针对 experimental.22 接口编译的消费者加载到当前接口上。任务书 schema、网络协议与模组安装方式不变。
+
 ## experimental.21 → experimental.22
 
 `QuestView.descriptionFormat()` 新增任务说明格式名，当前已知值为 `plain` 与 `markdown_v1`。本地化查询中的正文和格式始终来自同一个语言来源；未知格式名仍原样投影，调用方必须按纯文本安全降级。原有构造器继续存在并默认 `plain`。`DraftEditService.updateQuestTranslation(...)` 新增带字符串格式名的重载；省略格式的旧重载保留当前 locale 格式。依赖 record 组件反射、模式解构或生成的 `equals`／`toString` 的附属需要检查新增组件。
@@ -42,7 +66,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.22`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.25`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。

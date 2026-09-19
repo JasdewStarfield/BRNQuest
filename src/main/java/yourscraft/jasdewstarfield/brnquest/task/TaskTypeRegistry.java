@@ -110,6 +110,34 @@ public final class TaskTypeRegistry {
 
     /** Both historical IDs decode through this canonical target-plus-child-entry model. */
     private static final class UnifiedItemTask implements TaskType<Map<String, String>> {
+        @Override
+        public long craftedProgress(TaskContext context, Map<String, String> config, net.minecraft.world.item.ItemStack crafted) {
+            if (!craftedOnly(config)) return context.progress();
+            var spec = ItemChoiceMatcher.parseConfig(config).result().orElse(null);
+            // One persistent counter can represent only one required crafting entry.
+            if (spec == null || spec.entries().size() != 1 || spec.requiredEntries() != 1
+                    || !ItemChoiceMatcher.accepts(context.player().registryAccess(), spec, crafted)) return context.progress();
+            long required = spec.entries().getFirst().requiredCount();
+            return context.progress() >= required ? context.progress()
+                    : context.progress() + Math.min((long) crafted.getCount(), required - context.progress());
+        }
+
+        @Override
+        public Map<String, String> normalizeConfig(
+                yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext context,
+                Map<String, String> config) {
+            // Offline edits keep authored registry data intact; server writes resolve it before commit.
+            if (context.registries().isEmpty()) return config;
+            var canonical = ItemChoiceMatcher.canonicalEditorConfig(config);
+            var checked = ItemChoiceMatcher.normalizeConfig(context.registries().orElseThrow(), canonical);
+            var normalized = checked.result().orElseThrow(() -> new IllegalArgumentException(
+                    checked.error().map(error -> error.message()).orElse("Item matcher is invalid")));
+            var result = new java.util.LinkedHashMap<>(canonical);
+            result.put("matcher", normalized.encode());
+            result.put("required_entries", Integer.toString(normalized.requiredEntries()));
+            return Map.copyOf(result);
+        }
+
         private static final Codec<Map<String, String>> CODEC = Codec.unboundedMap(Codec.STRING, Codec.STRING)
                 .flatXmap(config -> ItemChoiceMatcher.normalizeConfig(
                                 RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY), config)

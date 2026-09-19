@@ -100,8 +100,13 @@ public final class AdminProgressGameTests {
             engine.reconcile(online.target);
             helper.assertValueEqual(service.catalog(online.target.createCommandSourceStack().withPermission(0), "").result().code(),
                     "FORBIDDEN", "ordinary players cannot list progress-management targets");
-            helper.assertTrue(service.catalog(actor, online.target.getScoreboardName()).players().stream()
-                    .anyMatch(player -> player.id().equals(online.target.getUUID().toString())), "catalog filters real online identities");
+            var matchingPlayers = service.catalog(actor, online.target.getScoreboardName()).players();
+            // Mock logins share a name. A larger suite can fill the 64-row catalog before this target;
+            // verify the name filter and every returned online identity without assuming a page position.
+            helper.assertTrue(!matchingPlayers.isEmpty() && matchingPlayers.stream().allMatch(player ->
+                    player.name().equals(online.target.getScoreboardName())
+                            && online.target.getServer().getPlayerList().getPlayer(UUID.fromString(player.id())) != null),
+                    "catalog filters real online identities");
             var valid = intent(online, quest, "", AdminProgressAction.FORCE_QUEST);
             var unpublished = new AdminProgressService.Intent(valid.targetId(), valid.bookId(), valid.revision(),
                     "brnquest:unpublished_draft_only", "", valid.action());

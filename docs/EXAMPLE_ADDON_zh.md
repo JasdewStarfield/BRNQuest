@@ -6,10 +6,12 @@
 
 - 被动任务 `brnquest_example:marker`：读取服务端玩家 scoreboard tag；
 - 提交任务 `brnquest_example:signal`：通过公共提交入口推进；
+- 确认任务 `brnquest_example:checkmark`：通过目标点击或任务级完成意图确认，服务端与客户端分别声明该能力；
+- 物品任务 `brnquest_example:item`：独立实现物品匹配、槽位选择页和合成计数；
 - 幂等奖励 `brnquest_example:experience`：奖励账本保证重复领取不重复执行；
-- 两种 task 和一种 reward 的客户端 presentation；
+- 任务与奖励的客户端 presentation，包括独立于领取状态的 XP 内容摘要；
 - 通过 `BrnQuestPlugin` 与暂存 registrar 原子注册 common 类型；
-- task/reward 的编辑器字段描述；
+- task/reward 的编辑器字段描述与带上下文的配置规范化；
 - `QuestCompletedEvent` 只读订阅及监听器可观察副作用。
 
 示例只导入 `api`、`extension`、`task`、`reward`、`event`、`editor` 和 `client.ui` 公共面，不读取进度存档、内部 definition、网络实现或 reload 管理器，也不使用反射。插件回调内先声明全部 common 类型，BRNQuest 预检成功后才一起提交。
@@ -19,6 +21,16 @@
 开发环境运行 `runClient` 或 `runServer` 可加载示例；`-PexcludeExampleAddon` 可排除示例附属模组。
 
 示例代码是 API 消费范例，不是新的内置任务类型，也不会被打进 BRNQuest 核心 mod 的生产资源。
+
+`checkmark` 使用可选 `title`；`experience` 使用正整数 `amount`（默认 3）。XP presentation 的 `contentSummary` 提供经验内容，通用布局再组合作者设置的 `title`，因此自定义名称不会隐藏数量。`signal` 继续只接受逐目标提交，适合对比两种完成意图。
+
+`checkmark` 和 `experience` 使用 `normalizeConfig(context, config)`：作者写入时分别去掉标题首尾空白、把经验数量规范为正整数字符串，只返回自己拥有的字段。通用作者事务保留未知配置键；例如 `" 007 "` 保存为 `"7"`，无效或非正数量拒绝写入。两者无需查询注册表；需要解析资源的类型可使用 `context.registries()` 中的当前只读查找器。完整契约见 [类型扩展 API](EXTENSION_API_zh.md)。
+
+## 独立物品交互与合成计数
+
+物品任务使用 `item`（默认 `minecraft:stone`）、`count`（默认 `2`，范围 1–2304）、`consume`（默认 `true`）和 `crafting_only`（默认 `false`）。按物品 ID 匹配，剩余物品的组件保持原样。消耗模式由附属自己的页面选择背包格，再通过公共 `TaskSubmissionSelection` 提交；服务端重新检查这些格子，只消耗所需数量。不消耗模式直接检查当前持有量。`crafting_only=true` 时仅累计真实合成产出，背包已有物品和手动点击不计数。
+
+该示例拥有自己的 Codec、规范化、服务端行为和客户端页面，不调用内置物品匹配器或内置选择页。它与 `brnquest:item` 分别注册，核心不会用示例类型替换内置类型；后续内置实现迁移仍保留自己的类型 ID。
 
 ## 命令奖励函数示例
 

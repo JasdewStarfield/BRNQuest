@@ -57,6 +57,50 @@ class RewardEntryDetailsTest {
         assertFalse(details.summary().getString().contains("900"));
     }
 
+    @Test void externalContentsKeepAuthoredTitleWithoutConsultingStatefulTitle() {
+        var view = view(ResourceLocation.parse("example:experience"), Map.of("title", "Journey", "amount", "7"));
+        var shared = Component.literal("Experience × 7");
+        var presentation = new ClientRewardPresentation() {
+            public Optional<Component> contentSummary(RewardView reward) { return Optional.of(shared); }
+            public Component title(RewardPresentationContext context) {
+                throw new AssertionError("Explicit configuration contents must not need a live title");
+            }
+            public Component interactionHint(RewardPresentationContext context) {
+                throw new AssertionError("A contents preview must not inspect claim state");
+            }
+        };
+        var details = RewardEntryDetails.resolve(null, view, presentation, ItemStack.EMPTY);
+        assertEquals("Journey · Experience × 7", details.summary().getString());
+        shared.append(" mutated");
+        assertEquals("Journey · Experience × 7", details.summary().getString());
+        assertTrue(details.lookupItem().isEmpty());
+    }
+
+    @Test void contentOverridePreservesItemLookupAndAddsNoDuplicateTitle() {
+        var view = view(ResourceLocation.parse("example:bundle"), Map.of("title", "Travel kit"));
+        var presentation = new ClientRewardPresentation() {
+            public Optional<Component> contentSummary(RewardView reward) {
+                return Optional.of(Component.literal("Travel kit"));
+            }
+        };
+        var parsed = new ItemStack(Items.TORCH, 2);
+        var details = RewardEntryDetails.resolve(null, view, presentation, parsed);
+        assertEquals("Travel kit", details.summary().getString());
+        assertEquals(2, details.lookupItem().getCount());
+        assertEquals(details.summary(), RewardEntryDetails.fromDisplayed(null, view, presentation, details.item()).summary());
+    }
+
+    @Test void legacyPresentationKeepsItemFallbackAndDoesNotInheritXpByPath() {
+        var view = view(ResourceLocation.parse("example:xp"), Map.of("xp", "900"));
+        var presentation = new ClientRewardPresentation() {
+            public Component title(RewardPresentationContext context) { return Component.literal("Legacy contents"); }
+        };
+        assertTrue(presentation.contentSummary(view).isEmpty());
+        var item = new ItemStack(Items.BOOK, 2);
+        assertEquals(item.getHoverName().getString() + " × 2",
+                RewardEntryDetails.resolve(null, view, presentation, item).summary().getString());
+    }
+
     @Test void statusHintsCanBeReadWithoutSendingPackets() {
         // There is no client connection in this unit test; rendering a missing state must be harmless.
         assertNotNull(RewardTableClientState.hint("test:unqueried"));

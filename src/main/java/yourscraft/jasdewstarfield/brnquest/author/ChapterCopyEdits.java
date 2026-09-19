@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import java.util.*;
@@ -9,6 +11,11 @@ import java.util.stream.Collectors;
 public final class ChapterCopyEdits {
     private ChapterCopyEdits() {}
     public static AuthorOperationResult<DraftChange> copy(QuestBookDefinition book, ResourceLocation sourceId) {
+        return copy(book, sourceId, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Passes the current registry lookup through the complete atomic copy. */
+    public static AuthorOperationResult<DraftChange> copy(QuestBookDefinition book, ResourceLocation sourceId, ConfigNormalizationContext context) {
         ChapterDefinition source = book.chapters().stream().filter(c -> c.id().equals(sourceId)).findFirst().orElse(null);
         if (source == null) return AuthorOperationResult.failure(AuthorOperationResult.Status.NOT_FOUND, "CHAPTER_NOT_FOUND", "Chapter no longer exists");
         if (book.quests().size() + source.quests().size() > yourscraft.jasdewstarfield.brnquest.BrnQuestConstants.MAX_QUESTS)
@@ -23,7 +30,7 @@ public final class ChapterCopyEdits {
         if (!added.success()) return added;
         QuestBookDefinition result = added.value().book();
         if (!source.quests().isEmpty()) {
-            var copied = QuestSelectionEdits.copyInto(result, source.quests().stream().map(QuestDefinition::id).collect(Collectors.toSet()), 0, 0, targetId);
+            var copied = QuestSelectionEdits.copyInto(result, source.quests().stream().map(QuestDefinition::id).collect(Collectors.toSet()), 0, 0, targetId, context);
             if (!copied.success()) return copied;
             result = copied.value().book();
         }

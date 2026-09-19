@@ -155,6 +155,87 @@ public final class BrnQuestGameTests {
         helper.succeed();
     }
 
+    /** External types cross real author persistence before exercising the public completion/claim APIs. */
+    @GameTest(template = "empty", batch = "externalConfirmationLifecycle")
+    @PrefixGameTestTemplate(false)
+    public static void externalConfirmationAndExperienceSurviveAuthorSaveAndReload(GameTestHelper helper) {
+        if (!ModList.get().isLoaded("brnquest_example")) { helper.succeed(); return; }
+        var player = helper.makeMockServerPlayerInLevel();
+        var server = helper.getLevel().getServer();
+        var quest = quest("external_confirmation", List.of(), List.of(), List.of());
+        install(quest);
+        // Give this disk-backed draft its own book identity so other author fixtures remain untouched.
+        var json = com.google.gson.JsonParser.parseString(NativeBookJson.encode(
+                QuestBookManager.get().active().orElseThrow().book())).getAsJsonObject();
+        var bookId = id("confirmation_" + player.getUUID().toString().replace("-", ""));
+        json.addProperty("id", bookId.toString());
+        var book = NativeBookJson.decode(json);
+        var task = new TaskDefinition(bookId, id("external_confirm"), ResourceLocation.parse("brnquest_example:checkmark"),
+                Map.of("title", "Confirm", "opaque", "keep-task"), false);
+        var reward = new RewardDefinition(bookId, id("external_xp"), ResourceLocation.parse("brnquest_example:experience"),
+                Map.of("amount", "3", "title", "Journey", "opaque", "keep-reward"), "manual", false);
+        book = DraftBookEditor.addTask(book, quest.id(), task).value().book();
+        book = DraftBookEditor.addReward(book, quest.id(), reward).value().book();
+        helper.assertTrue(!ConfigEditorSchemas.forTask(ApiViews.task(task)).rawFallback()
+                        && !ConfigEditorSchemas.forReward(ApiViews.reward(reward)).rawFallback(),
+                "external confirmation and XP expose usable author fields");
+        var repository = new DraftRepository();
+        var initial = DraftSnapshot.of(book, "");
+        helper.assertTrue(repository.create(server, initial).success(), "external draft must be created on disk");
+
+        task = new TaskDefinition(bookId, task.id(), task.typeId(), Map.of("title", "Confirm edited", "opaque", "keep-task"), false);
+        reward = new RewardDefinition(bookId, reward.id(), reward.typeId(),
+                Map.of("amount", "7", "title", "Journey edited", "opaque", "keep-reward"), "manual", false);
+        book = DraftBookEditor.updateTask(book, quest.id(), task.id(), task).value().book();
+        book = DraftBookEditor.updateReward(book, quest.id(), reward.id(), reward).value().book();
+        var copiedTask = new TaskDefinition(bookId, id("external_confirm_copy"), task.typeId(), task.config(), false);
+        var copiedReward = new RewardDefinition(bookId, id("external_xp_copy"), reward.typeId(), reward.config(), "manual", false);
+        book = DraftBookEditor.copyTask(book, quest.id(), task.id(), copiedTask).value().book();
+        book = DraftBookEditor.copyReward(book, quest.id(), reward.id(), copiedReward).value().book();
+        var edited = DraftSnapshot.of(book, "");
+        helper.assertTrue(repository.save(server, edited, initial.draftRevision()).success(), "edited external draft must save");
+        helper.assertTrue(!repository.save(server, initial, initial.draftRevision()).success(), "stale disk revision cannot undo external edits");
+        var loaded = repository.load(server, bookId);
+        helper.assertTrue(loaded.success(), "external draft must load from disk");
+        var saved = loaded.value().book();
+        helper.assertValueEqual(loaded.value().draftRevision(), edited.draftRevision(), "native persistence retains the edited revision");
+        var savedQuest = saved.quests().stream().filter(value -> value.id().equals(quest.id())).findFirst().orElseThrow();
+        helper.assertTrue(savedQuest.tasks().size() == 2 && savedQuest.tasks().stream()
+                        .allMatch(value -> "keep-task".equals(value.config().get("opaque"))
+                                && "Confirm edited".equals(value.config().get("title"))), "task copies retain owned and opaque config");
+        helper.assertTrue(savedQuest.rewards().size() == 2 && savedQuest.rewards().stream()
+                        .allMatch(value -> "keep-reward".equals(value.config().get("opaque"))
+                                && "7".equals(value.config().get("amount"))), "reward copies retain owned and opaque config");
+        helper.assertTrue(QuestBookManager.get().install(saved, new DiagnosticReport()), "reloaded external codecs must validate");
+        ProgressEngine.get().reconcile(player);
+        var context = OperationContext.self(player);
+        helper.assertTrue(!BrnQuestApi.claimRewardResult(context, player, reward.id().toString()).success(),
+                "XP cannot be claimed before external confirmation");
+        var submitted = BrnQuestApi.completeTaskResult(context, player, quest.id().toString(), task.id().toString());
+        // The existing operation reports whole-quest readiness after recording the submitted row.
+        // Inspect its ledger as well: another required row must remain incomplete at this point.
+        helper.assertTrue(!submitted.success() && submitted.code().equals("UNSATISFIED"), "one row does not complete both required objectives");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 1L,
+                "individual confirmation is persisted even while another objective remains");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(copiedTask.id().toString()), 0L,
+                "a copied objective has an independent progress entry");
+        var repeated = BrnQuestApi.completeTaskResult(context, player, quest.id().toString(), task.id().toString());
+        helper.assertTrue(repeated.success() && !repeated.changed(), "repeated confirmation is a no-op");
+        var completed = BrnQuestApi.submitQuestCompletionResult(context, player, quest.id().toString(), true);
+        helper.assertTrue(completed.success() && completed.changed(), "whole-quest intent confirms the remaining external copy");
+
+        int before = player.totalExperience;
+        helper.assertTrue(BrnQuestApi.claimRewardResult(context, player, reward.id().toString()).changed(), "first XP reward delivers");
+        helper.assertTrue(!BrnQuestApi.claimRewardResult(context, player, reward.id().toString()).changed(), "repeat XP claim does not deliver");
+        helper.assertTrue(BrnQuestApi.claimRewardResult(context, player, copiedReward.id().toString()).changed(), "copied reward has its own receipt");
+        helper.assertValueEqual(player.totalExperience - before, 14, "two distinct rewards each deliver exactly seven XP");
+        helper.assertTrue(QuestBookManager.get().install(saved, new DiagnosticReport()), "same saved book reloads safely");
+        ProgressEngine.get().reconcile(player);
+        helper.assertTrue(!BrnQuestApi.claimRewardResult(context, player, reward.id().toString()).changed(), "definition reload retains claim receipt");
+        helper.assertValueEqual(player.totalExperience - before, 14, "reload does not repeat XP delivery");
+        helper.succeed();
+    }
+
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)
     public static void dedicatedServerFreezesCommonAndScriptRegistrationBeforeReload(GameTestHelper helper) {
@@ -400,6 +481,133 @@ public final class BrnQuestGameTests {
                 "one quest-wide intent must not skip through every sequential objective");
         helper.assertTrue(ProgressEngine.get().completeTask(player, quest.id(), second.id()).success(),
                 "the next objective must unlock after the first receipt is stored");
+        helper.succeed();
+    }
+
+    /** The companion owns matching and selection; the core owns authority, receipts and retries. */
+    @GameTest(template = "empty", batch = "externalItemSubmission")
+    @PrefixGameTestTemplate(false)
+    public static void externalItemSelectionReportsCommittedTaskAndConsumesOnce(GameTestHelper helper) {
+        if (!ModList.get().isLoaded("brnquest_example")) { helper.succeed(); return; }
+        var player = helper.makeMockServerPlayerInLevel();
+        var other = helper.makeMockServerPlayerInLevel();
+        var task = new TaskDefinition(id("book"), id("external_items"), ResourceLocation.parse("brnquest_example:item"),
+                Map.of("item", "minecraft:stone", "count", "2", "consume", "true"), false);
+        var sibling = new TaskDefinition(id("book"), id("external_waiting"), TaskTypes.CHECKMARK, Map.of(), false);
+        var quest = quest("external_item_submission", List.of(), List.of(task, sibling), List.of());
+        install(quest); ProgressEngine.get().reconcile(player);
+        var selected = new ItemStack(Items.STONE, 3); selected.set(DataComponents.CUSTOM_NAME, Component.literal("Selected"));
+        player.getInventory().setItem(2, selected);
+        player.getInventory().setItem(3, new ItemStack(Items.STONE, 5));
+        player.getInventory().setItem(4, new ItemStack(Items.DIRT, 1));
+        var context = OperationContext.self(player);
+        var selection = new TaskSubmissionSelection(List.of(2));
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(OperationContext.self(other), player, quest.id().toString(), task.id().toString(), selection).success(),
+                "another player's SELF authority cannot submit this inventory");
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString()).success(),
+                "consumption requires explicit slot intent");
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), new TaskSubmissionSelection(List.of(2, 4))).success(),
+                "every selected slot is checked before any item is consumed");
+        helper.assertValueEqual(player.getInventory().getItem(2).getCount(), 3, "rejected selection is atomic");
+        // A selected slot can change after the client opened its page; only current server stacks count.
+        player.getInventory().setItem(2, new ItemStack(Items.STONE, 1));
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), selection).success(), "stale inventory cannot satisfy selection");
+        player.getInventory().setItem(2, selected);
+        var result = BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), selection);
+        helper.assertTrue(result.changed() && result.code().equals("TASK_SUBMITTED"), "new result describes the committed objective");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 1L, "objective receipt persisted");
+        helper.assertTrue(!BrnQuestApi.isQuestCompleted(player, quest.id().toString()), "waiting sibling still prevents whole-quest completion");
+        helper.assertValueEqual(player.getInventory().getItem(2).getCount(), 1, "only required selected items consumed");
+        helper.assertValueEqual(player.getInventory().getItem(3).getCount(), 5, "unselected component variants remain untouched");
+        helper.assertValueEqual(player.getInventory().getItem(2).getHoverName().getString(), "Selected", "remaining components preserved");
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), selection).changed(), "duplicate does not consume again");
+        var saved = QuestBookManager.get().active().orElseThrow().book();
+        helper.assertTrue(QuestBookManager.get().install(saved, new DiagnosticReport()), "same definition reloads");
+        ProgressEngine.get().reconcile(player);
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), selection).changed(), "reload retains objective receipt");
+        ProgressEngine.get().reset(player, quest.id());
+        helper.assertTrue(BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString(), new TaskSubmissionSelection(List.of(3))).changed(),
+                "explicit reset opens a new independent submission");
+        helper.assertValueEqual(player.getInventory().getItem(3).getCount(), 3, "reset cycle consumes only once");
+        helper.succeed();
+    }
+
+    /** Test-only injection proves inventory rollback without adding failure switches to the public example. */
+    @GameTest(template = "empty", batch = "submissionRollback")
+    @PrefixGameTestTemplate(false)
+    @SuppressWarnings("unchecked")
+    public static void throwingSubmissionRestoresInventoryAndAllowsRetry(GameTestHelper helper) throws Exception {
+        var registryField = yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry.class.getDeclaredField("TYPES");
+        registryField.setAccessible(true);
+        var registry = (Map<ResourceLocation, yourscraft.jasdewstarfield.brnquest.task.TaskType<?>>) registryField.get(null);
+        var typeId = id("throwing_submission_fixture");
+        var fail = new java.util.concurrent.atomic.AtomicBoolean(true);
+        var fixture = new yourscraft.jasdewstarfield.brnquest.task.TaskType<Map<String, String>>() {
+            public com.mojang.serialization.Codec<Map<String, String>> configCodec() {
+                return com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.STRING);
+            }
+            public boolean satisfied(yourscraft.jasdewstarfield.brnquest.task.TaskContext context, Map<String, String> config) { return context.progress() >= 1; }
+            public boolean allowsManualSubmission(Map<String, String> config) { return true; }
+            public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, Map<String, String> config) { return Component.literal("Rollback fixture"); }
+            public yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionResult submit(
+                    yourscraft.jasdewstarfield.brnquest.task.TaskContext context, Map<String, String> config) {
+                context.player().getInventory().getItem(0).shrink(2);
+                if (fail.get()) throw new IllegalStateException("Intentional test failure after consumption");
+                return yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionResult.accepted();
+            }
+        };
+        var previous = registry.put(typeId, fixture);
+        try {
+            var player = helper.makeMockServerPlayerInLevel();
+            var task = new TaskDefinition(id("book"), id("rollback_item"), typeId, Map.of(), false);
+            var quest = quest("rollback_submission", List.of(), List.of(task), List.of());
+            install(quest); ProgressEngine.get().reconcile(player);
+            var stack = new ItemStack(Items.STONE, 5);
+            stack.set(DataComponents.CUSTOM_NAME, Component.literal("Retained"));
+            player.getInventory().setItem(0, stack);
+            var context = OperationContext.self(player);
+            var result = BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString());
+            helper.assertValueEqual(result.code(), "TASK_SUBMISSION_FAILED", "type exception is a rejected intent");
+            helper.assertValueEqual(player.getInventory().getItem(0).getCount(), 5, "partially consumed inventory restored");
+            helper.assertValueEqual(player.getInventory().getItem(0).getHoverName().getString(), "Retained", "rollback retains components");
+            helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 0L, "failed submission never records a receipt");
+            fail.set(false);
+            helper.assertTrue(BrnQuestApi.submitTaskResult(context, player, quest.id().toString(), task.id().toString()).changed(), "retry can commit after rollback");
+            helper.assertValueEqual(player.getInventory().getItem(0).getCount(), 3, "retry consumes once");
+            helper.succeed();
+        } finally {
+            if (previous == null) registry.remove(typeId); else registry.put(typeId, previous);
+        }
+    }
+
+    /** Real loader crafting events drive external cumulative progress without exposing a mutable ledger. */
+    @GameTest(template = "empty", batch = "externalItemCrafting")
+    @PrefixGameTestTemplate(false)
+    public static void externalCraftingHookUsesActualOutputAndResets(GameTestHelper helper) {
+        if (!ModList.get().isLoaded("brnquest_example")) { helper.succeed(); return; }
+        var player = helper.makeMockServerPlayerInLevel();
+        var task = new TaskDefinition(id("book"), id("external_crafted"), ResourceLocation.parse("brnquest_example:item"),
+                Map.of("item", "minecraft:stone", "count", "3", "crafting_only", "true"), false);
+        var quest = quest("external_crafting", List.of(), List.of(task), List.of());
+        install(quest); ProgressEngine.get().reconcile(player);
+        player.getInventory().setItem(0, new ItemStack(Items.STONE, 64));
+        helper.assertTrue(!BrnQuestApi.submitTaskResult(OperationContext.self(player), player, quest.id().toString(), task.id().toString()).success(),
+                "holding items cannot impersonate a crafting event");
+        var output = new ItemStack(Items.STONE, 2);
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.entity.player.PlayerEvent.ItemCraftedEvent(
+                player, output, new net.minecraft.world.SimpleContainer(9)));
+        helper.assertValueEqual(output.getCount(), 2, "observer never mutates original crafted output");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 2L, "external hook counts real output");
+        ProgressEngine.get().recordCraft(player, new ItemStack(Items.DIRT, 4));
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 2L, "unrelated output ignored");
+        ProgressEngine.get().recordCraft(player, new ItemStack(Items.STONE, 2));
+        helper.assertTrue(BrnQuestApi.isQuestCompleted(player, quest.id().toString()), "required output completes external objective");
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 3L, "sample capped by type requirement");
+        ProgressEngine.get().reset(player, quest.id());
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 0L, "reset clears cumulative progress");
+        ProgressEngine.get().recordCraft(player, new ItemStack(Items.STONE, 1));
+        helper.assertValueEqual(ProgressEngine.get().progress(player).taskProgress(task.id().toString()), 1L, "new cycle starts from zero");
+        helper.assertValueEqual(player.getInventory().getItem(0).getCount(), 64, "craft observer never consumes held items");
         helper.succeed();
     }
 

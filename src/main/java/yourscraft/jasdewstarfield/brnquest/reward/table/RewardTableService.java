@@ -196,7 +196,12 @@ public final class RewardTableService {
             if(entry.has("table")) { preflight(entry.getAsJsonObject("table"),path,context,id); continue; }
             var type=RewardTypeRegistry.get(ResourceLocation.parse(entry.get("type").getAsString()));
             if(type==null || type.composition().isEmpty()) throw new IllegalArgumentException(path+": unsupported composition");
-            var config=type.normalizeConfig(RewardTableTree.config(entry));
+            // Preserve opaque leaf keys while resolving owned values against the live server registry lookup.
+            var original=RewardTableTree.config(entry);
+            var config=new java.util.TreeMap<>(original);
+            config.putAll(type.normalizeConfig(
+                    yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext.withRegistries(
+                            context.rewardContext().player().registryAccess()), original));
             yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec.decode(type.configCodec(),config).getOrThrow();
             var normalized=new com.google.gson.JsonObject();config.forEach(normalized::addProperty);entry.add("config",normalized);
             try {

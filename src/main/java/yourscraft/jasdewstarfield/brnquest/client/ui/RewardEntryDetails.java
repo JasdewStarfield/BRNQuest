@@ -6,7 +6,6 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 
 import java.util.Optional;
 
@@ -45,11 +44,12 @@ record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon
     static RewardEntryDetails fromDisplayed(Minecraft minecraft, RewardView view,
                                            ClientRewardPresentation presentation, ItemStack stack) {
         Component detail;
-        if (!stack.isEmpty()) {
+        var contents = presentation.contentSummary(view);
+        if (contents.isPresent()) {
+            // Type-owned content stays independent of claim state and the authored display title.
+            detail = contents.orElseThrow().copy();
+        } else if (!stack.isEmpty()) {
             detail = stack.getHoverName().copy().append(" × " + stack.getCount());
-        } else if (view.typeId().equals(RewardTypes.XP) || view.typeId().equals(RewardTypes.XP_LEVELS)) {
-            String key = view.typeId().equals(RewardTypes.XP) ? "xp" : "xp_levels";
-            detail = presentation.typeName(view).copy().append(" × " + view.config().getOrDefault(key, "0"));
         } else {
             detail = presentation.title(new RewardPresentationContext(minecraft, view, false, false, stack.copy()));
             if (detail.equals(Component.translatable("screen.brnquest.reward.unknown"))) {

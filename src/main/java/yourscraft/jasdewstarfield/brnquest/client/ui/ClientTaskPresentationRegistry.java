@@ -257,6 +257,23 @@ public final class ClientTaskPresentationRegistry {
     }
 
     private static final class ItemChoicePresentation implements ClientTaskPresentation {
+        @Override
+        public java.util.Optional<TaskSubmissionInteraction> submissionInteraction(TaskPresentationContext context) {
+            var spec = spec(context.task());
+            if (spec == null || !consumesItems(context.task()) || !readyForSubmission(context)) return java.util.Optional.empty();
+            // The built-in owns its parser and picker; the shared screen only sends the bounded slot intent.
+            return java.util.Optional.of((parent, submit) -> new ItemSubmissionScreen(parent, spec,
+                    slots -> submit.accept(new yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection(slots))));
+        }
+
+        @Override
+        public java.util.Optional<net.minecraft.client.gui.screens.Screen> candidateScreen(
+                net.minecraft.client.gui.screens.Screen parent, TaskPresentationContext context) {
+            var spec = spec(context.task());
+            return spec == null ? java.util.Optional.empty()
+                    : java.util.Optional.of(new ItemChoiceScreen(parent, spec, false, ignored -> {}));
+        }
+
         public boolean confirmed(TaskView task, long storedProgress) { return itemObjectiveSubmitted(task, storedProgress); }
         @Override
         public NodeStyle nodeStyle(TaskView task) {

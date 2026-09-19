@@ -307,7 +307,22 @@ dependencies {
     }
 }
 
+// Compile legacy consumers against the exact experimental.22 interfaces from commit 550e802.
+// TaskType and RewardType were unchanged in experimental.23.
+// The fixture output is not a runtime dependency: tests load only its consumer against today's SPI.
+def legacyPresentationClasses = layout.buildDirectory.dir('compatibility/experimental22')
+def compileLegacyPresentation = tasks.register('compileLegacyPresentation', JavaCompile) {
+    dependsOn tasks.named('classes')
+    source fileTree('src/test/compatibility/experimental22') { include '**/*.java' }
+    classpath = sourceSets.main.output + sourceSets.main.compileClasspath
+    destinationDirectory = legacyPresentationClasses
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    options.encoding = 'UTF-8'
+}
+
 test {
+    dependsOn compileLegacyPresentation
+    systemProperty 'brnquest.legacyPresentationClasses', legacyPresentationClasses.get().asFile.absolutePath
     useJUnitPlatform()
     // Keep short-lived test trees outside workspace watchers; allow CI to choose its own isolated root.
     def testTemp = isolatedTestRoot

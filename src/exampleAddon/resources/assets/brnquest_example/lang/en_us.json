@@ -3,9 +3,17 @@
   "screen.brnquest_example.reward.experience.title": "%s experience points",
   "screen.brnquest_example.task.marker": "Server marker objective",
   "screen.brnquest_example.task.signal": "Signal objective",
+  "screen.brnquest_example.task.checkmark": "Confirmation objective",
+  "screen.brnquest_example.field.confirmation_title": "Confirmation title",
+  "screen.brnquest_example.field.confirmation_title.help": "Optional title for a manually confirmed objective",
   "screen.brnquest_example.reward.guarded_tag": "Guarded tag",
   "screen.brnquest_example.field.tag": "Tag name",
   "screen.brnquest_example.field.mode": "Example mode",
   "screen.brnquest_example.mode.explicit": "Fixed example",
-  "screen.brnquest_example.mode.player": "Player example"
+  "screen.brnquest_example.mode.player": "Player example",
+  "screen.brnquest_example.task.item": "Example item objective",
+  "screen.brnquest_example.task.item.title": "Prepare %s × %s",
+  "screen.brnquest_example.item.select": "Choose items to submit",
+  "screen.brnquest_example.item.submit": "Submit",
+  "screen.brnquest_example.item.selected": "Selected %s / Required %s"
 }

@@ -22,6 +22,8 @@ final class ExampleClientHooks {
         });
         ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.MARKER_TASK, new MarkerPresentation());
         ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.SIGNAL_TASK, new SignalPresentation());
+        ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.CHECKMARK_TASK, new CheckmarkPresentation());
+        ClientTaskPresentationRegistry.register(BrnQuestExampleAddon.ITEM_TASK, new ExampleItemPresentation());
         ClientRewardPresentationRegistry.register(BrnQuestExampleAddon.EXPERIENCE_REWARD,
                 new ExperiencePresentation());
     }
@@ -54,6 +56,24 @@ final class ExampleClientHooks {
         }
     }
 
+    /** The client advertises an intent; the common TaskType independently authorizes it. */
+    private static final class CheckmarkPresentation implements ClientTaskPresentation {
+        public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> typeIcon() {
+            return java.util.Optional.of(yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon.glyph(Component.literal("✓")));
+        }
+        public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CHECKMARK; }
+        public String symbol(TaskView task) { return "✓"; }
+        public Component typeName(TaskView task) {
+            return Component.translatable("screen.brnquest_example.task.checkmark");
+        }
+        public boolean interactive(TaskView task) { return true; }
+        public boolean acceptsQuestCompletionIntent(TaskView task) { return true; }
+        public Component title(TaskPresentationContext context) {
+            String title = context.task().config().getOrDefault("title", "");
+            return title.isBlank() ? typeName(context.task()) : Component.literal(title);
+        }
+    }
+
     private static final class ExperiencePresentation implements ClientRewardPresentation {
         public java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> typeIcon() {
             return java.util.Optional.of(yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon.glyph(Component.literal("XP")));
@@ -65,6 +85,11 @@ final class ExampleClientHooks {
         public Component title(RewardPresentationContext context) {
             return Component.translatable("screen.brnquest_example.reward.experience.title",
                     context.reward().config().getOrDefault("amount", "3"));
+        }
+        public java.util.Optional<Component> contentSummary(RewardView reward) {
+            // The same content is available before completion and inside configured table previews.
+            return java.util.Optional.of(Component.translatable("screen.brnquest_example.reward.experience.title",
+                    reward.config().getOrDefault("amount", "3")));
         }
     }
 }

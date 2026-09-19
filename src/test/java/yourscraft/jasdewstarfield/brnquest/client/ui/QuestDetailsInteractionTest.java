@@ -33,7 +33,7 @@ class QuestDetailsInteractionTest {
     @Test void candidateButtonWinsOverTheContainingTaskRowEvenInPreview() {
         QuestDetailsInteraction interaction = frame(false, false);
         interaction.task(TASK, new UiRect(620, 100, 780, 124),
-                new UiRect(641, 104, 655, 120), QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION);
+                new UiRect(641, 104, 655, 120), QuestDetailsInteraction.Action.OPEN_TASK_INTERACTION);
         interaction.finish();
 
         QuestDetailsInteraction.ClickResult result = interaction.click(identity("r1", 800), 648, 110, 0);

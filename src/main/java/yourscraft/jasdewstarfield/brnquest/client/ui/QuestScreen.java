@@ -925,17 +925,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     storedProgress, stack);
         }
         TaskDisplayState state = taskDisplayState(quest, task, status, presentation, presentationContext);
-        ItemChoiceMatcher.Spec itemSpec = ItemChoiceMatcher.parseConfig(task.config()).result().orElse(null);
         QuestTaskRowWidget.Model model = new QuestTaskRowWidget.Model(task, presentation, presentationContext, state,
                 taskSatisfied(task, status), canSubmit(quest, status),
-                itemSpec != null && needsManualItemSelection(task, itemSpec));
+                presentation.submissionInteraction(presentationContext).isPresent());
         QuestTaskRowWidget.Result row = taskRowWidget.render(graphics, font, model,
                 new QuestTaskRowWidget.Layout(x, y, width, detailRecipeLookupViewport(),
                         mouseX, mouseY, attentionPingOffsetY));
         QuestDetailsInteraction.Action rowAction = switch (row.rowAction()) {
             case SUBMIT_TASK -> QuestDetailsInteraction.Action.SUBMIT_TASK;
             case COMPLETE_QUEST -> QuestDetailsInteraction.Action.COMPLETE_QUEST;
-            case OPEN_ITEM_SLOT_SELECTION -> QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION;
+            case OPEN_TASK_INTERACTION -> QuestDetailsInteraction.Action.OPEN_TASK_INTERACTION;
         };
         detailsInteraction.task(task.id(), row.action(), row.candidates(), rowAction);
         // Candidate help uses the shared feedback adapter; semantic dispatch still belongs to the detail frame.
@@ -1070,11 +1069,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         .filter(candidate -> candidate.id().equals(intent.targetId())).findFirst().orElse(null);
                 if (task != null) {
                     var presentation = ClientTaskPresentationRegistry.get(task.typeId());
-                    var view = ApiViews.task(task);
-                    if (presentation.resolvedOptions(view).isPresent()) openChildScreen(new ResolvedOptionsScreen(this,
-                            () -> presentation.resolvedOptions(view).orElse(List.of())));
-                    else ItemChoiceMatcher.parseConfig(task.config()).result()
-                            .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, true));
+                    presentation.candidateScreen(this, taskPresentationContext(task, status(quest)))
+                            .ifPresent(this::openChildScreen);
                 }
             }
             case COMPLETE_QUEST -> {
@@ -1090,7 +1086,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), quest.id().toString());
                 }
             }
-            case SUBMIT_TASK, OPEN_ITEM_SLOT_SELECTION -> handleDetailsTaskIntent(intent.action(), quest,
+            case SUBMIT_TASK, OPEN_TASK_INTERACTION -> handleDetailsTaskIntent(intent.action(), quest,
                     intent.targetId());
             case OPEN_REWARD_OPTIONS -> {
                 var reward = quest.rewards().stream().filter(value -> value.id().equals(intent.targetId())).findFirst().orElse(null);
@@ -1119,15 +1115,25 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 .filter(candidate -> candidate.id().equals(taskId)).findFirst().orElse(null);
         QuestStatus status = status(quest);
         if (task == null || !gameplayAllowed() || !taskDisplayState(quest, task, status).actionable()) return;
-        if (action == QuestDetailsInteraction.Action.OPEN_ITEM_SLOT_SELECTION) {
-            ItemChoiceMatcher.parseConfig(task.config()).result().filter(spec -> needsManualItemSelection(task, spec))
-                    .ifPresent(spec -> openGameplayItemChoiceScreen(quest, task, spec, false));
-            return;
-        }
-        // Pending ownership remains in ClientQuestState so rapid clicks cannot enqueue duplicate consumption.
-        if (ClientQuestState.get().beginTaskSubmission(task.id().toString())) {
-            BrnQuestNetwork.completeTask(ClientQuestState.get().revision(), quest.id().toString(),
-                    task.id().toString());
+        var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        var interaction = presentation.submissionInteraction(taskPresentationContext(task, status));
+        String revision = ClientQuestState.get().revision();
+        var sourceLevel = minecraft.level;
+        var sourcePlayer = minecraft.player;
+        // A factory cannot submit while it is still constructing its page.
+        Screen[] activePage = {null};
+        var submit = new TaskSubmissionDispatch(() -> gameplayAllowed() && minecraft.screen == activePage[0]
+                && minecraft.level == sourceLevel && minecraft.player == sourcePlayer
+                && revision.equals(ClientQuestState.get().revision())
+                && taskDisplayState(quest, task, status(quest)).actionable()
+                && ClientQuestState.get().beginTaskSubmission(task.id().toString()), selection ->
+                BrnQuestNetwork.completeTask(revision, quest.id().toString(), task.id().toString(), selection.inventorySlots()));
+        if (interaction.isPresent()) {
+            activePage[0] = interaction.orElseThrow().createScreen(this, submit);
+            openChildScreen(activePage[0]);
+        } else {
+            activePage[0] = this;
+            submit.accept(yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection.AUTOMATIC);
         }
     }
 
@@ -3831,47 +3837,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         openChildScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
     }
 
-    private void openGameplayItemChoiceScreen(QuestDefinition quest, TaskDefinition task,
-                                               ItemChoiceMatcher.Spec spec, boolean candidatesOnly) {
-        if (minecraft == null) return;
-        boolean selectionRequired = !candidatesOnly && needsManualItemSelection(task, spec);
-        boolean alreadySubmitted = ClientQuestState.get().taskProgress()
-                .getOrDefault(task.id().toString(), 0L) >= 1;
-        ItemChoiceOpenMode mode = itemChoiceOpenMode(candidatesOnly, gameplayAllowed(),
-                selectionRequired, alreadySubmitted);
-        if (mode == ItemChoiceOpenMode.VIEW_CANDIDATES) {
-            openChildScreen(new ItemChoiceScreen(this, spec, false, ignored -> {}));
-            return;
-        }
-        String submissionRevision = ClientQuestState.get().revision();
-        openChildScreen(new ItemSubmissionScreen(this, spec, selectedSlots -> {
-            // Never apply a selection captured from an older book to the newly displayed revision.
-            if (!submissionRevision.equals(ClientQuestState.get().revision())) return;
-            String taskId = task.id().toString();
-            if (ClientQuestState.get().beginTaskSubmission(taskId)) {
-                BrnQuestNetwork.completeTask(submissionRevision, quest.id().toString(),
-                        taskId, selectedSlots);
-            }
-        }));
-    }
-
-    /** Keeps the candidate-list affordance read-only regardless of quest or inventory state. */
-    static ItemChoiceOpenMode itemChoiceOpenMode(boolean candidatesOnly, boolean gameplayAllowed,
-                                                 boolean selectionRequired, boolean alreadySubmitted) {
-        return !candidatesOnly && gameplayAllowed && selectionRequired && !alreadySubmitted
-                ? ItemChoiceOpenMode.SELECT_INVENTORY : ItemChoiceOpenMode.VIEW_CANDIDATES;
-    }
-
-    private boolean needsManualItemSelection(TaskDefinition task, ItemChoiceMatcher.Spec spec) {
-        if (!ClientTaskPresentationRegistry.consumesItems(ApiViews.task(task)) || minecraft == null
-                || minecraft.level == null || minecraft.player == null) return false;
-        ItemChoiceMatcher.MatchPlan plan = ItemChoiceMatcher.plan(minecraft.level.registryAccess(),
-                minecraft.player.getInventory().items, spec);
-        // Every satisfiable consume objective enters the real-inventory picker. Even a one-entry
-        // objective may have several stacks with different components that the player must choose between.
-        return plan.satisfied();
-    }
-
     private void openTypedPropertyRawEditor() {
         if (minecraft == null || !typedPropertyRawEditable()) return;
         openChildScreen(new EditorRawConfigScreen(this, typedPropertySection.form().rawConfig(), config -> {
@@ -5137,14 +5102,18 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Builds the same state used by row color, row input and the outer-node attention badge. */
     private TaskDisplayState taskDisplayState(QuestDefinition quest, TaskDefinition task, QuestStatus status) {
+        var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+        return taskDisplayState(quest, task, status, presentation, taskPresentationContext(task, status));
+    }
+
+    /** Typed pages and rows see the same server-ledger projection without accessing runtime definitions. */
+    private TaskPresentationContext taskPresentationContext(TaskDefinition task, QuestStatus status) {
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
         var view = ApiViews.task(task);
         String itemSnbt = presentation.itemSnbt(view);
         ItemStack displayedItem = itemSnbt.isBlank() ? ItemStack.EMPTY : item(task.id(), itemSnbt);
         long storedProgress = ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L);
-        TaskPresentationContext context = new TaskPresentationContext(
-                minecraft, view, status, storedProgress, displayedItem);
-        return taskDisplayState(quest, task, status, presentation, context);
+        return new TaskPresentationContext(minecraft, view, status, storedProgress, displayedItem);
     }
 
     private TaskDisplayState taskDisplayState(QuestDefinition quest, TaskDefinition task, QuestStatus status,
@@ -5795,10 +5764,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return Math.max(1, detailContentBottom() - detailContentTop());
     }
 
-    enum ItemChoiceOpenMode {
-        VIEW_CANDIDATES,
-        SELECT_INVENTORY
-    }
 
 
     private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack, java.util.Optional<EditorIcon> icon) {}

@@ -1,5 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.author;
 
+import yourscraft.jasdewstarfield.brnquest.editor.ConfigNormalizationContext;
+
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.*;
 import java.util.*;
@@ -8,11 +10,22 @@ import java.util.*;
 public final class QuestSelectionEdits {
     private QuestSelectionEdits() {}
     public static AuthorOperationResult<DraftChange> copy(QuestBookDefinition book, Set<ResourceLocation> selected, double dx, double dy) {
-        return copyInto(book, selected, dx, dy, null);
+        return copy(book, selected, dx, dy, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Passes the current registry lookup through the complete atomic copy. */
+    public static AuthorOperationResult<DraftChange> copy(QuestBookDefinition book, Set<ResourceLocation> selected, double dx, double dy, ConfigNormalizationContext context) {
+        return copyInto(book, selected, dx, dy, null, context);
     }
     /** A chapter copy seeds its empty destination first, then reuses the same graph/locale copy rules. */
     static AuthorOperationResult<DraftChange> copyInto(QuestBookDefinition book, Set<ResourceLocation> selected,
             double dx, double dy, ResourceLocation destinationChapter) {
+        return copyInto(book, selected, dx, dy, destinationChapter, ConfigNormalizationContext.withoutRegistries());
+    }
+
+    /** Passes the current registry lookup through the complete atomic copy. */
+    static AuthorOperationResult<DraftChange> copyInto(QuestBookDefinition book, Set<ResourceLocation> selected,
+            double dx, double dy, ResourceLocation destinationChapter, ConfigNormalizationContext context) {
         var sources = book.quests().stream().filter(q -> selected.contains(q.id())).toList();
         if (selected.isEmpty() || sources.size() != selected.size() || !Double.isFinite(dx) || !Double.isFinite(dy)
                 || sources.stream().map(QuestDefinition::chapterId).distinct().count() != 1)
@@ -47,7 +60,7 @@ public final class QuestSelectionEdits {
                     source.subtitle(), source.description(), source.descriptionFormat(), source.icon(), source.x() + dx, source.y() + dy,
                     source.dependencies().stream().map(dep -> remap.getOrDefault(dep, dep)).toList(), tasks, rewards, "",
                     source.appearance(), source.behavior(), source.extensions());
-            var change = DraftBookEditor.copyQuest(result, source.id(), copy);
+            var change = DraftBookEditor.copyQuest(result, source.id(), copy, context);
             if (!change.success()) return change;
             result = change.value().book(); affected.addAll(change.value().affectedObjects());
         }

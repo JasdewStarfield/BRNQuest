@@ -5,6 +5,11 @@ plugins {
     id 'net.neoforged.moddev' version '2.0.121'
 }
 
+// A second validation build can coexist with a running development client holding the default artifacts.
+if (providers.gradleProperty('brnquestBuildDir').isPresent()) {
+    layout.buildDirectory = layout.projectDirectory.dir(providers.gradleProperty('brnquestBuildDir').get())
+}
+
 version = mod_version
 group = mod_group_id
 
@@ -17,7 +22,13 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 def opacSmokeRequested = gradle.startParameter.taskNames.any { it.tokenize(':').last() in ['runOpacSmokeServer', 'runOpacRestartServer', 'runOpacFallbackServer'] }
 def includeOpac = providers.gradleProperty('includeOpac').isPresent() || opacSmokeRequested
-def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent()
+// Compilation modules stay independent; runtime assembly can omit built-ins for absence/recovery checks.
+def includeBuiltin = !providers.gradleProperty('excludeBuiltin').isPresent()
+def legacyAddon = providers.gradleProperty('legacyAddon').isPresent()
+def includeExampleAddon = !providers.gradleProperty('excludeExampleAddon').isPresent() && !legacyAddon
+def includeGameTests = gradle.startParameter.taskNames.any { it.tokenize(':').last() in ['runGameTestServer', 'runClient'] }
+def moduleSmokeRequested = gradle.startParameter.taskNames.any { it.tokenize(':').last() == 'runModuleSmokeServer' }
+def moduleSmokePhase = providers.gradleProperty('moduleSmokePhase').getOrElse(includeBuiltin ? 'restored' : 'absent')
 // KubeJS is opt-in for runtime tests because its client-sync hook cannot target GameTest mock players.
 def kubeJsSmokeRequested = gradle.startParameter.taskNames.any {
     it.tokenize(':').last() in ['runKubeJsSmokeServer', 'runKubeJsReloadSmokeServer']
@@ -80,6 +91,28 @@ def prepareKubeJsReloadSmokeFixture = tasks.register('prepareKubeJsReloadSmokeFi
 }
 
 sourceSets {
+    // Only downstream modules see these outputs: javac for main cannot resolve built-in classes.
+    builtin {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+    integration {
+        compileClasspath += sourceSets.main.output + sourceSets.builtin.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+    gameTest {
+        compileClasspath += sourceSets.main.output + sourceSets.builtin.output + sourceSets.integration.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+    moduleTest {
+        // This fixture must compile and start without any built-in output on its classpath.
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+    test {
+        compileClasspath += sourceSets.builtin.output + sourceSets.integration.output
+        runtimeClasspath += sourceSets.builtin.output + sourceSets.integration.output
+    }
     opacTest {
         // The lifecycle fixture is an external development mod and is never shipped in BRNQuest.
         compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
@@ -115,10 +148,20 @@ repositories {
 neoForge {
     version = project.neo_version
 
+    [sourceSets.builtin, sourceSets.integration, sourceSets.gameTest, sourceSets.moduleTest].each {
+        addModdingDependenciesTo it
+    }
+
     runs {
+        moduleSmokeServer {
+            server()
+            gameDirectory = layout.dir(providers.provider { new File(isolatedTestRoot, 'module-smoke') }).get()
+            programArgument '--nogui'
+            systemProperty 'brnquest.module.phase', moduleSmokePhase
+        }
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
+            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
                     ? "${project.mod_id},brnquest_example" : project.mod_id
         }
 
@@ -134,7 +177,7 @@ neoForge {
             systemProperty 'java.io.tmpdir', isolatedTestRoot
             // IDE and Gradle launches receive the same deterministic fixture and isolated workspace.
             taskBefore prepareGameTestFixture
-            systemProperty 'neoforge.enabledGameTestNamespaces', includeExampleAddon
+            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
                     ? "${project.mod_id},brnquest_example" : project.mod_id
         }
 
@@ -191,6 +234,14 @@ neoForge {
     mods {
         "${mod_id}" {
             sourceSet(sourceSets.main)
+            if (includeBuiltin) {
+                sourceSet(sourceSets.builtin)
+                sourceSet(sourceSets.integration)
+            }
+            if (includeGameTests && includeBuiltin) sourceSet(sourceSets.gameTest)
+        }
+        if (moduleSmokeRequested) {
+            brnquest_module_test { sourceSet(sourceSets.moduleTest) }
         }
         if (opacSmokeRequested) {
             brnquest_opac_test { sourceSet(sourceSets.opacTest) }
@@ -213,7 +264,7 @@ neoForge {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 def generateGameTestStructure = tasks.register('generateGameTestStructure') {
-    def encoded = file('src/main/gametest/empty.nbt.b64')
+    def encoded = file('src/gameTest/fixtures/empty.nbt.b64')
     def generated = layout.buildDirectory.file('generated/gametestResources/data/brnquest/structure/empty.nbt')
     inputs.file encoded
     outputs.file generated
@@ -224,9 +275,9 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
         target.bytes = Base64.decoder.decode(encoded.getText('UTF-8').trim())
     }
 }
-sourceSets.main.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')
+sourceSets.gameTest.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')
+tasks.named('processGameTestResources').configure { dependsOn generateGameTestStructure }
 tasks.named('processResources').configure {
-    dependsOn generateGameTestStructure
     // Ship the human-readable dependency notice beside the embedded library metadata.
     from('THIRD_PARTY_NOTICES.md') { into 'META-INF' }
 }
@@ -292,11 +343,15 @@ dependencies {
         localRuntime("dev.latvian.mods:rhino:${rhino_version}") { transitive = false }
     }
     // Compile the isolated JEI plugin against its API without making JEI a published hard dependency.
-    compileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
-    compileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
+    integrationCompileOnly "mezz.jei:jei-${minecraft_version}-common-api:${jei_version}"
+    integrationCompileOnly "mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}"
     if (includeJei) {
         // Local runs include JEI by default; -PexcludeJei proves the dependency-absent path.
         localRuntime "mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}"
+    }
+    if (legacyAddon) {
+        // Load the frozen pre-P5c JAR as a real external mod; no companion sources participate.
+        localRuntime files('src/test/compatibility/experimental26/brnquest-example-experimental26.jar')
     }
     testImplementation platform('org.junit:junit-bom:5.11.4')
     testImplementation 'org.junit.jupiter:junit-jupiter'
@@ -320,10 +375,24 @@ def compileLegacyPresentation = tasks.register('compileLegacyPresentation', Java
     options.encoding = 'UTF-8'
 }
 
+// Keep the old field-editor consumer binary separate from the runtime SPI.
+def legacyEditorClasses = layout.buildDirectory.dir('compatibility/experimental25')
+def compileLegacyEditor = tasks.register('compileLegacyEditor', JavaCompile) {
+    dependsOn tasks.named('classes')
+    source fileTree('src/test/compatibility/experimental25') { include '**/*.java' }
+    classpath = sourceSets.main.output + sourceSets.main.compileClasspath
+    destinationDirectory = legacyEditorClasses
+    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(21) }
+    options.encoding = 'UTF-8'
+}
+
 test {
-    dependsOn compileLegacyPresentation
+    dependsOn compileLegacyPresentation, compileLegacyEditor, tasks.named('compileExampleAddonJava')
+    systemProperty 'brnquest.legacyEditorClasses', legacyEditorClasses.get().asFile.absolutePath
     systemProperty 'brnquest.legacyPresentationClasses', legacyPresentationClasses.get().asFile.absolutePath
     useJUnitPlatform()
+    // Unit tests reproduce loader-owned plugin registration explicitly.
+    systemProperty 'junit.jupiter.extensions.autodetection.enabled', 'true'
     // Keep short-lived test trees outside workspace watchers; allow CI to choose its own isolated root.
     def testTemp = isolatedTestRoot
     systemProperty 'java.io.tmpdir', testTemp
@@ -332,6 +401,7 @@ test {
     // NeoForge tests use a transformed class loader without a conventional code source;
     // provide an explicit project root for the public-signature contract test.
     systemProperty 'brnquest.projectDir', projectDir.absolutePath
+    systemProperty 'brnquest.buildDir', layout.buildDirectory.get().asFile.absolutePath
 }
 
 // A normal build must prove the public-only companion source still compiles.
@@ -378,6 +448,42 @@ tasks.named('runKubeJsReloadSmokeServer').configure {
             def phase = label == 'OpacRestart' ? 'restart' : 'initial'
             if (!log.isFile() || !log.getText('UTF-8').contains("[BRNQuest/OPAC_SMOKE] ${phase} PASS")) {
                 throw new GradleException('OPAC lifecycle fixture did not pass')
+            }
+        }
+    }
+}
+
+// The shipping artifact retains the established single-JAR installation and loader identity.
+tasks.named('jar').configure {
+    from sourceSets.builtin.output
+    from sourceSets.integration.output
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+// Isolated lifecycle runs retain the same world between missing-module and restoration phases.
+tasks.named('runModuleSmokeServer').configure {
+    doFirst {
+        def root = new File(isolatedTestRoot, 'module-smoke')
+        root.mkdirs()
+        new File(root, 'server.properties').setText('server-port=0\nonline-mode=false\nlevel-type=minecraft:flat\ngenerator-settings={"layers":[{"block":"minecraft:bedrock","height":1}],"biome":"minecraft:plains"}\ngenerate-structures=false\nview-distance=2\nsimulation-distance=2\n', 'UTF-8')
+    }
+    doLast {
+        def log = new File(isolatedTestRoot, 'module-smoke/logs/latest.log')
+        if (!log.isFile() || !log.getText('UTF-8').contains("[BRNQuest/MODULE_SMOKE] ${moduleSmokePhase} PASS")) {
+            throw new GradleException('Module absence/restoration fixture did not pass')
+        }
+    }
+}
+
+apply from: 'gradle/module-boundaries.gradle'
+
+if (legacyAddon) {
+    tasks.named('runGameTestServer').configure {
+        dependsOn 'verifyLegacyAddon'
+        doLast {
+            def log = gameTestRunDirectory.file('logs/latest.log').asFile
+            if (!log.isFile() || !log.getText('UTF-8').contains('(brnquest_example)')) {
+                throw new GradleException('Frozen add-on was not discovered as an installed mod')
             }
         }
     }

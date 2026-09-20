@@ -119,7 +119,7 @@ class FtbV13ImporterTest {
                 """,StandardCharsets.UTF_8);
         var result=new FtbV13Importer().importBook(temporary,"test","main");
         assertFalse(result.report().hasErrors(),result.report().toJson());
-        var tree=yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(result.book().quests().getFirst().rewards().getFirst().config().get("table"));
+        var tree=yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.parse(result.book().quests().getFirst().rewards().getFirst().config().get("table"));
         assertTrue(tree.entries().stream().allMatch(e->e.has("table") && !e.getAsJsonObject("config").has("table")));
         // A shared reference is legal; replacing it with a self-reference must stop instead of recursing forever.
         Files.writeString(temporary.resolve("reward_tables/aa.snbt"),"{id:'aa',rewards:[{type:'all_table',table_id:'aa'}]}",StandardCharsets.UTF_8);
@@ -138,7 +138,7 @@ class FtbV13ImporterTest {
         var result = new FtbV13Importer().importBook(temporary, "test", "main");
         assertFalse(result.report().hasErrors(), result.report().toJson());
         var reward = result.book().quests().getFirst().rewards().getFirst();
-        var tree = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(reward.config().get("table"));
+        var tree = yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.parse(reward.config().get("table"));
         assertEquals("choice",tree.mode()); assertEquals(2,tree.entries().size());
         assertEquals("brnquest:reward_table",reward.typeId().toString());
         assertTrue(reward.config().containsKey("table_data"));
@@ -158,13 +158,13 @@ class FtbV13ImporterTest {
         var result = new FtbV13Importer().importBook(temporary, "test", "main");
         assertFalse(result.report().hasErrors(), result.report().toJson());
         var rewards = result.book().quests().getFirst().rewards();
-        var random = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
-        var loot = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.get(1).config().get("table"));
+        var random = yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
+        var loot = yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.parse(rewards.get(1).config().get("table"));
         assertEquals("brnquest:reward_table", rewards.get(1).typeId().toString());
         assertEquals("random", random.mode()); assertEquals(2, random.rolls()); assertTrue(random.replacement());
         assertEquals(0, random.emptyWeight().signum()); assertEquals(new java.math.BigDecimal("2"), loot.emptyWeight());
-        assertTrue(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.always(random.entries().getFirst()));
-        assertEquals(new java.math.BigDecimal("0.25"), yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.weight(random.entries().get(1)));
+        assertTrue(yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.always(random.entries().getFirst()));
+        assertEquals(new java.math.BigDecimal("0.25"), yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.weight(random.entries().get(1)));
         assertTrue(rewards.getFirst().config().containsKey("table_data"), "original source remains available");
     }
 
@@ -204,10 +204,10 @@ class FtbV13ImporterTest {
         assertFalse(imported.report().hasErrors(),imported.report().toJson());
         var rewards = imported.book().quests().getFirst().rewards();
         assertEquals("brnquest:reward_table",rewards.getFirst().typeId().toString());
-        var tree = yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
+        var tree = yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.parse(rewards.getFirst().config().get("table"));
         assertEquals(2,tree.entries().size());
         assertTrue(tree.entries().getFirst().get("always").getAsBoolean());
-        assertEquals("say imported",yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableTree.config(tree.entries().get(1)).get("command"));
+        assertEquals("say imported",yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableTree.config(tree.entries().get(1)).get("command"));
         assertEquals(rewards.getFirst().config().get("table"),rewards.get(1).config().get("table"));
         assertFalse(imported.book().legacyIds().containsKey("0000000000000001"),"child aliases never replace root IDs");
     }

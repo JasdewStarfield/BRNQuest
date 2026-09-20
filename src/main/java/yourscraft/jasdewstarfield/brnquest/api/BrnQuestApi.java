@@ -318,6 +318,29 @@ public final class BrnQuestApi {
                 .findFirst().map(ApiViews::reward);
     }
 
+    /** Server-thread-only claim identity query; reading never claims a reward or advances a type journal. */
+    public static Optional<yourscraft.jasdewstarfield.brnquest.reward.RewardClaimState> getRewardClaimState(
+            ServerPlayer player, String rewardId) {
+        if (player == null || player.getServer() == null || !player.getServer().isSameThread()) return Optional.empty();
+        var id = resolve(rewardId);
+        var active = snapshot();
+        var owner = ProgressOwnerService.resolve(player).filter(value -> value.lifecycle() == ProgressOwnerLifecycle.ACTIVE);
+        if (id.isEmpty() || active.isEmpty() || owner.isEmpty()) return Optional.empty();
+        for (var quest : active.orElseThrow().book().quests()) for (var reward : quest.rewards()) {
+            if (!reward.id().equals(id.orElseThrow())) continue;
+            var progress = ProgressEngine.get().progress(player);
+            var context = new yourscraft.jasdewstarfield.brnquest.reward.RewardClaimContext(
+                    new yourscraft.jasdewstarfield.brnquest.reward.RewardContext(player, quest.bookId(), quest.id(), ApiViews.reward(reward)),
+                    owner.orElseThrow().id(), progress.completionCycles(quest.id().toString()), progress.claimGeneration(quest.id().toString()));
+            boolean completed = progress.status(quest.id().toString()).ordinal() >= QuestStatus.COMPLETED.ordinal();
+            boolean member = owner.orElseThrow().id().providerId().equals(
+                    yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders.PERSONAL)
+                    || progress.completionMembers(quest.id().toString()).contains(player.getUUID());
+            return Optional.of(new yourscraft.jasdewstarfield.brnquest.reward.RewardClaimState(context, active.orElseThrow().revision(), completed && member));
+        }
+        return Optional.empty();
+    }
+
     /** Returns the current immutable owner without exposing the mutable progress store. */
     public static Optional<ProgressOwnerView> getProgressOwner(ServerPlayer player) {
         return ProgressOwnerService.resolve(player);

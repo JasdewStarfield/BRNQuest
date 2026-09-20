@@ -38,7 +38,7 @@ public final class FtbImportService {
             throw new IOException("Import source is outside the allowed root or does not exist: " + sourceName);
         }
         validateSourceTree(importRoot, source);
-        FtbImportResult result = withImportSource(new FtbV13Importer().importBook(source,
+        FtbImportResult result = withImportSource(FtbImportBackend.installed().importBook(source,
                 namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT)), sourceName);
         validateItems(server, result);
         String json = NativeBookJson.encode(result.book());

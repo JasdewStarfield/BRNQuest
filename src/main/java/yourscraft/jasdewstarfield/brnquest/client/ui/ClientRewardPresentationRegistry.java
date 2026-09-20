@@ -20,73 +20,6 @@ public final class ClientRewardPresentationRegistry {
     private static final Map<ResourceLocation, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> TYPE_ICONS = new ConcurrentHashMap<>();
     private static volatile boolean frozen;
 
-    static {
-        registerBuiltin(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID, new ClientRewardPresentation() {
-            public String symbol(RewardView reward) { return "▣"; }
-            public Component interactionHint(RewardPresentationContext context) {
-                if (!context.claimed() && !context.claimable()) return title(context);
-                return RewardTableClientState.hint(context.reward().id().toString(), context.claimed());
-            }
-            public Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.loot_table"); }
-            public Component title(RewardPresentationContext context) {
-                String title = context.reward().config().getOrDefault("title", "");
-                return title.isBlank() ? typeName(context.reward()).copy().append(" · ")
-                        .append(context.reward().config().getOrDefault("loot_table", "")) : Component.literal(title);
-            }
-            // A single loot-table reference has no candidate browser; rules belong to the editor field help.
-        });
-        registerBuiltin(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new ClientRewardPresentation() {
-            public String symbol(RewardView reward) { return "▤"; }
-            public Component interactionHint(RewardPresentationContext context) {
-                if (!context.claimed() && !context.claimable()) return ClientRewardPresentation.super.interactionHint(context);
-                return RewardTableClientState.hint(context.reward().id().toString(), context.claimed());
-            }
-            public Component typeName(RewardView reward) { return Component.translatable("screen.brnquest.type.reward.reward_table"); }
-            public Component title(RewardPresentationContext context) {
-                String title = context.reward().config().getOrDefault("title", "");
-                return title.isBlank() ? typeName(context.reward()) : Component.literal(title);
-            }
-            public java.util.Optional<java.util.List<Component>> resolvedOptions(RewardView view) {
-                try {
-                    return java.util.Optional.of(RewardTablePreview.parse(view).lines(
-                            child -> RewardEntryDetails.resolve(net.minecraft.client.Minecraft.getInstance(), child).summary()));
-                } catch (RuntimeException error) { return java.util.Optional.of(java.util.List.of(Component.literal("Invalid reward table"))); }
-            }
-        });
-        registerBuiltin(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementPresentation.Reward());
-        registerBuiltin(RewardTypes.COMMAND, new ClientRewardPresentation() {
-            public String symbol(RewardView reward) { return ">_"; }
-            public Component title(RewardPresentationContext context) {
-                String title = context.reward().config().getOrDefault("title", "");
-                return title.isBlank() ? typeName(context.reward()) : Component.literal(title);
-            }
-            public Component typeName(RewardView reward) {
-                return Component.translatable("screen.brnquest.type.reward.command");
-            }
-        });
-        registerBuiltin(RewardTypes.ITEM, new ClientRewardPresentation() {
-            public String itemSnbt(RewardView reward) { return reward.config().getOrDefault("item", ""); }
-            public ItemStack displayedItem(RewardView reward, ItemStack parsedItem) {
-                if (parsedItem == null || parsedItem.isEmpty()) return ItemStack.EMPTY;
-                ItemStack displayed = parsedItem.copy();
-                displayed.setCount(displayedCount(reward, displayed.getCount()));
-                return displayed;
-            }
-            public Component typeName(RewardView reward) {
-                return Component.translatable("screen.brnquest.type.reward.item");
-            }
-
-        });
-        registerBuiltin(RewardTypes.CUSTOM, new ClientRewardPresentation() {
-            public String symbol(RewardView reward) { return "◆"; }
-            public Component typeName(RewardView reward) {
-                return Component.translatable("screen.brnquest.type.reward.custom");
-            }
-        });
-        registerBuiltin(RewardTypes.XP, experience(false));
-        registerBuiltin(RewardTypes.XP_LEVELS, experience(true));
-    }
-
     private ClientRewardPresentationRegistry() {}
 
     public static synchronized void register(ResourceLocation id, ClientRewardPresentation presentation) {
@@ -104,13 +37,13 @@ public final class ClientRewardPresentationRegistry {
         TYPE_ICONS.put(id, icon);
     }
 
-    private static void registerBuiltin(ResourceLocation id, ClientRewardPresentation presentation) {
-        register(id, presentation, QuestTypeIcons.forType(id));
-    }
-
     /** No synthetic instance/config is required to render a type choice. */
     public static yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon typeIcon(ResourceLocation id) {
-        return get(id).typeIcon().orElseGet(() -> TYPE_ICONS.getOrDefault(id, QuestTypeIcons.fallback()));
+        return get(id).typeIcon().orElseGet(() -> TYPE_ICONS.getOrDefault(id, ClientTypeIconFallback.icon()));
+    }
+    /** Distinguishes registered decoration from the generic unknown-type fallback. */
+    static boolean hasTypeIcon(ResourceLocation id) {
+        return get(id).typeIcon().isPresent() || TYPE_ICONS.containsKey(id);
     }
     public static ClientRewardPresentation get(ResourceLocation id) {
         return PRESENTATIONS.getOrDefault(id, FALLBACK);
@@ -120,28 +53,5 @@ public final class ClientRewardPresentationRegistry {
     public static boolean isFrozen() { return frozen; }
 
     /** Computes the effective visual stack size without mutating the cached parsed ItemStack. */
-    static int displayedCount(RewardView reward, int baseCount) {
-        int multiplier;
-        try {
-            multiplier = Math.max(1, Integer.parseInt(reward.config().getOrDefault("count", "1")
-                    .replaceAll("[^0-9-]", "")));
-        } catch (NumberFormatException ignored) {
-            multiplier = 1;
-        }
-        return (int) Math.min(Integer.MAX_VALUE, (long) Math.max(1, baseCount) * multiplier);
-    }
 
-    private static ClientRewardPresentation experience(boolean levels) {
-        return new ClientRewardPresentation() {
-            public String symbol(RewardView reward) { return "✦"; }
-            public java.util.Optional<Component> contentSummary(RewardView reward) {
-                // XP units and config keys belong to this type, not the shared reward layout.
-                String key = levels ? "xp_levels" : "xp";
-                return java.util.Optional.of(typeName(reward).copy().append(" × " + reward.config().getOrDefault(key, "0")));
-            }
-            public Component typeName(RewardView reward) {
-                return Component.translatable(levels ? "screen.brnquest.type.reward.xp_levels" : "screen.brnquest.type.reward.xp");
-            }
-        };
-    }
 }

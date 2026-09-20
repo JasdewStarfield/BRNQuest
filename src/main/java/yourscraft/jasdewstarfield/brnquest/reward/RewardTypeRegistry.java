@@ -1,18 +1,10 @@
 package yourscraft.jasdewstarfield.brnquest.reward;
 
-import com.mojang.serialization.Codec;
-import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.runtime.ScriptExtensionRegistry;
 
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -23,24 +15,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class RewardTypeRegistry {
     private static final Map<ResourceLocation, RewardType<?>> TYPES = new ConcurrentHashMap<>();
     private static volatile boolean frozen;
-
-    static {
-        register(LootTableReward.ID, new LootTableReward());
-        LootTableReward.registerFieldSource();
-        register(yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID, new yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward());
-        register(yourscraft.jasdewstarfield.brnquest.task.advancement.AdvancementConfig.ID, new AdvancementReward());
-        register(RewardTypes.COMMAND, new CommandReward());
-        register(RewardTypes.ITEM, new ItemReward());
-        register(RewardTypes.XP, new ExperienceReward(false));
-        register(RewardTypes.XP_LEVELS, new ExperienceReward(true));
-        register(RewardTypes.CUSTOM, new RewardType<Map<String, String>>() {
-            public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
-            public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("custom")); }
-            public RewardResult execute(RewardContext context, Map<String, String> config) {
-                return RewardResult.success("Custom reward acknowledged");
-            }
-        });
-    }
 
     private RewardTypeRegistry() {}
 
@@ -72,63 +46,4 @@ public final class RewardTypeRegistry {
     public static synchronized void freeze() { frozen = true; }
     public static boolean isFrozen() { return frozen; }
 
-    /** Typed runtime view of an item reward while schema 1 remains string-map compatible. */
-    private record ItemRewardConfig(String item, String count) {
-        private static final Codec<ItemRewardConfig> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-                Codec.STRING.fieldOf("item").forGetter(ItemRewardConfig::item),
-                Codec.STRING.optionalFieldOf("count", "1").forGetter(ItemRewardConfig::count)
-        ).apply(instance, ItemRewardConfig::new));
-    }
-
-    private static final class ItemReward implements RewardType<ItemRewardConfig> {
-        public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition("item")); }
-        public Codec<ItemRewardConfig> configCodec() { return ItemRewardConfig.CODEC; }
-
-        public List<ConfigFieldDescriptor> configFields() {
-            return List.of(
-                    ConfigFieldDescriptor.field("item", ConfigValueType.ITEM_STACK).asRequired()
-                            .withHelp("ItemStack SNBT delivered by this reward"),
-                    ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER).withDefault("1")
-                            .withRange(1, Integer.MAX_VALUE).withHelp("Stack multiplier")
-            );
-        }
-
-        public RewardResult execute(RewardContext context, ItemRewardConfig config) {
-            try {
-                var player = context.player();
-                CompoundTag tag = TagParser.parseTag(config.item);
-                ItemStack stack = ItemStack.parseOptional(player.registryAccess(), tag);
-                int multiplier = Integer.parseInt(config.count.replaceAll("[^0-9-]", ""));
-                if (multiplier > 1) stack.setCount(stack.getCount() * multiplier);
-                if (stack.isEmpty()) return RewardResult.failure("Invalid item reward");
-                ItemRewardDelivery.deliver(player, stack);
-                return RewardResult.success("Item reward delivered");
-            } catch (Exception exception) {
-                return RewardResult.failure(exception.getMessage());
-            }
-        }
-
-    }
-
-    /** Experience rewards remain separate IDs because FTB stores points and levels separately. */
-    private record ExperienceReward(boolean levels) implements RewardType<Map<String, String>> {
-        public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BuiltinComposition(levels ? "xp_levels" : "xp")); }
-        public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
-        public List<ConfigFieldDescriptor> configFields() {
-            return List.of(ConfigFieldDescriptor.field(levels ? "xp_levels" : "xp", ConfigValueType.INTEGER)
-                    .withDefault("1").withRange(1, Integer.MAX_VALUE)
-                    .withHelp(levels ? "Whole experience levels to grant" : "Raw experience points to grant"));
-        }
-        public RewardResult execute(RewardContext context, Map<String, String> config) {
-            String key = levels ? "xp_levels" : "xp";
-            try {
-                int amount = Integer.parseInt(config.getOrDefault(key, "1").replaceAll("[^0-9-]", ""));
-                if (amount < 1) return RewardResult.failure("Experience reward must be positive");
-                if (levels) context.player().giveExperienceLevels(amount); else context.player().giveExperiencePoints(amount);
-                return RewardResult.success("Granted " + amount + (levels ? " experience levels" : " experience points"));
-            } catch (NumberFormatException exception) {
-                return RewardResult.failure("Invalid experience reward");
-            }
-        }
-    }
 }

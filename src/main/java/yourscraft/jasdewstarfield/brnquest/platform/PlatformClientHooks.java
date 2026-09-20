@@ -19,6 +19,7 @@ import yourscraft.jasdewstarfield.brnquest.runtime.ExtensionRegistrationLifecycl
 public final class PlatformClientHooks {
     private PlatformClientHooks() {}
     public static void register(IEventBus bus) {
+        yourscraft.jasdewstarfield.brnquest.client.ClientModule.registerInstalled();
         bus.addListener(PlatformClientHooks::setup);
         bus.addListener(PlatformClientHooks::keys);
         bus.addListener(PlatformClientHooks::layers);
@@ -45,7 +46,6 @@ public final class PlatformClientHooks {
                         request.sessionId(), request.draftRevision()));
     }
     private static void logout(ClientPlayerNetworkEvent.LoggingOut event) {
-        yourscraft.jasdewstarfield.brnquest.client.ui.RewardTableClientState.clear();
         ClientEditorState.get().disconnected();
         yourscraft.jasdewstarfield.brnquest.client.ClientQuestState.get().disconnected();
     }

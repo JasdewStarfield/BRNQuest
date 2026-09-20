@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.builtin.client.ItemSubmissionScreen;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;

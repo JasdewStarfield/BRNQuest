@@ -28,6 +28,7 @@ class LegacyNormalizationCompatibilityTest {
             }
             var task = (TaskType<?>) taskClass.getConstructor().newInstance();
             var reward = (RewardType<?>) rewardClass.getConstructor().newInstance();
+            assertDoesNotThrow(() -> reward.clientClaimResponse(null, null, OperationResult.success("legacy")));
             var context = ConfigNormalizationContext.withRegistries(RegistryAccess.EMPTY);
             assertEquals(Map.of("legacy", "task"), task.normalizeConfig(context, Map.of()));
             assertEquals(Map.of("legacy", "reward"), reward.normalizeConfig(context, Map.of()));

@@ -32,8 +32,6 @@ public final class BrnQuestCommands {
                         .then(Commands.literal("claim").then(Commands.argument("player", EntityArgument.player()).then(Commands.argument("reward", StringArgumentType.string()).executes(BrnQuestCommands::rewardClaim)))))
                 .then(Commands.literal("validate").requires(s -> s.hasPermission(2)).executes(BrnQuestCommands::validate))
                 .then(HealthCommand.build())
-                .then(CommandRewardCommands.build())
-                .then(RewardTableCommands.build())
                 .then(Commands.literal("diagnose").requires(s -> s.hasPermission(2)).executes(BrnQuestCommands::diagnose))
                 .then(Commands.literal("workspace").requires(s -> s.hasPermission(2))
                         .then(Commands.literal("deploy")

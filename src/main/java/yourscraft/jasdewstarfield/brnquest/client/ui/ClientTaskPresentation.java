@@ -22,6 +22,18 @@ public interface ClientTaskPresentation {
         return java.util.Optional.empty();
     }
 
+    /** Optional type-owned title parts; the common row retains clipping, layout and hover ownership. */
+    @ApiStatus(ApiStability.EXPERIMENTAL)
+    record TitleDecoration(Component qualifier, Component subject, Component hint, boolean wholeTitle) {
+        public TitleDecoration { qualifier = qualifier.copy(); subject = subject.copy(); hint = hint.copy(); }
+        public Component qualifier() { return qualifier.copy(); }
+        public Component subject() { return subject.copy(); }
+        public Component hint() { return hint.copy(); }
+    }
+    default java.util.Optional<TitleDecoration> titleDecoration(TaskPresentationContext context) { return java.util.Optional.empty(); }
+    /** Display quantity belongs to the type's config schema. */
+    default int requiredCount(TaskView task) { return 1; }
+
     enum NodeStyle { ITEM, CHECKMARK, CUSTOM, PLACEHOLDER }
 
     default NodeStyle nodeStyle(TaskView task) { return NodeStyle.PLACEHOLDER; }
@@ -46,7 +58,6 @@ public interface ClientTaskPresentation {
         return resolvedOptions(context.task()).map(options -> new ResolvedOptionsScreen(parent,
                 () -> resolvedOptions(context.task()).orElse(List.of())));
     }
-
 
     /** Interpret only the server ledger, independently of inventory readiness or historical quest status. */
     default boolean confirmed(TaskView task, long storedProgress) { return storedProgress >= 1; }

@@ -43,7 +43,11 @@ The `docs/` directory contains only public user, administrator, and extension-au
 
 ## Source layout
 
-Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Stable API, data/import, progress, task, reward, owner, network, client, integration, command, and diagnostics concerns remain separated by package.
+Production code uses the base package `yourscraft.jasdewstarfield.brnquest`. Separate Java compilation units enforce the dependency direction `main` (core) ← `builtin` ← `integration` (FTB conversion and JEI); integrations also use core directly. Internal service providers assemble common and client registrations. The published mod remains one JAR with the same mod ID, type IDs, resource paths and public API.
+
+`gameTest`, `moduleTest`, `opacTest`, and `exampleAddon` are development-only source sets. Their classes, worlds and fixtures are excluded from the production JAR. Shared language catalogs and generic UI sprites belong to core; built-in-only type sprites belong to `builtin`.
+
+生产代码按 core、内置类型和 FTB/JEI 适配层分别编译，编译依赖单向向下。安装仍使用一个 JAR，模组 ID、类型 ID、资源路径及公开 API 保持兼容；测试与示例源码集不进入正式产物。
 
 Internal implementation plans, validation procedures, and historical acceptance reports are maintained in BRNQuest-Docs and are not part of the user documentation set shipped with the mod.
 

@@ -85,7 +85,7 @@ enum QuestTypedEntryKind {
         return this == TASK ? TaskTypeRegistry.get(typeId) != null : RewardTypeRegistry.get(typeId) != null;
     }
 
-    boolean itemBacked(ResourceLocation typeId) { return this == REWARD && typeId.equals(RewardTypes.ITEM); }
-    boolean choiceBacked(ResourceLocation typeId) { return this == TASK && typeId.equals(TaskTypes.ITEM); }
+    boolean itemBacked(ResourceLocation typeId) { return this == REWARD && ClientConfigEditors.creation(true, typeId).isPresent(); }
+    boolean choiceBacked(ResourceLocation typeId) { return this == TASK && ClientConfigEditors.creation(false, typeId).isPresent(); }
     ResourceLocation hiddenLegacyAlias() { return this == TASK ? TaskTypes.ITEM_CHOICE : null; }
 }

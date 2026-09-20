@@ -7,7 +7,6 @@ import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.RewardView;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 
 import java.util.ArrayList;
@@ -108,8 +107,7 @@ public final class ConfigEditorSchemas {
                 case RESOURCE_LOCATION -> {
                     if (ResourceLocation.tryParse(value) == null) throw new IllegalArgumentException();
                 }
-                case ITEM_MATCHER -> ItemChoiceMatcher.parse(value).error().ifPresent(error ->
-                        issues.add(issue(field, "INVALID_ITEM_MATCHER", error.message())));
+                case ITEM_MATCHER -> { /* The registered field validator owns its matcher schema. */ }
                 case TEXT, ITEM_STACK -> { /* Codec and publish validation retain final authority. */ }
             }
         } catch (IllegalArgumentException exception) {

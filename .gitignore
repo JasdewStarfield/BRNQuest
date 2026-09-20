@@ -21,3 +21,6 @@ Thumbs.db
 # Keep the Gradle Wrapper binary even though release archives are ignored.
 *.jar
 !gradle/wrapper/gradle-wrapper.jar
+
+# Frozen pre-module add-on is intentional binary compatibility evidence.
+!src/test/compatibility/experimental26/brnquest-example-experimental26.jar

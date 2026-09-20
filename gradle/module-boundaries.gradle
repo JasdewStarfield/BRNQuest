@@ -1,0 +1,74 @@
+// Check resolved compilation inputs, so an accidental classpath extension cannot bypass package tests.
+def moduleEdges = [main: [], builtin: ['main'], integration: ['main', 'builtin'],
+                   gameTest: ['main', 'builtin', 'integration'], moduleTest: ['main'], exampleAddon: ['main']]
+tasks.register('verifyModuleGraph') {
+    doLast {
+        def actual = [:]
+        moduleEdges.each { name, expected ->
+            def inputs = sourceSets[name].compileClasspath.files.collect { it.canonicalFile } as Set
+            actual[name] = moduleEdges.keySet().findAll { target ->
+                sourceSets[target].output.files.any { inputs.contains(it.canonicalFile) }
+            } as Set
+            if (actual[name] != (expected as Set)) {
+                throw new GradleException("Unexpected compilation edges for ${name}: ${actual[name]}, expected ${expected}")
+            }
+        }
+        def visited = [] as Set
+        def visiting = [] as Set
+        Closure visit
+        visit = { name ->
+            if (visiting.contains(name)) throw new GradleException("Compilation cycle at ${name}")
+            if (visited.contains(name)) return
+            visiting.add(name)
+            actual[name].each { visit(it) }
+            visiting.remove(name)
+            visited.add(name)
+        }
+        actual.keySet().each { visit(it) }
+        logger.lifecycle("Verified compilation graph: ${actual}")
+    }
+}
+
+// Inspect the final archive, not just the source roots: fixture leakage can originate in generated resources.
+tasks.register('verifyProductionArchive') {
+    dependsOn tasks.named('jar')
+    doLast {
+        new java.util.zip.ZipFile(tasks.named('jar').get().archiveFile.get().asFile).withCloseable { archive ->
+            def names = archive.entries().collect { it.name }
+            def forbidden = names.findAll { it.contains('GameTests') || it.contains('/gametest/') ||
+                    it.contains('/moduletest/') || it.contains('/opactest/') || it.contains('brnquestexample/') ||
+                    it.startsWith('data/brnquest/structure/') || it.startsWith('fixtures/') ||
+                    it.startsWith('world/') || it.startsWith('docs/validation/') || it == 'module-book.json' }
+            if (!forbidden.empty) throw new GradleException("Test/private content in production archive: ${forbidden}")
+            ['META-INF/neoforge.mods.toml', 'META-INF/THIRD_PARTY_NOTICES.md',
+             'META-INF/licenses/commonmark.txt',
+             'META-INF/services/yourscraft.jasdewstarfield.brnquest.platform.RuntimeModule',
+             'META-INF/services/yourscraft.jasdewstarfield.brnquest.client.ClientModule',
+             'META-INF/services/yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportBackend',
+             'assets/brnquest/lang/en_us.json', 'assets/brnquest/lang/zh_cn.json'].each {
+                if (!names.contains(it)) throw new GradleException("Missing assembly resource ${it}")
+            }
+            if (!names.any { it.startsWith('assets/brnquest/textures/gui/sprites/editor/type/') }) {
+                throw new GradleException('Built-in type icons were not assembled')
+            }
+        }
+    }
+}
+tasks.named('check').configure { dependsOn 'verifyModuleGraph', 'verifyProductionArchive' }
+
+// Binary compatibility input is immutable; a freshly compiled example cannot silently replace it.
+tasks.register('verifyLegacyAddon') {
+    inputs.files('src/test/compatibility/experimental26/baseline.properties',
+            'src/test/compatibility/experimental26/brnquest-example-experimental26.jar')
+    doLast {
+        def baseline = new Properties()
+        file('src/test/compatibility/experimental26/baseline.properties').withInputStream { baseline.load(it) }
+        def artifact = file("src/test/compatibility/experimental26/${baseline.artifact}")
+        def digest = java.security.MessageDigest.getInstance('SHA-256').digest(artifact.bytes).encodeHex().toString()
+        if (digest != baseline.artifactSha256) throw new GradleException('Frozen add-on binary changed')
+    }
+}
+tasks.named('check').configure { dependsOn 'verifyLegacyAddon' }
+
+// Compile every development fixture on check; none of these outputs is added to the shipping JAR.
+tasks.named('check').configure { dependsOn 'compileGameTestJava', 'compileModuleTestJava' }

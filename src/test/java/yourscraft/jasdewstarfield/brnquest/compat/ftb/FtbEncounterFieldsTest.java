@@ -1,7 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.compat.ftb;
 import org.junit.jupiter.api.Test;
 import net.minecraft.nbt.*;
-import yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig;
+import yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 class FtbEncounterFieldsTest {

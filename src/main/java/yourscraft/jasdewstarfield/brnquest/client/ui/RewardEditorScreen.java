@@ -9,16 +9,19 @@ import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import java.util.List;
 
 /** Shared child-panel chrome; the quest screen continues to own the authoring lease. */
-abstract class RewardEditorScreen extends Screen {
+public abstract class RewardEditorScreen extends Screen {
     protected final Screen parent;
     protected final EditorActionGroup<String> controls = new EditorActionGroup<>();
     protected String issue = "";
     private long lastFrame;
 
-    RewardEditorScreen(Screen parent, Component title) {
+    public RewardEditorScreen(Screen parent, Component title) {
         super(title);
         this.parent = parent;
     }
+
+    /** Read-only parent access supports breadcrumbs across module-owned nested editors. */
+    public Screen parentScreen() { return parent; }
 
     protected UiRect panel() {
         int w = Math.min(620, width - 24), h = Math.min(460, height - 24);

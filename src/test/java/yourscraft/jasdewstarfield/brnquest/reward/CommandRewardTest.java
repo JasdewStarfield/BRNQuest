@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.reward;
+import yourscraft.jasdewstarfield.brnquest.builtin.reward.*;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -15,12 +15,12 @@ class TaskDisplayStateTest {
     @Test void itemPresentationsOnlySatisfyQuestWideChecksAfterAnIndividualReceipt() {
         // Inventory readiness and quest status cannot substitute for the shared item receipt rule.
         TaskView ordinary = task(Map.of("count", "8"));
-        assertFalse(ClientTaskPresentationRegistry.itemObjectiveSubmitted(ordinary, 0));
-        assertTrue(ClientTaskPresentationRegistry.itemObjectiveSubmitted(ordinary, 1));
+        assertFalse(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveSubmitted(ordinary, 0));
+        assertTrue(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveSubmitted(ordinary, 1));
 
         TaskView crafting = task(Map.of("count", "8", "only_from_crafting", "true"));
-        assertFalse(ClientTaskPresentationRegistry.itemObjectiveSubmitted(crafting, 4));
-        assertTrue(ClientTaskPresentationRegistry.itemObjectiveSubmitted(crafting, 8));
+        assertFalse(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveSubmitted(crafting, 4));
+        assertTrue(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveSubmitted(crafting, 8));
     }
 
     @Test void authoritativeLedgerWinsOverLocalAndPendingState() {
@@ -30,16 +30,6 @@ class TaskDisplayStateTest {
         assertEquals(TaskDisplayState.SUBMITTED, state);
         assertTrue(state.confirmed());
         assertFalse(state.actionable());
-    }
-
-    @Test void experienceReadinessMatchesTheConfiguredBalanceKind() {
-        TaskView points = taskOfType("brnquest:xp", Map.of("value", "5", "points", "true"));
-        assertFalse(ClientTaskPresentationRegistry.experienceAvailable(points, 4, 20));
-        assertTrue(ClientTaskPresentationRegistry.experienceAvailable(points, 5, 0));
-
-        TaskView levels = taskOfType("brnquest:xp", Map.of("value", "2", "points", "false"));
-        assertFalse(ClientTaskPresentationRegistry.experienceAvailable(levels, 100, 1));
-        assertTrue(ClientTaskPresentationRegistry.experienceAvailable(levels, 0, 2));
     }
 
     @Test void completedQuestRemainsDistinctFromAnExplicitlySubmittedRow() {

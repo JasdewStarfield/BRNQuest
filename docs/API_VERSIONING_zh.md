@@ -66,7 +66,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.25`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.26`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -158,3 +158,9 @@ ClientTaskPresentation 与 ClientRewardPresentation 新增默认 `icon(view)`，
 网络协议 17 新增自选奖励请求及展示分页包，客户端和服务端须一起更新。选择携带冻结尝试身份、节点 occurrence、状态版本和条目 ID；服务器重新校验执行者及当前根资格，不接受客户端提供的奖励效果。
 
 网络协议 18 为嵌套自选响应增加当前 occurrence 与版本，路径字段允许最长 1024 字节；客户端按服务端待选择节点继续下一步。API 仍为 experimental.14，本阶段没有新增公开组合接口。
+
+## experimental.25 → experimental.26
+
+全部内置类型使用公开注册入口，并将专属页面、协议和生命周期接线归入内部实现包。新增 `ClientTaskPresentation` 标题装饰与数量默认方法、`ClientRewardPresentation` 状态刷新与领取准备默认方法、`RewardType.clientClaimResponse` 默认方法，以及 `ClientConfigEditors` 上下文重载和创建工厂。已有方法保持签名，旧编译消费者继承兼容默认行为。配置、协议 `18`、恢复日志及单 JAR 安装方式不变。调用边界见 [`EXTENSION_API_zh.md`](EXTENSION_API_zh.md)，英文迁移见 [`API_MIGRATION.md`](API_MIGRATION.md)。
+
+`BrnQuestApi.getRewardClaimState(player, rewardId)` 在服务器线程返回只读 `RewardClaimState`，包含既有不可变领取上下文（owner、周期、重置 generation）、revision 与建议性的 `eligible` 标记。任务已完成且玩家属于完成时成员时为 eligible；已领收据仍由领取事务判定，因此 eligible 不代表可再次发奖。玩家/服务器缺失、非服务器线程、奖励条目不存在或 owner 未激活时返回空。查询不执行奖励、不推进类型日志；恢复操作须重新查询身份并进入普通公开领取 API，不能把缓存快照作为授权。内置观测通过既有 `resetTransientState`、reload/logout 和只读 owner 身份清理本地计时，插件不接触可变进度账本。

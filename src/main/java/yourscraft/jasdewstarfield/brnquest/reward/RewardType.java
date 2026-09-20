@@ -34,5 +34,9 @@ public interface RewardType<TConfig> {
     default java.util.Optional<ComposableReward> composition() { return java.util.Optional.empty(); }
     /** Interactive rewards require an explicit player claim; automatic triggers must skip them. */
     default boolean requiresManualClaim(java.util.Map<String, String> config) { return false; }
+    /** Responds to an explicit client claim after the core transaction; no ledger access is exposed. */
+    default void clientClaimResponse(net.minecraft.server.level.ServerPlayer player,
+                                     yourscraft.jasdewstarfield.brnquest.api.RewardView reward,
+                                     yourscraft.jasdewstarfield.brnquest.api.OperationResult result) {}
     RewardResult execute(RewardContext context, TConfig config);
 }

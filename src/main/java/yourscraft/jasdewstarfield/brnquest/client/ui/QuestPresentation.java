@@ -69,7 +69,7 @@ final class QuestPresentation {
     }
 
     static int requiredCount(TaskDefinition task) {
-        return ClientTaskPresentationRegistry.requiredCount(ApiViews.task(task));
+        return ClientTaskPresentationRegistry.get(task.typeId()).requiredCount(ApiViews.task(task));
     }
 
     /** An authored quest title stays authoritative even when it resembles an ID; only a blank title may fall back. */

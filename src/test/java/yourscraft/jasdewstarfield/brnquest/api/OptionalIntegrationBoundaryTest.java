@@ -40,7 +40,7 @@ class OptionalIntegrationBoundaryTest {
 
     @Test void coreSourcesNeverResolveJeiTypesWhenTheOptionalModIsAbsent() throws IOException {
         Path root = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java");
-        Path integration = root.resolve(Path.of("yourscraft", "jasdewstarfield", "brnquest", "compat", "jei"));
+        Path integration = root.resolve("../../integration/java/yourscraft/jasdewstarfield/brnquest/compat/jei").normalize();
         List<Path> sources;
         try (var paths = Files.walk(root)) {
             sources = paths.filter(path -> path.toString().endsWith(".java"))
@@ -124,7 +124,7 @@ class OptionalIntegrationBoundaryTest {
     }
 
     @Test void jeiRegistersEveryScreenThatOffersShortcutLookupTargets() throws IOException {
-        Path plugin = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java",
+        Path plugin = Path.of(System.getProperty("brnquest.projectDir"), "src", "integration", "java",
                 "yourscraft", "jasdewstarfield", "brnquest", "compat", "jei", "BrnQuestJeiPlugin.java");
         String source = Files.readString(plugin, StandardCharsets.UTF_8);
 
@@ -138,7 +138,7 @@ class OptionalIntegrationBoundaryTest {
     }
 
     @Test void jeiScreenPropertiesRejectThePreInitZeroSizedFrame() throws IOException {
-        Path plugin = Path.of(System.getProperty("brnquest.projectDir"), "src", "main", "java",
+        Path plugin = Path.of(System.getProperty("brnquest.projectDir"), "src", "integration", "java",
                 "yourscraft", "jasdewstarfield", "brnquest", "compat", "jei", "BrnQuestJeiPlugin.java");
         String source = Files.readString(plugin, StandardCharsets.UTF_8);
         int method = source.indexOf("private static IGuiProperties questProperties");

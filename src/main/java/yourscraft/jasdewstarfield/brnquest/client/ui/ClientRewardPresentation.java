@@ -22,6 +22,11 @@ public interface ClientRewardPresentation {
     /** Resolved, read-only choices. Empty Optional means no browser; an empty list means no resolved members. */
     default java.util.Optional<java.util.List<Component>> resolvedOptions(RewardView view) { return java.util.Optional.empty(); }
 
+    /** Called only by the live quest screen, never by previews or tooltips. */
+    default void refresh(RewardView reward) {}
+    /** Arms a type-owned response page before the shared claim request is sent. */
+    default void prepareClaim(String revision, RewardView reward) {}
+
     default String itemSnbt(RewardView reward) { return ""; }
     default String symbol(RewardView reward) { return "?"; }
     /** Returns a defensive display copy; item rewards may apply a separate configured multiplier. */

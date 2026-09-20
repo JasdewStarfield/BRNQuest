@@ -72,18 +72,18 @@ class ClientPresentationContractTest {
     @Test void itemTaskConsumptionWordingHonorsCanonicalAndLegacyFields() {
         TaskView consuming = task(TaskTypes.ITEM, Map.of("consume_items", "true"));
         TaskView observing = task(TaskTypes.ITEM, Map.of("consume_items", "false", "consume", "true"));
-        assertTrue(ClientTaskPresentationRegistry.consumesItems(consuming));
-        assertTrue(ClientTaskPresentationRegistry.consumesItems(task(TaskTypes.ITEM,
+        assertTrue(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.consumesItems(consuming));
+        assertTrue(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.consumesItems(task(TaskTypes.ITEM,
                 Map.of("consume", "1b"))));
-        assertFalse(ClientTaskPresentationRegistry.consumesItems(observing));
+        assertFalse(yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.consumesItems(observing));
         assertEquals(Component.translatable("screen.brnquest.task.item.require.label"),
-                ClientTaskPresentationRegistry.itemObjectiveQualifier(consuming));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveQualifier(consuming));
         assertEquals(Component.translatable("screen.brnquest.task.item.hold.label"),
-                ClientTaskPresentationRegistry.itemObjectiveQualifier(observing));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveQualifier(observing));
         assertEquals(Component.translatable("screen.brnquest.task.item.require.hint"),
-                ClientTaskPresentationRegistry.itemObjectiveQualifierHint(consuming));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveQualifierHint(consuming));
         assertEquals(Component.translatable("screen.brnquest.task.item.hold.hint"),
-                ClientTaskPresentationRegistry.itemObjectiveQualifierHint(observing));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemObjectiveQualifierHint(observing));
     }
 
     @Test void multipleItemObjectiveWordingUsesRequiredTypesInsteadOfStackCount() {
@@ -94,18 +94,18 @@ class ClientPresentationContractTest {
         TaskView consuming = task(TaskTypes.ITEM, Map.of("matcher", matcher, "consume_items", "true"));
         TaskView observing = task(TaskTypes.ITEM, Map.of("matcher", matcher, "consume_items", "false"));
 
-        var spec = ClientTaskPresentationRegistry.itemSpec(consuming);
+        var spec = yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.itemSpec(consuming);
         assertEquals(Component.translatable("screen.brnquest.task.item_choice.require", 3, 2),
-                ClientTaskPresentationRegistry.multipleItemObjectiveTitle(consuming, spec));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.multipleItemObjectiveTitle(consuming, spec));
         assertEquals(Component.translatable("screen.brnquest.task.item_choice.hold", 3, 2),
-                ClientTaskPresentationRegistry.multipleItemObjectiveTitle(observing, spec));
+                yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinItemPresentation.multipleItemObjectiveTitle(observing, spec));
     }
 
     @Test void itemRewardDisplayCountIncludesTheConfiguredMultiplier() {
         RewardView reward = reward(RewardTypes.ITEM, Map.of("count", "4"));
 
-        assertEquals(8, ClientRewardPresentationRegistry.displayedCount(reward, 2));
-        assertEquals(1, ClientRewardPresentationRegistry.displayedCount(
+        assertEquals(8, yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinClientTypes.displayedCount(reward, 2));
+        assertEquals(1, yourscraft.jasdewstarfield.brnquest.builtin.client.BuiltinClientTypes.displayedCount(
                 reward(RewardTypes.ITEM, Map.of("count", "invalid")), 1));
     }
 

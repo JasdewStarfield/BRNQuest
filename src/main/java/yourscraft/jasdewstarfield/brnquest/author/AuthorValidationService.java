@@ -8,7 +8,6 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic;
 import yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 
 import java.util.HashSet;
 import java.util.HashMap;
@@ -123,13 +122,6 @@ public final class AuthorValidationService {
                 warn(report, "BQA-303", quest.id(), "behavior.repeat_cooldown_seconds",
                         "Repeat cooldown has no effect while the quest is not repeatable");
             }
-            quest.tasks().stream().filter(task -> booleanConfig(task.config(), "only_from_crafting"))
-                    .forEach(task -> ItemChoiceMatcher.parseConfig(task.config()).result().ifPresent(spec -> {
-                        if (spec.entries().size() != 1 || spec.requiredEntries() != 1) {
-                            add(report, "BQA-106", task.id(), "config.only_from_crafting",
-                                    "Crafting-only item objectives require exactly one accepted entry");
-                        }
-                    }));
         });
     }
 
@@ -138,10 +130,10 @@ public final class AuthorValidationService {
         book.quests().forEach(quest -> {
             quest.tasks().stream().filter(task -> included(task.id(), affected)).forEach(task ->
                     ConfigEditorSchemas.forTask(ApiViews.task(task)).issues().forEach(issue ->
-                            add(report, "BQA-T-" + issue.code(), task.id(), "config." + issue.fieldKey(), issue.message())));
+                            add(report, authorIssueCode("T", issue.code()), task.id(), "config." + issue.fieldKey(), issue.message())));
             quest.rewards().stream().filter(reward -> included(reward.id(), affected)).forEach(reward ->
                     ConfigEditorSchemas.forReward(ApiViews.reward(reward)).issues().forEach(issue ->
-                            add(report, "BQA-R-" + issue.code(), reward.id(), "config." + issue.fieldKey(), issue.message())));
+                            add(report, authorIssueCode("R", issue.code()), reward.id(), "config." + issue.fieldKey(), issue.message())));
         });
     }
 
@@ -190,4 +182,9 @@ public final class AuthorValidationService {
     private static void warn(DiagnosticReport report, String code, ResourceLocation id, String path, String message) {
         report.add(new Diagnostic(Diagnostic.Severity.WARN, code, "", path, id.toString(), message));
     }
+    /** Type validators may retain an existing author diagnostic identifier across migrations. */
+    private static String authorIssueCode(String kind, String code) {
+        return code.startsWith("BQA-") ? code : "BQA-" + kind + "-" + code;
+    }
+
 }

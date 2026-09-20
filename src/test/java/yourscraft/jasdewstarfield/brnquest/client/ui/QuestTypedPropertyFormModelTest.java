@@ -15,8 +15,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestTypedPropertyFormModelTest {
     @Test
+    void childPatchKeepsOuterEditsAndFieldsBeyondVisibleCapacity() {
+        var model = new QuestTypedPropertyFormModel(1);
+        model.openExisting(schema(List.of(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT),
+                ConfigFieldDescriptor.field("hidden", ConfigValueType.TEXT)),
+                Map.of("title", "old", "hidden", "old", "opaque", "keep"), false), "demo:item", "manual");
+        model.setConfigValue(0, "outer edit");
+        model.applyConfigPatch(Map.of("hidden", "child edit", "extension", "new"));
+        assertEquals(Map.of("title", "outer edit", "hidden", "child edit", "opaque", "keep", "extension", "new"), model.currentConfig());
+        model.applyConfigPatch(Map.of("title", "child title"));
+        assertEquals("child title", model.configValue(0));
+    }
+
+    @Test
     void rewardTableTitleAndChildEditsPreserveEachOtherAndUnknownFields() {
-        var type = new yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward();
+        var type = new yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableReward();
         var model = new QuestTypedPropertyFormModel(type.configFields().size());
         model.openExisting(schema(type.configFields(), Map.of("table", "original", "extension_data", "kept"), false),
                 "demo:table", "manual");

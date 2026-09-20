@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "module_test:book",
+  "title": "Pre-module schema-1 book",
+  "chapter_groups": [
+    {
+      "id": "module_test:group"
+    }
+  ],
+  "chapters": [
+    {
+      "id": "module_test:chapter",
+      "group_id": "module_test:group",
+      "quests": [
+        {
+          "id": "module_test:pending",
+          "title": "pending",
+          "tasks": [
+            {
+              "id": "module_test:pending_task",
+              "type": "brnquest:checkmark",
+              "config": {
+                "opaque": "preserve unknown payload 中文",
+                "nested": "{\"future\":true}"
+              }
+            }
+          ],
+          "rewards": [
+            {
+              "id": "module_test:pending_reward",
+              "type": "brnquest:xp",
+              "config": {
+                "opaque": "keep reward data",
+                "xp": "7"
+              },
+              "claim_policy": "manual"
+            }
+          ],
+          "dependencies": []
+        },
+        {
+          "id": "module_test:completed",
+          "title": "completed",
+          "tasks": [
+            {
+              "id": "module_test:completed_task",
+              "type": "brnquest:checkmark",
+              "config": {
+                "opaque": "preserve unknown payload 中文",
+                "nested": "{\"future\":true}"
+              }
+            }
+          ],
+          "rewards": [
+            {
+              "id": "module_test:completed_reward",
+              "type": "brnquest:xp",
+              "config": {
+                "opaque": "keep reward data",
+                "xp": "7"
+              },
+              "claim_policy": "manual"
+            }
+          ],
+          "dependencies": []
+        }
+      ]
+    }
+  ]
+}

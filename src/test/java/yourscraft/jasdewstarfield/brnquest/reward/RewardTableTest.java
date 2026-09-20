@@ -1,14 +1,15 @@
 package yourscraft.jasdewstarfield.brnquest.reward;
+import yourscraft.jasdewstarfield.brnquest.builtin.reward.*;
 
 import com.google.gson.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import yourscraft.jasdewstarfield.brnquest.reward.table.*;
+import yourscraft.jasdewstarfield.brnquest.builtin.reward.table.*;
 import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
-import static yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableJournal.*;
+import static yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableJournal.*;
 
 /** Pure configuration and forced-file tests exercise corruption and identity without granting game rewards. */
 class RewardTableTest {
@@ -88,10 +89,10 @@ class RewardTableTest {
         System.out.println("F5-A codec: nodes=256 bytes=" + maximum.getBytes(StandardCharsets.UTF_8).length + " meanMicros=" + (System.nanoTime()-started)/64/1000);
         var buffer = io.netty.buffer.Unpooled.buffer();
         try {
-            var payload = new yourscraft.jasdewstarfield.brnquest.network.RewardTableNetwork.Status("a".repeat(128),"b".repeat(256),"c".repeat(64));
-            var codec = yourscraft.jasdewstarfield.brnquest.network.RewardTableNetwork.Status.CODEC;
+            var payload = new yourscraft.jasdewstarfield.brnquest.builtin.network.RewardTableNetwork.Status("a".repeat(128),"b".repeat(256),"c".repeat(64));
+            var codec = yourscraft.jasdewstarfield.brnquest.builtin.network.RewardTableNetwork.Status.CODEC;
             codec.encode(buffer,payload); assertTrue(buffer.readableBytes()<512); assertEquals(payload,codec.decode(buffer));
-            assertThrows(RuntimeException.class,() -> codec.encode(buffer,new yourscraft.jasdewstarfield.brnquest.network.RewardTableNetwork.Status("r","b".repeat(257),"READY")));
+            assertThrows(RuntimeException.class,() -> codec.encode(buffer,new yourscraft.jasdewstarfield.brnquest.builtin.network.RewardTableNetwork.Status("r","b".repeat(257),"READY")));
         } finally { buffer.release(); }
     }
 }

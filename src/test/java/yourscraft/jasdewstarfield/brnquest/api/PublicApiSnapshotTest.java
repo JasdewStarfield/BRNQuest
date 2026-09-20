@@ -23,8 +23,9 @@ class PublicApiSnapshotTest {
     private static final String ROOT_PACKAGE = "yourscraft.jasdewstarfield.brnquest.";
     @Test void compiledPublicApiMatchesReviewedBaseline() throws Exception {
         Path project = Path.of(System.getProperty("brnquest.projectDir"));
-        Path classes = project.resolve(Path.of("build", "classes", "java", "main"));
-        Path actualReport = project.resolve(Path.of("build", "reports", "public-api-signatures.actual.txt"));
+        Path build = Path.of(System.getProperty("brnquest.buildDir"));
+        Path classes = build.resolve(Path.of("classes", "java", "main"));
+        Path actualReport = build.resolve(Path.of("reports", "public-api-signatures.actual.txt"));
         String actual = snapshot(classes);
         Files.createDirectories(actualReport.getParent());
         Files.writeString(actualReport, actual, StandardCharsets.UTF_8);
@@ -64,7 +65,7 @@ class PublicApiSnapshotTest {
         }
         apiTypes.sort(Comparator.comparing(Class::getName));
 
-        StringBuilder output = new StringBuilder("# BRNQuest public API 0.1.0-experimental.25\n");
+        StringBuilder output = new StringBuilder("# BRNQuest public API 0.1.0-experimental.26\n");
         for (Class<?> type : apiTypes) appendType(output, type);
         return output.toString();
     }

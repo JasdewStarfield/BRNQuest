@@ -10,8 +10,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import java.util.Optional;
 
 /** Configuration-only reward projection shared by live cells, frozen choices and author drafts. */
-record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon> decoration, String symbol) {
-    RewardEntryDetails {
+public record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon> decoration, String symbol) {
+    public RewardEntryDetails {
         summary = summary.copy();
         item = item.copy();
     }
@@ -20,7 +20,7 @@ record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon
     @Override public ItemStack item() { return item.copy(); }
 
     /** Parse display data only; this entry point never inspects claim state or sends a request. */
-    static RewardEntryDetails resolve(Minecraft minecraft, RewardView view) {
+    public static RewardEntryDetails resolve(Minecraft minecraft, RewardView view) {
         var presentation = ClientRewardPresentationRegistry.get(view.typeId());
         ItemStack parsed = ItemStack.EMPTY;
         try {
@@ -35,13 +35,13 @@ record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon
     }
 
     /** The input is a raw parsed stack, never a previously multiplied display stack. */
-    static RewardEntryDetails resolve(Minecraft minecraft, RewardView view,
+    public static RewardEntryDetails resolve(Minecraft minecraft, RewardView view,
                                       ClientRewardPresentation presentation, ItemStack parsed) {
         return fromDisplayed(minecraft, view, presentation, presentation.displayedItem(view, parsed.copy()));
     }
 
     /** Live reward cells already own the display copy; never apply their multiplier a second time. */
-    static RewardEntryDetails fromDisplayed(Minecraft minecraft, RewardView view,
+    public static RewardEntryDetails fromDisplayed(Minecraft minecraft, RewardView view,
                                            ClientRewardPresentation presentation, ItemStack stack) {
         Component detail;
         var contents = presentation.contentSummary(view);
@@ -64,15 +64,15 @@ record RewardEntryDetails(Component summary, ItemStack item, Optional<EditorIcon
         // Keep real items queryable, and retain legacy symbols when no addon icon was registered.
         if (decoration.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientRewardPresentationRegistry.typeIcon(view.typeId());
-            if (typeIcon != QuestTypeIcons.fallback()) decoration = Optional.of(typeIcon);
+            if (ClientRewardPresentationRegistry.hasTypeIcon(view.typeId())) decoration = Optional.of(typeIcon);
         }
         return new RewardEntryDetails(summary, stack, decoration, presentation.symbol(view));
     }
 
     /** Decorative icons never acquire item lookup semantics even when a presentation also supplies a stack. */
-    ItemStack lookupItem() { return decoration.isPresent() ? ItemStack.EMPTY : item(); }
+    public ItemStack lookupItem() { return decoration.isPresent() ? ItemStack.EMPTY : item(); }
 
-    EditorIcon icon() {
+    public EditorIcon icon() {
         if (decoration.isPresent()) return decoration.orElseThrow();
         if (item.isEmpty()) return EditorIcon.glyph(Component.literal(symbol));
         ItemStack displayed = item();

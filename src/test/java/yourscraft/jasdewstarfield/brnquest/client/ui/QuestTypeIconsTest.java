@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.builtin.client.QuestTypeIcons;
 
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
@@ -7,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuestTypeIconsTest {
     @Test void registeredKillEntityUsesExistingKillAsset() {
         assertEquals(ResourceLocation.parse("brnquest:editor/type/kill"), QuestTypeIcons.sprite(
-                yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL));
+                yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL));
         assertEquals(ResourceLocation.parse("brnquest:editor/type/custom"),
                 QuestTypeIcons.sprite(ResourceLocation.parse("example:kill_entity")));
     }

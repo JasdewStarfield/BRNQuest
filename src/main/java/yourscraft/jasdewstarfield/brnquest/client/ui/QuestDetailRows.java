@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.*;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 /**
@@ -36,7 +35,7 @@ final class QuestDetailRows {
         // Explicit type metadata fills missing visuals, while legacy addons retain their own symbol fallback.
         if (icon.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientTaskPresentationRegistry.typeIcon(taskView.typeId());
-            if (typeIcon != QuestTypeIcons.fallback()) icon = java.util.Optional.of(typeIcon);
+            if (ClientTaskPresentationRegistry.hasTypeIcon(taskView.typeId())) icon = java.util.Optional.of(typeIcon);
         }
         if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+3,y+4,x+19,y+20),0xFFFFFFFF);
         else if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
@@ -82,10 +81,7 @@ final class QuestDetailRows {
             // The ItemStack tooltip and JEI lookup share the exact rendered 16px icon bounds.
             hoveredLookup = lookup;
         } else if (titleHintHovered) {
-            hoveredText = ClientTaskPresentationRegistry.craftingOnly(taskView)
-                    || task.config().getOrDefault("title", "").isBlank()
-                    ? ClientTaskPresentationRegistry.itemObjectiveQualifierHint(taskView)
-                    : ClientTaskPresentationRegistry.defaultItemObjectiveTitle(presentationContext);
+            hoveredText = presentation.titleDecoration(presentationContext).map(ClientTaskPresentation.TitleDecoration::hint).orElse(title);
         } else if (visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)) {
             hoveredText = Component.translatable(presentation.resolvedOptions(taskView).isPresent()
                     ? "screen.brnquest.options.title" : "screen.brnquest.item_choice.view_candidates");
@@ -114,7 +110,7 @@ final class QuestDetailRows {
         var icon = presentation.icon(rewardView);
         if (icon.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientRewardPresentationRegistry.typeIcon(rewardView.typeId());
-            if (typeIcon != QuestTypeIcons.fallback()) icon = java.util.Optional.of(typeIcon);
+            if (ClientRewardPresentationRegistry.hasTypeIcon(rewardView.typeId())) icon = java.util.Optional.of(typeIcon);
         }
         // Reward cells retain compact quantity overlays while sharing the graystone inset surface.
         graphics.fill(x, y, x + 24, y + 24, claimed ? 0xFF30372F : claimable ? 0xFF514D36 : 0xFF34382F);
@@ -180,12 +176,13 @@ final class QuestDetailRows {
                                           ClientTaskPresentation presentation,
                                           TaskPresentationContext context, Component fallbackTitle,
                                           int right, int y, int maximumWidth, int color) {
-        if (!task.typeId().equals(TaskTypes.ITEM) && !task.typeId().equals(TaskTypes.ITEM_CHOICE)) {
+        var decoration = presentation.titleDecoration(context).orElse(null);
+        if (decoration == null) {
             EditorTextRenderer.drawFittedStringRight(graphics, font, fallbackTitle, right, y, maximumWidth, color, 0.75F);
             return null;
         }
 
-        String configuredTitle = task.config().getOrDefault("title", "");
+        String configuredTitle = decoration.wholeTitle() ? decoration.subject().getString() : "";
         if (!configuredTitle.isBlank()) {
             Component customTitle = Component.literal(configuredTitle);
             float scale = EditorTextLayout.fittedScale(font.width(customTitle), maximumWidth, 0.75F);
@@ -200,14 +197,9 @@ final class QuestDetailRows {
             return new UiRect(left, y, right, y + Math.max(1, Math.round(font.lineHeight * scale)));
         }
 
-        Component qualifier = ClientTaskPresentationRegistry.itemObjectiveQualifier(context.task());
+        Component qualifier = decoration.qualifier();
         String qualifierText = qualifier.getString();
-        ItemChoiceMatcher.Spec itemSpec = ClientTaskPresentationRegistry.itemSpec(context.task());
-        String subject = itemSpec != null && itemSpec.entries().size() > 1
-                ? Component.translatable("screen.brnquest.task.item_choice.requirement",
-                        itemSpec.entries().size(), itemSpec.requiredEntries()).getString()
-                : presentation.title(context).getString() + (itemSpec == null ? ""
-                        : " ×" + itemSpec.entries().getFirst().requiredCount());
+        String subject = decoration.subject().getString();
         String fullText = qualifierText + " " + subject;
         float scale = EditorTextLayout.fittedScale(font.width(fullText), maximumWidth, 0.75F);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));

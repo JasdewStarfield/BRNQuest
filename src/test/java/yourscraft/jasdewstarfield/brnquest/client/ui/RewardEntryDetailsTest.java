@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.builtin.client.RewardTableClientState;
 
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;

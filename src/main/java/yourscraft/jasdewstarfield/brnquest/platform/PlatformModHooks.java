@@ -29,6 +29,8 @@ public final class PlatformModHooks {
     private PlatformModHooks() {}
 
     public static void register(IEventBus modEventBus, ModContainer container) {
+        // Built-ins share the public plugin lifecycle and freeze boundary with external types.
+        RuntimeModule.registerInstalled();
         yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.register();
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
                 yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.tick(event.getServer()));
@@ -71,14 +73,12 @@ public final class PlatformModHooks {
     }
     private static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player && player.getServer() != null) {
-            yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableService.logout(player);
             yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.logout(player);
             // A remote administrator must not keep a server-side write lease after disconnecting.
             EditSessionService.get().releasePlayer(player.getServer(), player.getUUID());
         }
     }
     private static void onServerStopped(ServerStoppedEvent event) {
-        yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableService.clear();
         yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.stopped(event.getServer());
         EditSessionService.get().clearServer(event.getServer());
     }
@@ -96,7 +96,6 @@ public final class PlatformModHooks {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
             ItemTaskMonitor.tick(player);
             ProgressEngine.get().tick(player);
-            yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableService.tick(player);
         }
     }
 }

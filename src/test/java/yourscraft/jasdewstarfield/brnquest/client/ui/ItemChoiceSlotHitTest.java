@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.builtin.client.ItemChoiceScreen;
 
 import org.junit.jupiter.api.Test;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;

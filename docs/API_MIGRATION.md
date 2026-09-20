@@ -1,5 +1,20 @@
 # Public API migration
 
+## experimental.25 to experimental.26
+
+All built-in task and reward implementations now register through `BrnQuestPlugins` during mod construction. Type-owned editors, observation caches, command recovery and reward-table protocols live under the internal `builtin` package. Existing IDs (including `item_choice`), string-map fields, translation/texture paths, composition version `1`, journal formats and network protocol `18` are unchanged. Existing books require no migration; BRNQuest still ships as one JAR. Tests without a mod lifecycle must explicitly provide their type registrations.
+
+The following additive, experimental hooks replace built-in branches in shared UI and transport code:
+
+- `ClientTaskPresentation.titleDecoration(context)` optionally supplies copied title parts and a hover hint. `wholeTitle` controls whether the whole title or only the qualifier receives the interactive underline. `requiredCount(task)` supplies a display quantity. Defaults are empty and `1`.
+- `ClientRewardPresentation.refresh(reward)` runs on client ticks for the live, selected, completed quest; use bounded/throttled read-only status requests. `prepareClaim(revision, reward)` runs immediately before the ordinary claim request and can arm a type-owned response screen. Both default to no-op and confer no claim authority.
+- `RewardType.clientClaimResponse(player, reward, result)` runs on the server after a revision-matched player claim transaction. It may send a type-owned response using the authoritative result; it must not repeat execution or change receipts. The default is no-op. API-originated claims do not invoke this client transport hook.
+- `ClientConfigEditors.Factory` remains a functional interface. Its contextual `create(parent, field, config, commit)` overload receives an immutable map and returns a field patch through `commit`; the default delegates to the old single-value method. Generic authoring merges that patch and preserves unrelated fields. Optional `label`/`icon` defaults preserve generic editing. `registerCreation(reward, type, factory)` supplies type-owned creation UI; the core still owns the author mutation, permission checks and revision.
+
+`BrnQuestApi.getRewardClaimState(player, rewardId)` is a server-thread-only, read-only query returning `Optional<RewardClaimState>`. It exposes the existing immutable `RewardClaimContext`, the current revision and an advisory `eligible` flag (completed quest and completion-cohort membership). It returns empty for a missing book/reward, inactive owner, absent player/server or a non-server thread. Querying neither executes effects nor advances a type journal. A claimed reward can still have an eligible identity: the core receipt decides idempotency. Re-query before recovery and call the ordinary public claim API; never treat a cached snapshot as authorization. Identity includes owner, completion cycle and reset generation, preserving recovery keys across this migration.
+
+Existing compiled implementations inherit these defaults. Register client factories only on the client, before opening author screens. `builtin` classes and shared UI helpers without public API classification remain internal; integrations should use the documented SPI rather than migrated implementation classes.
+
 ## experimental.24 to experimental.25
 
 `TaskSubmissionSelection` and the three-argument `TaskType.submit` are now experimental public contracts. Selections contain at most 36 unique, ordered main-inventory indices (0–35); an empty selection means automatic submission. Types must validate live server inventory. The default overload still delegates to the existing two-argument method.

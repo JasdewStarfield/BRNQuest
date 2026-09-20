@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.25` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.26` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -11,6 +11,8 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 若只需要从整合包脚本查询、推进或观察任务，或声明简单的外部进度 task / 事件奖励，不必编写 Java 插件；请使用 [KubeJS 服务端脚本 API](KUBEJS_API_zh.md)。Java SPI 仍适合需要自定义 Codec、服务端判定或客户端 presentation 的复杂类型。
 
 ## 注册时间
+
+全部内置目标与奖励通过 `BrnQuestPlugins` 在模组构造阶段注册，类型专属表单、观测缓存、命令恢复及奖励表协议归入内部 `builtin` 包。历史 ID（含 `item_choice` 别名）、字符串配置、语言/图标路径、组合版本 `1`、恢复日志格式和协议 `18` 保持兼容，仍随单个 BRNQuest JAR 提供。单元测试若不运行模组生命周期，需要自行注册所用类型；`builtin` 实现类不属于公共 API。
 
 - 附属模组应在自己的构造或 common setup 期间调用 `BrnQuestPlugins.register(BrnQuestPlugin)`。插件通过暂存的 `BrnQuestExtensionRegistrar` 一次声明 task、reward 和 owner provider；只有回调正常结束且全部声明通过预检后才写入实际注册表。
 - 插件 ID 应使用附属模组自己的命名空间；BRNQuest 强制 task、reward 和 owner provider 与该插件 ID 使用相同命名空间。重复插件 ID、重复类型或跨插件命名空间声明会明确失败，不留下半注册结果。
@@ -182,3 +184,13 @@ ClientTaskPresentationRegistry.register(typeId, presentation,
 ### 类型拥有的创建默认值
 
 `TaskType.creationConfig(config, defaults)` 只在创建时合并类型理解的提示，默认不消费任何提示。当前书／章提供 `consume_items`，内置物品类型仅在配置同时缺少 `consume_items` 与历史 `consume` 时应用；其它类型不自动添加此键。此纯函数也供客户端预填使用，不应访问世界、注册表上下文或执行副作用。服务器仍执行原有规范化和校验。
+
+## experimental.26：类型专属界面接入
+
+`ClientTaskPresentation.titleDecoration(context)` 可返回标题限定词、主体、悬浮说明及整标题下划线标记；组件以副本传递，裁剪、布局与命中仍由通用行负责。默认不提供装饰。`requiredCount(task)` 仅提供展示数量，默认 `1`。
+
+`ClientRewardPresentation.refresh(reward)` 在当前实时选中、已完成任务的客户端 tick 调用，可发起限频只读状态查询。`prepareClaim(revision, reward)` 在普通领取请求发送前记录预期的类型专属响应；两者默认空操作。服务端 `RewardType.clientClaimResponse(player, reward, result)` 在 revision 匹配的玩家网络领取事务之后接收权威结果，用于发送选择页等响应；不得再次执行奖励或修改收据。直接 API 领取不触发此网络响应钩子。
+
+`ClientConfigEditors.Factory` 保留原有单值抽象方法，因此旧实现和 lambda 继续兼容。新增 `create(parent, field, config, commit)` 重载接收不可变配置，并回调字段补丁，通用作者服务合并补丁、保留未知字段。默认重载委托旧方法；`label(value)` / `icon(value)` 提供字段按钮展示。`registerCreation(reward, type, factory)` 注册类型专属创建页，回调初始配置后由核心执行原有作者事务。工厂仅在客户端注册，作者权限、revision 和最终校验仍归核心。
+
+`BrnQuestApi.getRewardClaimState(player, rewardId)` 在服务器线程返回只读 `RewardClaimState`，包含既有不可变领取上下文（owner、周期、重置 generation）、revision 与建议性的 `eligible` 标记。任务已完成且玩家属于完成时成员时为 eligible；已领收据仍由领取事务判定，因此 eligible 不代表可再次发奖。玩家/服务器缺失、非服务器线程、奖励条目不存在或 owner 未激活时返回空。查询不执行奖励、不推进类型日志；恢复操作须重新查询身份并进入普通公开领取 API，不能把缓存快照作为授权。内置观测通过既有 `resetTransientState`、reload/logout 和只读 owner 身份清理本地计时，插件不接触可变进度账本。

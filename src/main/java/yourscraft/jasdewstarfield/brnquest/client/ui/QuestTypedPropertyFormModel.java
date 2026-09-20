@@ -19,7 +19,7 @@ import java.util.function.Consumer;
  * Owns typed-property draft values independently from rendering and network submission.
  * Native text fields mirror this model, so a Screen re-init does not become a second state owner.
  */
-final class QuestTypedPropertyFormModel {
+public final class QuestTypedPropertyFormModel {
     private final int capacity;
     private final EditorFormFields<String> identityFields = new EditorFormFields<String>()
             .define("id", "screen.brnquest.editor.typed.property.id", 256)
@@ -36,7 +36,7 @@ final class QuestTypedPropertyFormModel {
     private Map<String, String> rawConfig = Map.of();
     private boolean bound;
 
-    QuestTypedPropertyFormModel(int capacity) {
+    public QuestTypedPropertyFormModel(int capacity) {
         if (capacity <= 0) throw new IllegalArgumentException("capacity must be positive");
         this.capacity = capacity;
         this.configValues = new ArrayList<>(Collections.nCopies(capacity, ""));
@@ -46,7 +46,7 @@ final class QuestTypedPropertyFormModel {
         }
     }
 
-    void bind(Font font, Consumer<EditorTextField> register) {
+    public void bind(Font font, Consumer<EditorTextField> register) {
         identityFields.bind(font, register);
         configFields.bind(font, register);
         vectorFields.bind(font, register);
@@ -72,11 +72,11 @@ final class QuestTypedPropertyFormModel {
         syncFields();
     }
 
-    void openExisting(ConfigEditorSchema nextSchema, String nextId, String nextClaim) {
+    public void openExisting(ConfigEditorSchema nextSchema, String nextId, String nextClaim) {
         open(nextSchema, nextId, nextClaim, true);
     }
 
-    void openNew(ConfigEditorSchema nextSchema, String nextId, String nextClaim) {
+    public void openNew(ConfigEditorSchema nextSchema, String nextId, String nextClaim) {
         open(nextSchema, nextId, nextClaim, false);
     }
 
@@ -109,21 +109,21 @@ final class QuestTypedPropertyFormModel {
         }
     }
 
-    ConfigEditorSchema schema() { return schema; }
-    String id() { return id; }
-    String claim() { return claim; }
-    Map<String, String> rawConfig() { return rawConfig; }
-    Map<String, String> serverIssues() { return serverIssues; }
-    EditorTextField identityField(String key) { return identityFields.field(key); }
-    EditorTextField configField(int index) { return configFields.field(index); }
-    String configValue(int index) { return configValues.get(index); }
+    public ConfigEditorSchema schema() { return schema; }
+    public String id() { return id; }
+    public String claim() { return claim; }
+    public Map<String, String> rawConfig() { return rawConfig; }
+    public Map<String, String> serverIssues() { return serverIssues; }
+    public EditorTextField identityField(String key) { return identityFields.field(key); }
+    public EditorTextField configField(int index) { return configFields.field(index); }
+    public String configValue(int index) { return configValues.get(index); }
 
-    void setConfigValue(int index, String value) {
+    public void setConfigValue(int index, String value) {
         configValues.set(index, value);
         if (bound) { configFields.field(index).setValue(value); syncVector(index); }
     }
 
-    EditorTextField vectorField(int index, int axis) { return vectorFields.field(index * 3 + axis); }
+    public EditorTextField vectorField(int index, int axis) { return vectorFields.field(index * 3 + axis); }
     private void syncVector(int index) {
         syncingVector = true;
         try {
@@ -132,9 +132,22 @@ final class QuestTypedPropertyFormModel {
         } finally { syncingVector = false; }
     }
 
-    void replaceRawConfig(Map<String, String> config) { rawConfig = Map.copyOf(config); }
+    public void replaceRawConfig(Map<String, String> config) { rawConfig = Map.copyOf(config); }
 
-    int fieldIndex(String key) {
+    /** Apply a child editor's patch while retaining edits and opaque fields outside its ownership. */
+    public void applyConfigPatch(Map<String, String> patch) {
+        Map<String, String> checked = Map.copyOf(patch);
+        var merged = new LinkedHashMap<>(currentConfig());
+        merged.putAll(checked);
+        originalConfig = Map.copyOf(merged);
+        rawConfig = originalConfig;
+        checked.forEach((key, value) -> {
+            int index = fieldIndex(key);
+            if (index >= 0) setConfigValue(index, value);
+        });
+    }
+
+    public int fieldIndex(String key) {
         if (schema == null) return -1;
         for (int index = 0; index < Math.min(schema.fields().size(), capacity); index++) {
             if (schema.fields().get(index).key().equals(key)) return index;
@@ -142,7 +155,7 @@ final class QuestTypedPropertyFormModel {
         return -1;
     }
 
-    Map<String, String> currentConfig() {
+    public Map<String, String> currentConfig() {
         if (schema != null && schema.rawFallback()) return rawConfig;
         Map<String, String> config = new LinkedHashMap<>(originalConfig);
         List<ConfigFieldDescriptor> fields = schema == null ? List.of() : schema.fields();
@@ -154,7 +167,7 @@ final class QuestTypedPropertyFormModel {
         return Map.copyOf(config);
     }
 
-    Map<String, String> localIssues() {
+    public Map<String, String> localIssues() {
         if (schema == null) return Map.of();
         Map<String, String> issues = new LinkedHashMap<>();
         for (ConfigFieldIssue issue : ConfigEditorSchemas.validate(schema.fields(), currentConfig())) {
@@ -163,25 +176,25 @@ final class QuestTypedPropertyFormModel {
         return Collections.unmodifiableMap(issues);
     }
 
-    void clearNonIdentityServerIssues() {
+    public void clearNonIdentityServerIssues() {
         serverIssues.keySet().removeIf(key -> !"id".equals(key) && !"claim_policy".equals(key));
     }
 
-    void hide() {
+    public void hide() {
         if (!bound) return;
         identityFields.hide();
         configFields.hide();
         vectorFields.hide();
     }
 
-    void offsetForDrawerAnimation(int offset) {
+    public void offsetForDrawerAnimation(int offset) {
         if (!bound) return;
         identityFields.offsetForDrawerAnimation(offset);
         configFields.offsetForDrawerAnimation(offset);
         vectorFields.offsetForDrawerAnimation(offset);
     }
 
-    void close() {
+    public void close() {
         schema = null;
         originalConfig = Map.of();
         rawConfig = Map.of();

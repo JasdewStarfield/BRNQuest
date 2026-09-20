@@ -2,17 +2,24 @@ package yourscraft.jasdewstarfield.brnquest.architecture;
 
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
-import com.tngtech.archunit.core.importer.ImportOption;
+import com.tngtech.archunit.core.importer.Location;
+import com.tngtech.archunit.junit.LocationProvider;
 import com.tngtech.archunit.lang.ArchRule;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /** Bytecode-level boundaries for code that must remain safe on a dedicated server. */
-@AnalyzeClasses(
-        packages = "yourscraft.jasdewstarfield.brnquest",
-        importOptions = ImportOption.DoNotIncludeTests.class
-)
+@AnalyzeClasses(locations = ArchitectureBoundaryTest.ProductionModules.class)
 public class ArchitectureBoundaryTest {
+    /** Exact outputs work with custom build directories and exclude deliberate test-only violations. */
+    public static final class ProductionModules implements LocationProvider {
+        @Override public java.util.Set<Location> get(Class<?> testClass) {
+            var build = java.nio.file.Path.of(System.getProperty("brnquest.buildDir"), "classes/java");
+            return java.util.Set.of(Location.of(build.resolve("main")), Location.of(build.resolve("builtin")),
+                    Location.of(build.resolve("integration")));
+        }
+    }
+
     private static final String CLIENT_PACKAGE = "yourscraft.jasdewstarfield.brnquest.client..";
     private static final String MINECRAFT_CLIENT_PACKAGE = "net.minecraft.client..";
     // Match composed screen parts and their reusable primitives while leaving top-level Screen dispatchers out.
@@ -20,6 +27,37 @@ public class ArchitectureBoundaryTest {
             + "(Section|Panel|Widget|Renderer|Controller|Interaction|"
             + "NodeDrag|DiagnosticPresentation|TooltipComposer|TypePickerModel|TypedEntryKind|"
             + "TypedPropertyFormModel|ScreenFrameIdentity|FormFields|SelectionFocus)";
+
+    @ArchTest
+    static final ArchRule coreMustNotDependOnBuiltinTypes = noClasses()
+            .that().resideInAnyPackage(
+                    "yourscraft.jasdewstarfield.brnquest.editor..",
+                    "yourscraft.jasdewstarfield.brnquest.network..",
+                    "yourscraft.jasdewstarfield.brnquest.task..",
+                    "yourscraft.jasdewstarfield.brnquest.reward..",
+                    "yourscraft.jasdewstarfield.brnquest.author..",
+                    "yourscraft.jasdewstarfield.brnquest.progress..",
+                    "yourscraft.jasdewstarfield.brnquest.client..")
+            .and().haveNameNotMatching(".*GameTests(\\$.*)?")
+            .should().dependOnClassesThat().resideInAPackage("yourscraft.jasdewstarfield.brnquest.builtin..")
+            .because("loader bootstrap alone wires built-in plugins into generic registries");
+
+    @ArchTest
+    static final ArchRule builtinsMustNotAccessMutableProgress = noClasses()
+            .that().resideInAPackage("yourscraft.jasdewstarfield.brnquest.builtin..")
+            .should().dependOnClassesThat().haveNameMatching(
+                    ".*\\.progress\\.(ProgressEngine|PlayerProgress|QuestProgressData)")
+            .because("type recovery reads immutable identities and re-enters the public claim transaction");
+
+    @ArchTest
+    static final ArchRule builtinCommonMustNotLoadClientClasses = noClasses()
+            .that().resideInAPackage("yourscraft.jasdewstarfield.brnquest.builtin..")
+            .and().resideOutsideOfPackages("..client..")
+            .and().haveNameNotMatching(".*\\$ClientDelegate")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                    CLIENT_PACKAGE, MINECRAFT_CLIENT_PACKAGE,
+                    "yourscraft.jasdewstarfield.brnquest.builtin.basic.client..",
+                    "yourscraft.jasdewstarfield.brnquest.builtin.client..");
 
     @ArchTest
     static final ArchRule publicApiMustNotLoadClientClasses = noClasses()

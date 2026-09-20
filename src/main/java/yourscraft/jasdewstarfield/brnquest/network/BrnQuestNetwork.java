@@ -171,7 +171,17 @@ public final class BrnQuestNetwork {
             ResourceLocation id = ResourceLocation.tryParse(payload.rewardId());
             if (context.player() instanceof ServerPlayer player && id != null && payload.revision().equals(currentRevision())) {
                 var result = BrnQuestApi.claimRewardResult(OperationContext.self(player), player, id.toString());
-                if (result.code().equals("TABLE_AWAITING_CHOICE")) RewardTableChoiceNetwork.open(player, id);
+                // Dispatch only the registered type's response; the claim transaction already checked authority.
+                BrnQuestApi.getReward(id.toString()).ifPresent(reward -> {
+                            var type = yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry.get(reward.typeId());
+                            if (type != null) {
+                                try { type.clientClaimResponse(player, reward, result); }
+                                catch (RuntimeException | LinkageError exception) {
+                                    // A response failure cannot undo or replay the already committed claim.
+                                    BRNQuest.LOGGER.error("Reward response failed for {}", id, exception);
+                                }
+                            }
+                        });
             }
         });
         registrar.playToServer(SelectQuestPayload.TYPE, SelectQuestPayload.CODEC, (payload, context) -> {
@@ -190,7 +200,7 @@ public final class BrnQuestNetwork {
         AuthoringNetwork.register(registrar);
         AdminProgressNetwork.register(registrar);
         ServerFieldNetwork.register(registrar);
-        RewardTableNetwork.register(registrar);
+
     }
 
     public static void syncAll(ServerPlayer player, boolean revisionMatches) {
@@ -277,7 +287,7 @@ public final class BrnQuestNetwork {
     }
     public static void toggleTracked(String revision, String questId) { PacketDistributor.sendToServer(new ToggleTrackedPayload(revision, questId)); }
     public static void claimReward(String revision, String rewardId) {
-        yourscraft.jasdewstarfield.brnquest.client.ui.RewardTableChoiceScreen.expect(revision,rewardId);
+        yourscraft.jasdewstarfield.brnquest.client.ui.ClientRewardInteractions.prepareClaim(revision, rewardId);
         PacketDistributor.sendToServer(new ClaimRewardPayload(revision, rewardId));
     }
     public static void selectQuest(String revision, String questId) { PacketDistributor.sendToServer(new SelectQuestPayload(revision, questId)); }

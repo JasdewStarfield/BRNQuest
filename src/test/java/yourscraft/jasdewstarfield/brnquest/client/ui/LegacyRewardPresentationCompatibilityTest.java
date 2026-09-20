@@ -20,6 +20,8 @@ class LegacyRewardPresentationCompatibilityTest {
                     .anyMatch(method -> method.getName().equals("contentSummary")));
             var presentation = (ClientRewardPresentation) consumer.getConstructor().newInstance();
             assertTrue(presentation.contentSummary(null).isEmpty());
+            assertDoesNotThrow(() -> presentation.refresh(null));
+            assertDoesNotThrow(() -> presentation.prepareClaim("old", null));
             assertEquals("Legacy reward", presentation.typeName(null).getString());
         }
     }

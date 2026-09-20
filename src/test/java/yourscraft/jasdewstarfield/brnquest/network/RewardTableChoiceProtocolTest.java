@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.network;
+import yourscraft.jasdewstarfield.brnquest.builtin.network.RewardTableChoiceNetwork;
 
 import com.google.gson.*;
 import io.netty.buffer.Unpooled;

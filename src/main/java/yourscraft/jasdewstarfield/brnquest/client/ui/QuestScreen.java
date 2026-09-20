@@ -75,7 +75,6 @@ import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
-import yourscraft.jasdewstarfield.brnquest.task.ItemChoiceMatcher;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
@@ -371,10 +370,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // Only a live selected quest may query execution status; previews/rendering remain read-only.
         QuestDefinition selected = selectedQuest();
         if (gameplayAllowed() && selected != null && isCompleted(status(selected))) {
-            selected.rewards().stream().filter(reward -> reward.typeId().equals(
-                    yourscraft.jasdewstarfield.brnquest.reward.table.RewardTableReward.ID)
-                    || reward.typeId().equals(yourscraft.jasdewstarfield.brnquest.reward.LootTableReward.ID))
-                    .forEach(reward -> RewardTableClientState.refresh(reward.id().toString()));
+            selected.rewards().forEach(reward -> ClientRewardPresentationRegistry.get(reward.typeId()).refresh(ApiViews.reward(reward)));
         }
     }
 
@@ -905,7 +901,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Registers only the visible portion, so scrolled-away text cannot capture a right click. */
-
 
     private int renderTask(GuiGraphics graphics, QuestDefinition quest, TaskDefinition task, QuestStatus status,
                            int x, int y, int width, int mouseX, int mouseY) {
@@ -3572,9 +3567,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             hoveredDetailText = Component.translatable(descriptor.helpText());
         EditorTextField field = typedPropertySection.form().configField(index);
         if (ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).isPresent()) {
-            renderEditorTextButton(graphics, row.field(), Component.translatable("screen.brnquest.config.edit").append(" · ").append(
-                            yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewText.compactValue(field.getValue())),
-                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            var editor = ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow();
+            var icon = editor.icon(field.getValue());
+            if (icon.isPresent()) renderEditorActionButton(graphics, row.field(),
+                    EditorButton.Definition.iconAndText(editor.label(field.getValue()), editor.label(field.getValue()), icon.get()),
+                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            else renderEditorTextButton(graphics, row.field(), editor.label(field.getValue()), null,
+                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
             var vector = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(row.field(), descriptor.serverSource().isPresent());
             for (int axis = 0; axis < 3; axis++) {
@@ -3600,18 +3599,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             EditorIcon icon = stack.isEmpty()
                     ? QuestActionIcons.named("plus") : EditorIcon.item(stack);
             EditorButton.Definition definition = EditorButton.Definition.iconAndText(select, select, icon);
-            renderEditorActionButton(graphics, row.field(), definition,
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-            // This icon opens an editor; it is not a recipe lookup target.
-        } else if (descriptor.valueType() == ConfigValueType.ITEM_MATCHER) {
-            ItemChoiceMatcher.Spec spec = ItemChoiceMatcher.parse(field.getValue()).result().orElse(null);
-            List<ItemStack> candidates = choiceCandidates(spec);
-            ItemStack stack = candidates.isEmpty() ? ItemStack.EMPTY : candidates.getFirst();
-            Component edit = Component.translatable(
-                    "screen.brnquest.editor.typed.property.edit_matcher", candidates.size());
-            EditorIcon icon = stack.isEmpty()
-                    ? QuestActionIcons.named("plus") : EditorIcon.item(stack);
-            EditorButton.Definition definition = EditorButton.Definition.iconAndText(edit, edit, icon);
             renderEditorActionButton(graphics, row.field(), definition,
                     !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             // This icon opens an editor; it is not a recipe lookup target.
@@ -3717,12 +3704,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     openChildScreen(new ServerFieldScreen(this, descriptor.serverSource().orElseThrow().toString(), field.getValue(), value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value), typedPropertySection.form().currentConfig(), false, descriptor.labelKey().isBlank() ? Component.literal(descriptor.key()) : Component.translatable(descriptor.labelKey())));
                 }
                 case ITEM -> openTypedPropertyItemSelector(intent.fieldIndex());
-                case MATCHER -> openTypedPropertyMatcherEditor(intent.fieldIndex());
+                case MATCHER -> openTypedPropertyRawEditor();
                 case CUSTOM -> {
                     var descriptor = typedPropertySection.form().schema().fields().get(intent.fieldIndex());
                     openChildScreen(ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow()
-                            .create(this, typedPropertySection.form().configValue(intent.fieldIndex()),
-                                    value -> typedPropertySection.form().setConfigValue(intent.fieldIndex(), value)));
+                            .create(this, descriptor.key(), Map.copyOf(typedPropertySection.form().currentConfig()), patch -> {
+                                typedPropertySection.form().applyConfigPatch(patch);
+                                itemCache.remove(typedPropertySection.originalId());
+                                typedPropertyMessage = null;
+                            }));
                 }
                 case RAW -> openTypedPropertyRawEditor();
                 case OPTIONAL -> typedPropertySection.toggleOptional();
@@ -3748,42 +3738,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString());
             itemCache.remove(typedPropertySection.originalId());
         });
-    }
-
-    private void openTypedPropertyMatcherEditor(int fieldIndex) {
-        if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-        ItemChoiceMatcher.Spec initial = ItemChoiceMatcher.parse(
-                typedPropertySection.form().configValue(fieldIndex)).result().orElse(null);
-        int requiredIndex = typedPropertySection.form().fieldIndex("required_entries");
-        if (initial != null && requiredIndex >= 0) {
-            try {
-                int required = Integer.parseInt(typedPropertySection.form().configValue(requiredIndex));
-                initial = initial.withRequiredEntries(required);
-            } catch (IllegalArgumentException ignored) {
-                // The target-level field keeps its own inline validation; child editing still opens.
-            }
-        }
-        if (initial == null) {
-            openNewItemChoiceEditor(spec -> setTypedMatcher(fieldIndex, spec));
-        } else {
-            openItemChoiceScreen(initial, true, spec -> setTypedMatcher(fieldIndex, spec));
-        }
-    }
-
-    private void setTypedMatcher(int fieldIndex, ItemChoiceMatcher.Spec spec) {
-        if (fieldIndex >= MAX_TYPED_CONFIG_FIELDS) return;
-        typedPropertySection.form().setConfigValue(fieldIndex, spec.encode());
-        int requiredIndex = typedPropertySection.form().fieldIndex("required_entries");
-        if (requiredIndex >= 0) {
-            typedPropertySection.form().setConfigValue(requiredIndex, Integer.toString(spec.requiredEntries()));
-        }
-        itemCache.remove(typedPropertySection.originalId());
-        typedPropertyMessage = null;
-    }
-
-    private void openNewItemChoiceEditor(java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
-        if (minecraft == null) return;
-        openChildScreen(ItemChoiceScreen.createEditor(this, resultConsumer));
     }
 
     /** Permission hiding is only a convenience; the server checks every request independently. */
@@ -3824,17 +3778,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                          : yourscraft.jasdewstarfield.brnquest.progress.AdminProgressAction.FORCE_TASK);
         openChildScreen(new AdminProgressScreen(this, active.book().id().toString(), active.revision(),
                 questId.toString(), taskId == null ? "" : taskId.toString(), action));
-    }
-
-    private List<ItemStack> choiceCandidates(ItemChoiceMatcher.Spec spec) {
-        if (spec == null || minecraft == null || minecraft.level == null) return List.of();
-        return ItemChoiceMatcher.displayedCandidates(minecraft.level.registryAccess(), spec);
-    }
-
-    private void openItemChoiceScreen(ItemChoiceMatcher.Spec initial, boolean editing,
-                                      java.util.function.Consumer<ItemChoiceMatcher.Spec> resultConsumer) {
-        if (minecraft == null) return;
-        openChildScreen(new ItemChoiceScreen(this, initial, editing, resultConsumer));
     }
 
     private void openTypedPropertyRawEditor() {
@@ -4082,14 +4025,16 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (choice == null || ClientEditorState.get().busy()) return true;
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null || typedEditorQuestId == null) return true;
-        if (choice.route() == QuestTypePickerModel.Route.CHOICE_SELECTOR) {
+        if (choice.route() == QuestTypePickerModel.Route.CHOICE_SELECTOR || choice.route() == QuestTypePickerModel.Route.ITEM_SELECTOR) {
             closeActiveEditorOverlay();
-            openNewItemChoiceEditor(spec -> addSelectedChoice(typeId, spec));
-            return true;
-        }
-        if (choice.route() == QuestTypePickerModel.Route.ITEM_SELECTOR) {
-            closeActiveEditorOverlay();
-            openItemSelector(typeId);
+            ClientConfigEditors.creation(typedEditorKind == QuestTypedEntryKind.REWARD, typeId).ifPresent(factory ->
+                    openChildScreen(factory.create(this, config -> {
+                        var current = displaySnapshot();
+                        if (current == null || typedEditorQuestId == null) return;
+                        ResourceLocation id = suggestId(current.book(), typedEditorKind.idStem());
+                        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
+                                "", 0, 0, 0, List.of(), Map.copyOf(config));
+                    })));
             return true;
         }
         if (choice.route() == QuestTypePickerModel.Route.PROPERTY_FORM) {
@@ -4104,37 +4049,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return true;
     }
 
-    private void openItemSelector(ResourceLocation typeId) {
-        if (minecraft == null) return;
-        openEditorItemSelector(stack -> addSelectedItem(typeId, stack));
-    }
-
     /** Opens a real child Screen so JEI initializes ghost dragging before the first interaction. */
     private void openEditorItemSelector(java.util.function.Consumer<ItemStack> selectionConsumer) {
         if (minecraft == null) return;
         openChildScreen(new EditorItemSelectorScreen(this, selectionConsumer));
-    }
-
-    private void addSelectedItem(ResourceLocation typeId, ItemStack stack) {
-        QuestBookSnapshot snapshot = displaySnapshot();
-        if (snapshot == null || typedEditorQuestId == null || minecraft == null || minecraft.level == null
-                || stack.isEmpty()) return;
-        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
-        // Store a count-one ItemStack; the separate count field remains the author-facing quantity.
-        String itemSnbt = stack.copyWithCount(1).save(minecraft.level.registryAccess()).toString();
-        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
-                "", 0, 0, 0, List.of(), Map.of("item", itemSnbt, "count", "1"));
-    }
-
-    private void addSelectedChoice(ResourceLocation typeId, ItemChoiceMatcher.Spec spec) {
-        QuestBookSnapshot snapshot = displaySnapshot();
-        if (snapshot == null || typedEditorQuestId == null) return;
-        ResourceLocation id = suggestId(snapshot.book(), typedEditorKind.idStem());
-        sendMutation("ADD_" + typedEditorKind.actionPrefix(), id, typedEditorQuestId, typeId,
-                "", 0, 0, 0, List.of(), Map.of(
-                        "matcher", spec.encode(),
-                        "required_entries", Integer.toString(spec.requiredEntries()),
-                        "consume_items", "false"));
     }
 
     private int typedEditorListTop() { return topToolbarHeight() + 34; }
@@ -5198,7 +5116,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Keeps the claimed check above the item while leaving its vanilla count corner unobstructed. */
 
-
     private int statusColor(QuestStatus status) {
         return switch (status) {
             case COMPLETED, REWARD_CLAIMED -> 0xFF72D88D;
@@ -5339,15 +5256,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Shrinks compact one-line labels before truncating them, preserving more meaningful text. */
 
-
     /** Right-aligns compact detail text while using the same shrink-before-truncate policy. */
-
 
     /**
      * Draws built-in item semantics as a styled prefix and returns that prefix's exact hover area.
      * Other presentations retain the public objective-title path and do not inherit item semantics.
      */
-
 
     private int graphCoordinate(double coordinate) {
         return (int) Math.round(coordinate * QuestViewportMath.GRID_SCALE);
@@ -5763,8 +5677,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private int detailViewportHeight() {
         return Math.max(1, detailContentBottom() - detailContentTop());
     }
-
-
 
     private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack, java.util.Optional<EditorIcon> icon) {}
 

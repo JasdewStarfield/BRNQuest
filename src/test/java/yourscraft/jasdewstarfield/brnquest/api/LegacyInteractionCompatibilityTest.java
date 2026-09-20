@@ -24,6 +24,8 @@ class LegacyInteractionCompatibilityTest {
             var task = (TaskType<Map<String, String>>) taskClass.getConstructor().newInstance();
             var presentation = (ClientTaskPresentation) clientClass.getConstructor().newInstance();
             assertTrue(presentation.submissionInteraction(null).isEmpty());
+            assertTrue(presentation.titleDecoration(null).isEmpty());
+            assertEquals(1, presentation.requiredCount(null));
             var book = ResourceLocation.parse("legacy:book");
             var view = new TaskView(book, ResourceLocation.parse("legacy:task"), ResourceLocation.parse("legacy:type"), Map.of(), false);
             var context = new TaskContext(null, book, ResourceLocation.parse("legacy:quest"), view, 7);

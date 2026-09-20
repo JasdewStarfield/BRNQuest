@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.builtin.client.QuestTypeIcons;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -29,6 +30,6 @@ class TypeIconExtensionTest {
         assertSame(QuestTypeIcons.fallback(), ClientTaskPresentationRegistry.typeIcon(id));
         assertSame(QuestTypeIcons.fallback(), ClientRewardPresentationRegistry.typeIcon(id));
         assertNotSame(QuestTypeIcons.fallback(), ClientTaskPresentationRegistry.typeIcon(
-                yourscraft.jasdewstarfield.brnquest.task.encounter.EncounterConfig.KILL));
+                yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL));
     }
 }

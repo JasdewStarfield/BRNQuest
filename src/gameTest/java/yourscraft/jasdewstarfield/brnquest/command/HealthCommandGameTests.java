@@ -64,6 +64,24 @@ public final class HealthCommandGameTests {
                     helper.assertValueEqual(QuestBookManager.get().health(), beforeHealth, "query preserves active pointer and reload observation");
                     helper.assertValueEqual(EditSessionService.get().inspect(player, bookId).value(), beforeLease,
                             "query preserves draft revision, saved revision, history and lease expiry");
+                    // Historical task ledgers can outgrow the wire budget independently of the current book size.
+                    var progress = yourscraft.jasdewstarfield.brnquest.progress.ProgressEngine.get().progress(player);
+                    for (int i = 0; i < 5500; i++) progress.addTaskProgress("health:historical_" + i + "x".repeat(200), 1);
+                    var beforeTasks = progress.taskProgressView();
+                    yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork.syncProgress(player, true);
+                    var failure = yourscraft.jasdewstarfield.brnquest.network.ProgressSyncFailures.get().inspect(player.getUUID()).orElseThrow();
+                    helper.assertValueEqual(failure.code(), "PROGRESS_TOO_LARGE", "oversize reports an explicit failure");
+                    helper.assertTrue(failure.bytes() > yourscraft.jasdewstarfield.brnquest.BrnQuestConstants.MAX_PROGRESS_BYTES,
+                            "failure reports actual UTF-8 size");
+                    helper.assertValueEqual(progress.taskProgressView(), beforeTasks, "failed sync preserves server progress");
+                    messages.clear();
+                    dispatcher.execute("brnquest health player " + player.getGameProfile().getName() + " details", source);
+                    helper.assertTrue(messages.stream().anyMatch(message -> message.getContents() instanceof
+                            net.minecraft.network.chat.contents.TranslatableContents text
+                            && text.getKey().equals("command.brnquest.health.player.progress_failed")),
+                            "administrator sees progress failure through the actual health command");
+                    helper.assertValueEqual(yourscraft.jasdewstarfield.brnquest.network.ProgressSyncFailures.get().inspect(player.getUUID()).orElseThrow(),
+                            failure, "diagnostic query does not mutate failure state");
                     // A failed load keeps the previous active object; observing it must also retain that object.
                     helper.assertTrue(!QuestBookManager.get().install(null, new DiagnosticReport()), "invalid candidate rejected");
                     var rejected = QuestBookManager.get().health();

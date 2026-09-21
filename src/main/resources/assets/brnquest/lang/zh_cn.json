@@ -916,5 +916,8 @@
   "screen.brnquest.canvas.import_reload_failed": "素材已保存，但资源未能加载；请尝试重新加载资源或重启客户端。",
   "screen.brnquest.canvas.import_success": "已导入本地素材。点击条目使用；图片不会上传。",
   "screen.brnquest.canvas.import_reused": "该素材已存在，已定位到原资源。点击条目使用。",
-  "screen.brnquest.canvas.import_single": "请一次导入一张 PNG。"
+  "screen.brnquest.canvas.import_single": "请一次导入一张 PNG。",
+  "message.brnquest.progress_sync.failed": "任务进度同步失败（%s；%s / %s 字节）。显示的进度可能已过期。服务端问题解决后，重新打开任务书可重试。",
+  "screen.brnquest.progress_sync.failed": "进度同步失败 · 当前显示可能已过期",
+  "command.brnquest.health.player.progress_failed": "进度同步失败：%s，%s / %s 字节。"
 }

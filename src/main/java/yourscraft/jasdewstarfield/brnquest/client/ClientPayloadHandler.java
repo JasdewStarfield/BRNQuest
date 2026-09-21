@@ -33,6 +33,14 @@ public final class ClientPayloadHandler {
             }
         });
     }
+    public static void progressFailure(BrnQuestNetwork.ProgressSyncFailurePayload payload) {
+        Minecraft.getInstance().execute(() -> {
+            if (ClientQuestState.get().progressSyncFailed(payload) && Minecraft.getInstance().player != null) {
+                Minecraft.getInstance().player.displayClientMessage(Component.translatable(
+                        "message.brnquest.progress_sync.failed", payload.code(), payload.actual(), payload.maximum()), false);
+            }
+        });
+    }
     public static void progress(BrnQuestNetwork.ProgressSnapshotPayload payload) {
         Minecraft.getInstance().execute(() -> {
             ClientQuestState.get().progress(payload.json());

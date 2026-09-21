@@ -10,16 +10,26 @@ import yourscraft.jasdewstarfield.brnquest.editor.*;
 import java.util.*;
 
 /** Four separately registered exploration types share mechanics, without core type-ID branches. */
-public final class LocationTask implements TaskType<Map<String, String>> {
+public final class LocationTask implements ReusableTaskConfigType<LocationTask.Config> {
     private final String kind;
-    public LocationTask(String kind) { this.kind = kind; }
-    public Codec<Map<String, String>> configCodec() { return LocationConfig.codec(kind); }
-    public boolean satisfied(TaskContext context, Map<String, String> config) { return context.progress() >= 1; }
-    public int pollingIntervalTicks() { return 10; }
-    public long sampledProgress(TaskContext context, Map<String, String> config) {
-        return context.progress() >= 1 || LocationTargets.matches(context.player(), kind, LocationConfig.parse(kind, config)) ? 1 : 0;
+    private final Codec<Config> codec;
+
+    /** Preserve opaque authored keys while reusing the immutable parsed target across samples. */
+    public record Config(Map<String, String> raw, LocationConfig target) {
+        public Config { raw = Map.copyOf(raw); }
     }
-    public Component describe(TaskView task, Map<String, String> config) { return Component.literal(config.toString()); }
+
+    public LocationTask(String kind) {
+        this.kind = kind;
+        this.codec = LocationConfig.codec(kind).xmap(values -> new Config(values, LocationConfig.parse(kind, values)), Config::raw);
+    }
+    public Codec<Config> configCodec() { return codec; }
+    public boolean satisfied(TaskContext context, Config config) { return context.progress() >= 1; }
+    public int pollingIntervalTicks() { return 10; }
+    public long sampledProgress(TaskContext context, Config config) {
+        return context.progress() >= 1 || LocationTargets.matches(context.player(), kind, config.target()) ? 1 : 0;
+    }
+    public Component describe(TaskView task, Config config) { return Component.literal(config.raw().toString()); }
     public List<ConfigFieldDescriptor> configFields() {
         List<ConfigFieldDescriptor> fields = new ArrayList<>();
         fields.add(ConfigFieldDescriptor.field("title", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.title"));

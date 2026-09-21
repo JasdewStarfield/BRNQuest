@@ -3,7 +3,6 @@ package yourscraft.jasdewstarfield.brnquest.task;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStability;
 import yourscraft.jasdewstarfield.brnquest.api.ApiStatus;
 import yourscraft.jasdewstarfield.brnquest.api.TaskView;
-import yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec;
 
 import java.util.Optional;
 
@@ -17,7 +16,7 @@ public final class TaskTypeExecutor {
     }
 
     public static <T> long sampledProgress(TaskType<T> type, TaskContext context) {
-        return StringMapConfigCodec.decode(type.configCodec(), context.task().config()).result()
+        return decode(type, context.task()).result()
                 .map(config -> type.sampledProgress(context, config)).orElse(context.progress());
     }
 
@@ -64,19 +63,19 @@ public final class TaskTypeExecutor {
     }
 
     private static <T> Optional<Boolean> executeTyped(TaskType<T> type, TaskContext context, Invocation invocation) {
-        return StringMapConfigCodec.decode(type.configCodec(), context.task().config()).result().map(config ->
+        return decode(type, context.task()).result().map(config ->
                 invocation == Invocation.SATISFIED ? type.satisfied(context, config) : type.consume(context, config));
     }
 
     private static <T> TaskSubmissionResult submitTyped(TaskType<T> type, TaskContext context,
                                                         TaskSubmissionSelection selection) {
-        return StringMapConfigCodec.decode(type.configCodec(), context.task().config()).result()
+        return decode(type, context.task()).result()
                 .map(config -> type.submit(context, config, selection))
                 .orElseGet(() -> TaskSubmissionResult.failure("INVALID_CONFIG", "Task configuration is invalid"));
     }
 
     private static <T> com.mojang.serialization.DataResult<T> decode(TaskType<T> type, TaskView task) {
-        return StringMapConfigCodec.decode(type.configCodec(), task.config());
+        return DecodedTaskConfigs.decode(type, task.config());
     }
 
     private static boolean flag(TaskType<?> type, TaskView task, Flag flag) {

@@ -75,6 +75,10 @@ final class HealthCommand {
         send(source, "player." + observation.status().name().toLowerCase(Locale.ROOT), player.getGameProfile().getName(),
                 observation.submittedChunks(), observation.expectedChunks(), observation.encodedBytes());
         send(source, "player.no_receipt");
+        yourscraft.jasdewstarfield.brnquest.network.ProgressSyncFailures.get().inspect(player.getUUID()).ifPresent(failure -> {
+            send(source, "player.progress_failed", failure.code(), failure.bytes(), BrnQuestConstants.MAX_PROGRESS_BYTES);
+            if (details) source.sendSuccess(() -> Component.literal("progressRevision=" + failure.revision()), false);
+        });
         if (details) source.sendSuccess(() -> Component.literal("revision=" + observation.revision()
                 + " observedAt=" + observation.observedAt() + " code=" + observation.code()), false);
         return 1;

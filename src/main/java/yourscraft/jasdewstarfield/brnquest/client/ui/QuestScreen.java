@@ -3286,6 +3286,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private Component editorStatus() {
+        // Keep stale-progress feedback visible while the book remains usable for reading.
+        if (ClientQuestState.get().progressSyncFailure().isPresent())
+            return Component.translatable("screen.brnquest.progress_sync.failed");
         ClientEditorState editor = ClientEditorState.get();
         if (editor.editing() && !editor.busy() && editor.mode() != ClientEditorState.Mode.ERROR
                 && clipboardMessage != null && System.currentTimeMillis() < clipboardMessageUntil) return clipboardMessage;

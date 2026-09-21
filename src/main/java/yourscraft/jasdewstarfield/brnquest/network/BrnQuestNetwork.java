@@ -62,6 +62,16 @@ public final class BrnQuestNetwork {
                 BookSyncFailurePayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
+    /** Small optional diagnostic; progress payloads and protocol compatibility remain unchanged. */
+    public record ProgressSyncFailurePayload(String revision, String code, int actual, int maximum) implements CustomPacketPayload {
+        public static final Type<ProgressSyncFailurePayload> TYPE = payloadType("progress_sync_failure");
+        public static final StreamCodec<ByteBuf, ProgressSyncFailurePayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, ProgressSyncFailurePayload::revision,
+                ByteBufCodecs.stringUtf8(64), ProgressSyncFailurePayload::code,
+                ByteBufCodecs.VAR_INT, ProgressSyncFailurePayload::actual,
+                ByteBufCodecs.VAR_INT, ProgressSyncFailurePayload::maximum, ProgressSyncFailurePayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
     public record ProgressSnapshotPayload(String json, boolean toast) implements CustomPacketPayload {
         public static final Type<ProgressSnapshotPayload> TYPE = payloadType("progress_snapshot");
         public static final StreamCodec<ByteBuf, ProgressSnapshotPayload> CODEC = StreamCodec.composite(ByteBufCodecs.stringUtf8(BrnQuestConstants.MAX_PROGRESS_BYTES), ProgressSnapshotPayload::json, ByteBufCodecs.BOOL, ProgressSnapshotPayload::toast, ProgressSnapshotPayload::new);
@@ -193,6 +203,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, BookManifestPayload.TYPE, BookManifestPayload.CODEC, ClientDelegate::manifest);
         registerClient(registrar, BookChunkPayload.TYPE, BookChunkPayload.CODEC, ClientDelegate::chunk);
         registerClient(registrar, BookSyncFailurePayload.TYPE, BookSyncFailurePayload.CODEC, ClientDelegate::bookFailure);
+        registerClient(registrar.optional(), ProgressSyncFailurePayload.TYPE, ProgressSyncFailurePayload.CODEC, ClientDelegate::progressFailure);
         registerClient(registrar, ProgressSnapshotPayload.TYPE, ProgressSnapshotPayload.CODEC, ClientDelegate::progress);
         registerClient(registrar, ProgressDeltaPayload.TYPE, ProgressDeltaPayload.CODEC, ClientDelegate::delta);
         registerClient(registrar, QuestToastPayload.TYPE, QuestToastPayload.CODEC, ClientDelegate::toast);
@@ -263,14 +274,37 @@ public final class BrnQuestNetwork {
 
     private static void syncOneProgress(ServerPlayer player, boolean changed) {
         PlayerProgress progress = ProgressEngine.get().progress(player);
-        String json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), progress.taskProgressView(),
-                ProgressEngine.get().visibleClaims(player), ProgressEngine.get().visibleQuestIds(player),
-                progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision()));
-        if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
-        if (changed) {
-            send(player, new ProgressDeltaPayload(json));
-        } else {
-            send(player, new ProgressSnapshotPayload(json, false));
+        String json;
+        try {
+            json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), progress.taskProgressView(),
+                    ProgressEngine.get().visibleClaims(player), ProgressEngine.get().visibleQuestIds(player),
+                    progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision()));
+        } catch (RuntimeException exception) {
+            rejectProgressSync(player, progress.revision(), "ENCODE_FAILED", 0, exception);
+            return;
+        }
+        int bytes = json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        if (bytes > BrnQuestConstants.MAX_PROGRESS_BYTES) {
+            rejectProgressSync(player, progress.revision(), "PROGRESS_TOO_LARGE", bytes, null);
+            return;
+        }
+        try {
+            boolean submitted = send(player, changed ? new ProgressDeltaPayload(json) : new ProgressSnapshotPayload(json, false));
+            // Clearing a failure records transport submission only; the client clears its own error after applying data.
+            if (submitted) ProgressSyncFailures.get().forget(player.getUUID());
+        } catch (RuntimeException exception) {
+            rejectProgressSync(player, progress.revision(), "SEND_FAILED", bytes, exception);
+        }
+    }
+
+    private static void rejectProgressSync(ServerPlayer player, String revision, String code, int bytes, RuntimeException exception) {
+        if (!ProgressSyncFailures.get().rejected(player.getUUID(), revision, code, bytes)) return;
+        BRNQuest.LOGGER.error("[BRNQuest/NETWORK] Progress sync failed for {}: code={} actual={} maximum={} revision={}",
+                player.getGameProfile().getName(), code, bytes, BrnQuestConstants.MAX_PROGRESS_BYTES, revision, exception);
+        try {
+            send(player, new ProgressSyncFailurePayload(revision, code, bytes, BrnQuestConstants.MAX_PROGRESS_BYTES));
+        } catch (RuntimeException deliveryFailure) {
+            BRNQuest.LOGGER.warn("[BRNQuest/NETWORK] Could not deliver progress failure to {}", player.getUUID(), deliveryFailure);
         }
     }
 
@@ -303,7 +337,7 @@ public final class BrnQuestNetwork {
             return null;
         }
     }
-    static void send(ServerPlayer player, CustomPacketPayload payload) {
+    static boolean send(ServerPlayer player, CustomPacketPayload payload) {
         // Mock players and clients without the negotiated channel must not make
         // otherwise server-only progress operations fail.
         boolean submitted = false;
@@ -316,6 +350,7 @@ public final class BrnQuestNetwork {
             // Record after the transport call, including skipped channels or a thrown send; never claim receipt.
             BookSyncObservations.get().observe(player.getUUID(), payload, submitted);
         }
+        return submitted;
     }
     static List<String> split(String value, int characters) { List<String> result = new ArrayList<>(); for (int i = 0; i < value.length(); i += characters) result.add(value.substring(i, Math.min(value.length(), i + characters))); return result; }
     private static <T extends CustomPacketPayload> CustomPacketPayload.Type<T> payloadType(String path) { return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, path)); }
@@ -331,6 +366,7 @@ public final class BrnQuestNetwork {
         static void manifest(BookManifestPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.manifest(p); }
         static void chunk(BookChunkPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.chunk(p); }
         static void bookFailure(BookSyncFailurePayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.bookFailure(p); }
+        static void progressFailure(ProgressSyncFailurePayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.progressFailure(p); }
         static void progress(ProgressSnapshotPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.progress(p); }
         static void delta(ProgressDeltaPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.delta(p); }
         static void toast(QuestToastPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.toast(p); }

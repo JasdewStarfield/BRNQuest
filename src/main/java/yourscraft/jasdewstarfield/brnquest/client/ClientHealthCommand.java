@@ -16,6 +16,8 @@ public final class ClientHealthCommand {
     }
     private static int report(net.minecraft.commands.CommandSourceStack source, boolean details) {
         messages(ClientQuestState.get().syncHealth(), details).forEach(message -> source.sendSuccess(() -> message, false));
+        ClientQuestState.get().progressSyncFailure().ifPresent(failure -> source.sendSuccess(() ->
+                Component.translatable("message.brnquest.progress_sync.failed", failure.code(), failure.actual(), failure.maximum()), false));
         return 1;
     }
     /** Pure formatting keeps local commands testable without creating a Minecraft client. */

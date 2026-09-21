@@ -41,6 +41,23 @@ public final class ClientQuestState {
     public void finishRewardChoice(String id) { rewardWait.finish(id); }
     private ResourceLocation selected;
     private String bookSyncFailure = "";
+    private BrnQuestNetwork.ProgressSyncFailurePayload progressSyncFailure;
+
+    public Optional<BrnQuestNetwork.ProgressSyncFailurePayload> progressSyncFailure() {
+        return Optional.ofNullable(progressSyncFailure);
+    }
+
+    /** A failed transfer never acknowledges a reward or overwrites the last valid progress. */
+    public boolean progressSyncFailed(BrnQuestNetwork.ProgressSyncFailurePayload failure) {
+        String current = advertisedRevision.isBlank() ? revision() : advertisedRevision;
+        if (!current.isBlank() && !current.equals(failure.revision())) return false;
+        boolean changed = progressSyncFailure == null
+                || !progressSyncFailure.revision().equals(failure.revision())
+                || !progressSyncFailure.code().equals(failure.code());
+        progressSyncFailure = failure;
+        return changed;
+    }
+
     private String advertisedRevision = "";
     private String lastRejectedRevision = "";
     private String lastRejectedCode = "";
@@ -177,25 +194,45 @@ public final class ClientQuestState {
     }
 
     public void progress(String json) {
-        if (json.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_PROGRESS_BYTES) return;
-        BrnQuestNetwork.ProgressWire wire = GSON.fromJson(json, BrnQuestNetwork.ProgressWire.class);
-        // Progress already carries a revision. A delayed prior-book snapshot cannot replace live state or unlock input.
-        if (wire == null || (book != null && !book.revision().equals(wire.revision()))) return;
-        statuses = wire.quests() == null ? Map.of() : Map.copyOf(wire.quests());
-        statuses.forEach((id, status) -> {
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) completionWait.finish(id);
-        });
-        taskProgress = wire.tasks() == null ? Map.of() : Map.copyOf(wire.tasks());
-        claimed = wire.claimed() == null ? Set.of() : Set.copyOf(wire.claimed());
-        // An unrelated progress refresh is not a receipt for an unanswered reward request.
-        claimed.forEach(rewardWait::finish);
-        visible = wire.visible() == null ? Set.of() : Set.copyOf(wire.visible());
-        visibilityAuthoritative = wire.visible() != null;
-        completionCycles = wire.cycles() == null ? Map.of() : Map.copyOf(wire.cycles());
-        nextAvailable = wire.nextAvailable() == null ? Map.of() : Map.copyOf(wire.nextAvailable());
-        // The server sends a progress response for every task submission, including rejected
-        // attempts, so receipt is the acknowledgement that makes task rows clickable again.
-        pendingTaskSubmissions.clear();
+        int bytes = json.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes > BrnQuestConstants.MAX_PROGRESS_BYTES) {
+            progressSyncFailed(new BrnQuestNetwork.ProgressSyncFailurePayload(
+                    advertisedRevision.isBlank() ? revision() : advertisedRevision,
+                    "PROGRESS_TOO_LARGE", bytes, BrnQuestConstants.MAX_PROGRESS_BYTES));
+            return;
+        }
+        try {
+            BrnQuestNetwork.ProgressWire wire = GSON.fromJson(json, BrnQuestNetwork.ProgressWire.class);
+            if (wire == null) throw new IllegalArgumentException("Missing progress object");
+            // A delayed prior-book snapshot cannot replace live state or clear the current failure.
+            if ((book != null && !book.revision().equals(wire.revision()))
+                    || (!advertisedRevision.isBlank() && !advertisedRevision.equals(wire.revision()))) return;
+            // Validate all collections before publishing any field: a malformed tail must not partially apply.
+            var newStatuses = wire.quests() == null ? Map.<String, QuestStatus>of() : Map.copyOf(wire.quests());
+            var newTasks = wire.tasks() == null ? Map.<String, Long>of() : Map.copyOf(wire.tasks());
+            var newClaimed = wire.claimed() == null ? Set.<String>of() : Set.copyOf(wire.claimed());
+            var newVisible = wire.visible() == null ? Set.<String>of() : Set.copyOf(wire.visible());
+            var newCycles = wire.cycles() == null ? Map.<String, Integer>of() : Map.copyOf(wire.cycles());
+            var newNextAvailable = wire.nextAvailable() == null ? Map.<String, Long>of() : Map.copyOf(wire.nextAvailable());
+            statuses = newStatuses;
+            taskProgress = newTasks;
+            claimed = newClaimed;
+            visible = newVisible;
+            visibilityAuthoritative = wire.visible() != null;
+            completionCycles = newCycles;
+            nextAvailable = newNextAvailable;
+            statuses.forEach((id, status) -> {
+                if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) completionWait.finish(id);
+            });
+            // Only actual receipts finish reward requests; an unrelated update is not an acknowledgement.
+            claimed.forEach(rewardWait::finish);
+            pendingTaskSubmissions.clear();
+            progressSyncFailure = null;
+        } catch (RuntimeException exception) {
+            progressSyncFailed(new BrnQuestNetwork.ProgressSyncFailurePayload(
+                    advertisedRevision.isBlank() ? revision() : advertisedRevision,
+                    "DECODE_FAILED", bytes, BrnQuestConstants.MAX_PROGRESS_BYTES));
+        }
     }
 
     public Optional<ResourceLocation> trackedQuest() {
@@ -222,6 +259,7 @@ public final class ClientQuestState {
         lastAppliedRevision = "";
         ignoredChunks = 0;
         bookSyncFailure = "";
+        progressSyncFailure = null;
         clearBookTransfer();
     }
 

@@ -125,6 +125,60 @@ class ClientQuestStateTest {
         assertEquals("CONFLICTING_CHUNK", state.bookSyncFailure());
     }
 
+    @Test void failureRetainsProgressAndWaitsUntilValidRecovery() {
+        var state = ClientQuestState.get();
+        state.progress("{\"tasks\":{\"test:task\":3},\"revision\":\"r1\"}");
+        state.beginTaskSubmission("test:task");
+        state.beginRewardClaim("test:reward");
+        var failure = new yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork.ProgressSyncFailurePayload(
+                "r1", "PROGRESS_TOO_LARGE", 1048577, 1048576);
+        assertTrue(state.progressSyncFailed(failure));
+        assertFalse(state.progressSyncFailed(failure));
+        assertEquals(3L, state.taskProgress().get("test:task"));
+        assertTrue(state.isTaskSubmissionPending("test:task"));
+        assertTrue(state.rewardClaimPending("test:reward"));
+        state.progress("{\"tasks\":{\"test:task\":4},\"revision\":\"r1\"}");
+        assertTrue(state.progressSyncFailure().isEmpty());
+        assertEquals(4L, state.taskProgress().get("test:task"));
+        assertFalse(state.isTaskSubmissionPending("test:task"));
+        assertTrue(state.rewardClaimPending("test:reward"));
+    }
+
+    @Test void priorBookProgressCannotClearANewerAdvertisedFailure() {
+        var state = ClientQuestState.get();
+        state.progress("{\"tasks\":{\"test:task\":3},\"revision\":\"old\"}");
+        state.advertised("new");
+        state.progressSyncFailed(new yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork.ProgressSyncFailurePayload(
+                "new", "PROGRESS_TOO_LARGE", 1048577, 1048576));
+        state.progress("{\"tasks\":{\"test:task\":9},\"revision\":\"old\"}");
+        assertTrue(state.progressSyncFailure().isPresent());
+        assertEquals(3L, state.taskProgress().get("test:task"));
+    }
+
+    @Test void malformedTailDoesNotPartiallyReplaceProgress() {
+        var state = ClientQuestState.get();
+        state.progress("{\"quests\":{\"test:q\":\"ACTIVE\"},\"tasks\":{\"test:task\":3}}");
+        state.progress("{\"quests\":{},\"tasks\":{\"test:task\":9},\"nextAvailable\":{\"test:q\":null}}");
+        assertEquals(3L, state.taskProgress().get("test:task"));
+        assertTrue(state.statuses().containsKey("test:q"));
+        assertEquals("DECODE_FAILED", state.progressSyncFailure().orElseThrow().code());
+        state.progress("{");
+        assertEquals(3L, state.taskProgress().get("test:task"));
+    }
+
+    @Test void oversizeAndStaleFailuresNeverEraseValidState() {
+        var state = ClientQuestState.get();
+        state.progress("{\"tasks\":{\"test:task\":3}}");
+        state.advertised("current");
+        assertFalse(state.progressSyncFailed(new yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork.ProgressSyncFailurePayload(
+                "old", "PROGRESS_TOO_LARGE", 1048577, 1048576)));
+        state.progress("中".repeat(350000));
+        assertEquals("PROGRESS_TOO_LARGE", state.progressSyncFailure().orElseThrow().code());
+        assertEquals(3L, state.taskProgress().get("test:task"));
+        state.disconnected();
+        assertTrue(state.progressSyncFailure().isEmpty());
+    }
+
     private static QuestBookSnapshot snapshot(String path) {
         ResourceLocation bookId = ResourceLocation.fromNamespaceAndPath("test", path);
         ResourceLocation groupId = ResourceLocation.fromNamespaceAndPath("test", path + "_group");

@@ -83,10 +83,17 @@ public final class OpenPacSmoke {
         check(ProgressEngine.get().forceComplete(a, id("quest")).changed(), "shared completion");
         check(ProgressEngine.get().claim(a, id("ordinary")).changed(), "A ordinary reward");
         check(BrnQuestApi.getProgress(b, "opac_test:quest").orElseThrow().claimedRewards().isEmpty(), "B independent receipt");
+        // The synchronized presentation must keep each member's receipts separate.
+        check(ProgressEngine.get().visibleClaims(a).contains("opac_test:ordinary"), "A visible ordinary receipt");
+        check(!ProgressEngine.get().visibleClaims(b).contains("opac_test:ordinary"), "B cannot see A receipt");
         check(ProgressEngine.get().claim(b, id("ordinary")).changed(), "offline member ordinary reward");
         check(!ProgressEngine.get().claim(a, id("ordinary")).changed(), "ordinary idempotency");
         check(ProgressEngine.get().claim(b, id("team")).changed(), "one team reward");
         check(!ProgressEngine.get().claim(a, id("team")).changed(), "team idempotency");
+        check(ProgressEngine.get().visibleStatuses(a).get("opac_test:quest") == QuestStatus.REWARD_CLAIMED,
+                "A visible terminal status includes personal and team receipts");
+        check(ProgressEngine.get().visibleStatuses(b).get("opac_test:quest") == QuestStatus.REWARD_CLAIMED,
+                "B visible terminal status includes own receipts");
         check(a.totalExperience == 1 && b.totalExperience == 3, "actual per-recipient side effects");
         // Automatic delivery and repeat blocking both include an offline completion member.
         check(ProgressEngine.get().forceComplete(a, id("automatic")).changed(), "automatic completion");

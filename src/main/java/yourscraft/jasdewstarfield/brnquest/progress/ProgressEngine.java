@@ -41,6 +41,19 @@ public final class ProgressEngine {
     private static final int MAX_CHAIN_OPERATIONS = 256;
     private static final ThreadLocal<Integer> COMPLETION_DEPTH = ThreadLocal.withInitial(() -> 0);
     private final Map<ProgressOwnerId, Object> locks = new WeakHashMap<>();
+    private volatile TaskPollingPlan pollingPlan;
+    private volatile QuestVisibilityPlan visibilityPlan;
+
+    /** Replacement snapshots rebuild the index, including same-ID config edits and live authoring. */
+    private TaskPollingPlan pollingPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
+        TaskPollingPlan plan = pollingPlan;
+        if (plan == null || plan.snapshot != snapshot) {
+            plan = new TaskPollingPlan(snapshot);
+            pollingPlan = plan;
+        }
+        return plan;
+    }
+
     private ProgressEngine() {}
     public static ProgressEngine get() { return INSTANCE; }
 
@@ -64,17 +77,20 @@ public final class ProgressEngine {
     public Map<String, QuestStatus> visibleStatuses(ServerPlayer player) {
         PlayerProgress progress = progress(player);
         if (!shared(player)) return progress.questsView();
+        // Resolve the viewer ledger once; ordinary receipts remain specific to this member.
         Map<String, QuestStatus> result = new HashMap<>(progress.questsView());
         String tracked = QuestProgressData.get(player.getServer()).tracked(player.getUUID());
         var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot != null) for (QuestDefinition quest : snapshot.book().quests()) {
+        if (snapshot != null) for (QuestDefinition quest : snapshot.quests().values()) {
             String id = quest.id().toString();
             QuestStatus status = progress.status(id);
             if (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) {
                 result.put(id, id.equals(tracked) ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE);
             } else if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
                 result.put(id, !quest.rewards().isEmpty() && quest.rewards().stream()
-                        .allMatch(reward -> rewardClaimed(player, reward)) ? QuestStatus.REWARD_CLAIMED : QuestStatus.COMPLETED);
+                        .allMatch(reward -> reward.teamReward() ? progress.isClaimed(reward.id().toString())
+                                : progress.memberClaimed(player.getUUID(), reward.id().toString()))
+                        ? QuestStatus.REWARD_CLAIMED : QuestStatus.COMPLETED);
             }
         }
         return Map.copyOf(result);
@@ -131,7 +147,7 @@ public final class ProgressEngine {
         PlayerProgress progress = progress(player);
         boolean changed = false;
         long now = System.currentTimeMillis();
-        for (QuestDefinition quest : snapshot.book().quests()) {
+        for (QuestDefinition quest : pollingPlan(snapshot).quests) {
             changed |= advanceRepeatIfReady(quest, progress, now);
         }
         if (changed) {
@@ -145,8 +161,13 @@ public final class ProgressEngine {
         synchronizedOwner(player, () -> {
             var snapshot = QuestBookManager.get().active().orElse(null);
             if (snapshot == null) return null;
+            var due = pollingPlan(snapshot).dueQuests(player.server.getTickCount(), id -> {
+                var type = TaskTypeRegistry.get(id);
+                return type == null ? 0 : type.pollingIntervalTicks();
+            });
+            if (due.isEmpty()) return null;
             var progress = progress(player);
-            for (var quest : snapshot.book().quests()) {
+            for (var quest : due) {
                 var status = progress.status(quest.id().toString());
                 if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) || !dependenciesComplete(quest, progress)) continue;
                 boolean changed = false;
@@ -175,13 +196,14 @@ public final class ProgressEngine {
     public Set<String> visibleQuestIds(ServerPlayer player) {
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return Set.of();
+        QuestVisibilityPlan plan = visibilityPlan;
+        // Same-ID edits/reloads replace the snapshot and must rebuild even if the revision string is reused.
+        if (plan == null || plan.snapshot != snapshot) {
+            plan = new QuestVisibilityPlan(snapshot);
+            visibilityPlan = plan;
+        }
         PlayerProgress progress = progress(player);
-        Map<ResourceLocation, Boolean> memo = new HashMap<>();
-        Set<String> visible = new HashSet<>();
-        snapshot.book().quests().forEach(quest -> {
-            if (isVisible(quest, progress, snapshot.book(), memo)) visible.add(quest.id().toString());
-        });
-        return Set.copyOf(visible);
+        return plan.visible(progress, quest -> dependenciesComplete(quest, progress));
     }
 
     private static ResourceLocation typedLegacyId(String key, String prefix) {
@@ -654,27 +676,6 @@ public final class ProgressEngine {
         if (status == QuestStatus.ACTIVE || dependencyCompleted(id, progress)) return true;
         QuestDefinition quest = QuestBookManager.get().active().map(snapshot -> snapshot.quests().get(id)).orElse(null);
         return quest != null && quest.tasks().stream().anyMatch(task -> progress.taskProgress(task.id().toString()) > 0);
-    }
-
-    private boolean isVisible(QuestDefinition quest, PlayerProgress progress, QuestBookDefinition book,
-                              Map<ResourceLocation, Boolean> memo) {
-        Boolean cached = memo.get(quest.id());
-        if (cached != null) return cached;
-        memo.put(quest.id(), false); // validated DAG guard
-        QuestStatus status = progress.status(quest.id().toString());
-        boolean complete = status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED
-                || progress.completionCycles(quest.id().toString()) > 0;
-        long completedTasks = quest.tasks().stream().filter(task -> progress.taskProgress(task.id().toString()) >= 1).count();
-        if (quest.behavior().invisibleUntilComplete() && !complete
-                && (quest.behavior().visibleAfterTasks() <= 0
-                || completedTasks < quest.behavior().visibleAfterTasks())) return false;
-        if (quest.behavior().hideUntilDependenciesComplete() && !dependenciesComplete(quest, progress)) return false;
-        if (quest.behavior().hideUntilDependenciesVisible()) for (ResourceLocation dependency : quest.dependencies()) {
-            QuestDefinition parent = book.quests().stream().filter(value -> value.id().equals(dependency)).findFirst().orElse(null);
-            if (parent != null && !isVisible(parent, progress, book, memo)) return false;
-        }
-        memo.put(quest.id(), true);
-        return true;
     }
 
     private boolean booleanConfig(Map<String, String> config, String key) {

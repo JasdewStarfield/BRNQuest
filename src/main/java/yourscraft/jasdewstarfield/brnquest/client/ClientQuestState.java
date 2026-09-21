@@ -23,6 +23,8 @@ public final class ClientQuestState {
     private final Map<Integer, String> chunks = new HashMap<>();
     private Map<String, QuestStatus> statuses = Map.of();
     private Map<String, Long> taskProgress = Map.of();
+    private Set<String> waitingForTeam = Set.of();
+    public boolean waitingForTeam(String quest) { return waitingForTeam.contains(quest); }
     private Set<String> claimed = Set.of();
     private Set<String> visible = Set.of();
     private boolean visibilityAuthoritative;
@@ -214,6 +216,9 @@ public final class ClientQuestState {
             var newVisible = wire.visible() == null ? Set.<String>of() : Set.copyOf(wire.visible());
             var newCycles = wire.cycles() == null ? Map.<String, Integer>of() : Map.copyOf(wire.cycles());
             var newNextAvailable = wire.nextAvailable() == null ? Map.<String, Long>of() : Map.copyOf(wire.nextAvailable());
+            var newWaiting = wire.waitingForTeam() == null ? Set.<String>of() : Set.copyOf(wire.waitingForTeam());
+            waitingForTeam = newWaiting;
+            newWaiting.forEach(completionWait::finish);
             statuses = newStatuses;
             taskProgress = newTasks;
             claimed = newClaimed;
@@ -246,6 +251,7 @@ public final class ClientQuestState {
         book = null;
         statuses = Map.of();
         taskProgress = Map.of();
+        waitingForTeam = Set.of();
         claimed = Set.of();
         visible = Set.of();
         visibilityAuthoritative = false;

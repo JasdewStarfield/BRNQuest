@@ -81,7 +81,7 @@ public final class ApiViews {
                 value.invisibleUntilComplete(), value.visibleAfterTasks(), value.hideDetailsUntilStartable(),
                 value.hideTextUntilComplete(), value.hideLockIcon(), value.dependencyRequirement().serializedName(),
                 value.minimumRequiredDependencies(), value.sequentialTasks(), value.repeatable(),
-                value.repeatCooldownSeconds(), value.ignoreRewardBlocking());
+                value.repeatCooldownSeconds(), value.ignoreRewardBlocking(), value.requireAllTeamMembers());
     }
 
     public static TaskView task(TaskDefinition task) {

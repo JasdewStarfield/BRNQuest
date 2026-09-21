@@ -40,7 +40,7 @@
 
 FTB v13 `all_table`、`random`、`loot` 和 `choice` 从外部 `reward_tables` 或内嵌 `table_data` 展开为独立快照。random 不使用源空权重，loot 保留空权重；二者将合法 loot_size 映射为有放回抽取次数，零权重条目转必给。缺失或非法 loot_size、非正/溢出的总权重、缺失引用、循环引用和不可提升的子领取策略报错，源字段仍保留。FTB loot 不等于原生 Minecraft 战利品表，后者尚未开放。
 
-网络协议为 18，客户端和服务端需同步更新。扩展接口见 [EXTENSION_API_zh.md](EXTENSION_API_zh.md)。
+网络协议为 19，客户端和服务端需同步更新。扩展接口见 [EXTENSION_API_zh.md](EXTENSION_API_zh.md)。
 
 领取遇到读写故障时，日志记录格式与保留方式见 [文件读写故障日志](FILE_IO_DIAGNOSTICS_zh.md)。
 

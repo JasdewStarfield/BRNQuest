@@ -23,7 +23,10 @@ public final class ProgressOwnerService {
         }
         ProgressOwnerProvider optional = ProgressOwnerProviderRegistry.get(
                 net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("brnquest", "openpac"));
-        if (optional != null) {
+        // The active book selects the ledger; switching policy never copies or erases history.
+        boolean share = yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get().active()
+                .map(snapshot -> snapshot.book().settings().shareTeamProgress()).orElse(true);
+        if (optional != null && share) {
             try {
                 var id = optional.resolve(player);
                 if (id != null && id.isPresent() && id.get().providerId().equals(optional.id())) {

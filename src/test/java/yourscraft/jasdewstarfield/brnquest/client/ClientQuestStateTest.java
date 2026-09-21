@@ -43,6 +43,20 @@ class ClientQuestStateTest {
         assertFalse(state.rewardClaimPending("test:other"));
         assertFalse(state.questCompletionPending("test:quest"));
     }
+    /** Waiting acknowledges the player's action without making the shared quest terminal. */
+    @Test void waitingForTeamIsAuthoritativeAndClearsAfterCompletionOrDisconnect() {
+        var state = ClientQuestState.get();
+        state.beginQuestCompletion("test:quest");
+        state.progress("{\"quests\":{\"test:quest\":\"AVAILABLE\"},\"tasks\":{},\"waitingForTeam\":[\"test:quest\"]}");
+        assertTrue(state.waitingForTeam("test:quest"));
+        assertFalse(state.questCompletionPending("test:quest"));
+        assertEquals(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.AVAILABLE, state.statuses().get("test:quest"));
+        state.progress("{\"quests\":{\"test:quest\":\"COMPLETED\"},\"waitingForTeam\":[]}");
+        assertFalse(state.waitingForTeam("test:quest"));
+        state.progress("{\"waitingForTeam\":[\"test:quest\"]}");
+        state.disconnected();
+        assertFalse(state.waitingForTeam("test:quest"));
+    }
     @AfterEach void resetSingleton() {
         ClientQuestState.get().resetForTest();
     }

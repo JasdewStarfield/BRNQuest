@@ -831,6 +831,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : Component.translatable(QuestPresentation.statusTranslationKey(quest, status, ClientQuestState.get().claimed()));
         if (gameplayAllowed() && ClientQuestState.get().questCompletionPending(quest.id().toString()))
             statusText = Component.translatable("screen.brnquest.choice.waiting");
+        if (gameplayAllowed() && ClientQuestState.get().waitingForTeam(quest.id().toString()))
+            statusText = Component.translatable("screen.brnquest.status.waiting_for_team");
         UiRect content = new UiRect(left + 10, detailContentTop(), left + 10 + detailsWidth() - 24, detailContentBottom());
         UiRect clip = new UiRect(left + 1 + detailsDrawerOffsetX(), detailContentTop(),
                 Math.min(width, width - 10 + detailsDrawerOffsetX()), detailContentBottom());
@@ -4690,6 +4692,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         result.put("dependency_requirement", value.dependencyRequirement().serializedName());
         result.put("minimum_required_dependencies", Integer.toString(value.minimumRequiredDependencies()));
         result.put("sequential_tasks", Boolean.toString(value.sequentialTasks()));
+        result.put("require_all_team_members", Boolean.toString(value.requireAllTeamMembers()));
         result.put("repeatable", Boolean.toString(value.repeatable()));
         result.put("repeat_cooldown_seconds", Integer.toString(value.repeatCooldownSeconds()));
         result.put("ignore_reward_blocking", Boolean.toString(value.ignoreRewardBlocking()));
@@ -5005,6 +5008,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
+        if (ClientQuestState.get().waitingForTeam(quest.id().toString())) return false;
         if (ClientQuestState.get().questCompletionPending(quest.id().toString())) return false;
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return false;
         return quest.tasks().stream().filter(task -> !task.optional()).allMatch(task ->

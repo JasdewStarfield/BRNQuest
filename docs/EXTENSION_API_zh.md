@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.26` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.27` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -12,7 +12,7 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 ## 注册时间
 
-全部内置目标与奖励通过 `BrnQuestPlugins` 在模组构造阶段注册，类型专属表单、观测缓存、命令恢复及奖励表协议归入内部 `builtin` 包。历史 ID（含 `item_choice` 别名）、字符串配置、语言/图标路径、组合版本 `1`、恢复日志格式和协议 `18` 保持兼容，仍随单个 BRNQuest JAR 提供。单元测试若不运行模组生命周期，需要自行注册所用类型；`builtin` 实现类不属于公共 API。
+全部内置目标与奖励通过 `BrnQuestPlugins` 在模组构造阶段注册，类型专属表单、观测缓存、命令恢复及奖励表协议归入内部 `builtin` 包。历史 ID（含 `item_choice` 别名）、字符串配置、语言/图标路径、组合版本 `1`、恢复日志格式保持兼容；当前网络协议为 `19`，仍随单个 BRNQuest JAR 提供。单元测试若不运行模组生命周期，需要自行注册所用类型；`builtin` 实现类不属于公共 API。
 
 - 附属模组应在自己的构造或 common setup 期间调用 `BrnQuestPlugins.register(BrnQuestPlugin)`。插件通过暂存的 `BrnQuestExtensionRegistrar` 一次声明 task、reward 和 owner provider；只有回调正常结束且全部声明通过预检后才写入实际注册表。
 - 插件 ID 应使用附属模组自己的命名空间；BRNQuest 强制 task、reward 和 owner provider 与该插件 ID 使用相同命名空间。重复插件 ID、重复类型或跨插件命名空间声明会明确失败，不留下半注册结果。

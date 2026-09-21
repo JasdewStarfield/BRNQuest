@@ -128,6 +128,7 @@ public final class NativeBookJson {
             behavior.addProperty("dependency_requirement", quest.behavior().dependencyRequirement().serializedName());
             behavior.addProperty("minimum_required_dependencies", quest.behavior().minimumRequiredDependencies());
             behavior.addProperty("sequential_tasks", quest.behavior().sequentialTasks());
+            behavior.addProperty("require_all_team_members", quest.behavior().requireAllTeamMembers());
             behavior.addProperty("repeatable", quest.behavior().repeatable());
             behavior.addProperty("repeat_cooldown_seconds", quest.behavior().repeatCooldownSeconds());
             behavior.addProperty("ignore_reward_blocking", quest.behavior().ignoreRewardBlocking());
@@ -207,7 +208,7 @@ public final class NativeBookJson {
                         DependencyRequirement.parse(text(behavior, "dependency_requirement", "all_completed")),
                         integer(behavior, "minimum_required_dependencies"), bool(behavior, "sequential_tasks"),
                         bool(behavior, "repeatable"), integer(behavior, "repeat_cooldown_seconds"),
-                        bool(behavior, "ignore_reward_blocking")),
+                        bool(behavior, "ignore_reward_blocking"), bool(behavior, "require_all_team_members")),
                 stringMap(value, "extensions"));
     }
 

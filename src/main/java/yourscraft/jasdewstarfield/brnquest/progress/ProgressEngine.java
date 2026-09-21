@@ -61,6 +61,41 @@ public final class ProgressEngine {
         return QuestProgressData.get(player.getServer()).get(ProgressOwnerService.require(player));
     }
 
+    /** Objectives for all-member quests are personal within the active team and completion cycle. */
+    private boolean allMembers(ServerPlayer player, QuestDefinition quest) {
+        return quest.behavior().requireAllTeamMembers() && shared(player);
+    }
+    private PlayerProgress taskLedger(ServerPlayer player, QuestDefinition quest, PlayerProgress progress) {
+        return allMembers(player, quest) ? progress.objectives(player.getUUID()) : progress;
+    }
+    public long taskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task) {
+        return taskLedger(player, quest, progress(player)).taskProgress(task.id().toString());
+    }
+    /** Every recipient receives their own objective counters, while quest status stays team-wide. */
+    public Map<String, Long> visibleTaskProgress(ServerPlayer player) {
+        PlayerProgress progress = progress(player);
+        Map<String, Long> result = new HashMap<>(progress.taskProgressView());
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot != null && shared(player)) {
+            var personal = progress.objectives(player.getUUID());
+            for (var quest : snapshot.book().quests()) if (quest.behavior().requireAllTeamMembers()) {
+                for (var task : quest.tasks()) result.put(task.id().toString(), personal.taskProgress(task.id().toString()));
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    /** Waiting is server-authored so inventory previews cannot claim personal completion. */
+    public Set<String> waitingForTeam(ServerPlayer player) {
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot == null || !shared(player)) return Set.of();
+        var progress = progress(player);
+        return snapshot.book().quests().stream().filter(quest -> quest.behavior().requireAllTeamMembers())
+                .filter(quest -> progress.status(quest.id().toString()) == QuestStatus.AVAILABLE
+                        || progress.status(quest.id().toString()) == QuestStatus.ACTIVE)
+                .filter(quest -> progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED)
+                .map(quest -> quest.id().toString()).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
     private boolean shared(ServerPlayer player) {
         return !ProgressOwnerService.require(player).providerId().equals(
                 yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders.PERSONAL);
@@ -143,7 +178,21 @@ public final class ProgressEngine {
         if (player.getServer().getTickCount() % 20 != 0) return;
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
-        if (shared(player)) deliverAutomatic(player);
+        if (shared(player)) {
+            deliverAutomatic(player);
+            var ledger = progress(player);
+            var members = ProgressOwnerService.resolve(player).orElseThrow().members();
+            for (var quest : snapshot.book().quests()) {
+                if (!quest.behavior().requireAllTeamMembers()) continue;
+                var status = ledger.status(quest.id().toString());
+                if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
+                        && ledger.allMembersCompleted(quest.id().toString(), members)
+                        && dependenciesComplete(quest, ledger)) {
+                    boundedCompletion(() -> synchronizedOwner(player, () -> markCompleted(player, quest, ledger,
+                            QuestProgressData.get(player.getServer()))));
+                }
+            }
+        }
         PlayerProgress progress = progress(player);
         boolean changed = false;
         long now = System.currentTimeMillis();
@@ -203,7 +252,9 @@ public final class ProgressEngine {
             visibilityPlan = plan;
         }
         PlayerProgress progress = progress(player);
-        return plan.visible(progress, quest -> dependenciesComplete(quest, progress));
+        var tasks = visibleTaskProgress(player);
+        return plan.visible(progress, quest -> dependenciesComplete(quest, progress),
+                task -> tasks.getOrDefault(task.id().toString(), 0L));
     }
 
     private static ResourceLocation typedLegacyId(String key, String prefix) {
@@ -254,6 +305,10 @@ public final class ProgressEngine {
             QuestStatus status = progress.status(questId.toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
+            if (allMembers(player, quest)
+                    && progress.objectives(player.getUUID()).status(questId.toString()) == QuestStatus.COMPLETED) {
+                return finishMemberCompletion(player, quest, progress, data);
+            }
             if (checkmarkIntent) {
                 // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
                 for (TaskDefinition task : quest.tasks()) {
@@ -281,11 +336,20 @@ public final class ProgressEngine {
                 TaskType<?> type = TaskTypeRegistry.get(task.typeId());
                 // Submitted rows already consumed once; unsubmitted optional rows must not be
                 // swept into another row's completion transaction or spend the player's items.
-                if (type != null && !task.optional() && progress.taskProgress(task.id().toString()) < 1
+                if (type != null && !task.optional() && taskLedger(player, quest, progress).taskProgress(task.id().toString()) < 1
                         && !TaskTypeExecutor.consume(type, taskContext(player, quest, task, progress))) {
                     restoreMainInventory(player, inventoryBeforeConsume);
                     return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
                 }
+            }
+            if (allMembers(player, quest)) {
+                // Inventory-satisfied objectives need a receipt before resources disappear or the player logs out.
+                for (var task : quest.tasks()) if (!task.optional()
+                        && taskLedger(player, quest, progress).taskProgress(task.id().toString()) == 0) {
+                    changeTaskProgress(player, quest, task, progress, 1);
+                }
+                data.setDirty();
+                return finishMemberCompletion(player, quest, progress, data);
             }
             return markCompleted(player, quest, progress, data);
         }));
@@ -319,7 +383,7 @@ public final class ProgressEngine {
             PlayerProgress progress = progress(player);
             // Submission is an idempotent command. Check the per-task ledger before quest
             // status so a retransmission after quest completion is also a successful no-op.
-            if (progress.taskProgress(taskId.toString()) >= 1) {
+            if (taskLedger(player, quest, progress).taskProgress(taskId.toString()) >= 1) {
                 return OperationResult.noChange("ALREADY_SUBMITTED", "Task already submitted");
             }
             QuestStatus status = progress.status(questId.toString());
@@ -377,7 +441,7 @@ public final class ProgressEngine {
             // Administrative/API completion intentionally bypasses task resources;
             // callers have already made an explicit server-side authority decision.
             quest.tasks().forEach(task -> {
-                if (progress.taskProgress(task.id().toString()) < 1) {
+                if (taskLedger(player, quest, progress).taskProgress(task.id().toString()) < 1) {
                     changeTaskProgress(player, quest, task, progress, Long.MAX_VALUE / 4);
                 }
             });
@@ -423,7 +487,7 @@ public final class ProgressEngine {
                         // Ignore a broken observer; no progress has been written and other types still receive the event.
                         continue;
                     }
-                    long previous = progress.taskProgress(task.id().toString());
+                    long previous = taskLedger(player, quest, progress).taskProgress(task.id().toString());
                     if (sampled <= previous) continue;
                     changeTaskProgress(player, quest, task, progress, sampled - previous);
                     if (TaskTypeExecutor.satisfied(type, taskContext(player, quest, task, progress))) {
@@ -547,7 +611,7 @@ public final class ProgressEngine {
         }
         TaskDefinition task = quest.tasks().stream().filter(value -> value.id().equals(taskId)).findFirst().orElseThrow();
         if (action == AdminProgressAction.RESET_TASK) {
-            long previous = progress.taskProgress(taskId.toString());
+            long previous = taskLedger(player, quest, progress).taskProgress(taskId.toString());
             progress.resetTask(quest.id().toString(), taskId.toString(),
                     dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
             QuestProgressData.get(player.getServer()).setDirty();
@@ -558,7 +622,7 @@ public final class ProgressEngine {
             reconcile(player);
             return OperationResult.success("Objective progress reset; reward claims preserved");
         }
-        if (progress.taskProgress(taskId.toString()) >= 1) {
+        if (taskLedger(player, quest, progress).taskProgress(taskId.toString()) >= 1) {
             return OperationResult.noChange("ALREADY_SUBMITTED", "Objective already completed");
         }
         // Do not call the normal submission path: it may consume other currently satisfied items.
@@ -567,7 +631,10 @@ public final class ProgressEngine {
         if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED
                 && dependenciesComplete(quest, progress)
                 && quest.tasks().stream().filter(value -> !value.optional())
-                .allMatch(value -> progress.taskProgress(value.id().toString()) >= 1)) {
+                .allMatch(value -> taskLedger(player, quest, progress).taskProgress(value.id().toString()) >= 1)) {
+            if (allMembers(player, quest)) {
+                return boundedCompletion(() -> finishMemberCompletion(player, quest, progress, QuestProgressData.get(player.getServer())));
+            }
             return boundedCompletion(() -> markCompleted(player, quest, progress, QuestProgressData.get(player.getServer())));
         }
         return OperationResult.success("Objective force-completed without consuming resources");
@@ -617,6 +684,21 @@ public final class ProgressEngine {
         return reward.policy().automatic() && type != null && !type.requiresManualClaim(reward.config());
     }
 
+    /** Personal completion is durable, but only the full roster can commit the shared quest. */
+    private OperationResult finishMemberCompletion(ServerPlayer player, QuestDefinition quest,
+                                                   PlayerProgress progress, QuestProgressData data) {
+        boolean changed = progress.objectives(player.getUUID()).status(quest.id().toString()) != QuestStatus.COMPLETED;
+        progress.objectives(player.getUUID()).status(quest.id().toString(), QuestStatus.COMPLETED);
+        if (progress.allMembersCompleted(quest.id().toString(), ProgressOwnerService.resolve(player).orElseThrow().members())) {
+            return markCompleted(player, quest, progress, data);
+        }
+        data.setDirty();
+        BrnQuestNetwork.syncProgress(player, true);
+        return new OperationResult(changed ? yourscraft.jasdewstarfield.brnquest.api.OperationStatus.SUCCESS
+                : yourscraft.jasdewstarfield.brnquest.api.OperationStatus.NO_CHANGE,
+                "WAITING_FOR_TEAM", "Your objectives are complete; waiting for all team members");
+    }
+
     private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
         if (shared(player)) progress.completionMembers(quest.id().toString(),
@@ -654,6 +736,8 @@ public final class ProgressEngine {
     }
 
     private boolean taskIsCurrent(ServerPlayer player, QuestDefinition quest, TaskDefinition task, PlayerProgress progress) {
+        if (allMembers(player, quest)
+                && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED) return false;
         if (!quest.behavior().sequentialTasks() || task.optional()) return true;
         for (TaskDefinition candidate : quest.tasks()) {
             if (candidate.id().equals(task.id())) return true;
@@ -675,7 +759,7 @@ public final class ProgressEngine {
         QuestStatus status = progress.status(id.toString());
         if (status == QuestStatus.ACTIVE || dependencyCompleted(id, progress)) return true;
         QuestDefinition quest = QuestBookManager.get().active().map(snapshot -> snapshot.quests().get(id)).orElse(null);
-        return quest != null && quest.tasks().stream().anyMatch(task -> progress.taskProgress(task.id().toString()) > 0);
+        return quest != null && quest.tasks().stream().anyMatch(task -> progress.taskStarted(task.id().toString()));
     }
 
     private boolean booleanConfig(Map<String, String> config, String key) {
@@ -690,8 +774,8 @@ public final class ProgressEngine {
 
     private long changeTaskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
                                     PlayerProgress progress, long amount) {
-        long previous = progress.taskProgress(task.id().toString());
-        long current = progress.addTaskProgress(task.id().toString(), amount);
+        long previous = taskLedger(player, quest, progress).taskProgress(task.id().toString());
+        long current = taskLedger(player, quest, progress).addTaskProgress(task.id().toString(), amount);
         if (previous != current) {
             // Mark the authoritative world data dirty before observers see the committed value.
             QuestProgressData.get(player.getServer()).setDirty();
@@ -704,7 +788,7 @@ public final class ProgressEngine {
     private TaskContext taskContext(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
                                     PlayerProgress progress) {
         return new TaskContext(player, quest.bookId(), quest.id(), ApiViews.task(task),
-                progress.taskProgress(task.id().toString()));
+                taskLedger(player, quest, progress).taskProgress(task.id().toString()));
     }
 
     private OperationResult boundedCompletion(java.util.function.Supplier<OperationResult> operation) {

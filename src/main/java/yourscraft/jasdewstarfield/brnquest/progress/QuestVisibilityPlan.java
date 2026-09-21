@@ -27,18 +27,24 @@ final class QuestVisibilityPlan {
     }
 
     Set<String> visible(PlayerProgress progress, Predicate<QuestDefinition> dependenciesComplete) {
+        return visible(progress, dependenciesComplete, task -> progress.taskProgress(task.id().toString()));
+    }
+    /** Visibility thresholds use the recipient's counters for all-member objectives. */
+    Set<String> visible(PlayerProgress progress, Predicate<QuestDefinition> dependenciesComplete,
+                        java.util.function.ToLongFunction<yourscraft.jasdewstarfield.brnquest.data.TaskDefinition> taskProgress) {
         // Default books need no progress reads, recursive memo or new ID set for each recipient.
         if (conditional.isEmpty()) return unconditional;
         Set<String> result = new HashSet<>(unconditional);
         Map<ResourceLocation, Boolean> memo = new HashMap<>();
         for (var quest : conditional) {
-            if (visible(quest, progress, dependenciesComplete, memo)) result.add(quest.id().toString());
+            if (visible(quest, progress, dependenciesComplete, memo, taskProgress)) result.add(quest.id().toString());
         }
         return Set.copyOf(result);
     }
 
     private boolean visible(QuestDefinition quest, PlayerProgress progress,
-                            Predicate<QuestDefinition> dependenciesComplete, Map<ResourceLocation, Boolean> memo) {
+                            Predicate<QuestDefinition> dependenciesComplete, Map<ResourceLocation, Boolean> memo,
+                            java.util.function.ToLongFunction<yourscraft.jasdewstarfield.brnquest.data.TaskDefinition> taskProgress) {
         if (unconditional.contains(quest.id().toString())) return true;
         Boolean cached = memo.get(quest.id());
         if (cached != null) return cached;
@@ -53,7 +59,7 @@ final class QuestVisibilityPlan {
                 if (remaining <= 0) return false;
                 // Only this rule needs task progress; stop as soon as its threshold is met.
                 for (var task : quest.tasks()) {
-                    if (progress.taskProgress(task.id().toString()) >= 1 && --remaining == 0) break;
+                    if (taskProgress.applyAsLong(task) >= 1 && --remaining == 0) break;
                 }
                 if (remaining > 0) return false;
             }
@@ -61,7 +67,7 @@ final class QuestVisibilityPlan {
         if (rules.hideUntilDependenciesComplete() && !dependenciesComplete.test(quest)) return false;
         if (rules.hideUntilDependenciesVisible()) for (var id : quest.dependencies()) {
             var parent = snapshot.quests().get(id);
-            if (parent != null && !visible(parent, progress, dependenciesComplete, memo)) return false;
+            if (parent != null && !visible(parent, progress, dependenciesComplete, memo, taskProgress)) return false;
         }
         memo.put(quest.id(), true);
         return true;

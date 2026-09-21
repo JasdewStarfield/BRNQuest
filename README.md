@@ -7,7 +7,7 @@ This repository contains the active BRNQuest implementation for:
 - Java 21
 - branch `mc/1.21.1-neoforge`
 
-BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI, KubeJS, and Open Parties and Claims integration are optional at runtime. OPAC 0.30.3 is the validated compatibility baseline; compatible nearby versions are detected at runtime. OPAC parties share quest progress with individual reward receipts and HUD focus; BRNTalk owns its optional BRNQuest adapter.
+BRNQuest includes a server-authoritative quest runtime and in-game visual editor. JEI, KubeJS, and Open Parties and Claims integration are optional at runtime. OPAC 0.30.3 is the validated compatibility baseline; compatible nearby versions are detected at runtime. OPAC parties share quest progress by default, with optional personal progress and per-quest all-member completion; reward receipts and HUD focus remain individual; BRNTalk owns its optional BRNQuest adapter.
 
 ## Build
 
@@ -20,6 +20,8 @@ Before running Gradle, check for stale Gradle, Java, or Minecraft development pr
 The development run configurations are `runClient`, `runServer`, `runGameTestServer`, `runKubeJsSmokeServer`, `runKubeJsReloadSmokeServer`, and `runData`. The two KubeJS smoke servers opt into their optional runtime automatically and validate both a clean script load and a deliberately failed reload rollback.
 
 ## Documentation
+
+- 队伍共享、独立进度和全员完成 / Team sharing, personal progress and all-member completion: [中文](docs/TEAM_PROGRESS_zh.md) / [English](docs/TEAM_PROGRESS.md)
 
 - 任务界面、键盘操作与编辑生效层次 / Quest UI, keyboard controls and editing: [中文](docs/QUEST_UI_zh.md) / [English](docs/QUEST_UI.md)
 

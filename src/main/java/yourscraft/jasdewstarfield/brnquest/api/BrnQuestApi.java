@@ -357,7 +357,7 @@ public final class BrnQuestApi {
         var progress = ProgressEngine.get().progress(player);
         QuestDefinition definition = quest.orElseThrow();
         Map<ResourceLocation, Long> taskProgress = definition.tasks().stream().collect(Collectors.toUnmodifiableMap(
-                task -> task.id(), task -> progress.taskProgress(task.id().toString())));
+                task -> task.id(), task -> ProgressEngine.get().taskProgress(player, definition, task)));
         Set<ResourceLocation> claimedRewards = definition.rewards().stream()
                 .filter(reward -> ProgressEngine.get().rewardClaimed(player, reward))
                 .map(reward -> reward.id()).collect(Collectors.toUnmodifiableSet());

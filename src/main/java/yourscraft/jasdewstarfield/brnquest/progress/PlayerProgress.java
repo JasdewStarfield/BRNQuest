@@ -9,6 +9,28 @@ import java.util.*;
 
 /** Mutable server-only state; public APIs expose immutable views instead. */
 public final class PlayerProgress {
+    // Per-member objectives live inside the team ledger and survive logout and server restart.
+    private final Map<UUID, PlayerProgress> memberObjectives = new HashMap<>();
+    public PlayerProgress objectives(UUID member) {
+        return memberObjectives.computeIfAbsent(member, ignored -> new PlayerProgress());
+    }
+    /** Completion is tested against the authoritative current roster, including offline members. */
+    public boolean allMembersCompleted(String quest, Set<UUID> members) {
+        return !members.isEmpty() && members.stream().allMatch(member -> {
+            var objectives = memberObjectives.get(member);
+            return objectives != null && objectives.status(quest) == QuestStatus.COMPLETED;
+        });
+    }
+    /** Immutable member state participates in administrator stale-preview detection. */
+    public Map<UUID, String> objectiveState(String quest, Collection<String> tasks) {
+        Map<UUID, String> result = new TreeMap<>();
+        memberObjectives.forEach((member, ledger) -> {
+            Map<String, Long> values = new TreeMap<>();
+            tasks.forEach(task -> values.put(task, ledger.taskProgress(task)));
+            result.put(member, ledger.status(quest).name() + values);
+        });
+        return Map.copyOf(result);
+    }
     private final Map<String, QuestStatus> quests = new HashMap<>();
     private final Map<String, Long> taskProgress = new HashMap<>();
     private final Set<String> claimedRewards = new HashSet<>();
@@ -30,6 +52,10 @@ public final class PlayerProgress {
     public QuestStatus status(String id) { return quests.getOrDefault(id, QuestStatus.LOCKED); }
     public void status(String id, QuestStatus status) { quests.put(id, status); }
     public long taskProgress(String id) { return taskProgress.getOrDefault(id, 0L); }
+    /** Started dependencies can observe contribution by any member without combining their counters. */
+    public boolean taskStarted(String id) {
+        return taskProgress(id) > 0 || memberObjectives.values().stream().anyMatch(ledger -> ledger.taskProgress(id) > 0);
+    }
     public long addTaskProgress(String id, long amount) { return taskProgress.merge(id, amount, Long::sum); }
     public boolean claim(String id) { return claimedRewards.add(id); }
     public boolean isClaimed(String id) { return claimedRewards.contains(id); }
@@ -80,6 +106,8 @@ public final class PlayerProgress {
     /** Moves quest-level state across a canonical ID alias without touching stable task/reward ledgers. */
     public boolean migrateQuestId(String oldId, String newId) {
         if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        boolean memberChanged = false;
+        for (var ledger : memberObjectives.values()) memberChanged |= ledger.migrateQuestId(oldId, newId);
         boolean oldAttempt = rewardAttempts.remove(oldId);
         if (oldAttempt) rewardAttempts.add(newId);
         String oldGeneration = claimGenerations.remove(oldId);
@@ -87,7 +115,7 @@ public final class PlayerProgress {
         Long oldCompletion = completionTimes.remove(oldId);
         Integer oldCycles = completionCycles.remove(oldId);
         Long oldNext = nextAvailableTimes.remove(oldId);
-        boolean changed = oldAttempt || oldGeneration != null || oldStatus != null || oldCompletion != null || oldCycles != null || oldNext != null
+        boolean changed = memberChanged || oldAttempt || oldGeneration != null || oldStatus != null || oldCompletion != null || oldCycles != null || oldNext != null
                 || orphanedQuestIds.remove(oldId);
         if (oldGeneration != null) claimGenerations.putIfAbsent(newId, oldGeneration);
         if (oldStatus != null) {
@@ -107,8 +135,10 @@ public final class PlayerProgress {
     /** Moves accumulated task progress when an author explicitly renames the stable task ID. */
     public boolean migrateTaskId(String oldId, String newId) {
         if (oldId == null || newId == null || oldId.equals(newId)) return false;
+        boolean memberChanged = false;
+        for (var ledger : memberObjectives.values()) memberChanged |= ledger.migrateTaskId(oldId, newId);
         Long oldProgress = taskProgress.remove(oldId);
-        if (oldProgress == null) return false;
+        if (oldProgress == null) return memberChanged;
         taskProgress.merge(newId, oldProgress, Math::max);
         return true;
     }
@@ -134,6 +164,7 @@ public final class PlayerProgress {
         }
         quests.remove(questId);
         completionTimes.remove(questId);
+        memberObjectives.values().forEach(ledger -> ledger.resetQuest(questId, taskIds, rewardIds));
         taskIds.forEach(taskProgress::remove);
         claimedRewards.removeAll(rewardIds);
         memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
@@ -145,6 +176,7 @@ public final class PlayerProgress {
     /** Starts a new repeat cycle only after the prior cycle's reward policy permits it. */
     public void beginNextCycle(String questId, Collection<String> taskIds, Collection<String> rewardIds,
                                QuestStatus availableStatus) {
+        memberObjectives.values().forEach(ledger -> ledger.resetQuest(questId, taskIds, rewardIds));
         taskIds.forEach(taskProgress::remove);
         claimedRewards.removeAll(rewardIds);
         memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
@@ -156,6 +188,7 @@ public final class PlayerProgress {
 
     /** A single-objective reset must never make previously delivered rewards claimable again. */
     void resetTask(String questId, String taskId, QuestStatus reopenedStatus) {
+        memberObjectives.values().forEach(ledger -> ledger.resetTask(questId, taskId, reopenedStatus));
         taskProgress.remove(taskId);
         completionTimes.remove(questId);
         // An administrator reopening an objective invalidates dependency completion for this quest.
@@ -178,6 +211,9 @@ public final class PlayerProgress {
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putString("revision", revision);
+        CompoundTag objectives = new CompoundTag();
+        memberObjectives.forEach((member, ledger) -> objectives.put(member.toString(), ledger.save()));
+        tag.put("member_objectives", objectives);
         CompoundTag generations = new CompoundTag();
         claimGenerations.forEach(generations::putString);
         tag.put("claim_generations", generations);
@@ -212,6 +248,11 @@ public final class PlayerProgress {
     public static PlayerProgress load(CompoundTag tag) {
         PlayerProgress result = new PlayerProgress();
         result.revision = tag.getString("revision");
+        CompoundTag objectives = tag.getCompound("member_objectives");
+        for (String member : objectives.getAllKeys()) {
+            try { result.memberObjectives.put(UUID.fromString(member), load(objectives.getCompound(member))); }
+            catch (IllegalArgumentException ignored) { /* Retain every valid member when a key is malformed. */ }
+        }
         readStrings(tag.getList("reward_attempts", Tag.TAG_STRING), result.rewardAttempts);
         CompoundTag generations = tag.getCompound("claim_generations");
         generations.getAllKeys().forEach(key -> result.claimGenerations.put(key, generations.getString(key)));

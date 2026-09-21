@@ -276,9 +276,10 @@ public final class BrnQuestNetwork {
         PlayerProgress progress = ProgressEngine.get().progress(player);
         String json;
         try {
-            json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), progress.taskProgressView(),
+            json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), ProgressEngine.get().visibleTaskProgress(player),
                     ProgressEngine.get().visibleClaims(player), ProgressEngine.get().visibleQuestIds(player),
-                    progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision()));
+                    progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision(),
+                    ProgressEngine.get().waitingForTeam(player)));
         } catch (RuntimeException exception) {
             rejectProgressSync(player, progress.revision(), "ENCODE_FAILED", 0, exception);
             return;
@@ -360,7 +361,14 @@ public final class BrnQuestNetwork {
     public record ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
                                java.util.Map<String, Long> tasks, java.util.Set<String> claimed,
                                java.util.Set<String> visible, java.util.Map<String, Integer> cycles,
-                               java.util.Map<String, Long> nextAvailable, String revision) {}
+                               java.util.Map<String, Long> nextAvailable, String revision, java.util.Set<String> waitingForTeam) {
+        /** Older callers omit the optional waiting indicator. */
+        public ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
+                            java.util.Map<String, Long> tasks, java.util.Set<String> claimed, java.util.Set<String> visible,
+                            java.util.Map<String, Integer> cycles, java.util.Map<String, Long> nextAvailable, String revision) {
+            this(quests, tasks, claimed, visible, cycles, nextAvailable, revision, java.util.Set.of());
+        }
+    }
     private static final class ClientDelegate {
         static void hello(HelloPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.hello(p); }
         static void manifest(BookManifestPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.manifest(p); }

@@ -104,6 +104,7 @@ public final class OpenPacSmoke {
         check(ProgressEngine.get().progress(a).status("opac_test:repeat") == QuestStatus.COMPLETED, "offline member blocks repeat");
         check(ProgressEngine.get().claim(b, id("repeat_reward")).changed(), "second repeat receipt");
         check(ProgressEngine.get().progress(a).status("opac_test:repeat") == QuestStatus.AVAILABLE, "all members permit next repeat");
+        verifyTeamPolicies(a, b, party);
         party.addMember(C, PartyMemberRank.MEMBER, "OpacC");
         check(ProgressEngine.get().claim(c, id("ordinary")).code().equals("NOT_ELIGIBLE"), "late join has no old-cycle entitlement");
         // Owner transfer has no public mutator; this fixture alone exercises the audited internal operation.
@@ -125,6 +126,9 @@ public final class OpenPacSmoke {
         durable.addMember(B, PartyMemberRank.MEMBER, "OpacB");
         var durableOwner = ProgressOwnerService.require(a);
         data.get(durableOwner).addTaskProgress("opac_test:restart", 9);
+        ProgressEngine.get().reconcile(a);
+        check(ProgressEngine.get().complete(a, id("all_members"), true).code().equals("WAITING_FOR_TEAM"),
+                "durable fixture waits for offline B");
         data.tracked(SAVED_ID, durable.getId().toString());
         data.setDirty();
         if (Boolean.getBoolean("brnquest.opac.disableHooks")) {
@@ -164,6 +168,59 @@ public final class OpenPacSmoke {
         check(data.ownerIds().stream().anyMatch(id -> data.archive(id).isPresent()
                 && data.get(id).memberClaimed(A, "opac_test:ordinary")), "archive and receipts survive restart");
         check(ProgressOwnerService.resolve(a).orElseThrow().members().equals(Set.of(A, B)), "offline membership survives restart");
+        check(ProgressEngine.get().waitingForTeam(a).contains("opac_test:all_members"), "personal completion survives restart");
+        var b = player(server, B, "OpacB");
+        check(ProgressEngine.get().visibleTaskProgress(b).get("opac_test:all_check") == 0L, "offline member still needs own task");
+        check(ProgressEngine.get().complete(b, id("all_members"), true).changed(), "remaining member completes after restart");
+        check(ProgressEngine.get().progress(a).status("opac_test:after_all") == QuestStatus.AVAILABLE, "restart completion unlocks descendant");
+    }
+    /** Exercise real OPAC membership with personal ledgers and the ordinary completion transaction. */
+    private static void verifyTeamPolicies(ServerPlayer a, ServerPlayer b, xaero.pac.common.server.parties.party.api.IServerPartyAPI party) {
+        var engine = ProgressEngine.get();
+        var original = QuestBookManager.get().active().orElseThrow().book();
+        var personalBook = new QuestBookDefinition(original.id(), original.schemaVersion(), original.title(),
+                original.chapterGroups(), original.chapters(), original.legacyIds(), original.localization(),
+                original.extensions(), original.questDefaults(), new BookSettings(false, false, "manual", false, false, false));
+        check(QuestBookManager.get().install(personalBook, new DiagnosticReport()), "personal mode publishes");
+        engine.reconcile(a); engine.reconcile(b);
+        check(!ProgressOwnerService.require(a).equals(ProgressOwnerService.require(b)), "same OPAC party uses separate personal ledgers");
+        check(engine.complete(a, id("all_members"), true).changed(), "all-member option behaves normally in personal mode");
+        check(engine.progress(b).status("opac_test:all_members") == QuestStatus.AVAILABLE, "personal completion does not leak");
+        check(QuestBookManager.get().install(original, new DiagnosticReport()), "shared mode publishes");
+        engine.reconcile(a); engine.reconcile(b);
+        check(engine.complete(a, id("all_members"), true).code().equals("WAITING_FOR_TEAM"), "A alone cannot finish shared quest");
+        check(engine.visibleTaskProgress(a).get("opac_test:all_check") == 1L, "A sees own objective");
+        check(engine.visibleTaskProgress(b).get("opac_test:all_check") == 0L, "B never inherits A objective");
+        check(engine.progress(a).status("opac_test:after_all") == QuestStatus.LOCKED, "descendant stays locked");
+        check(engine.claim(a, id("all_reward")).code().equals("LOCKED"), "rewards wait for everyone");
+        engine.complete(a, id("all_members"), true);
+        check(engine.visibleTaskProgress(a).get("opac_test:all_check") == 1L, "waiting submission is idempotent");
+        party.addMember(C, PartyMemberRank.MEMBER, "OpacC");
+        check(engine.complete(b, id("all_members"), true).code().equals("WAITING_FOR_TEAM"), "new offline member is required");
+        party.removeMember(C);
+        engine.tick(a);
+        check(engine.progress(a).status("opac_test:all_members") == QuestStatus.COMPLETED, "departed member completes through scheduled roster check");
+        check(engine.progress(a).status("opac_test:after_all") == QuestStatus.AVAILABLE, "all-member completion unlocks descendant");
+        party.addMember(C, PartyMemberRank.MEMBER, "OpacC");
+        engine.reconcile(a);
+        check(engine.progress(a).status("opac_test:all_members") == QuestStatus.COMPLETED, "late join does not reopen terminal quest");
+        party.removeMember(C);
+        a.getInventory().add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE, 6));
+        b.getInventory().add(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.STONE, 6));
+        check(engine.completeTask(a, id("all_items"), id("all_item")).code().equals("WAITING_FOR_TEAM"), "A submits own items");
+        check(a.getInventory().countItem(net.minecraft.world.item.Items.STONE) == 3, "only A resources consumed");
+        engine.complete(a, id("all_items"), false);
+        engine.completeTask(a, id("all_items"), id("all_item"));
+        check(a.getInventory().countItem(net.minecraft.world.item.Items.STONE) == 3, "waiting retries never consume twice");
+        check(b.getInventory().countItem(net.minecraft.world.item.Items.STONE) == 6, "B resources untouched until own submission");
+        check(engine.completeTask(b, id("all_items"), id("all_item")).changed(), "B completes using own items");
+        check(b.getInventory().countItem(net.minecraft.world.item.Items.STONE) == 3, "B consumes own resources once");
+        engine.reset(a, id("all_members"));
+        check(engine.visibleTaskProgress(a).get("opac_test:all_check") == 0L
+                && engine.visibleTaskProgress(b).get("opac_test:all_check") == 0L, "reset clears every member");
+        check(QuestBookManager.get().install(personalBook, new DiagnosticReport()), "return to personal mode");
+        check(engine.progress(a).status("opac_test:all_members") == QuestStatus.COMPLETED, "personal history retained after team reset");
+        check(QuestBookManager.get().install(original, new DiagnosticReport()), "restore fixture policy");
     }
     private static void install() {
         var ordinary = new RewardDefinition(id("book"), id("ordinary"), ResourceLocation.parse("brnquest:xp"), Map.of("xp", "1"), "manual", false);
@@ -180,8 +237,19 @@ public final class OpenPacSmoke {
                 Map.of("xp", "1"), "manual", false)), "", QuestAppearance.DEFAULT,
                 new QuestBehavior(false, false, false, 0, false, false, false, DependencyRequirement.ALL_COMPLETED,
                         0, false, true, 0, false), Map.of());
+        var all = new QuestDefinition(id("book"), id("all_members"), id("chapter"), "Everyone", "", "", "", 4, 0,
+                List.of(), List.of(new TaskDefinition(id("book"), id("all_check"), ResourceLocation.parse("brnquest:checkmark"), Map.of(), false)),
+                List.of(new RewardDefinition(id("book"), id("all_reward"), ResourceLocation.parse("brnquest:xp"), Map.of("xp", "1"), "manual", false)),
+                "", QuestAppearance.DEFAULT, new QuestBehavior(false, false, false, 0, false, false, false,
+                DependencyRequirement.ALL_COMPLETED, 0, false, false, 0, false, true), Map.of());
+        var after = new QuestDefinition(id("book"), id("after_all"), id("chapter"), "After everyone", "", "", "", 5, 0,
+                List.of(all.id()), List.of(), List.of(), "");
+        var allItems = new QuestDefinition(id("book"), id("all_items"), id("chapter"), "Individual items", "", "", "", 6, 0,
+                List.of(), List.of(new TaskDefinition(id("book"), id("all_item"), ResourceLocation.parse("brnquest:item"),
+                Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "3", "consume_items", "true"), false)),
+                List.of(), "", QuestAppearance.DEFAULT, all.behavior(), Map.of());
         var book = new QuestBookDefinition(id("book"), 1, "OPAC fixture", List.of(new ChapterGroupDefinition(id("book"), id("group"), "Group", 0)),
-                List.of(new ChapterDefinition(id("book"), id("chapter"), id("group"), "Chapter", "", 0, List.of(quest, focus, automatic, repeat))), Map.of());
+                List.of(new ChapterDefinition(id("book"), id("chapter"), id("group"), "Chapter", "", 0, List.of(quest, focus, automatic, repeat, all, after, allItems))), Map.of());
         check(QuestBookManager.get().install(book, new DiagnosticReport()), "fixture book valid");
     }
     private static ResourceLocation id(String path) { return ResourceLocation.fromNamespaceAndPath("opac_test", path); }

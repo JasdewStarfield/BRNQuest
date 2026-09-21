@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 
 /** Small policy form stages changes locally, then returns them to the book-property transaction. */
 final class EditorBookSettingsScreen extends Screen {
-    private static final List<String> FIELDS = List.of("consume_items", "reward_team", "reward_claim_policy", "suppress_auto_claim", "pause_game");
+    private static final List<String> FIELDS = List.of("consume_items", "reward_team", "reward_claim_policy", "suppress_auto_claim", "pause_game", "share_team_progress");
     private final Screen parent;
     private final Consumer<BookSettings> selection;
     private final Map<String, String> values = new HashMap<>();
@@ -20,7 +20,7 @@ final class EditorBookSettingsScreen extends Screen {
         super(Component.translatable("screen.brnquest.book.settings"));
         this.parent = parent; this.selection = selection; values.putAll(initial.values());
     }
-    private int top() { return (height - 208) / 2; }
+    private int top() { return (height - 234) / 2; }
     private int panelWidth() { return Math.min(430, width - 28); }
     @Override protected void init() {
         int w = panelWidth(), left = (width - w) / 2;
@@ -35,11 +35,11 @@ final class EditorBookSettingsScreen extends Screen {
             }));
             button.setTooltip(Tooltip.create(Component.translatable("screen.brnquest.book.setting." + key + ".help")));
         }
-        addRenderableWidget(new EditorButtonWidget(left, top() + 176, w / 2 - 4, 20, Component.translatable("gui.cancel"), button -> onClose()));
-        addRenderableWidget(new EditorButtonWidget(left + w / 2 + 4, top() + 176, w / 2 - 4, 20,
+        addRenderableWidget(new EditorButtonWidget(left, top() + 202, w / 2 - 4, 20, Component.translatable("gui.cancel"), button -> onClose()));
+        addRenderableWidget(new EditorButtonWidget(left + w / 2 + 4, top() + 202, w / 2 - 4, 20,
                 Component.translatable("screen.brnquest.editor.scope.apply_parent"), button -> {
             selection.accept(new BookSettings(Boolean.parseBoolean(values.get("consume_items")), Boolean.parseBoolean(values.get("reward_team")),
-                    values.get("reward_claim_policy"), Boolean.parseBoolean(values.get("suppress_auto_claim")), Boolean.parseBoolean(values.get("pause_game"))));
+                    values.get("reward_claim_policy"), Boolean.parseBoolean(values.get("suppress_auto_claim")), Boolean.parseBoolean(values.get("pause_game")), Boolean.parseBoolean(values.get("share_team_progress"))));
             onClose();
         }));
     }
@@ -54,7 +54,7 @@ final class EditorBookSettingsScreen extends Screen {
         try {
             int w = panelWidth(), left = (width - w) / 2;
             graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
-            GraystoneSurface.raised(graphics, new UiRect(left - 10, top(), left + w + 10, top() + 208), GraystonePalette.PANEL, true);
+            GraystoneSurface.raised(graphics, new UiRect(left - 10, top(), left + w + 10, top() + 234), GraystonePalette.PANEL, true);
             graphics.drawCenteredString(font, title, width / 2, top() + 10, GraystonePalette.TEXT);
             for (int i = 0; i < FIELDS.size(); i++) EditorPropertyRow.label(graphics, font,
                     Component.translatable("screen.brnquest.book.setting." + FIELDS.get(i)),

@@ -10,7 +10,17 @@ public record QuestBehavior(boolean hideUntilDependenciesVisible, boolean hideUn
                             boolean hideLockIcon, DependencyRequirement dependencyRequirement,
                             int minimumRequiredDependencies, boolean sequentialTasks,
                             boolean repeatable, int repeatCooldownSeconds,
-                            boolean ignoreRewardBlocking) {
+                            boolean ignoreRewardBlocking, boolean requireAllTeamMembers) {
+    /** Preserve the default behavior for existing integrations and imported quests. */
+    public QuestBehavior(boolean hideUntilDependenciesVisible, boolean hideUntilDependenciesComplete,
+                         boolean invisibleUntilComplete, int visibleAfterTasks,
+                         boolean hideDetailsUntilStartable, boolean hideTextUntilComplete, boolean hideLockIcon,
+                         DependencyRequirement dependencyRequirement, int minimumRequiredDependencies,
+                         boolean sequentialTasks, boolean repeatable, int repeatCooldownSeconds, boolean ignoreRewardBlocking) {
+        this(hideUntilDependenciesVisible, hideUntilDependenciesComplete, invisibleUntilComplete, visibleAfterTasks,
+                hideDetailsUntilStartable, hideTextUntilComplete, hideLockIcon, dependencyRequirement,
+                minimumRequiredDependencies, sequentialTasks, repeatable, repeatCooldownSeconds, ignoreRewardBlocking, false);
+    }
     public static final QuestBehavior DEFAULT = new QuestBehavior(false, false, false, 0,
             false, false, false, DependencyRequirement.ALL_COMPLETED, 0,
             false, false, 0, false);
@@ -30,7 +40,8 @@ public record QuestBehavior(boolean hideUntilDependenciesVisible, boolean hideUn
             Codec.BOOL.optionalFieldOf("sequential_tasks", false).forGetter(QuestBehavior::sequentialTasks),
             Codec.BOOL.optionalFieldOf("repeatable", false).forGetter(QuestBehavior::repeatable),
             Codec.INT.optionalFieldOf("repeat_cooldown_seconds", 0).forGetter(QuestBehavior::repeatCooldownSeconds),
-            Codec.BOOL.optionalFieldOf("ignore_reward_blocking", false).forGetter(QuestBehavior::ignoreRewardBlocking)
+            Codec.BOOL.optionalFieldOf("ignore_reward_blocking", false).forGetter(QuestBehavior::ignoreRewardBlocking),
+            Codec.BOOL.optionalFieldOf("require_all_team_members", false).forGetter(QuestBehavior::requireAllTeamMembers)
     ).apply(i, QuestBehavior::new));
 
     public QuestBehavior {

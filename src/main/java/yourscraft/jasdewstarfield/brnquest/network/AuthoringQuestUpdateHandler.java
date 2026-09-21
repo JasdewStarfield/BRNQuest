@@ -71,7 +71,7 @@ final class AuthoringQuestUpdateHandler {
                 behaviorInput.invisibleUntilComplete(), behaviorInput.visibleAfterTasks(), behaviorInput.hideDetailsUntilStartable(),
                 behaviorInput.hideTextUntilComplete(), behaviorInput.hideLockIcon(), behaviorInput.dependencyRequirement(),
                 behaviorInput.minimumRequiredDependencies(), behaviorInput.sequentialTasks(), behaviorInput.repeatable(),
-                behaviorInput.repeatCooldownSeconds(), behaviorInput.ignoreRewardBlocking());
+                behaviorInput.repeatCooldownSeconds(), behaviorInput.ignoreRewardBlocking(), behaviorInput.requireAllTeamMembers());
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
                 wire.title(), wire.subtitle(), wire.description(), quest.descriptionFormat(), icon, replacementX, replacementY,
                 quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior, quest.extensions());

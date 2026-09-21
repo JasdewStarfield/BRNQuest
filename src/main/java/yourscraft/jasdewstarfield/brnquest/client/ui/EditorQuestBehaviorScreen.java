@@ -23,11 +23,11 @@ import java.util.function.Consumer;
 /** Scrollable behavior form composed from the same property rows, fields, buttons and scrollbar as the main editor. */
 public final class EditorQuestBehaviorScreen extends Screen {
     private static final int ROW_HEIGHT = 24;
-    private static final int ROW_COUNT = 13;
+    private static final int ROW_COUNT = 14;
     private static final List<String> BOOLEAN_KEYS = List.of(
             "hide_until_dependencies_visible", "hide_until_dependencies_complete", "invisible_until_complete",
             "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon",
-            "sequential_tasks", "repeatable", "ignore_reward_blocking");
+            "sequential_tasks", "repeatable", "ignore_reward_blocking", "require_all_team_members");
 
     // Shared input feedback follows the same rendered geometry as every form button.
     private final EditorButtonInput buttons = new EditorButtonInput();
@@ -52,7 +52,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
         this.consumer = consumer;
         booleans.addAll(List.of(value.hideUntilDependenciesVisible(), value.hideUntilDependenciesComplete(),
                 value.invisibleUntilComplete(), value.hideDetailsUntilStartable(), value.hideTextUntilComplete(),
-                value.hideLockIcon(), value.sequentialTasks(), value.repeatable(), value.ignoreRewardBlocking()));
+                value.hideLockIcon(), value.sequentialTasks(), value.repeatable(), value.ignoreRewardBlocking(), value.requireAllTeamMembers()));
         requirement = value.dependencyRequirement();
         visibleAfterTasksValue = value.visibleAfterTasks();
         minimumDependenciesValue = value.minimumRequiredDependencies();
@@ -255,7 +255,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
     private void apply() {
         consumer.accept(new QuestBehavior(booleans.get(0), booleans.get(1), booleans.get(2), parse(visibleAfterTasks),
                 booleans.get(3), booleans.get(4), booleans.get(5), requirement, parse(minimumDependencies),
-                booleans.get(6), booleans.get(7), parse(cooldownSeconds), booleans.get(8)));
+                booleans.get(6), booleans.get(7), parse(cooldownSeconds), booleans.get(8), booleans.get(9)));
         onClose();
     }
 
@@ -286,6 +286,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
             case 4, 5, 6 -> row - 1;
             case 9, 10 -> row - 3;
             case 12 -> 8;
+            case 13 -> 9;
             default -> -1;
         };
     }

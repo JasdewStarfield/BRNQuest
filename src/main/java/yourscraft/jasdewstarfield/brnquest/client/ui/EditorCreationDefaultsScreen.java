@@ -31,7 +31,7 @@ final class EditorCreationDefaultsScreen extends Screen {
             List.of("hide_until_dependencies_visible", "hide_until_dependencies_complete", "invisible_until_complete",
                     "visible_after_tasks", "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon"),
             List.of("dependency_requirement"),
-            List.of("sequential_tasks", "repeatable", "repeat_cooldown_seconds", "ignore_reward_blocking"));
+            List.of("sequential_tasks", "repeatable", "repeat_cooldown_seconds", "ignore_reward_blocking", "require_all_team_members"));
     private static final List<String> FIELDS = GROUPS.stream().flatMap(List::stream).toList();
     EditorCreationDefaultsScreen(Screen parent, QuestCreationDefaults initial, QuestCreationDefaults inherited,
                                  Consumer<QuestCreationDefaults> selection) {

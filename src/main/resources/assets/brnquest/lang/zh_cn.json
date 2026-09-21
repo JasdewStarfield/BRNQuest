@@ -919,5 +919,10 @@
   "screen.brnquest.canvas.import_single": "请一次导入一张 PNG。",
   "message.brnquest.progress_sync.failed": "任务进度同步失败（%s；%s / %s 字节）。显示的进度可能已过期。服务端问题解决后，重新打开任务书可重试。",
   "screen.brnquest.progress_sync.failed": "进度同步失败 · 当前显示可能已过期",
-  "command.brnquest.health.player.progress_failed": "进度同步失败：%s，%s / %s 字节。"
+  "command.brnquest.health.player.progress_failed": "进度同步失败：%s，%s / %s 字节。",
+  "screen.brnquest.book.setting.share_team_progress": "共享队伍任务进度",
+  "screen.brnquest.book.setting.share_team_progress.help": "与 OPAC 队友共享任务进度。关闭后，每位玩家使用各自的个人记录；原有个人和队伍记录都会保留。",
+  "screen.brnquest.editor.behavior.require_all_team_members": "要求队内全员完成",
+  "screen.brnquest.status.waiting_for_team": "个人目标已完成，等待队友完成",
+  "screen.brnquest.defaults.require_all_team_members": "要求队内全员完成"
 }

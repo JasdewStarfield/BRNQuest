@@ -9,7 +9,7 @@ public record QuestCreationDefaults(Map<String, String> values) {
     public static final List<String> FIELDS = List.of("shape", "size", "icon_scale", "min_width",
             "hide_until_dependencies_visible", "hide_until_dependencies_complete", "hide_details_until_startable",
             "hide_text_until_complete", "sequential_tasks", "repeatable", "invisible_until_complete",
-            "visible_after_tasks", "hide_lock_icon", "dependency_requirement", "repeat_cooldown_seconds", "ignore_reward_blocking");
+            "visible_after_tasks", "hide_lock_icon", "dependency_requirement", "repeat_cooldown_seconds", "ignore_reward_blocking", "require_all_team_members");
     /** Field kinds are explicit so UI pagination and JSON validation do not depend on list positions. */
     public static boolean integerField(String key) {
         return key.equals("visible_after_tasks") || key.equals("repeat_cooldown_seconds");
@@ -85,7 +85,7 @@ public record QuestCreationDefaults(Map<String, String> values) {
                 flag("invisible_until_complete"), integer("visible_after_tasks"), flag("hide_details_until_startable"),
                 flag("hide_text_until_complete"), flag("hide_lock_icon"),
                 DependencyRequirement.parse(values.get("dependency_requirement")), d.minimumRequiredDependencies(),
-                flag("sequential_tasks"), flag("repeatable"), integer("repeat_cooldown_seconds"), flag("ignore_reward_blocking"));
+                flag("sequential_tasks"), flag("repeatable"), integer("repeat_cooldown_seconds"), flag("ignore_reward_blocking"), flag("require_all_team_members"));
     }
     private int integer(String key) { return Integer.parseInt(values.getOrDefault(key, "0")); }
     private double number(String key, double fallback) { return values.containsKey(key) ? Double.parseDouble(values.get(key)) : fallback; }

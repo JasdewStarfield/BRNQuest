@@ -919,5 +919,10 @@
   "screen.brnquest.canvas.import_single": "Import one PNG at a time.",
   "message.brnquest.progress_sync.failed": "Quest progress sync failed (%s; %s / %s bytes). Displayed progress may be outdated. After the server issue is resolved, reopen the quest book to retry.",
   "screen.brnquest.progress_sync.failed": "Progress sync failed · displayed progress may be outdated",
-  "command.brnquest.health.player.progress_failed": "Progress sync failure: %s, %s / %s bytes."
+  "command.brnquest.health.player.progress_failed": "Progress sync failure: %s, %s / %s bytes.",
+  "screen.brnquest.book.setting.share_team_progress": "Share team progress",
+  "screen.brnquest.book.setting.share_team_progress.help": "Share progress with OPAC teammates. When off, each player uses their personal history. Existing personal and team histories are retained.",
+  "screen.brnquest.editor.behavior.require_all_team_members": "Require every team member",
+  "screen.brnquest.status.waiting_for_team": "Your objectives are complete; waiting for teammates",
+  "screen.brnquest.defaults.require_all_team_members": "Require every team member"
 }

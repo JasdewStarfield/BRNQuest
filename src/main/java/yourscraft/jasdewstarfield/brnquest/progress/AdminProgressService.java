@@ -34,7 +34,12 @@ public final class AdminProgressService {
     /** Equality is the confirmation concurrency guard; it never trusts a client-supplied snapshot. */
     public record State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed,
                         long completedAt, Map<String, QuestStatus> dependencies,
-                        Map<UUID, Set<String>> memberClaims, String claimGeneration) {
+                        Map<UUID, Set<String>> memberClaims, String claimGeneration,
+                        Map<UUID, String> memberObjectives, Set<UUID> members) {
+        public State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed, long completedAt,
+                     Map<String, QuestStatus> dependencies, Map<UUID, Set<String>> memberClaims, String claimGeneration) {
+            this(status, tasks, claimed, completedAt, dependencies, memberClaims, claimGeneration, Map.of(), Set.of());
+        }
         public State(QuestStatus status, Map<String, Long> tasks, Set<String> claimed, long completedAt,
                      Map<String, QuestStatus> dependencies, Map<UUID, Set<String>> memberClaims) {
             this(status, tasks, claimed, completedAt, dependencies, memberClaims, "");
@@ -211,7 +216,7 @@ public final class AdminProgressService {
     static State state(ServerPlayer player, QuestDefinition quest) {
         PlayerProgress progress = ProgressEngine.get().progress(player);
         Map<String, Long> tasks = new TreeMap<>();
-        quest.tasks().forEach(task -> tasks.put(task.id().toString(), progress.taskProgress(task.id().toString())));
+        quest.tasks().forEach(task -> tasks.put(task.id().toString(), ProgressEngine.get().taskProgress(player, quest, task)));
         Set<String> claimed = new TreeSet<>();
         quest.rewards().forEach(reward -> { if (ProgressEngine.get().rewardClaimed(player, reward)) claimed.add(reward.id().toString()); });
         Map<String, QuestStatus> dependencies = new TreeMap<>();
@@ -219,7 +224,9 @@ public final class AdminProgressService {
         return new State(progress.status(quest.id().toString()), Map.copyOf(tasks), Set.copyOf(claimed),
                 progress.completedAt(quest.id().toString()), Map.copyOf(dependencies),
                 progress.memberClaimsFor(quest.rewards().stream().map(reward -> reward.id().toString()).toList()),
-                progress.claimGeneration(quest.id().toString()));
+                progress.claimGeneration(quest.id().toString()),
+                progress.objectiveState(quest.id().toString(), tasks.keySet()),
+                ProgressOwnerService.resolve(player).orElseThrow().members());
     }
 
     private static View view(Resolved resolved, Intent intent, State state) {
@@ -227,6 +234,9 @@ public final class AdminProgressService {
         boolean terminal = state.status() == QuestStatus.COMPLETED || state.status() == QuestStatus.REWARD_CLAIMED;
         boolean completes = !terminal && (intent.action() == AdminProgressAction.FORCE_QUEST
                 || intent.action() == AdminProgressAction.FORCE_TASK
+                && (!quest.behavior().requireAllTeamMembers() || state.members().stream()
+                    .filter(member -> !member.equals(resolved.player().getUUID()))
+                    .allMatch(member -> state.memberObjectives().getOrDefault(member, "").startsWith("COMPLETED")))
                 && state.dependencies().values().stream().allMatch(status ->
                 status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED)
                 && quest.tasks().stream().filter(task -> !task.optional()).allMatch(task ->

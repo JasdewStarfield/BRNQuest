@@ -29,6 +29,26 @@ class BookSettingsTest {
         assertEquals("true", ApiViews.book(QuestBookSnapshot.of(book)).settings().get("pause_game"));
         assertEquals(Boolean.FALSE, ApiViews.chapter(book.chapters().getFirst()).consumeItems());
     }
+    @Test void teamPoliciesRoundTripAndKeepLegacyDefaults() {
+        assertTrue(BookSettings.fromJson(JsonParser.parseString("{}")).shareTeamProgress());
+        var settings = BookSettings.fromJson(JsonParser.parseString("{\"share_team_progress\":false}"));
+        assertFalse(BookSettings.fromJson(settings.toJson()).shareTeamProgress());
+        var defaults = new QuestCreationDefaults(Map.of("require_all_team_members", "true"));
+        assertTrue(defaults.behavior().requireAllTeamMembers());
+        assertFalse(QuestBehavior.DEFAULT.requireAllTeamMembers());
+        var quest = new QuestDefinition(id("book"), id("quest"), id("chapter"), "", "", "", "", 0, 0,
+                List.of(), List.of(), List.of(), "", QuestAppearance.DEFAULT, defaults.behavior(), Map.of());
+        var book = new QuestBookDefinition(id("book"), 1, "", List.of(),
+                List.of(new ChapterDefinition(id("book"), id("chapter"), id("group"), "", "", 0, List.of(quest))),
+                Map.of(), BookLocalization.EMPTY, Map.of(), defaults, settings);
+        var decoded = NativeBookJson.decode(JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject());
+        assertEquals(book, decoded);
+        assertTrue(ApiViews.quest(decoded.quests().getFirst()).behavior().requireAllTeamMembers());
+        var codecJson = QuestBehavior.CODEC.encodeStart(com.mojang.serialization.JsonOps.INSTANCE, defaults.behavior()).getOrThrow();
+        assertTrue(QuestBehavior.CODEC.parse(com.mojang.serialization.JsonOps.INSTANCE, codecJson).getOrThrow().requireAllTeamMembers());
+        assertThrows(IllegalArgumentException.class, () -> BookSettings.fromJson(
+                JsonParser.parseString("{\"share_team_progress\":\"false\"}")));
+    }
     @Test void oldBooksOmitDefaultSettingsAndInvalidPoliciesFailStrictly() {
         var old = new QuestBookDefinition(id("book"), 1, "Old", List.of(), List.of(), Map.of());
         assertFalse(NativeBookJson.encode(old).contains("\"settings\""));

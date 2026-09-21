@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.26`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.27`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -164,3 +164,7 @@ experimental.13 公开 ComposableReward、RewardLeafContext、RewardType.composi
 客户端类型可通过 `ClientTaskPresentation.TitleDecoration` / `titleDecoration` / `requiredCount` 提供标题与数量，通过 `ClientRewardPresentation.refresh` / `prepareClaim` 接入状态查询及领取响应准备。`ClientConfigEditors.Factory` 的上下文重载回传字段补丁；`CreationFactory` / `registerCreation` / `creation` 提供类型创建页路由。服务端 `RewardType.clientClaimResponse` 仅处理普通网络领取完成后的类型响应。以上均为实验性公共契约，旧接口保留兼容默认行为；详细调用约束见 [`EXTENSION_API_zh.md`](EXTENSION_API_zh.md)。
 
 `BrnQuestApi.getRewardClaimState(player, rewardId)` 在服务器线程返回只读 `RewardClaimState`，包含既有不可变领取上下文（owner、周期、重置 generation）、revision 与建议性的 `eligible` 标记。任务已完成且玩家属于完成时成员时为 eligible；已领收据仍由领取事务判定，因此 eligible 不代表可再次发奖。玩家/服务器缺失、非服务器线程、奖励条目不存在或 owner 未激活时返回空。查询不执行奖励、不推进类型日志；恢复操作须重新查询身份并进入普通公开领取 API，不能把缓存快照作为授权。内置观测通过既有 `resetTransientState`、reload/logout 和只读 owner 身份清理本地计时，插件不接触可变进度账本。
+
+## experimental.27：队伍进度策略
+
+`QuestBehaviorView.requireAllTeamMembers()` 暴露单任务的全员完成规则；原构造器保留，新字段默认 false。`QuestBookView.settings()` 增加默认 true 的 `share_team_progress`。全员任务的进度查询返回请求玩家自己的目标计数，任务状态、依赖解锁和奖励仍等待全员完成。`WAITING_FOR_TEAM` 表示个人完成已保存，队伍仍在等待；首次记录返回 SUCCESS，重复提交返回 NO_CHANGE。网络协议升级为 19，客户端与服务端需同步更新。成员变化、历史切换及重置规则见 [队伍进度](TEAM_PROGRESS_zh.md)。

@@ -1,5 +1,11 @@
 # Public API migration
 
+## experimental.26 to experimental.27
+
+`QuestBehaviorView.requireAllTeamMembers()` exposes the new per-quest completion rule. The previous constructor remains available and defaults this flag to false. `QuestBookView.settings()` adds `share_team_progress` (default true). Progress queries expose the requesting member's objective counters for all-member quests; quest status and rewards remain locked until every current member, including offline members, finishes. `WAITING_FOR_TEAM` acknowledges personal completion without declaring the shared quest complete. Update client and server together to network protocol 19.
+
+See [team progress](TEAM_PROGRESS.md) for membership, history and reset behavior.
+
 ## experimental.25 to experimental.26
 
 All built-in task and reward implementations now register through `BrnQuestPlugins` during mod construction. Type-owned editors, observation caches, command recovery and reward-table protocols live under the internal `builtin` package. Existing IDs (including `item_choice`), string-map fields, translation/texture paths, composition version `1`, journal formats and network protocol `18` are unchanged. Existing books require no migration; BRNQuest still ships as one JAR. Tests without a mod lifecycle must explicitly provide their type registrations.

@@ -5,7 +5,12 @@ import java.util.*;
 
 /** Shared book policies; creation defaults are materialized only when adding an entry. */
 public record BookSettings(boolean consumeItems, boolean rewardTeam, String rewardClaimPolicy,
-                           boolean suppressAutoClaim, boolean pauseGame) {
+                           boolean suppressAutoClaim, boolean pauseGame, boolean shareTeamProgress) {
+    /** Existing books keep their shared team progress policy. */
+    public BookSettings(boolean consumeItems, boolean rewardTeam, String rewardClaimPolicy,
+                        boolean suppressAutoClaim, boolean pauseGame) {
+        this(consumeItems, rewardTeam, rewardClaimPolicy, suppressAutoClaim, pauseGame, true);
+    }
     public static final BookSettings DEFAULT = new BookSettings(false, false, "manual", false, false);
     public BookSettings {
         if (Arrays.stream(RewardClaimPolicy.values()).noneMatch(p -> p.serializedName().equals(rewardClaimPolicy)))
@@ -14,7 +19,7 @@ public record BookSettings(boolean consumeItems, boolean rewardTeam, String rewa
     public Map<String, String> values() {
         return Map.of("consume_items", Boolean.toString(consumeItems), "reward_team", Boolean.toString(rewardTeam),
                 "reward_claim_policy", rewardClaimPolicy, "suppress_auto_claim", Boolean.toString(suppressAutoClaim),
-                "pause_game", Boolean.toString(pauseGame));
+                "pause_game", Boolean.toString(pauseGame), "share_team_progress", Boolean.toString(shareTeamProgress));
     }
     public JsonObject toJson() {
         var json = new JsonObject();
@@ -37,7 +42,8 @@ public record BookSettings(boolean consumeItems, boolean rewardTeam, String rewa
         }
         return new BookSettings(bool(json, "consume_items"), bool(json, "reward_team"),
                 json.has("reward_claim_policy") ? json.get("reward_claim_policy").getAsString() : "manual",
-                bool(json, "suppress_auto_claim"), bool(json, "pause_game"));
+                bool(json, "suppress_auto_claim"), bool(json, "pause_game"),
+                !json.has("share_team_progress") || bool(json, "share_team_progress"));
     }
     private static boolean bool(JsonObject json, String key) { return json.has(key) && json.get(key).getAsBoolean(); }
     /** A chapter's explicit false must override a consuming book default. */

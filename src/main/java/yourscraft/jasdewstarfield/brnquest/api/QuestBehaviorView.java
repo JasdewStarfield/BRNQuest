@@ -8,4 +8,15 @@ public record QuestBehaviorView(boolean hideUntilDependenciesVisible, boolean hi
                                 boolean hideLockIcon, String dependencyRequirement,
                                 int minimumRequiredDependencies, boolean sequentialTasks,
                                 boolean repeatable, int repeatCooldownSeconds,
-                                boolean ignoreRewardBlocking) {}
+                                boolean ignoreRewardBlocking, boolean requireAllTeamMembers) {
+    /** Existing consumers retain the historical shared-completion default. */
+    public QuestBehaviorView(boolean hideUntilDependenciesVisible, boolean hideUntilDependenciesComplete,
+                             boolean invisibleUntilComplete, int visibleAfterTasks, boolean hideDetailsUntilStartable,
+                             boolean hideTextUntilComplete, boolean hideLockIcon, String dependencyRequirement,
+                             int minimumRequiredDependencies, boolean sequentialTasks, boolean repeatable,
+                             int repeatCooldownSeconds, boolean ignoreRewardBlocking) {
+        this(hideUntilDependenciesVisible, hideUntilDependenciesComplete, invisibleUntilComplete, visibleAfterTasks,
+                hideDetailsUntilStartable, hideTextUntilComplete, hideLockIcon, dependencyRequirement,
+                minimumRequiredDependencies, sequentialTasks, repeatable, repeatCooldownSeconds, ignoreRewardBlocking, false);
+    }
+}

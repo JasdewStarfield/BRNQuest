@@ -137,7 +137,7 @@ final class AuthoringRequestDecoder {
                            boolean hideTextUntilComplete, boolean hideLockIcon,
                            yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement dependencyRequirement,
                            int minimumRequiredDependencies, boolean sequentialTasks, boolean repeatable,
-                           int repeatCooldownSeconds, boolean ignoreRewardBlocking) {}
+                           int repeatCooldownSeconds, boolean ignoreRewardBlocking, boolean requireAllTeamMembers) {}
     record QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
                         ResourceLocation replacementQuestId, String title, String subtitle, String description,
                         IconKind iconKind, ResourceLocation iconId, boolean preserveIcon, Double x, Double y,
@@ -200,7 +200,7 @@ final class AuthoringRequestDecoder {
                             integer(values, "visible_after_tasks"), bool(values, "hide_details_until_startable"),
                             bool(values, "hide_text_until_complete"), bool(values, "hide_lock_icon"), dependency,
                             integer(values, "minimum_required_dependencies"), bool(values, "sequential_tasks"),
-                            bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"), bool(values, "ignore_reward_blocking"));
+                            bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"), bool(values, "ignore_reward_blocking"), bool(values, "require_all_team_members"));
                 } catch (RuntimeException invalid) {
                     throw invalid("INVALID_QUEST_BEHAVIOR", "behavior", "Quest behavior contains an invalid number or enum");
                 }

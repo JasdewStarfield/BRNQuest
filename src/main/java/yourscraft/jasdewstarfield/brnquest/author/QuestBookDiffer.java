@@ -331,6 +331,7 @@ public final class QuestBookDiffer {
         result.put("dependency_requirement", behavior.dependencyRequirement().serializedName());
         result.put("minimum_required_dependencies", Integer.toString(behavior.minimumRequiredDependencies()));
         result.put("sequential_tasks", Boolean.toString(behavior.sequentialTasks()));
+        result.put("require_all_team_members", Boolean.toString(behavior.requireAllTeamMembers()));
         result.put("repeatable", Boolean.toString(behavior.repeatable()));
         result.put("repeat_cooldown_seconds", Integer.toString(behavior.repeatCooldownSeconds()));
         result.put("ignore_reward_blocking", Boolean.toString(behavior.ignoreRewardBlocking()));

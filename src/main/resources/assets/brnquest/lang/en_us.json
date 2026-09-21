@@ -744,6 +744,7 @@
   "screen.brnquest.editor.section.identity": "Identity and text",
   "screen.brnquest.editor.section.configuration": "Configuration",
   "screen.brnquest.editor.section.appearance": "Appearance and position",
+  "screen.brnquest.editor.section.quest_rules": "Quest rules",
   "screen.brnquest.editor.section.completion": "Completion and claiming",
   "screen.brnquest.editor.section.visibility": "Visibility",
   "screen.brnquest.editor.section.dependencies": "Dependencies",

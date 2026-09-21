@@ -59,7 +59,7 @@ public final class EditorActionGroup<K> {
             if (visible.width() == 0 || visible.height() == 0) continue;
             Action<K> action = placed.action();
             boolean hovered = visible.containsExclusive(mouseX, mouseY);
-            graphics.enableScissor(placed.clip().left(), placed.clip().top(), placed.clip().right(), placed.clip().bottom());
+            LocalScissor.enable(graphics, placed.clip());
             try {
                 EditorButton.render(graphics, font, placed.bounds(), action.definition(),
                         new EditorButton.State(action.enabled(), hovered, action.key().equals(focused)), action.tone().palette());

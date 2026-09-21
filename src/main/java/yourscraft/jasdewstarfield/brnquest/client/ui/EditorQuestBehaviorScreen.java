@@ -33,6 +33,10 @@ public final class EditorQuestBehaviorScreen extends Screen {
     private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final Consumer<QuestBehavior> consumer;
+    // Null remains the explicit chapter-inheritance state; apply commits through the parent form.
+    private Boolean hideDependencyLines;
+    private final Consumer<Boolean> hideLinesSelection;
+    private int rowCount() { return ROW_COUNT + (hideLinesSelection == null ? 0 : 1); }
     private final List<Boolean> booleans = new ArrayList<>();
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
     private DependencyRequirement requirement;
@@ -47,7 +51,13 @@ public final class EditorQuestBehaviorScreen extends Screen {
     private double renderedScroll;
 
     public EditorQuestBehaviorScreen(Screen parent, QuestBehavior value, Consumer<QuestBehavior> consumer) {
+        this(parent, value, consumer, null, null);
+    }
+    public EditorQuestBehaviorScreen(Screen parent, QuestBehavior value, Consumer<QuestBehavior> consumer,
+                                    Boolean hideDependencyLines, Consumer<Boolean> hideLinesSelection) {
         super(Component.translatable("screen.brnquest.editor.behavior.title"));
+        this.hideDependencyLines = hideDependencyLines;
+        this.hideLinesSelection = hideLinesSelection;
         this.parent = parent;
         this.consumer = consumer;
         booleans.addAll(List.of(value.hideUntilDependenciesVisible(), value.hideUntilDependenciesComplete(),
@@ -122,11 +132,18 @@ public final class EditorQuestBehaviorScreen extends Screen {
             EditorPropertyPanel.section(font, "screen.brnquest.editor.section." + sections[i])
                     .render(graphics, bounds.left(), bounds.top() - 24, bounds.width());
         }
-        for (int row = 0; row < ROW_COUNT; row++) {
+        for (int row = 0; row < rowCount(); row++) {
             UiRect bounds = rowBounds(row);
             if (bounds.bottom() <= viewport.top() || bounds.top() >= viewport.bottom()) continue;
             int booleanIndex = booleanIndexAtRow(row);
-            if (booleanIndex >= 0) renderBoolean(graphics, booleanIndex, bounds, mouseX, mouseY);
+            if (row == ROW_COUNT) {
+                var layout = propertyRow(bounds);
+                EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.quest.hide_dependency_lines"), layout.label(), null);
+                var label = Component.translatable(hideDependencyLines == null ? "screen.brnquest.dependency_lines.inherit"
+                        : hideDependencyLines ? "screen.brnquest.dependency_lines.hide" : "screen.brnquest.dependency_lines.show");
+                buttons.render(graphics, font, layout.field(), EditorButton.Definition.text(label, null),
+                        true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            } else if (booleanIndex >= 0) renderBoolean(graphics, booleanIndex, bounds, mouseX, mouseY);
             else if (row == 3) renderNumber(graphics, visibleAfterTasks, "visible_after_tasks", bounds, mouseX, mouseY, partialTick);
             else if (row == 7) renderRequirement(graphics, bounds, mouseX, mouseY);
             else if (row == 8) renderNumber(graphics, minimumDependencies, "minimum_required_dependencies", bounds, mouseX, mouseY, partialTick);
@@ -206,8 +223,12 @@ public final class EditorQuestBehaviorScreen extends Screen {
                 viewport.top(), viewport.bottom(), contentHeight(), viewport.height())) return true;
         if (button == 0 && viewport.contains(mouseX, mouseY)) {
             int row = -1;
-            for (int candidate = 0; candidate < ROW_COUNT; candidate++) {
+            for (int candidate = 0; candidate < rowCount(); candidate++) {
                 if (rowBounds(candidate).contains(mouseX, mouseY)) { row = candidate; break; }
+            }
+            if (row == ROW_COUNT && propertyRow(rowBounds(row)).field().contains(mouseX, mouseY)) {
+                hideDependencyLines = hideDependencyLines == null ? Boolean.TRUE : hideDependencyLines ? Boolean.FALSE : null;
+                return true;
             }
             if (row >= 0) {
                 int booleanIndex = booleanIndexAtRow(row);
@@ -256,6 +277,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
         consumer.accept(new QuestBehavior(booleans.get(0), booleans.get(1), booleans.get(2), parse(visibleAfterTasks),
                 booleans.get(3), booleans.get(4), booleans.get(5), requirement, parse(minimumDependencies),
                 booleans.get(6), booleans.get(7), parse(cooldownSeconds), booleans.get(8), booleans.get(9)));
+        if (hideLinesSelection != null) hideLinesSelection.accept(hideDependencyLines);
         onClose();
     }
 
@@ -317,7 +339,7 @@ public final class EditorQuestBehaviorScreen extends Screen {
         return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), labelWidth);
     }
 
-    private int contentHeight() { return ROW_COUNT * ROW_HEIGHT + 72; }
+    private int contentHeight() { return rowCount() * ROW_HEIGHT + 72; }
     private UiRect cancelBounds() { UiRect p=panel(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
     private UiRect applyBounds() { UiRect p=panel(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
     /** Child editors follow the task book's pause policy instead of Screen's unconditional default. */

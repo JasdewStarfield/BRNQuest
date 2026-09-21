@@ -16,6 +16,10 @@ final class EditorCreationDefaultsScreen extends Screen {
     private final Screen parent;
     private final Consumer<QuestCreationDefaults> selection;
     private final QuestCreationDefaults inherited;
+    // This chapter-wide inherited policy is staged beside defaults without changing its stored meaning.
+    private boolean hideDependencyLines;
+    private final Consumer<Boolean> hideLinesSelection;
+    private final List<List<String>> groups;
     private final Map<String, String> values = new TreeMap<>();
     private EditorButtonWidget done;
     private final List<AbstractWidget> controls = new ArrayList<>();
@@ -32,19 +36,32 @@ final class EditorCreationDefaultsScreen extends Screen {
                     "visible_after_tasks", "hide_details_until_startable", "hide_text_until_complete", "hide_lock_icon"),
             List.of("dependency_requirement"),
             List.of("sequential_tasks", "repeatable", "repeat_cooldown_seconds", "ignore_reward_blocking", "require_all_team_members"));
-    private static final List<String> FIELDS = GROUPS.stream().flatMap(List::stream).toList();
     EditorCreationDefaultsScreen(Screen parent, QuestCreationDefaults initial, QuestCreationDefaults inherited,
                                  Consumer<QuestCreationDefaults> selection) {
+        this(parent, initial, inherited, selection, false, null);
+    }
+    EditorCreationDefaultsScreen(Screen parent, QuestCreationDefaults initial, QuestCreationDefaults inherited,
+                                 Consumer<QuestCreationDefaults> selection, boolean hideDependencyLines,
+                                 Consumer<Boolean> hideLinesSelection) {
         super(Component.translatable("screen.brnquest.defaults.title"));
+        this.hideDependencyLines = hideDependencyLines;
+        this.hideLinesSelection = hideLinesSelection;
+        groups = new ArrayList<>(GROUPS);
+        if (hideLinesSelection != null) groups.set(2, List.of("dependency_requirement", "hide_dependency_lines"));
         this.parent = parent; this.selection = selection; this.inherited = inherited;
         values.putAll(initial.values());
     }
     @Override protected void init() {
         controls.clear();
         int half = fieldWidth(), left = viewport().right() - half;
-        for (String key : FIELDS) {
+        for (String key : groups.stream().flatMap(List::stream).toList()) {
             int y = 0;
-            if (key.equals("shape")) {
+            if (key.equals("hide_dependency_lines")) {
+                addControl(new EditorButtonWidget(left, y, half, 20, hideLinesLabel(), button -> {
+                    hideDependencyLines = !hideDependencyLines;
+                    button.setMessage(hideLinesLabel());
+                }));
+            } else if (key.equals("shape")) {
                 addControl(new EditorButtonWidget(left, y, half, 20, shapeLabel(), button -> {
                     var shapes = List.of("", "chamfer", "square", "circle", "diamond");
                     String next = shapes.get((shapes.indexOf(values.getOrDefault("shape", "")) + 1) % shapes.size());
@@ -78,9 +95,14 @@ final class EditorCreationDefaultsScreen extends Screen {
                 Component.translatable("gui.cancel"), button -> onClose()));
         done = addRenderableWidget(new EditorButtonWidget(apply.left(), apply.top(), apply.width(), apply.height(),
                 Component.translatable("screen.brnquest.editor.scope.apply_parent"), button -> {
-            selection.accept(new QuestCreationDefaults(values)); onClose();
+            selection.accept(new QuestCreationDefaults(values));
+            if (hideLinesSelection != null) hideLinesSelection.accept(hideDependencyLines);
+            onClose();
         }));
         validate();
+    }
+    private Component hideLinesLabel() {
+        return Component.translatable(hideDependencyLines ? "options.on" : "options.off");
     }
     private Component shapeLabel() {
         String shape = values.get("shape");
@@ -100,7 +122,8 @@ final class EditorCreationDefaultsScreen extends Screen {
         if (QuestCreationDefaults.integerField(key)) return "0";
         return switch (key) { case "shape" -> "chamfer"; case "min_width" -> "0.0"; default -> "1.0"; };
     }
-    private Component label(String key) { return Component.translatable("screen.brnquest.defaults." + key); }
+    private Component label(String key) { return Component.translatable(key.equals("hide_dependency_lines")
+            ? "screen.brnquest.quest.hide_dependency_lines" : "screen.brnquest.defaults." + key); }
     private Component toggleLabel(String key) {
         String value = values.get(key);
         return value == null ? Component.translatable("screen.brnquest.defaults.inherit", Component.translatable(
@@ -138,11 +161,11 @@ final class EditorCreationDefaultsScreen extends Screen {
             graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
             try {
                 int top = viewport.top() - (int) Math.round(renderedScroll), row = 0;
-                for (int group = 0; group < GROUPS.size(); group++) {
+                for (int group = 0; group < groups.size(); group++) {
                     EditorPropertyPanel.section(font, "screen.brnquest.editor.section." + SECTIONS.get(group))
                             .render(graphics, viewport.left(), top, viewport.width());
                     top += SECTION_HEIGHT;
-                    for (String key : GROUPS.get(group)) {
+                    for (String key : groups.get(group)) {
                         AbstractWidget control = controls.get(row++);
                         control.setX(viewport.right() - fieldWidth());
                         control.setY(top);
@@ -200,7 +223,7 @@ final class EditorCreationDefaultsScreen extends Screen {
         return new UiRect(p.left() + 12, p.top() + 42, p.right() - 17, p.bottom() - 48);
     }
     private int fieldWidth() { return Math.min(210, viewport().width() / 2); }
-    private int contentHeight() { return FIELDS.size() * ROW_HEIGHT + GROUPS.size() * SECTION_HEIGHT; }
+    private int contentHeight() { return groups.stream().mapToInt(List::size).sum() * ROW_HEIGHT + groups.size() * SECTION_HEIGHT; }
     private UiRect cancelBounds() { UiRect p = panel(); return new UiRect(p.left()+12,p.bottom()-34,p.centerX()-4,p.bottom()-10); }
     private UiRect applyBounds() { UiRect p = panel(); return new UiRect(p.centerX()+4,p.bottom()-34,p.right()-12,p.bottom()-10); }
     @Override public void tick() { parent.tick(); super.tick(); }

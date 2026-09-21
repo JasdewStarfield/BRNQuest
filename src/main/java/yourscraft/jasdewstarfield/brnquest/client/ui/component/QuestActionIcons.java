@@ -20,11 +20,12 @@ public final class QuestActionIcons {
                 // Never stretch the small pixel art; clipping handles unusually narrow controls.
                 var sprite = Minecraft.getInstance().getGuiSprites().getSprite(id);
                 int x = bounds.centerX() - 5, y = bounds.centerY() - 5;
-                graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
-                graphics.blit(x + 1, y + 1, 0, 10, 10, sprite, .08F, .09F, .07F, (color >>> 24) / 255F * .7F);
-                graphics.blit(x, y, 0, 10, 10, sprite, (color >> 16 & 255) / 255F,
-                        (color >> 8 & 255) / 255F, (color & 255) / 255F, (color >>> 24) / 255F);
-                graphics.disableScissor();
+                LocalScissor.enable(graphics, bounds);
+                try {
+                    graphics.blit(x + 1, y + 1, 0, 10, 10, sprite, .08F, .09F, .07F, (color >>> 24) / 255F * .7F);
+                    graphics.blit(x, y, 0, 10, 10, sprite, (color >> 16 & 255) / 255F,
+                            (color >> 8 & 255) / 255F, (color & 255) / 255F, (color >>> 24) / 255F);
+                } finally { graphics.disableScissor(); }
             }
         };
     }

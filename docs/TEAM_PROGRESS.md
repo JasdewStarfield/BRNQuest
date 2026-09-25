@@ -10,4 +10,4 @@ Personal and team histories are retained separately. Switching the book policy s
 
 A full quest reset clears every member's objectives and reward receipts for that quest. Resetting one objective clears it for every member and requires personal completion again while preserving reward receipts. A new repeat cycle clears all member objectives. Administrators can force-complete an entire quest to bypass the rule; forcing a single objective advances only the selected player's counter.
 
-Apply or publish editor changes through the existing workflow. Update both client and server to network protocol 19.
+Apply or publish editor changes through the existing workflow. Update both client and server to network protocol 21.

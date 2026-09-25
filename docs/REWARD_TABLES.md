@@ -40,7 +40,7 @@ Changed resources, corrupt records and stale cycles remain blocked. Commands ins
 
 FTB v13 `all_table`, `random`, `loot` and `choice` rewards import from external `reward_tables` or inline `table_data` as independent snapshots. Random ignores source empty weight; loot preserves it. Both map valid loot_size to draws with replacement and zero-weight entries to guaranteed rewards. Missing/invalid loot_size, non-positive or overflowing total weight, missing references, cycles and incompatible child policies produce diagnostics while preserving source fields. FTB loot is distinct from native Minecraft loot tables, which are not implemented yet.
 
-Update both client and server to protocol 19. See [EXTENSION_API_zh.md](EXTENSION_API_zh.md) for the experimental API.
+Update both client and server to protocol 21. See [EXTENSION_API_zh.md](EXTENSION_API_zh.md) for the experimental API.
 
 ## Nesting and recovery
 

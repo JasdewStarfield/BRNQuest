@@ -109,7 +109,8 @@ public final class AuthoringHandlerGameTests {
             session.close(new AuthoringRequestDecoder.LeaseRequest(UUID.fromString(opened.sessionId()), opened.draftRevision()));
             session.openCurrent(new AuthoringRequestDecoder.CurrentRequest(bookId, revision, opened.draftRevision(), true));
             opened = last(packets);
-            check(helper, opened.code().equals("SESSION_OPENED"), "replace uses expected advanced draft revision");
+            check(helper, opened.code().equals("DRAFT_VERSION_CREATED"),
+                    "replace creates a backed-up version using the expected draft revision");
             session.close(new AuthoringRequestDecoder.LeaseRequest(UUID.fromString(opened.sessionId()), opened.draftRevision()));
             session.openLive(new AuthoringRequestDecoder.OpenRequest(bookId, ""));
             opened = last(packets);
@@ -121,6 +122,51 @@ public final class AuthoringHandlerGameTests {
             release(admin);
             manager.install(previous.book(), new DiagnosticReport(), source);
         }
+    }
+
+    /** A saved edit survives versioning, and its visible history restores through the editor protocol. */
+    @GameTest(template = "empty", timeoutTicks = 400, batch = "authoringHandlerCurrent")
+    @PrefixGameTestTemplate(false)
+    public static void savedDraftVersionCanBeRestoredInGame(GameTestHelper helper) {
+        var server = helper.getLevel().getServer();
+        var admin = helper.makeMockServerPlayerInLevel(); op(admin);
+        var bookId = ResourceLocation.parse("brnquest:version_handler_" + admin.getUUID().toString().replace("-", ""));
+        var packets = new ArrayList<CustomPacketPayload>();
+        var session = new AuthoringSessionHandler(admin, new AuthoringResponseSender(packets::add, server::getTickCount));
+        var repository = new DraftRepository();
+        try {
+            var saved = new DraftService().createEmpty(admin, bookId, "Saved edit");
+            check(helper, saved.success(), saved.code());
+            session.versionSavedDraft(new AuthoringRequestDecoder.DraftVersionRequest(bookId,
+                    saved.value().draftRevision()));
+            var opened = last(packets);
+            check(helper, opened.code().equals("DRAFT_VERSION_CREATED"), "saved draft version opens");
+            check(helper, repository.load(server, bookId).value().book().title().equals("Saved edit"),
+                    "versioning retains the saved edit");
+            session.close(new AuthoringRequestDecoder.LeaseRequest(UUID.fromString(opened.sessionId()),
+                    opened.draftRevision()));
+            var history = new AuthorBackupService().listDraftVersions(admin, bookId);
+            check(helper, history.success() && !history.value().isEmpty(), "version appears in game history");
+            String backupId = history.value().getFirst().id();
+            var newerBook = new QuestBookDefinition(bookId, 1, "Later edit", List.of(), List.of(), Map.of());
+            var newer = DraftSnapshot.from(newerBook, saved.value().origin(), saved.value().baseRevision());
+            check(helper, repository.replace(server, newer, saved.value().draftRevision()).success(),
+                    "later edit replaces current saved draft");
+            session.restoreDraftVersion(new AuthoringRequestDecoder.DraftRestoreRequest(bookId, backupId,
+                    saved.value().draftRevision()));
+            check(helper, last(packets).code().equals("RESTORE_TARGET_CHANGED"),
+                    "stale catalog revision cannot restore over newer edit");
+            session.restoreDraftVersion(new AuthoringRequestDecoder.DraftRestoreRequest(bookId, backupId,
+                    newer.draftRevision()));
+            check(helper, last(packets).code().equals("DRAFT_BACKUP_RESTORED"),
+                    "selected backup restores and opens in editor");
+            check(helper, repository.load(server, bookId).value().book().title().equals("Saved edit"),
+                    "recovered saved content is current again");
+            check(helper, new AuthorBackupService().listDraftVersions(admin, bookId).value().stream()
+                    .anyMatch(version -> version.revision().equals(newer.draftRevision())),
+                    "restore keeps the displaced draft recoverable in game");
+            helper.succeed();
+        } finally { release(admin); }
     }
 
     @GameTest(template = "empty", timeoutTicks = 600, batch = "authoringHandlerPublication")
@@ -147,15 +193,20 @@ public final class AuthoringHandlerGameTests {
             check(helper, opened.success(), opened.code());
             var request = new AuthoringRequestDecoder.SessionRequest(opened.value().sessionId(), bookId,
                     created.value().draftRevision());
-            publication.publishAndApply(new AuthoringRequestDecoder.SessionRequest(request.sessionId(), bookId, "stale"));
+            publication.publishAndApply(new AuthoringRequestDecoder.ReviewedPublishRequest(
+                    new AuthoringRequestDecoder.SessionRequest(request.sessionId(), bookId, "stale"),
+                    "", previous.book().id(), previous.revision()));
             check(helper, last(packets).code().equals("STALE_DRAFT_REVISION")
                     && last(packets).message().startsWith("Save failed:"), "failed save cannot advance publication");
             publication.review(request);
             check(helper, last(packets).review() != null && last(packets).review().publishAllowed(), "saved draft review uses real publish gates");
+            var review = last(packets).review();
             String active = manager.active().orElseThrow().revision();
             check(helper, active.equals(previous.revision()), "review does not reload or install drafts");
             packets.clear();
-            publication.publishAndApply(request);
+            // Apply the exact workspace and active-book snapshot accepted by review.
+            publication.publishAndApply(new AuthoringRequestDecoder.ReviewedPublishRequest(request,
+                    review.fromRevision(), ResourceLocation.parse(review.activeBookId()), review.activeRevision()));
             // Reload is asynchronous; wait for the actual final response, not just disk or log evidence.
             helper.startSequence().thenWaitUntil(() -> {
                 check(helper, !packets.isEmpty(), "await publish response");

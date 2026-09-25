@@ -28,10 +28,12 @@ public final class AuthoringNetwork {
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record OpenSessionPayload(String bookId) implements CustomPacketPayload {
+    public record OpenSessionPayload(String bookId, String expectedDraftRevision) implements CustomPacketPayload {
         public static final Type<OpenSessionPayload> TYPE = AuthoringNetwork.type("editor_session_open");
         public static final StreamCodec<ByteBuf, OpenSessionPayload> CODEC = StreamCodec.composite(
-                ByteBufCodecs.STRING_UTF8, OpenSessionPayload::bookId, OpenSessionPayload::new);
+                ByteBufCodecs.STRING_UTF8, OpenSessionPayload::bookId,
+                ByteBufCodecs.STRING_UTF8, OpenSessionPayload::expectedDraftRevision,
+                OpenSessionPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
@@ -86,13 +88,17 @@ public final class AuthoringNetwork {
     }
 
     /** One confirmed request drives the existing save, publish, backup-deploy, and reload boundaries. */
-    public record PublishApplyPayload(String sessionId, String bookId, String draftRevision)
+    public record PublishApplyPayload(String sessionId, String bookId, String draftRevision,
+                                      String workspaceRevision, String activeBookId, String activeRevision)
             implements CustomPacketPayload {
         public static final Type<PublishApplyPayload> TYPE = AuthoringNetwork.type("editor_publish_apply");
         public static final StreamCodec<ByteBuf, PublishApplyPayload> CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, PublishApplyPayload::sessionId,
                 ByteBufCodecs.STRING_UTF8, PublishApplyPayload::bookId,
                 ByteBufCodecs.STRING_UTF8, PublishApplyPayload::draftRevision,
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::workspaceRevision,
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::activeBookId,
+                ByteBufCodecs.STRING_UTF8, PublishApplyPayload::activeRevision,
                 PublishApplyPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
@@ -148,8 +154,52 @@ public final class AuthoringNetwork {
         }
     }
 
+    public record DraftVersionsPayload(String json) implements CustomPacketPayload {
+        public static final Type<DraftVersionsPayload> TYPE = AuthoringNetwork.type("editor_draft_versions");
+        public static final StreamCodec<ByteBuf, DraftVersionsPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(BrnQuestConstants.MAX_EDITOR_METADATA_BYTES), DraftVersionsPayload::json,
+                DraftVersionsPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    /** Creates a restorable same-ID version from the saved draft selected in the catalog. */
+    public record VersionSavedDraftPayload(String bookId, String expectedDraftRevision)
+            implements CustomPacketPayload {
+        public static final Type<VersionSavedDraftPayload> TYPE = AuthoringNetwork.type("editor_draft_version");
+        public static final StreamCodec<ByteBuf, VersionSavedDraftPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(256), VersionSavedDraftPayload::bookId,
+                ByteBufCodecs.stringUtf8(128), VersionSavedDraftPayload::expectedDraftRevision,
+                VersionSavedDraftPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record RequestDraftVersionsPayload(String bookId) implements CustomPacketPayload {
+        public static final Type<RequestDraftVersionsPayload> TYPE = AuthoringNetwork.type("editor_draft_versions_request");
+        public static final StreamCodec<ByteBuf, RequestDraftVersionsPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(256), RequestDraftVersionsPayload::bookId,
+                RequestDraftVersionsPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    /** A restore is bound to the selected book and its current on-disk draft revision. */
+    public record RestoreDraftVersionPayload(String bookId, String backupId, String expectedCurrentRevision)
+            implements CustomPacketPayload {
+        public static final Type<RestoreDraftVersionPayload> TYPE = AuthoringNetwork.type("editor_draft_version_restore");
+        public static final StreamCodec<ByteBuf, RestoreDraftVersionPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.stringUtf8(256), RestoreDraftVersionPayload::bookId,
+                ByteBufCodecs.stringUtf8(512), RestoreDraftVersionPayload::backupId,
+                ByteBufCodecs.stringUtf8(128), RestoreDraftVersionPayload::expectedCurrentRevision,
+                RestoreDraftVersionPayload::new);
+        public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     public record CatalogResponseWire(String status, String code, String message, boolean allowed,
                                       List<CatalogEntryWire> entries) {}
+
+    public record DraftVersionWire(String backupId, String revision, String title, long savedAtEpochMillis) {}
+
+    public record DraftVersionsResponseWire(String bookId, String status, String code, String message,
+                                            List<DraftVersionWire> versions) {}
 
     public record EditorDiagnosticWire(String severity, String code, String objectId,
                                        String path, String message) {}
@@ -158,9 +208,17 @@ public final class AuthoringNetwork {
                                    String path, String before, String after) {}
 
     public record PublishReviewWire(boolean publishAllowed, String baseline, String fromRevision,
-                                    String targetRevision, String backupStrategy, int diagnosticCount,
-                                    int changeCount, boolean truncated, List<EditorDiagnosticWire> diagnostics,
-                                    List<SemanticDiffWire> changes) {
+                                     String targetRevision, String activeBookId, String activeRevision,
+                                     String backupStrategy, int diagnosticCount,
+                                     int changeCount, boolean truncated, List<EditorDiagnosticWire> diagnostics,
+                                     List<SemanticDiffWire> changes) {
+        public PublishReviewWire(boolean publishAllowed, String baseline, String fromRevision,
+                                 String targetRevision, String backupStrategy, int diagnosticCount,
+                                 int changeCount, boolean truncated, List<EditorDiagnosticWire> diagnostics,
+                                 List<SemanticDiffWire> changes) {
+            this(publishAllowed, baseline, fromRevision, targetRevision, "", "", backupStrategy,
+                    diagnosticCount, changeCount, truncated, diagnostics, changes);
+        }
         public PublishReviewWire {
             diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
             changes = changes == null ? List.of() : List.copyOf(changes);
@@ -246,7 +304,11 @@ public final class AuthoringNetwork {
     }
 
     public static void openSession(ResourceLocation bookId) {
-        PacketDistributor.sendToServer(new OpenSessionPayload(bookId.toString()));
+        openSession(bookId, "");
+    }
+
+    public static void openSession(ResourceLocation bookId, String expectedDraftRevision) {
+        PacketDistributor.sendToServer(new OpenSessionPayload(bookId.toString(), expectedDraftRevision));
     }
 
     public record OpenLivePayload(String bookId) implements CustomPacketPayload {
@@ -264,6 +326,20 @@ public final class AuthoringNetwork {
                                           String draftRevision, boolean replaceDraft) {
         PacketDistributor.sendToServer(new OpenCurrentSessionPayload(bookId.toString(), activeRevision,
                 draftRevision == null ? "" : draftRevision, replaceDraft));
+    }
+
+    public static void versionSavedDraft(ResourceLocation bookId, String expectedDraftRevision) {
+        PacketDistributor.sendToServer(new VersionSavedDraftPayload(bookId.toString(), expectedDraftRevision));
+    }
+
+    public static void requestDraftVersions(ResourceLocation bookId) {
+        PacketDistributor.sendToServer(new RequestDraftVersionsPayload(bookId.toString()));
+    }
+
+    public static void restoreDraftVersion(ResourceLocation bookId, String backupId,
+                                           String expectedCurrentRevision) {
+        PacketDistributor.sendToServer(new RestoreDraftVersionPayload(bookId.toString(), backupId,
+                expectedCurrentRevision));
     }
 
     public static void renewSession(UUID sessionId, String draftRevision) {
@@ -285,8 +361,10 @@ public final class AuthoringNetwork {
         PacketDistributor.sendToServer(new SaveSessionPayload(sessionId.toString(), bookId.toString(), draftRevision));
     }
 
-    public static void publishAndApply(UUID sessionId, ResourceLocation bookId, String draftRevision) {
-        PacketDistributor.sendToServer(new PublishApplyPayload(sessionId.toString(), bookId.toString(), draftRevision));
+    public static void publishAndApply(UUID sessionId, ResourceLocation bookId, String draftRevision,
+                                       String workspaceRevision, String activeBookId, String activeRevision) {
+        PacketDistributor.sendToServer(new PublishApplyPayload(sessionId.toString(), bookId.toString(), draftRevision,
+                workspaceRevision, activeBookId, activeRevision));
     }
 
     public static void updateQuest(UUID sessionId, ResourceLocation bookId, String draftRevision,

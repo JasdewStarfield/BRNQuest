@@ -28,6 +28,10 @@ final class AuthoringRequestDecoder {
     }
     record OpenRequest(ResourceLocation bookId, String expectedDraftRevision) {}
     record CurrentRequest(ResourceLocation bookId, String activeRevision, String draftRevision, boolean replaceDraft) {}
+    record DraftVersionRequest(ResourceLocation bookId, String expectedDraftRevision) {}
+    record DraftRestoreRequest(ResourceLocation bookId, String backupId, String expectedCurrentRevision) {}
+    record ReviewedPublishRequest(SessionRequest session, String workspaceRevision,
+                                  ResourceLocation activeBookId, String activeRevision) {}
     record LeaseRequest(UUID sessionId, String draftRevision) {}
     enum RecoveryAction { ABANDON, REFRESH, SAVE_AS }
     record RecoveryRequest(UUID sessionId, ResourceLocation bookId, RecoveryAction action, ResourceLocation targetBookId) {}
@@ -42,6 +46,18 @@ final class AuthoringRequestDecoder {
                 () -> new CurrentRequest(id(wire.bookId(), "bookId"),
                         text(wire.activeRevision(), "activeRevision", 32767, false),
                         text(wire.draftRevision(), "draftRevision", 32767, true), wire.replaceDraft()));
+    }
+
+    static Result<DraftVersionRequest> version(String bookId, String revision) {
+        return boundary("INVALID_DRAFT_VERSION", "Invalid saved draft selection", () ->
+                new DraftVersionRequest(id(bookId, "bookId"), text(revision, "draftRevision", 128, false)));
+    }
+
+    static Result<DraftRestoreRequest> restoreDraft(RestoreDraftVersionPayload wire) {
+        return boundary("INVALID_DRAFT_RESTORE", "Invalid draft version selection", () ->
+                new DraftRestoreRequest(id(wire.bookId(), "bookId"),
+                        text(wire.backupId(), "backupId", 512, false),
+                        text(wire.expectedCurrentRevision(), "currentRevision", 128, true)));
     }
 
     static Result<LeaseRequest> lease(String sessionId, String revision) {
@@ -129,6 +145,15 @@ final class AuthoringRequestDecoder {
         return boundary(publish ? "INVALID_PUBLISH_REQUEST" : "INVALID_SAVE_REQUEST",
                 publish ? "Incomplete publish request" : "Incomplete draft save request", () -> new SessionRequest(
                         uuid(sessionId), id(bookId, "bookId"), text(revision, "draftRevision", 32767, false)));
+    }
+
+    static Result<ReviewedPublishRequest> reviewedPublication(PublishApplyPayload wire) {
+        return boundary("INVALID_PUBLISH_REQUEST", "Incomplete reviewed publish request", () ->
+                new ReviewedPublishRequest(new SessionRequest(uuid(wire.sessionId()), id(wire.bookId(), "bookId"),
+                        text(wire.draftRevision(), "draftRevision", 32767, false)),
+                        text(wire.workspaceRevision(), "workspaceRevision", 32767, true),
+                        wire.activeBookId().isBlank() ? null : id(wire.activeBookId(), "activeBookId"),
+                        text(wire.activeRevision(), "activeRevision", 32767, true)));
     }
     enum IconKind { ITEM, TEXTURE }
     record AppearanceRequest(String shape, double size, double iconScale, double minWidth) {}

@@ -24,9 +24,27 @@ final class AuthoringPayloadRegistrar {
         registrar.playToServer(RequestCatalogPayload.TYPE, RequestCatalogPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) new AuthoringSessionHandler(player).sendCatalog();
         });
+        registrar.playToServer(RequestDraftVersionsPayload.TYPE, RequestDraftVersionsPayload.CODEC, (payload, context) -> {
+            if (context.player() instanceof ServerPlayer player) {
+                dispatch(player, "VERSIONS", AuthoringRequestDecoder.open(payload.bookId(), ""),
+                        request -> new AuthoringSessionHandler(player).sendDraftVersions(request.bookId()));
+            }
+        });
+        registrar.playToServer(VersionSavedDraftPayload.TYPE, VersionSavedDraftPayload.CODEC, (payload, context) -> {
+            if (context.player() instanceof ServerPlayer player) {
+                dispatch(player, "OPEN", AuthoringRequestDecoder.version(payload.bookId(), payload.expectedDraftRevision()),
+                        request -> new AuthoringSessionHandler(player).versionSavedDraft(request));
+            }
+        });
+        registrar.playToServer(RestoreDraftVersionPayload.TYPE, RestoreDraftVersionPayload.CODEC, (payload, context) -> {
+            if (context.player() instanceof ServerPlayer player) {
+                dispatch(player, "OPEN", AuthoringRequestDecoder.restoreDraft(payload),
+                        request -> new AuthoringSessionHandler(player).restoreDraftVersion(request));
+            }
+        });
         registrar.playToServer(OpenSessionPayload.TYPE, OpenSessionPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) {
-                dispatch(player, "OPEN", AuthoringRequestDecoder.open(payload.bookId(), ""),
+                dispatch(player, "OPEN", AuthoringRequestDecoder.open(payload.bookId(), payload.expectedDraftRevision()),
                         request -> new AuthoringSessionHandler(player).open(request));
             }
         });
@@ -62,7 +80,7 @@ final class AuthoringPayloadRegistrar {
         });
         registrar.playToServer(PublishApplyPayload.TYPE, PublishApplyPayload.CODEC, (payload, context) -> {
             if (context.player() instanceof ServerPlayer player) {
-                dispatch(player, "PUBLISH", AuthoringRequestDecoder.publication(payload.sessionId(), payload.bookId(), payload.draftRevision(), true),
+                dispatch(player, "PUBLISH", AuthoringRequestDecoder.reviewedPublication(payload),
                         request -> new AuthoringPublicationHandler(player).publishAndApply(request));
             }
         });
@@ -79,6 +97,8 @@ final class AuthoringPayloadRegistrar {
             }
         });
         registerClient(registrar, CatalogPayload.TYPE, CatalogPayload.CODEC, FMLEnvironment.dist == Dist.CLIENT ? ClientDelegate::catalog : (payload, context) -> {});
+        registerClient(registrar, DraftVersionsPayload.TYPE, DraftVersionsPayload.CODEC,
+                FMLEnvironment.dist == Dist.CLIENT ? ClientDelegate::draftVersions : (payload, context) -> {});
         registerClient(registrar, SessionPayload.TYPE, SessionPayload.CODEC, FMLEnvironment.dist == Dist.CLIENT ? ClientDelegate::session : (payload, context) -> {});
         registerClient(registrar, DraftChunkPayload.TYPE, DraftChunkPayload.CODEC, FMLEnvironment.dist == Dist.CLIENT ? ClientDelegate::draftChunk : (payload, context) -> {});
     }
@@ -101,6 +121,11 @@ final class AuthoringPayloadRegistrar {
         static void catalog(CatalogPayload payload,
                             net.neoforged.neoforge.network.handling.IPayloadContext context) {
             ClientPayloadHandler.editorCatalog(payload);
+        }
+
+        static void draftVersions(DraftVersionsPayload payload,
+                                  net.neoforged.neoforge.network.handling.IPayloadContext context) {
+            ClientPayloadHandler.editorDraftVersions(payload);
         }
 
         static void session(SessionPayload payload,

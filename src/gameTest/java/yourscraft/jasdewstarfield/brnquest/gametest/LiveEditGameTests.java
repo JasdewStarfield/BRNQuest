@@ -43,18 +43,31 @@ public final class LiveEditGameTests {
         ResourceLocation source = ResourceLocation.parse("000_live:source_" + unique);
         var original = new QuestBookDefinition(bookId, 1, "Original", List.of(), List.of(), Map.of());
         Path file = WorkspacePaths.deployed(server).resolve("data/000_live/brnquest/books/source_" + unique + ".json");
+        Path selectionFile = ActiveBookSelection.file(WorkspacePaths.deployed(server));
+        String previousSelection;
+        try { previousSelection = Files.exists(selectionFile)
+                ? Files.readString(selectionFile, StandardCharsets.UTF_8) : null; }
+        catch (java.io.IOException exception) { throw new IllegalStateException(exception); }
         Runnable cleanup = () -> {
             sessions.releasePlayer(server, admin.getUUID());
             if (server.getPlayerList().getPlayer(admin.getUUID()) == admin) server.getPlayerList().remove(admin);
             if (server.getPlayerList().getPlayer(ordinary.getUUID()) == ordinary) server.getPlayerList().remove(ordinary);
             server.getPlayerList().getOps().remove(admin.getGameProfile());
             // The unique filename belongs only to this test; do not delete the shared managed pack.
-            try { Files.deleteIfExists(file); }
+            try {
+                Files.deleteIfExists(file);
+                if (previousSelection == null) Files.deleteIfExists(selectionFile);
+                else Files.writeString(selectionFile, previousSelection, StandardCharsets.UTF_8);
+            }
             catch (java.io.IOException exception) { throw new IllegalStateException(exception); }
             manager.install(previous.book(), new DiagnosticReport(), previousResource);
         };
         try {
             helper.assertTrue(manager.install(original, new DiagnosticReport(), source), "fixture is valid");
+            // This isolated source is the active book for the test. Mirror that selection in
+            // the deployed pack so a later resource reload follows the same live source.
+            Files.createDirectories(selectionFile.getParent());
+            Files.writeString(selectionFile, ActiveBookSelection.encode(source), StandardCharsets.UTF_8);
             String initial = manager.active().orElseThrow().revision();
             helper.assertTrue(!sessions.openLive(ordinary, bookId).success(), "ordinary players cannot enter live editing");
             // An existing advanced draft must remain untouched and must not become the live editor's source.

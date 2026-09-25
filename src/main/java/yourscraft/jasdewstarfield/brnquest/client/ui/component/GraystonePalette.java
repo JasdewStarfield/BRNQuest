@@ -7,6 +7,8 @@ public final class GraystonePalette {
     public static final int ROW = 0xFF383B35;
     public static final int HOVER = 0xFF454940;
     public static final int SELECTED = 0xFF68634A;
+    /** Cool tint marks a server draft associated by book ID without implying it is the open revision. */
+    public static final int RELATED = 0xFF4E5C5F;
     public static final int INSET = 0xFF20231E;
     // Solid cool stone keeps inline-code runs legible against both row and inset document surfaces.
     public static final int INLINE_CODE = 0xFF505A60;

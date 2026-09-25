@@ -35,12 +35,18 @@ public final class ClientEditorState {
 
     public record CatalogEntry(ResourceLocation bookId, String title, String draftRevision, DraftOrigin origin,
                                String importSource) {}
+    public record DraftVersionEntry(String backupId, String revision, String title, long savedAtEpochMillis) {}
     public record LeaseRequest(UUID sessionId, String draftRevision) {}
+    public record OpenRequest(ResourceLocation bookId, String expectedDraftRevision) {}
 
     private Mode mode = Mode.VIEW;
     private boolean allowed;
     private boolean live;
     private List<CatalogEntry> catalog = List.of();
+    private ResourceLocation versionsBookId;
+    private List<DraftVersionEntry> draftVersions = List.of();
+    private boolean versionsLoading;
+    private String versionsError = "";
     private String statusCode = "";
     private String statusMessage = "";
     private List<AuthoringNetwork.EditorDiagnosticWire> diagnostics = List.of();
@@ -55,6 +61,7 @@ public final class ClientEditorState {
     private int undoSteps;
     private int redoSteps;
     private ResourceLocation pendingBookId;
+    private String pendingBookRevision = "";
     private String[] chunks = new String[0];
     private int expectedBytes;
     private int receivedChunks;
@@ -153,8 +160,53 @@ public final class ClientEditorState {
 
     /** Starts a close, optionally retaining a server book to open after acknowledgement. */
     public synchronized Optional<LeaseRequest> beginClose(ResourceLocation openAfterClose) {
+        return beginClose(openAfterClose, "");
+    }
+
+    /** The history belongs to one book and is replaced only by its matching server reply. */
+    public synchronized void beginDraftVersions(ResourceLocation targetBookId) {
+        versionsBookId = targetBookId;
+        draftVersions = List.of();
+        versionsError = "";
+        versionsLoading = true;
+    }
+
+    public synchronized void acceptDraftVersions(String json) {
+        try {
+            var response = GSON.fromJson(json, AuthoringNetwork.DraftVersionsResponseWire.class);
+            if (response == null || versionsBookId == null
+                    || !versionsBookId.equals(ResourceLocation.tryParse(response.bookId()))) return;
+            versionsLoading = false;
+            if (!"SUCCESS".equals(response.status()) && !"NO_CHANGE".equals(response.status())) {
+                versionsError = safe(response.code());
+                draftVersions = List.of();
+                return;
+            }
+            List<DraftVersionEntry> decoded = new ArrayList<>();
+            if (response.versions() != null) {
+                for (var version : response.versions()) {
+                    if (version.backupId() == null || version.backupId().isBlank()
+                            || version.revision() == null || version.revision().isBlank()) continue;
+                    decoded.add(new DraftVersionEntry(version.backupId(), version.revision(),
+                            safe(version.title()), Math.max(0L, version.savedAtEpochMillis())));
+                    if (decoded.size() >= 40) break;
+                }
+            }
+            draftVersions = List.copyOf(decoded);
+            versionsError = "";
+        } catch (RuntimeException exception) {
+            versionsLoading = false;
+            draftVersions = List.of();
+            versionsError = "INVALID_DRAFT_VERSIONS";
+        }
+    }
+
+    /** Carries the selected catalog version through the old lease's close acknowledgement. */
+    public synchronized Optional<LeaseRequest> beginClose(ResourceLocation openAfterClose,
+                                                           String expectedDraftRevision) {
         if (!hasSession() || busy()) return Optional.empty();
         pendingBookId = openAfterClose;
+        pendingBookRevision = expectedDraftRevision == null ? "" : expectedDraftRevision;
         mode = Mode.CLOSING;
         statusCode = openAfterClose == null ? "SESSION_CLOSING" : "SESSION_SWITCHING";
         return Optional.of(new LeaseRequest(sessionId, draftRevision));
@@ -247,7 +299,7 @@ public final class ClientEditorState {
     }
 
     /** Applies server session metadata and returns a queued book switch, if one became ready. */
-    public synchronized Optional<ResourceLocation> acceptSession(String json) {
+    public synchronized Optional<OpenRequest> acceptSession(String json) {
         AuthoringNetwork.SessionResponseWire response;
         try {
             response = GSON.fromJson(json, AuthoringNetwork.SessionResponseWire.class);
@@ -390,6 +442,7 @@ public final class ClientEditorState {
 
     public synchronized void abandonLocalSession() {
         pendingBookId = null;
+        pendingBookRevision = "";
         if (mode == Mode.OPENING && sessionId == null) {
             // The server may still grant the in-flight request. Close that lease as
             // soon as its identity arrives instead of leaving an invisible editor.
@@ -414,9 +467,14 @@ public final class ClientEditorState {
     public synchronized void disconnected() {
         allowed = false;
         catalog = List.of();
+        versionsBookId = null;
+        draftVersions = List.of();
+        versionsLoading = false;
+        versionsError = "";
         statusCode = "";
         statusMessage = "";
         pendingBookId = null;
+        pendingBookRevision = "";
         closeWhenOpened = false;
         immediateClose = null;
         clearLease();
@@ -464,8 +522,25 @@ public final class ClientEditorState {
 
     public synchronized Optional<QuestBookSnapshot> draft() { return Optional.ofNullable(draft); }
     public synchronized ResourceLocation bookId() { return bookId; }
+    public synchronized List<DraftVersionEntry> draftVersions() { return draftVersions; }
+    public synchronized boolean versionsLoading() { return versionsLoading; }
+    public synchronized String versionsError() { return versionsError; }
     public synchronized UUID sessionId() { return sessionId; }
     public synchronized String draftRevision() { return draftRevision; }
+    /** The saved revision identifies the catalog row behind this editing session, even after local edits. */
+    public synchronized String savedRevision() { return savedRevision; }
+    public synchronized String baseRevision() { return baseRevision; }
+    /** A catalog row is current only when it names the exact saved draft held by this lease. */
+    public synchronized boolean editingCatalogEntry(CatalogEntry entry) {
+        return entry != null && editing() && !live && bookId != null
+                && bookId.equals(entry.bookId()) && !savedRevision.isBlank()
+                && savedRevision.equals(entry.draftRevision());
+    }
+    /** Browsing or live editing can point to a same-ID server draft without opening that draft. */
+    public synchronized boolean relatedCatalogEntry(CatalogEntry entry, ResourceLocation activeBookId) {
+        return entry != null && activeBookId != null && activeBookId.equals(entry.bookId())
+                && (mode == Mode.VIEW || live && hasSession()) && !editingCatalogEntry(entry);
+    }
     public synchronized String statusCode() { return statusCode; }
     public synchronized String statusMessage() { return statusMessage; }
     public synchronized List<AuthoringNetwork.EditorDiagnosticWire> diagnostics() { return diagnostics; }
@@ -617,6 +692,20 @@ public final class ClientEditorState {
             return;
         }
         savedRevision = response.savedRevision();
+        // The catalog can remain open across a save. Keep its selection revision in
+        // step with the acknowledged disk write before the player versions this draft.
+        List<CatalogEntry> updatedCatalog = new ArrayList<>(catalog.size() + 1);
+        boolean found = false;
+        for (CatalogEntry entry : catalog) {
+            if (entry.bookId().equals(bookId)) {
+                updatedCatalog.add(new CatalogEntry(bookId, draft == null ? entry.title() : draft.book().title(),
+                        savedRevision, entry.origin(), entry.importSource()));
+                found = true;
+            } else updatedCatalog.add(entry);
+        }
+        if (!found && draft != null) updatedCatalog.add(new CatalogEntry(bookId, draft.book().title(),
+                savedRevision, DraftOrigin.UNKNOWN, ""));
+        catalog = List.copyOf(updatedCatalog);
         undoSteps = response.undoSteps();
         redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
@@ -648,12 +737,14 @@ public final class ClientEditorState {
         statusMessage = safe(response.message());
     }
 
-    private Optional<ResourceLocation> acceptClosed() {
+    private Optional<OpenRequest> acceptClosed() {
         ResourceLocation next = pendingBookId;
+        String expected = pendingBookRevision;
         pendingBookId = null;
+        pendingBookRevision = "";
         clearLease();
         mode = Mode.VIEW;
-        if (next != null && beginOpen(next)) return Optional.of(next);
+        if (next != null && beginOpen(next)) return Optional.of(new OpenRequest(next, expected));
         return Optional.empty();
     }
 

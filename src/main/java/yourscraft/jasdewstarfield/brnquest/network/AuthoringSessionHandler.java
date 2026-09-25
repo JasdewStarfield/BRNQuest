@@ -40,7 +40,46 @@ final class AuthoringSessionHandler {
         responses.sendCatalog(AuthorApi.catalog(player));
     }
 
+    void sendDraftVersions(ResourceLocation bookId) {
+        responses.sendDraftVersions(bookId, new yourscraft.jasdewstarfield.brnquest.author.AuthorBackupService()
+                .listDraftVersions(player, bookId));
+    }
+
+    void versionSavedDraft(AuthoringRequestDecoder.DraftVersionRequest request) {
+        var versioned = new DraftService().versionSavedDraft(player, request.bookId(),
+                request.expectedDraftRevision());
+        if (!versioned.success()) {
+            responses.sendFailure("OPEN", versioned);
+            return;
+        }
+        sendCatalog();
+        open(new AuthoringRequestDecoder.OpenRequest(request.bookId(), versioned.value().draftRevision()),
+                "DRAFT_VERSION_CREATED", "Saved draft copied into history and reopened");
+    }
+
+    void restoreDraftVersion(AuthoringRequestDecoder.DraftRestoreRequest request) {
+        var restored = new yourscraft.jasdewstarfield.brnquest.author.AuthorBackupService()
+                .restoreDraftVersion(player, request.bookId(), request.backupId(),
+                        request.expectedCurrentRevision());
+        if (!restored.success()) {
+            responses.sendFailure("OPEN", restored);
+            return;
+        }
+        sendCatalog();
+        var draft = new DraftRepository().load(player.getServer(), request.bookId());
+        if (!draft.success()) {
+            responses.sendFailure("OPEN", draft);
+            return;
+        }
+        open(new AuthoringRequestDecoder.OpenRequest(request.bookId(), draft.value().draftRevision()),
+                "DRAFT_BACKUP_RESTORED", "Saved draft version restored and opened");
+    }
+
     void open(AuthoringRequestDecoder.OpenRequest request) {
+        open(request, "SESSION_OPENED", "Edit session opened");
+    }
+
+    private void open(AuthoringRequestDecoder.OpenRequest request, String code, String message) {
         ResourceLocation bookId = request.bookId();
         String expectedDraftRevision = request.expectedDraftRevision();
         AuthorOperationResult<EditSessionHandle> opened = AuthorApi.open(player, bookId, expectedDraftRevision);
@@ -56,7 +95,7 @@ final class AuthoringSessionHandler {
             responses.sendFailure("OPEN", snapshot);
             return;
         }
-        sendDraft("OPEN", "SESSION_OPENED", "Edit session opened", handle, snapshot.value());
+        sendDraft("OPEN", code, message, handle, snapshot.value());
     }
 
     void openCurrent(AuthoringRequestDecoder.CurrentRequest payload) {
@@ -91,8 +130,17 @@ final class AuthoringSessionHandler {
         sendCatalog();
         // Continuing and replacing both pass through the normal permission,
         // ownership, migration, revision, and lease checks below.
+        String openedCode = "SESSION_OPENED";
+        String openedMessage = "Edit session opened";
+        if (payload.replaceDraft()) {
+            boolean hadDraft = !payload.draftRevision().isBlank();
+            openedCode = hadDraft ? "DRAFT_VERSION_CREATED" : "DRAFT_COPY_CREATED";
+            openedMessage = hadDraft ? "Current task book copied; previous draft backed up"
+                    : "Current task book copied into a new draft";
+        }
         open(new AuthoringRequestDecoder.OpenRequest(bookId, payload.replaceDraft() ? "" :
-                payload.draftRevision().isBlank() ? active.revision() : payload.draftRevision()));
+                payload.draftRevision().isBlank() ? active.revision() : payload.draftRevision()),
+                openedCode, openedMessage);
     }
 
     void renew(AuthoringRequestDecoder.LeaseRequest request) {

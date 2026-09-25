@@ -83,7 +83,9 @@ class ClientEditorStateTest {
         var book = new QuestBookDefinition(ResourceLocation.parse("test:live"), 1, "Live", List.of(), List.of(), Map.of());
         var snapshot = QuestBookSnapshot.of(book);
         state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
-                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of(
+                new AuthoringNetwork.CatalogEntryWire(book.id().toString(), "Separate draft",
+                        "different-revision", DraftOrigin.WORKSPACE.name())))));
         assertTrue(state.beginOpenCurrent(book.id()));
         UUID session = UUID.randomUUID();
         String json = NativeBookJson.encode(book);
@@ -92,6 +94,8 @@ class ClientEditorStateTest {
                 snapshot.revision(), snapshot.revision(), 36000L, 1, json.getBytes(StandardCharsets.UTF_8).length)));
         assertTrue(state.acceptDraftChunk(session.toString(), snapshot.revision(), 0, json));
         assertTrue(state.live());
+        assertTrue(state.relatedCatalogEntry(state.catalog().getFirst(), book.id()));
+        assertFalse(state.editingCatalogEntry(state.catalog().getFirst()));
         assertTrue(state.gameplayAllowed(snapshot.revision()));
         assertFalse(state.gameplayAllowed("another-runtime-revision"));
         assertTrue(state.beginSave().isEmpty());
@@ -129,6 +133,45 @@ class ClientEditorStateTest {
                 .map(entry -> entry.bookId().toString()).toList());
         assertEquals(List.of("test:backup_old"), state.filteredCatalog(displayed, "BACKUP_OLD").stream()
                 .map(entry -> entry.bookId().toString()).toList());
+    }
+
+    @Test void browsingMarksSameIdDraftAsRelatedWithoutClaimingItsRevisionIsOpen() {
+        ResourceLocation activeId = ResourceLocation.parse("test:active");
+        ResourceLocation otherId = ResourceLocation.parse("test:other");
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of(
+                new AuthoringNetwork.CatalogEntryWire(activeId.toString(), "Draft", "different-revision",
+                        DraftOrigin.WORKSPACE.name())))));
+
+        ClientEditorState.CatalogEntry entry = state.catalog().getFirst();
+        assertTrue(state.relatedCatalogEntry(entry, activeId));
+        assertFalse(state.relatedCatalogEntry(entry, otherId));
+        assertFalse(state.editingCatalogEntry(entry));
+        assertTrue(state.beginOpen(activeId));
+        assertFalse(state.relatedCatalogEntry(entry, activeId), "opening a draft must clear the related marker");
+    }
+
+    @Test void bookSwitchCarriesTheCatalogRevisionAcrossLeaseClose() {
+        QuestBookSnapshot first = QuestBookSnapshot.of(new QuestBookDefinition(
+                ResourceLocation.parse("test:first"), 1, "First", List.of(), List.of(), Map.of()));
+        ResourceLocation second = ResourceLocation.parse("test:second");
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of(
+                new AuthoringNetwork.CatalogEntryWire(first.book().id().toString(), "First",
+                        first.revision(), DraftOrigin.EMPTY.name()),
+                new AuthoringNetwork.CatalogEntryWire(second.toString(), "Second",
+                        "selected-revision", DraftOrigin.EMPTY.name())))));
+        assertTrue(state.beginOpen(first.book().id()));
+        UUID session = UUID.randomUUID();
+        acceptTransfer("OPEN", session, first, first.revision());
+        assertTrue(state.beginClose(second, "selected-revision").isPresent());
+
+        var next = state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(
+                "CLOSE", "SUCCESS", "SESSION_CLOSED", "ok", session.toString(),
+                first.book().id().toString(), "", first.revision(), first.revision(), 0, 0, 0)));
+
+        assertEquals(new ClientEditorState.OpenRequest(second, "selected-revision"), next.orElseThrow());
+        assertEquals(ClientEditorState.Mode.OPENING, state.mode());
     }
 
     @Test void catalogCanFindAnFtbDraftByItsInboxSourceName() {
@@ -226,6 +269,13 @@ class ClientEditorStateTest {
         assertEquals(ClientEditorState.Mode.EDITING, state.mode());
         assertFalse(state.dirty());
         assertEquals("After", state.draft().orElseThrow().book().title());
+        assertEquals(afterSnapshot.revision(), state.catalog().getFirst().draftRevision(),
+                "saving updates the revision used by the version action");
+        assertEquals("After", state.catalog().getFirst().title());
+        assertTrue(state.editingCatalogEntry(state.catalog().getFirst()));
+        assertFalse(state.editingCatalogEntry(new ClientEditorState.CatalogEntry(bookId, "Before",
+                beforeSnapshot.revision(), DraftOrigin.UNKNOWN, "")),
+                "a catalog row with the same book ID but another saved revision is not the edited draft");
     }
 
     @Test void publishPipelineCanStartFromDirtyDraftAndReturnsToSavedEditingState() {

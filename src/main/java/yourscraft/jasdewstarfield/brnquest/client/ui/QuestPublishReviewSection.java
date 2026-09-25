@@ -21,10 +21,14 @@ import java.util.Locale;
 /** Owns the publish-review overlay's immutable payload, filtering, scrolling and pointer frame. */
 final class QuestPublishReviewSection {
     enum Action { CANCEL, CONFIRM, JUMP_TO_OBJECT, DETAILS }
-    record Intent(Action action, String reviewedRevision, ResourceLocation objectId) {
-        static Intent cancel() { return new Intent(Action.CANCEL, "", null); }
-        static Intent confirm(String revision) { return new Intent(Action.CONFIRM, revision, null); }
-        static Intent jump(ResourceLocation objectId) { return new Intent(Action.JUMP_TO_OBJECT, "", objectId); }
+    record Intent(Action action, String reviewedRevision, String workspaceRevision,
+                  String activeBookId, String activeRevision, ResourceLocation objectId) {
+        static Intent cancel() { return new Intent(Action.CANCEL, "", "", "", "", null); }
+        static Intent confirm(EditorPublishReviewModel review) {
+            return new Intent(Action.CONFIRM, review.targetRevision(), review.fromRevision(),
+                    review.activeBookId(), review.activeRevision(), null);
+        }
+        static Intent jump(ResourceLocation objectId) { return new Intent(Action.JUMP_TO_OBJECT, "", "", "", "", objectId); }
     }
     record RenderResult(List<Component> tooltip) {
         RenderResult { tooltip = tooltip == null ? List.of() : List.copyOf(tooltip); }
@@ -147,7 +151,7 @@ final class QuestPublishReviewSection {
             return new ClickResult(true, null);
         }
         if (review.publishAllowed() && layout.confirm().contains(mouseX, mouseY)) {
-            return new ClickResult(true, Intent.confirm(review.targetRevision()));
+            return new ClickResult(true, Intent.confirm(review));
         }
         List<EditorPublishReviewRows.Row> rows = rows();
         int row = EditorPublishReviewPanel.rowAt(layout, scroll, rows.size(), mouseX, mouseY);
@@ -166,7 +170,7 @@ final class QuestPublishReviewSection {
                 lines.addAll(EditorTooltipComposer.diagnostic(diagnostic));
             }
             detailLines = List.copyOf(lines);
-            return new ClickResult(true, new Intent(Action.DETAILS, "", null));
+            return new ClickResult(true, new Intent(Action.DETAILS, "", "", "", "", null));
         }
         ResourceLocation objectId = row < 0 ? null : objectId(rows.get(row));
         return new ClickResult(true, objectId == null ? null : Intent.jump(objectId));

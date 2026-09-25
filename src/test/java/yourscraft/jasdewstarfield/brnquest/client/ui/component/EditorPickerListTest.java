@@ -11,6 +11,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class EditorPickerListTest {
     private static final UiRect BOUNDS = new UiRect(10, 10, 210, 152);
 
+    @Test void popupHeightFitsEveryRequestedRowAboveItsFooter() {
+        int footer = 24;
+        int height = EditorPickerList.popupHeightForRows(8, footer);
+        UiRect listBounds = new UiRect(2, 2, 418, height - footer);
+        assertEquals(8 * EditorPickerList.ROW_HEIGHT, EditorPickerList.rowsBounds(listBounds).height());
+        EditorPickerList<Integer> picker = new EditorPickerList<>();
+        var frame = picker.advance(listBounds, listBounds, 12, i -> i, 0, 12);
+        assertEquals(8, frame.rows().size(), "the last allocated row must not disappear at the footer");
+    }
+
     @Test void searchFooterAndScrollbarNeverSelectAnEntry() {
         EditorPickerList<String> picker = new EditorPickerList<>();
         picker.advance(BOUNDS, BOUNDS, 8, i -> "entry-" + i, 0, 12);
@@ -90,5 +100,9 @@ class EditorPickerListTest {
         assertEquals(EditorPickerList.Tone.WARNING, warning.tone());
         assertFalse(warning.selected());
         assertEquals("warning", warning.tooltip().getFirst().getString());
+        var related = new EditorPickerList.Entry(Component.literal("draft"), Component.literal("same ID"),
+                EditorPickerList.Tone.NORMAL, EditorPickerList.Highlight.SAME_BOOK, List.of());
+        assertFalse(related.selected(), "a same-ID draft must not claim to be the open edit revision");
+        assertEquals(EditorPickerList.Highlight.SAME_BOOK, related.highlight());
     }
 }

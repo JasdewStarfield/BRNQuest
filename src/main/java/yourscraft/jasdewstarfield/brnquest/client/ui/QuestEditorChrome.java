@@ -34,7 +34,7 @@ final class QuestEditorChrome {
                  boolean canUndo, boolean canRedo, int undoSteps, int redoSteps,
                  boolean publishSurfaceReady, boolean historySurfaceReady,
                  Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid,
-                 boolean catalogOpen) {
+                 boolean catalogOpen, List<Component> titleTooltip) {
         Model(QuestScreenFrameIdentity identity, String title, ResourceLocation bookId,
               boolean allowed, boolean editing, boolean hasLease, boolean live, boolean busy, boolean dirty,
               boolean canUndo, boolean canRedo, int undoSteps, int redoSteps,
@@ -42,11 +42,12 @@ final class QuestEditorChrome {
               Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid) {
             this(identity, title, bookId, allowed, editing, hasLease, live, busy, dirty, canUndo, canRedo,
                     undoSteps, redoSteps, publishSurfaceReady, historySurfaceReady, status, error,
-                    errorTooltip, snapToGrid, false);
+                    errorTooltip, snapToGrid, false, List.of());
         }
         Model {
             title = title == null ? "" : title;
             errorTooltip = errorTooltip == null ? List.of() : List.copyOf(errorTooltip);
+            titleTooltip = titleTooltip == null ? List.of() : List.copyOf(titleTooltip);
         }
     }
 
@@ -183,7 +184,16 @@ final class QuestEditorChrome {
         }
         Component hoveredDetail = layout.title().contains(mouseX, mouseY)
                 ? Component.literal(model.bookId().toString()) : null;
+        if (hoveredDetail != null) tooltip = titleTooltip(model);
         return new RenderResult(hoveredDetail, tooltip);
+    }
+
+    /** Keep the identity lines together and place the catalog action after them. */
+    static List<Component> titleTooltip(Model model) {
+        List<Component> lines = new java.util.ArrayList<>(model.titleTooltip());
+        if (lines.isEmpty()) lines.add(Component.literal(model.bookId().toString()));
+        if (model.allowed()) lines.add(Component.translatable("screen.brnquest.editor.catalog.open"));
+        return List.copyOf(lines);
     }
 
     ClickResult click(QuestScreenFrameIdentity identity, double x, double y) {

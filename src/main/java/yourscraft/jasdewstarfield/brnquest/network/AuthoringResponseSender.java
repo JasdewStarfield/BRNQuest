@@ -7,6 +7,7 @@ import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftCatalogEntry;
+import yourscraft.jasdewstarfield.brnquest.author.DraftBackupVersion;
 import yourscraft.jasdewstarfield.brnquest.author.DraftSnapshot;
 import yourscraft.jasdewstarfield.brnquest.author.DraftEditResult;
 import yourscraft.jasdewstarfield.brnquest.author.DraftPublishResult;
@@ -74,21 +75,37 @@ final class AuthoringResponseSender {
         outbound.accept(new CatalogPayload(json));
     }
 
+    /** A bounded, book-specific history response contains only validated backup metadata. */
+    void sendDraftVersions(ResourceLocation bookId, AuthorOperationResult<List<DraftBackupVersion>> result) {
+        List<DraftVersionWire> versions = result.success() ? result.value().stream()
+                .map(version -> new DraftVersionWire(version.id(), version.revision(),
+                        boundedTitle(version.title()), version.savedAtEpochMillis())).toList() : List.of();
+        var response = new DraftVersionsResponseWire(bookId.toString(), result.status().name(), result.code(),
+                boundedMessage(result.message()), versions);
+        outbound.accept(new DraftVersionsPayload(GSON.toJson(response)));
+    }
+
     /** Maps the authoritative preview and diff without repeating their publication gates. */
     void sendPublishReview(EditSessionHandle handle, boolean publishAllowed, ResourceLocation bookId,
-                           DraftPublishResult preview, QuestBookDiff diff) {
+                            DraftPublishResult preview, QuestBookDiff diff) {
+        sendPublishReview(handle, publishAllowed, bookId, preview, diff, "", "");
+    }
+
+    void sendPublishReview(EditSessionHandle handle, boolean publishAllowed, ResourceLocation bookId,
+                            DraftPublishResult preview, QuestBookDiff diff, String activeBookId,
+                            String activeRevision) {
         List<EditorDiagnosticWire> allDiagnostics = new java.util.ArrayList<>(preview.diagnostics().stream()
                 .map(diagnostic -> new EditorDiagnosticWire(diagnostic.severity().name(), diagnostic.code(),
                         diagnostic.objectId(), diagnostic.path(), boundedReviewValue(diagnostic.message())))
                 .toList());
         if (preview.revisionCheck() != null) {
             preview.revisionCheck().conflicts().forEach(conflict -> allDiagnostics.add(
-                    new EditorDiagnosticWire("ERROR", conflict.code(), bookId.toString(), "revision",
+                    new EditorDiagnosticWire(publishAllowed ? "WARN" : "ERROR", conflict.code(), bookId.toString(), "revision",
                             boundedReviewValue(conflict.message()))));
         }
         List<SemanticDiffWire> allChanges = diff.entries().stream().map(AuthoringResponseSender::diffWire).toList();
         sendPublishReview(handle, publishAllowed, diff.fromRevision(),
-                diff.toRevision(), allDiagnostics, allChanges);
+                diff.toRevision(), activeBookId, activeRevision, allDiagnostics, allChanges);
     }
 
     static SemanticDiffWire diffWire(SemanticDiffEntry entry) {
@@ -103,9 +120,17 @@ final class AuthoringResponseSender {
     }
 
     void sendPublishReview(EditSessionHandle handle, boolean publishAllowed,
-                           String fromRevision, String targetRevision,
-                           List<EditorDiagnosticWire> allDiagnostics,
-                           List<SemanticDiffWire> allChanges) {
+                            String fromRevision, String targetRevision,
+                            List<EditorDiagnosticWire> allDiagnostics,
+                            List<SemanticDiffWire> allChanges) {
+        sendPublishReview(handle, publishAllowed, fromRevision, targetRevision, "", "",
+                allDiagnostics, allChanges);
+    }
+
+    void sendPublishReview(EditSessionHandle handle, boolean publishAllowed,
+                            String fromRevision, String targetRevision, String activeBookId,
+                            String activeRevision, List<EditorDiagnosticWire> allDiagnostics,
+                            List<SemanticDiffWire> allChanges) {
         List<EditorDiagnosticWire> diagnostics = new java.util.ArrayList<>(
                 allDiagnostics.stream().limit(MAX_REVIEW_ROWS)
                         .map(AuthoringResponseSender::boundedDiagnostic).toList());
@@ -115,7 +140,7 @@ final class AuthoringResponseSender {
         String json;
         do {
             PublishReviewWire review = new PublishReviewWire(publishAllowed, "WORKSPACE", fromRevision,
-                    targetRevision, "BACKUP_AND_REPLACE", allDiagnostics.size(), allChanges.size(), truncated,
+                    targetRevision, activeBookId, activeRevision, "BACKUP_AND_REPLACE", allDiagnostics.size(), allChanges.size(), truncated,
                     diagnostics, changes);
             EditSessionView view = handle.session();
             long remaining = Math.max(0L, view.expiresAtTick() - currentTick.getAsLong());

@@ -110,6 +110,18 @@ class QuestEditorChromeTest {
         assertFalse(chrome.click(identity, snap.centerX(), snap.centerY()).consumed());
     }
 
+    @Test void titleTooltipKeepsIdentityLinesBeforeTheCatalogAction() {
+        var identity = identity("r1", 320, 240);
+        List<Component> lines = List.of(Component.literal("Editing draft"), Component.literal("Revision: abc"));
+        var model = new QuestEditorChrome.Model(identity, "Test", BOOK, true, true, true, false,
+                false, false, false, false, 0, 0, false, false, null, false, List.of(), true,
+                false, lines);
+
+        var tooltip = QuestEditorChrome.titleTooltip(model);
+        assertEquals(lines, tooltip.subList(0, 2));
+        assertEquals(3, tooltip.size());
+    }
+
     private static QuestScreenFrameIdentity identity(String revision, int width, int height) {
         return new QuestScreenFrameIdentity(BOOK, revision, true, width, height);
     }

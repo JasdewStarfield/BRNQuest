@@ -62,10 +62,15 @@ public final class ClientPayloadHandler {
         Minecraft.getInstance().execute(() -> ClientEditorState.get().acceptCatalog(payload.json()));
     }
 
+    public static void editorDraftVersions(AuthoringNetwork.DraftVersionsPayload payload) {
+        Minecraft.getInstance().execute(() -> ClientEditorState.get().acceptDraftVersions(payload.json()));
+    }
+
     public static void editorSession(AuthoringNetwork.SessionPayload payload) {
         Minecraft.getInstance().execute(() -> {
             ClientEditorState state = ClientEditorState.get();
-            state.acceptSession(payload.json()).ifPresent(AuthoringNetwork::openSession);
+            state.acceptSession(payload.json()).ifPresent(request ->
+                    AuthoringNetwork.openSession(request.bookId(), request.expectedDraftRevision()));
             state.pollImmediateClose().ifPresent(request ->
                     AuthoringNetwork.closeSession(request.sessionId(), request.draftRevision()));
         });

@@ -17,6 +17,41 @@ import java.util.*;
 public final class AuthorBackupService {
     private static final int MOVE_ATTEMPTS = 4;
     private static final long MOVE_RETRY_MILLIS = 25L;
+    private static final int MAX_VISIBLE_DRAFT_VERSIONS = 40;
+
+    /** Lists only the selected book's validated backups, newest first. */
+    public AuthorOperationResult<List<DraftBackupVersion>> listDraftVersions(ServerPlayer player,
+                                                                              ResourceLocation bookId) {
+        MinecraftServer server = authorizedServer(player);
+        if (server == null) return authorizationFailure(player);
+        if (bookId == null) return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                "INVALID_BOOK_ID", "A task book ID is required");
+        Path root = backupRoot(server, BackupKind.DRAFT).toAbsolutePath().normalize();
+        Path directory = root.resolve(bookId.getNamespace()).resolve(bookId.getPath()).normalize();
+        if (!directory.startsWith(root)) return AuthorOperationResult.failure(
+                AuthorOperationResult.Status.INVALID_REQUEST, "INVALID_BOOK_ID", "Unsafe task book ID");
+        if (!Files.isDirectory(directory)) return AuthorOperationResult.success(
+                "DRAFT_VERSIONS_EMPTY", "No saved versions exist for this task book", List.of());
+        try (var paths = Files.list(directory)) {
+            List<DraftBackupVersion> versions = new ArrayList<>();
+            for (Path candidate : paths.filter(Files::isDirectory).toList()) {
+                // Validation also checks the manifest, book ID and content revision before
+                // a backup becomes selectable from the editor.
+                validate(candidate, BackupKind.DRAFT, bookId);
+                var snapshot = DraftRepository.readDirectoryAllowCanonicalDrift(candidate, bookId).value();
+                versions.add(new DraftBackupVersion(root.relativize(candidate).toString().replace('\\', '/'),
+                        snapshot.draftRevision(), snapshot.book().title(),
+                        Files.getLastModifiedTime(candidate.resolve("draft.json")).toMillis()));
+            }
+            versions.sort(Comparator.comparingLong(DraftBackupVersion::savedAtEpochMillis).reversed()
+                    .thenComparing(DraftBackupVersion::id));
+            return AuthorOperationResult.success("DRAFT_VERSIONS_LISTED", "Saved draft versions listed",
+                    List.copyOf(versions.stream().limit(MAX_VISIBLE_DRAFT_VERSIONS).toList()));
+        } catch (Exception exception) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE,
+                    "DRAFT_VERSIONS_FAILED", exception.getMessage());
+        }
+    }
 
     public AuthorOperationResult<List<BackupDescriptor>> list(ServerPlayer player, BackupKind kind) {
         MinecraftServer server = authorizedServer(player);
@@ -55,12 +90,51 @@ public final class AuthorBackupService {
 
     public AuthorOperationResult<BackupRestoreResult> restore(ServerPlayer player, BackupKind kind, String backupId,
                                                                String expectedCurrentRevision) {
+        return restore(player, kind, null, backupId, expectedCurrentRevision);
+    }
+
+    /** Pins the chosen task book as well as the current revision for editor restores. */
+    public AuthorOperationResult<BackupRestoreResult> restoreDraftVersion(ServerPlayer player,
+            ResourceLocation bookId, String backupId, String expectedCurrentRevision) {
+        if (bookId == null) return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                "INVALID_BOOK_ID", "A task book ID is required");
+        MinecraftServer server = authorizedServer(player);
+        if (server == null) return authorizationFailure(player);
+        try {
+            Path target = WorkspacePaths.drafts(server).resolve(bookId.getNamespace())
+                    .resolve(bookId.getPath()).normalize();
+            // The catalog exposes a draft content revision, while the atomic restore guard
+            // compares whole directory trees. Pin both before moving either directory.
+            String treeBefore = treeRevision(target);
+            var current = new DraftRepository().load(server, bookId);
+            String contentBefore = current.success() ? current.value().draftRevision() : "";
+            if (!current.success() && current.status() != AuthorOperationResult.Status.NOT_FOUND) {
+                return AuthorOperationResult.failure(current.status(), current.code(), current.message());
+            }
+            if (!contentBefore.equals(normalize(expectedCurrentRevision))
+                    || !treeBefore.equals(treeRevision(target))) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                        "RESTORE_TARGET_CHANGED", "The saved draft changed after version history opened");
+            }
+            return restore(player, BackupKind.DRAFT, bookId, backupId, treeBefore);
+        } catch (IOException exception) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.IO_FAILURE,
+                    "BACKUP_RESTORE_FAILED", exception.getMessage());
+        }
+    }
+
+    private AuthorOperationResult<BackupRestoreResult> restore(ServerPlayer player, BackupKind kind,
+            ResourceLocation expectedBookId, String backupId, String expectedCurrentRevision) {
         MinecraftServer server = authorizedServer(player);
         if (server == null) return authorizationFailure(player);
         AuthorOperationResult<BackupRestoreResult> result;
         String before = "";
         try {
             ResolvedBackup backup = resolve(server, kind, backupId);
+            if (expectedBookId != null && !expectedBookId.equals(backup.bookId())) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                        "BACKUP_BOOK_MISMATCH", "The selected backup belongs to another task book");
+            }
             Path target = target(server, backup);
             before = treeRevision(target);
             if (kind == BackupKind.DRAFT
@@ -93,10 +167,16 @@ public final class AuthorBackupService {
                                                                        Path target, String before) throws IOException {
         Path parent = target.toAbsolutePath().normalize().getParent();
         Path staging = parent.resolve("." + target.getFileName() + ".restore-staging-" + UUID.randomUUID());
-        Path overwritten = WorkspacePaths.backups(server).resolve("restore-overwritten")
-                .resolve(backup.kind().name().toLowerCase(Locale.ROOT))
-                .resolve((before.isBlank() ? "EMPTY" : before) + "-" + UUID.randomUUID());
+        Path overwritten = backup.kind() == BackupKind.DRAFT
+                // Keep the version displaced by a restore in the same in-game history.
+                ? backupRoot(server, BackupKind.DRAFT).resolve(backup.bookId().getNamespace())
+                    .resolve(backup.bookId().getPath())
+                    .resolve((before.isBlank() ? "EMPTY" : before) + "-" + UUID.randomUUID())
+                : WorkspacePaths.backups(server).resolve("restore-overwritten")
+                    .resolve(backup.kind().name().toLowerCase(Locale.ROOT))
+                    .resolve((before.isBlank() ? "EMPTY" : before) + "-" + UUID.randomUUID());
         boolean previousMoved = false;
+        boolean stagedMovedToTarget = false;
         try {
             FileIoTrace.createDirectories(parent);
             copyTree(backup.path(), staging);
@@ -107,6 +187,7 @@ public final class AuthorBackupService {
                 previousMoved = true;
             }
             move(staging, target);
+            stagedMovedToTarget = true;
             String restoredRevision = treeRevision(target);
             if (!restoredRevision.equals(backup.revision())) throw new IOException("Restored target failed verification");
             return AuthorOperationResult.success("BACKUP_RESTORED", "Backup restored atomically",
@@ -116,7 +197,8 @@ public final class AuthorBackupService {
             if (previousMoved && Files.exists(overwritten)) {
                 safeDelete(target, parent);
                 move(overwritten, target);
-            } else {
+            } else if (stagedMovedToTarget) {
+                // A failed staging copy leaves the original target untouched.
                 safeDelete(target, parent);
             }
             safeDelete(staging, parent);

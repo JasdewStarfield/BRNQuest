@@ -18,16 +18,32 @@ public final class EditorPickerList<K> {
     public static final int ROW_HEIGHT = 30;
     private static final int COLUMN_GAP = 4;
 
+    /** Includes the popup's top inset and the picker's header, row, and bottom insets. */
+    public static int popupHeightForRows(int rows, int footerHeight) {
+        if (rows < 0 || footerHeight < 0) throw new IllegalArgumentException("Negative popup size");
+        return 2 + SEARCH_HEIGHT + 2 + rows * ROW_HEIGHT + 2 + footerHeight;
+    }
+
     /** Each column reserves room for the icon and a useful localized name; narrow windows stay single-column. */
     public static int iconColumns(int width) { return width >= 284 ? 2 : 1; }
     public enum Tone { NORMAL, WARNING, DISABLED }
+    public enum Highlight { NONE, EDITING_DRAFT, SAME_BOOK }
 
     public record Entry(Component primary, Component secondary, Tone tone,
-                        boolean selected, List<Component> tooltip) {
-        public Entry { tooltip = List.copyOf(tooltip); }
-        public Entry(Component primary, Component secondary, Tone tone) {
-            this(primary, secondary, tone, false, List.of());
+                        Highlight highlight, List<Component> tooltip) {
+        public Entry {
+            highlight = highlight == null ? Highlight.NONE : highlight;
+            tooltip = List.copyOf(tooltip);
         }
+        /** Preserve the simple selected flag used by other pickers. */
+        public Entry(Component primary, Component secondary, Tone tone,
+                     boolean selected, List<Component> tooltip) {
+            this(primary, secondary, tone, selected ? Highlight.EDITING_DRAFT : Highlight.NONE, tooltip);
+        }
+        public Entry(Component primary, Component secondary, Tone tone) {
+            this(primary, secondary, tone, Highlight.NONE, List.of());
+        }
+        public boolean selected() { return highlight == Highlight.EDITING_DRAFT; }
     }
 
     private final EditorListPanel<K> list = new EditorListPanel<>();
@@ -64,28 +80,63 @@ public final class EditorPickerList<K> {
     /** Only visible choices are presented; returned hover text is drawn by the host above all panels. */
     public List<Component> render(GuiGraphics graphics, Font font, Component searchText, boolean showingHint,
                                    Function<K, Entry> presentation, Component emptyText, int mouseX, int mouseY) {
-        return renderChoices(graphics, font, searchText, showingHint, presentation, null, emptyText, mouseX, mouseY);
+        return render(graphics, font, searchText, showingHint, false, presentation, emptyText, mouseX, mouseY);
+    }
+
+    /** The catalog opts into a visible input focus and caret; other pickers keep their current input policy. */
+    public List<Component> render(GuiGraphics graphics, Font font, Component searchText, boolean showingHint,
+                                   boolean searchFocused, Function<K, Entry> presentation,
+                                   Component emptyText, int mouseX, int mouseY) {
+        return renderChoices(graphics, font, searchText, showingHint, searchFocused, true,
+                presentation, null, emptyText, mouseX, mouseY);
+    }
+
+    /** A history list has a heading in the same slot, without implying that it accepts typing. */
+    public List<Component> renderHeading(GuiGraphics graphics, Font font, Component heading,
+                                          Function<K, Entry> presentation, Component emptyText,
+                                          int mouseX, int mouseY) {
+        return renderChoices(graphics, font, heading, false, false, false,
+                presentation, null, emptyText, mouseX, mouseY);
     }
 
     /** Type pickers opt into icon rows without changing legacy entries or other selector layouts. */
     public List<Component> renderIconChoices(GuiGraphics graphics, Font font, Component searchText,
             Function<K, Entry> presentation, Function<K, EditorIcon> icons, Component emptyText, int mouseX, int mouseY) {
-        return renderChoices(graphics, font, searchText, false, presentation, icons, emptyText, mouseX, mouseY);
+        return renderChoices(graphics, font, searchText, false, false, true,
+                presentation, icons, emptyText, mouseX, mouseY);
     }
 
     private List<Component> renderChoices(GuiGraphics graphics, Font font, Component searchText, boolean showingHint,
-            Function<K, Entry> presentation, Function<K, EditorIcon> icons, Component emptyText, int mouseX, int mouseY) {
+            boolean searchFocused, boolean searchable, Function<K, Entry> presentation,
+            Function<K, EditorIcon> icons, Component emptyText, int mouseX, int mouseY) {
         if (bounds == null || bounds.width() == 0 || bounds.height() == 0) return List.of();
         graphics.enableScissor(bounds.left(), bounds.top(), bounds.right(), bounds.bottom());
         try {
             GraystoneSurface.raised(graphics, bounds, GraystonePalette.PANEL, true);
             graphics.fill(bounds.left() + 2, bounds.top() + 2, bounds.right() - 2,
                     Math.min(bounds.bottom(), bounds.top() + SEARCH_HEIGHT), GraystonePalette.INSET);
-            QuestActionIcons.named("search").render(graphics, font,
-                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            searchText.getString(), Math.max(0, bounds.width() - 26))),
-                    bounds.left() + 20, bounds.top() + 6, showingHint ? GraystonePalette.DISABLED : 0xFFFFFFFF, false);
+            int textLeft = searchable ? bounds.left() + 20 : bounds.left() + 7;
+            int available = Math.max(0, bounds.right() - textLeft - 6);
+            if (searchable) QuestActionIcons.named("search").render(graphics, font,
+                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15),
+                    searchFocused ? GraystonePalette.HEADER_LIGHT : GraystonePalette.SECONDARY);
+            // Keep the end of a long query visible, where the caret and latest typed characters live.
+            String visible = searchText.getString();
+            while (!showingHint && !visible.isEmpty() && font.width(visible) > available)
+                visible = visible.substring(1);
+            visible = font.plainSubstrByWidth(visible, available);
+            graphics.drawString(font, Component.literal(visible), textLeft, bounds.top() + 6,
+                    showingHint ? GraystonePalette.DISABLED : GraystonePalette.TEXT, false);
+            if (searchFocused && searchable) {
+                graphics.renderOutline(bounds.left() + 2, bounds.top() + 2,
+                        Math.max(0, bounds.width() - 4), Math.min(SEARCH_HEIGHT - 1, bounds.height() - 3),
+                        GraystonePalette.HEADER_LIGHT);
+                if ((System.currentTimeMillis() / 500L & 1L) == 0L) {
+                    int caretX = Math.min(bounds.right() - 6, textLeft + (showingHint ? 0 : font.width(visible)));
+                    graphics.fill(caretX, bounds.top() + 5, caretX + 1, bounds.top() + 15,
+                            GraystonePalette.HEADER_LIGHT);
+                }
+            }
         } finally {
             graphics.disableScissor();
         }
@@ -93,8 +144,17 @@ public final class EditorPickerList<K> {
             Entry entry = presentation.apply(row.key());
             UiRect rect = row.bounds();
             boolean hovered = row.visible().containsExclusive(mouseX, mouseY);
-            GraystoneSurface.raised(graphics, rect,
-                    entry.selected() ? GraystonePalette.SELECTED : hovered ? 0xFF5C6056 : GraystonePalette.HOVER, entry.tone() != Tone.DISABLED);
+            // Current draft and merely related same-ID drafts use different fills and edge marks.
+            int fill = switch (entry.highlight()) {
+                case EDITING_DRAFT -> GraystonePalette.SELECTED;
+                case SAME_BOOK -> GraystonePalette.RELATED;
+                case NONE -> hovered ? 0xFF5C6056 : GraystonePalette.HOVER;
+            };
+            GraystoneSurface.raised(graphics, rect, fill, entry.tone() != Tone.DISABLED);
+            if (entry.highlight() != Highlight.NONE) graphics.fill(rect.left() + 2, rect.top() + 2,
+                    rect.left() + 4, rect.bottom() - 2,
+                    entry.highlight() == Highlight.EDITING_DRAFT
+                            ? GraystonePalette.HEADER_LIGHT : GraystonePalette.SECONDARY);
 
             int primaryColor = switch (entry.tone()) {
                 case NORMAL -> 0xFFFFFFFF;
@@ -105,19 +165,13 @@ public final class EditorPickerList<K> {
                 int inset = rect.width() >= 36 ? 28 : 4;
                 if (inset == 28) icons.apply(row.key()).render(graphics, font,
                         new UiRect(rect.left()+6, rect.top()+7, rect.left()+22, rect.top()+23), primaryColor);
-                QuestActionIcons.named("search").render(graphics, font,
-                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
+                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
                         Math.max(0, rect.width()-inset-4))), rect.left()+inset, rect.top()+11, primaryColor, false);
                 return;
             }
             int textWidth = Math.max(0, rect.width() - 8);
-            QuestActionIcons.named("search").render(graphics, font,
-                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 4, primaryColor, false);
-            QuestActionIcons.named("search").render(graphics, font,
-                    new UiRect(bounds.left() + 5, bounds.top() + 5, bounds.left() + 15, bounds.top() + 15), GraystonePalette.SECONDARY);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.secondary().getString(), textWidth)),
                     rect.left() + 4, rect.top() + 16, GraystonePalette.SECONDARY, false);
         }, () -> {

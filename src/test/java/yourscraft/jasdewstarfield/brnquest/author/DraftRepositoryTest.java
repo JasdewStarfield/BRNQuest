@@ -270,6 +270,25 @@ class DraftRepositoryTest {
         }
     }
 
+    @Test void copyingIdenticalCurrentBookStillBacksUpTheOldDraft() throws Exception {
+        DraftRepository repository = new DraftRepository();
+        Path drafts = tempDirectory.resolve("drafts");
+        Path backups = tempDirectory.resolve("backups");
+        DraftSnapshot current = DraftSnapshot.from(book("test:identical", "Current"), DraftOrigin.ACTIVE, "base");
+        assertTrue(repository.create(drafts, current).success());
+
+        AuthorOperationResult<DraftSnapshot> copied = repository.replace(drafts, backups, current,
+                current.draftRevision());
+
+        assertEquals("DRAFT_VERSION_CREATED", copied.code());
+        assertEquals(current, repository.load(drafts, current.book().id()).value());
+        try (var paths = Files.walk(backups.resolve("drafts/test/identical"))) {
+            Path previous = paths.filter(path -> Files.isRegularFile(path.resolve("book.json")))
+                    .findFirst().orElseThrow();
+            assertEquals(current, repository.readDirectoryForTest(previous, current.book().id()).value());
+        }
+    }
+
     @Test void injectedFailureRestoresTheOriginalDraft() throws Exception {
         DraftRepository repository = new DraftRepository(stage -> {
             if (stage == DraftRepository.TransactionStage.BACKUP_MOVED) throw new java.io.IOException("injected");

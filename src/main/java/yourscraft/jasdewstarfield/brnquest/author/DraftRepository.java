@@ -215,17 +215,21 @@ public final class DraftRepository {
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
                     "DRAFT_SELECTION_STALE", "The selected draft changed; review it before replacing it");
         }
-        AuthorOperationResult<DraftSaveResult> saved = save(draftsRoot, backupsRoot, replacement, expected);
+        // A deliberate new version always archives the selected draft, even when its
+        // book and manifest already match the current active book byte for byte.
+        AuthorOperationResult<DraftSaveResult> saved = save(draftsRoot, backupsRoot, replacement, expected, true);
         if (!saved.success()) return failureLike(saved);
-        return saved.status() == AuthorOperationResult.Status.NO_CHANGE
-                ? AuthorOperationResult.noChange("DRAFT_VERSION_ALREADY_CURRENT",
-                "Draft already matches the current book", replacement)
-                : AuthorOperationResult.success("DRAFT_VERSION_CREATED",
+        return AuthorOperationResult.success("DRAFT_VERSION_CREATED",
                 "Previous draft version backed up; current book is now the draft", replacement);
     }
 
     AuthorOperationResult<DraftSaveResult> save(Path draftsRoot, Path backupsRoot, DraftSnapshot draft,
                                                  String expectedDiskRevision) {
+        return save(draftsRoot, backupsRoot, draft, expectedDiskRevision, false);
+    }
+
+    private AuthorOperationResult<DraftSaveResult> save(Path draftsRoot, Path backupsRoot, DraftSnapshot draft,
+                                                         String expectedDiskRevision, boolean forceVersion) {
         AuthorOperationResult<DraftSnapshot> loaded = load(draftsRoot, draft.book().id());
         if (!loaded.success()) return failureLike(loaded);
         DraftSnapshot disk = loaded.value();
@@ -237,7 +241,7 @@ public final class DraftRepository {
         String expectedManifest = draft.manifest().encode();
         Path target = draftDirectory(draftsRoot, draft.book().id());
         try {
-            if (FileIoTrace.readString(target.resolve(BOOK_FILE), StandardCharsets.UTF_8).equals(expectedBook)
+            if (!forceVersion && FileIoTrace.readString(target.resolve(BOOK_FILE), StandardCharsets.UTF_8).equals(expectedBook)
                     && FileIoTrace.readString(target.resolve(MANIFEST_FILE), StandardCharsets.UTF_8).equals(expectedManifest)) {
                 return AuthorOperationResult.noChange("DRAFT_ALREADY_SAVED", "Draft files already match the session",
                         new DraftSaveResult(draft, disk.draftRevision(), null));

@@ -60,6 +60,28 @@ public final class DraftService {
         return prepared.success() ? repository.replace(server, prepared.value(), expectedDraftRevision) : prepared;
     }
 
+    /** Archives the selected saved draft and keeps its exact contents as the new current version. */
+    public AuthorOperationResult<DraftSnapshot> versionSavedDraft(ServerPlayer player, ResourceLocation bookId,
+                                                                   String expectedDraftRevision) {
+        MinecraftServer server = authorizedServer(player);
+        if (server == null) return authorizationFailure(player);
+        if (bookId == null || expectedDraftRevision == null || expectedDraftRevision.isBlank()) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.INVALID_REQUEST,
+                    "INVALID_DRAFT_VERSION", "Choose a saved draft version before copying it");
+        }
+        var occupied = EditSessionService.get().inspect(player, bookId);
+        if (occupied.success()) {
+            return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "BOOK_ALREADY_EDITED",
+                    "Close the edit session before creating a draft version");
+        }
+        if (occupied.status() != AuthorOperationResult.Status.NOT_FOUND) {
+            return AuthorOperationResult.failure(occupied.status(), occupied.code(), occupied.message());
+        }
+        var source = repository.load(server, bookId);
+        if (!source.success()) return source;
+        return repository.replace(server, source.value(), expectedDraftRevision);
+    }
+
     /** Captures the existing workspace as the publish target baseline while copying current active content. */
     private AuthorOperationResult<DraftSnapshot> prepareFromActive(MinecraftServer server,
                                                                     QuestBookDefinition activeBook,

@@ -34,6 +34,20 @@ class DraftRevisionGuardTest {
         assertFalse(check.hasConflicts());
     }
 
+    @Test void savingOldDraftIsSafeButReviewedPublishStillBlocksDiskChanges() {
+        DraftSnapshot draft = DraftSnapshot.from(book(), DraftOrigin.WORKSPACE, "old-workspace");
+        RevisionCheck sourceDrift = DraftRevisionGuard.evaluate(draft, draft.draftRevision(),
+                draft.draftRevision(), "another-active", "new-workspace");
+        assertNull(DraftPersistenceService.blockingSaveConflict(sourceDrift));
+        assertNotNull(DraftPublishService.blockingPublishConflict(sourceDrift, false));
+        assertNull(DraftPublishService.blockingPublishConflict(sourceDrift, true));
+
+        RevisionCheck diskDrift = DraftRevisionGuard.evaluate(draft, "old-saved",
+                "different-disk", "another-active", "new-workspace");
+        assertEquals("DISK_DRAFT_CHANGED", DraftPersistenceService.blockingSaveConflict(diskDrift).code());
+        assertEquals("DISK_DRAFT_CHANGED", DraftPublishService.blockingPublishConflict(diskDrift, true).code());
+    }
+
     @Test void activeContentCapturesAnExistingWorkspaceAsItsPublicationBaseline() {
         DraftSnapshot draft = DraftSnapshot.from(book(), DraftOrigin.ACTIVE, "shared-base");
         RevisionVector matchingVector = new RevisionVector("shared-base", "shared-base",

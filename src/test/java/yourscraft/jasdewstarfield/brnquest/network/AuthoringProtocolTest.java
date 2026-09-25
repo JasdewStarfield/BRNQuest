@@ -24,6 +24,9 @@ class AuthoringProtocolTest {
     private static final List<Expected> EXPECTED = List.of(
             new Expected(OpenLivePayload.class, "editor_open_live", true),
             new Expected(RequestCatalogPayload.class, "editor_catalog_request", true),
+            new Expected(RequestDraftVersionsPayload.class, "editor_draft_versions_request", true),
+            new Expected(VersionSavedDraftPayload.class, "editor_draft_version", true),
+            new Expected(RestoreDraftVersionPayload.class, "editor_draft_version_restore", true),
             new Expected(OpenSessionPayload.class, "editor_session_open", true),
             new Expected(OpenCurrentSessionPayload.class, "editor_session_open_current", true),
             new Expected(RenewSessionPayload.class, "editor_session_renew", true),
@@ -34,15 +37,16 @@ class AuthoringProtocolTest {
             new Expected(UpdateQuestPayload.class, "editor_quest_update", true),
             new Expected(EditorMutationPayload.class, "editor_mutation", true),
             new Expected(CatalogPayload.class, "editor_catalog", false),
+            new Expected(DraftVersionsPayload.class, "editor_draft_versions", false),
             new Expected(SessionPayload.class, "editor_session", false),
             new Expected(DraftChunkPayload.class, "editor_draft_chunk", false));
 
     @Test void registrationOrderDirectionIdsAndCodecsRemainCompatible() throws Exception {
-        assertEquals("19", BrnQuestConstants.NETWORK_PROTOCOL);
+        assertEquals("21", BrnQuestConstants.NETWORK_PROTOCOL);
         var recorder = new RecordingRegistrar();
         AuthoringNetwork.register(recorder);
-        assertEquals(14, recorder.routes.size());
-        assertEquals(11, recorder.routes.stream().filter(Route::serverbound).count());
+        assertEquals(18, recorder.routes.size());
+        assertEquals(14, recorder.routes.stream().filter(Route::serverbound).count());
         var unique = new HashSet<String>();
         for (int index = 0; index < EXPECTED.size(); index++) {
             var expected = EXPECTED.get(index);
@@ -54,9 +58,9 @@ class AuthoringProtocolTest {
             assertSame(expected.payload().getField("CODEC").get(null), actual.codec());
             roundTrip(expected.payload(), actual.codec());
         }
-        assertEquals(14, Arrays.stream(AuthoringNetwork.class.getDeclaredClasses())
+        assertEquals(18, Arrays.stream(AuthoringNetwork.class.getDeclaredClasses())
                 .filter(CustomPacketPayload.class::isAssignableFrom).count());
-        assertEquals(10, Arrays.stream(AuthoringNetwork.class.getDeclaredClasses())
+        assertEquals(12, Arrays.stream(AuthoringNetwork.class.getDeclaredClasses())
                 .filter(type -> type.getSimpleName().endsWith("Wire")).count());
     }
 
@@ -96,7 +100,7 @@ class AuthoringProtocolTest {
         register.setAccessible(true);
         var recorder = new RecordingRegistrar();
         register.invoke(null, recorder);
-        assertEquals(14, recorder.routes.size());
+        assertEquals(18, recorder.routes.size());
     }
 
     @Test @SuppressWarnings("unchecked")

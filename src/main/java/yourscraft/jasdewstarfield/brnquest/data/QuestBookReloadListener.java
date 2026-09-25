@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.data;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimpleJsonResourceReloadListener;
@@ -19,11 +20,21 @@ import java.util.Map;
 /** Loads the deterministic native book file and commits only a fully parsed snapshot. */
 public final class QuestBookReloadListener extends SimpleJsonResourceReloadListener {
     private long preparedGeneration;
+    private ResourceLocation preparedSelection;
     public QuestBookReloadListener() { super(new Gson(), "brnquest/books"); }
 
     @Override
     protected Map<ResourceLocation, JsonElement> prepare(ResourceManager manager, ProfilerFiller profiler) {
         preparedGeneration = QuestBookManager.get().liveGeneration();
+        preparedSelection = null;
+        var selection = manager.getResource(ActiveBookSelection.RESOURCE);
+        if (selection.isPresent()) {
+            try (var reader = selection.orElseThrow().openAsReader()) {
+                preparedSelection = ActiveBookSelection.decode(JsonParser.parseReader(reader));
+            } catch (Exception exception) {
+                BRNQuest.LOGGER.warn("[BRNQuest] Could not read active-book selection; using legacy order", exception);
+            }
+        }
         return super.prepare(manager, profiler);
     }
 
@@ -40,8 +51,16 @@ public final class QuestBookReloadListener extends SimpleJsonResourceReloadListe
             QuestBookReloadTransaction.install(new QuestBookDefinition(ResourceLocation.fromNamespaceAndPath(BRNQuest.MOD_ID, "empty"), 1, "BRNQuest", java.util.List.of(), java.util.List.of(), Map.of()), report, null);
             return;
         }
-        if (values.size() > 1) report.add(new Diagnostic(Diagnostic.Severity.WARN, "BQV-002", "", "", "", "Only the lexically first book is active in schema 1"));
-        Map.Entry<ResourceLocation, JsonElement> selected = values.entrySet().stream().min(Comparator.comparing(e -> e.getKey().toString())).orElseThrow();
+        // A published workspace explicitly selects its book. Older packs keep their previous
+        // deterministic fallback until an author publishes a selected book.
+        Map.Entry<ResourceLocation, JsonElement> selected = selectBook(values, preparedSelection);
+        if (selected == null) {
+            if (preparedSelection != null) report.add(new Diagnostic(Diagnostic.Severity.WARN, "BQV-004", "", "", "",
+                    "Selected task book " + preparedSelection + " is unavailable; using lexical order"));
+            if (values.size() > 1) report.add(new Diagnostic(Diagnostic.Severity.WARN, "BQV-002", "", "", "",
+                    "Only the lexically first book is active without a valid selection"));
+            selected = selectBook(values, null);
+        }
         try {
             QuestBookDefinition book = NativeBookJson.decode(selected.getValue().getAsJsonObject());
             if (QuestBookReloadTransaction.install(book, report, selected.getKey())) {
@@ -55,5 +74,13 @@ public final class QuestBookReloadListener extends SimpleJsonResourceReloadListe
             QuestBookReloadTransaction.reject(report);
             BRNQuest.LOGGER.error("[BRNQuest] Retaining previous quest snapshot after reload failure", exception);
         }
+    }
+
+    /** Returning null for a missing explicit choice lets apply report the fallback clearly. */
+    static Map.Entry<ResourceLocation, JsonElement> selectBook(Map<ResourceLocation, JsonElement> values,
+                                                                ResourceLocation preferred) {
+        if (preferred != null) return values.entrySet().stream()
+                .filter(entry -> entry.getKey().equals(preferred)).findFirst().orElse(null);
+        return values.entrySet().stream().min(Comparator.comparing(entry -> entry.getKey().toString())).orElse(null);
     }
 }

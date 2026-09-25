@@ -6,6 +6,7 @@ import yourscraft.jasdewstarfield.brnquest.api.AuthorApi;
 import java.util.UUID;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
 import yourscraft.jasdewstarfield.brnquest.author.AuthorOperationResult;
+import yourscraft.jasdewstarfield.brnquest.author.DraftPublishService;
 
 /** Server-authoritative authoring use cases; requests are parsed before entering this boundary. */
 final class AuthoringPublicationHandler {
@@ -41,7 +42,7 @@ final class AuthoringPublicationHandler {
         UUID sessionId = request.sessionId();
         ResourceLocation bookId = request.bookId();
         String draftRevision = request.draftRevision();
-        var preview = AuthorApi.previewPublish(player, sessionId, bookId, draftRevision);
+        var preview = new DraftPublishService().previewForApply(player, sessionId, bookId, draftRevision);
         if (!preview.success() && preview.value() == null) {
             responses.sendFailure("REVIEW", preview);
             return;
@@ -57,14 +58,16 @@ final class AuthoringPublicationHandler {
             responses.sendFailure("REVIEW", renewed);
             return;
         }
+        var active = yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get().active().orElse(null);
         responses.sendPublishReview(renewed.value(), preview.success(), bookId,
-                preview.value(), diff.value());
+                preview.value(), diff.value(), active == null ? "" : active.book().id().toString(),
+                active == null ? "" : active.revision());
     }
 
-    void publishAndApply(AuthoringRequestDecoder.SessionRequest request) {
-        UUID sessionId = request.sessionId();
-        ResourceLocation bookId = request.bookId();
-        String draftRevision = request.draftRevision();
+    void publishAndApply(AuthoringRequestDecoder.ReviewedPublishRequest reviewed) {
+        UUID sessionId = reviewed.session().sessionId();
+        ResourceLocation bookId = reviewed.session().bookId();
+        String draftRevision = reviewed.session().draftRevision();
         debugPublishPhase(player, bookId, draftRevision, "request", "STARTED", "PUBLISH_REQUEST_ACCEPTED");
         var saved = AuthorApi.save(player, sessionId, bookId, draftRevision);
         debugPublishPhase(player, bookId, draftRevision, "save", saved.status().name(), saved.code());
@@ -72,7 +75,8 @@ final class AuthoringPublicationHandler {
             responses.sendFailure("PUBLISH", saved.status(), saved.code(), "Save failed: " + saved.message());
             return;
         }
-        var published = AuthorApi.publish(player, sessionId, bookId, draftRevision);
+        var published = new DraftPublishService().publishReviewed(player, sessionId, bookId, draftRevision,
+                reviewed.workspaceRevision(), reviewed.activeBookId(), reviewed.activeRevision());
         debugPublishPhase(player, bookId, draftRevision, "workspace", published.status().name(), published.code());
         if (!published.success()) {
             String message = "Draft was saved, but publish failed: " + published.message();
@@ -113,6 +117,14 @@ final class AuthoringPublicationHandler {
                         reloaded.status().name(), reloaded.code());
                 responses.sendFailure("PUBLISH", reloaded.status(), reloaded.code(),
                         "Workspace was deployed, but reload failed: " + reloaded.message());
+            } else if (yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager.get().active()
+                    .filter(active -> active.book().id().equals(bookId)
+                            && active.revision().equals(draftRevision)).isEmpty()) {
+                // A completed resource reload can still retain another book after a data-pack
+                // override or validation rejection. Report the real active result to the author.
+                debugPublishPhase(player, bookId, draftRevision, "reload", "CONFLICT", "PUBLISHED_BOOK_NOT_ACTIVE");
+                responses.sendFailure("PUBLISH", AuthorOperationResult.Status.CONFLICT,
+                        "PUBLISHED_BOOK_NOT_ACTIVE", "Workspace was deployed, but this task book did not become active");
             } else {
                 debugPublishPhase(player, bookId, draftRevision, "reload",
                         reloaded.status().name(), "PUBLISH_APPLY_COMPLETE");

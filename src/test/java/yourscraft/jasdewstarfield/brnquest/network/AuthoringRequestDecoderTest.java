@@ -15,6 +15,8 @@ class AuthoringRequestDecoderTest {
         assertTrue(open.success());
         assertEquals("test:book", open.value().bookId().toString());
         assertEquals("", open.value().expectedDraftRevision());
+        assertEquals("listed-revision", AuthoringRequestDecoder.open("test:book", "listed-revision")
+                .value().expectedDraftRevision());
         var current = AuthoringRequestDecoder.current(new AuthoringNetwork.OpenCurrentSessionPayload(
                 "test:book", "active", "draft", true));
         assertTrue(current.success());
@@ -59,6 +61,15 @@ class AuthoringRequestDecoderTest {
         assertEquals("INVALID_SAVE_REQUEST", AuthoringRequestDecoder.publication(SESSION, "test:book", "", false).failure().code());
         assertEquals("INVALID_PUBLISH_REQUEST", AuthoringRequestDecoder.publication(null, "test:book", "r", true).failure().code());
         assertEquals("bookId", AuthoringRequestDecoder.publication(SESSION, "Bad ID", "r", true).failure().path());
+        var reviewed = AuthoringRequestDecoder.reviewedPublication(new AuthoringNetwork.PublishApplyPayload(
+                SESSION, "test:book", "draft", "workspace", "test:active", "active"));
+        assertTrue(reviewed.success());
+        assertEquals("workspace", reviewed.value().workspaceRevision());
+        assertEquals("test:active", reviewed.value().activeBookId().toString());
+        assertEquals("active", reviewed.value().activeRevision());
+        assertEquals("INVALID_PUBLISH_REQUEST", AuthoringRequestDecoder.reviewedPublication(
+                new AuthoringNetwork.PublishApplyPayload(SESSION, "test:book", "draft", "workspace", "Bad ID", "active"))
+                .failure().code());
     }
     @Test void invalidLiveBookPreservesTheOriginalConflictResponse() {
         var decoded = AuthoringRequestDecoder.live("Bad ID");

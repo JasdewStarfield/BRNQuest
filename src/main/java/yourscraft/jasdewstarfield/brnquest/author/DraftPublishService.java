@@ -29,17 +29,35 @@ public final class DraftPublishService {
 
     public AuthorOperationResult<DraftPublishResult> publish(ServerPlayer player, UUID sessionId,
                                                               ResourceLocation bookId, String expectedDraftRevision) {
+        return publishInternal(player, sessionId, bookId, expectedDraftRevision, null);
+    }
+
+    /** UI confirmation may replace an older source only when both reviewed server snapshots still match. */
+    public AuthorOperationResult<DraftPublishResult> publishReviewed(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String expectedDraftRevision, String expectedWorkspaceRevision,
+            ResourceLocation expectedActiveBookId, String expectedActiveRevision) {
+        return publishInternal(player, sessionId, bookId, expectedDraftRevision,
+                new ReviewedSource(expectedWorkspaceRevision, expectedActiveBookId, expectedActiveRevision));
+    }
+
+    private AuthorOperationResult<DraftPublishResult> publishInternal(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String expectedDraftRevision, ReviewedSource reviewed) {
         AuthorOperationResult<DraftPublishResult> result = sessions.publish(player, sessionId, bookId,
                 expectedDraftRevision, state -> {
             if (state.dirty()) {
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "UNSAVED_DRAFT",
                         "Save the current draft before publishing it");
             }
-            AuthorOperationResult<DraftPublishResult> preview = previewState(player, state);
+            AuthorOperationResult<DraftPublishResult> preview = previewState(player, state, reviewed != null);
             if (!preview.success()) return preview;
             DraftPublishResult inspected = preview.value();
             RevisionCheck checked = inspected.revisionCheck();
             String expectedWorkspace = checked.revisions().workspaceRevision();
+            if (reviewed != null && (!expectedWorkspace.equals(reviewed.workspaceRevision())
+                    || !sameActiveSnapshot(reviewed))) {
+                return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT,
+                        "PUBLISH_REVIEW_STALE", "Workspace or active task book changed after publish review");
+            }
             AuthorOperationResult<DraftPublishResult> published = workspace.publish(player.getServer(),
                     state.snapshot(), expectedWorkspace);
             if (!published.success()) return published;
@@ -62,10 +80,18 @@ public final class DraftPublishService {
                                                               ResourceLocation bookId,
                                                               String expectedDraftRevision) {
         return sessions.read(player, sessionId, bookId, expectedDraftRevision,
-                state -> previewState(player, state));
+                state -> previewState(player, state, false));
     }
 
-    private AuthorOperationResult<DraftPublishResult> previewState(ServerPlayer player, DraftSessionState state) {
+    /** Review for the explicit backup-and-replace UI; source drift is shown as a warning. */
+    public AuthorOperationResult<DraftPublishResult> previewForApply(ServerPlayer player, UUID sessionId,
+            ResourceLocation bookId, String expectedDraftRevision) {
+        return sessions.read(player, sessionId, bookId, expectedDraftRevision,
+                state -> previewState(player, state, true));
+    }
+
+    private AuthorOperationResult<DraftPublishResult> previewState(ServerPlayer player, DraftSessionState state,
+                                                                   boolean allowSourceDrift) {
         List<Diagnostic> diagnostics = AuthorValidationService.full(state.snapshot().book());
         List<Diagnostic> baselineDiagnostics = sourceBaselineDiagnostics(player, state.snapshot());
         if (AuthorValidationService.blocksCommit(diagnostics, baselineDiagnostics)) {
@@ -78,12 +104,35 @@ public final class DraftPublishService {
         RevisionCheck checked = addWorkspaceCreationConflict(state.snapshot(), inspected.value());
         DraftPublishResult preview = new DraftPublishResult(state.snapshot(),
                 checked.revisions().workspaceRevision(), null, checked, diagnostics);
-        if (checked.hasConflicts()) {
-            RevisionConflict first = checked.conflicts().getFirst();
+        RevisionConflict blocking = blockingPublishConflict(checked, allowSourceDrift);
+        if (blocking != null) {
+            RevisionConflict first = blocking;
             return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "REVISION_CONFLICT",
                     "Draft publish rejected by revision guard: " + first.code() + " - " + first.message(), preview);
         }
         return AuthorOperationResult.success("DRAFT_READY_TO_PUBLISH", "Draft is ready to publish", preview);
+    }
+
+    static RevisionConflict blockingPublishConflict(RevisionCheck check, boolean allowSourceDrift) {
+        return check.conflicts().stream()
+                .filter(conflict -> !allowSourceDrift || "DISK_DRAFT_CHANGED".equals(conflict.code()))
+                .findFirst().orElse(null);
+    }
+
+    private static boolean sameActiveSnapshot(ReviewedSource reviewed) {
+        var active = QuestBookManager.get().active().orElse(null);
+        return active == null
+                ? reviewed.activeBookId() == null && reviewed.activeRevision().isBlank()
+                : active.book().id().equals(reviewed.activeBookId())
+                    && active.revision().equals(reviewed.activeRevision());
+    }
+
+    private record ReviewedSource(String workspaceRevision, ResourceLocation activeBookId,
+                                  String activeRevision) {
+        private ReviewedSource {
+            workspaceRevision = workspaceRevision == null ? "" : workspaceRevision;
+            activeRevision = activeRevision == null ? "" : activeRevision;
+        }
     }
 
     /**

@@ -4,6 +4,7 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.ActiveBookSelection;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 
 import java.nio.charset.StandardCharsets;
@@ -46,10 +47,32 @@ class WorkspacePublishRepositoryTest {
         var result = repository.publish(workspace, temporary.resolve("backups"), changed,
                 original.draftRevision());
 
-        assertTrue(result.success());
+        assertTrue(result.success(), () -> result.code() + ": " + result.message());
         assertEquals("preserve", Files.readString(workspace.resolve("notes.txt"), StandardCharsets.UTF_8));
         assertTrue(Files.isRegularFile(result.value().backup().resolve(
                 "data/test/brnquest/books/replace.json")));
+    }
+
+    @Test void publishingAnotherBookSelectsItAndRepublishingOldContentSwitchesBack() throws Exception {
+        WorkspacePublishRepository repository = new WorkspacePublishRepository();
+        Path workspace = temporary.resolve("workspace");
+        Path backups = temporary.resolve("backups");
+        DraftSnapshot first = draft("test:alpha", "Alpha");
+        DraftSnapshot second = draft("test:zeta", "Zeta");
+        var firstPublish = repository.publish(workspace, backups, first, "");
+        assertTrue(firstPublish.success(), () -> firstPublish.code() + ": " + firstPublish.message());
+        var secondPublish = repository.publish(workspace, backups, second, "");
+        assertTrue(secondPublish.success(), () -> secondPublish.code() + ": " + secondPublish.message());
+        assertEquals(ActiveBookSelection.encode(second.book().id()),
+                Files.readString(ActiveBookSelection.file(workspace)));
+
+        var switchedBack = repository.publish(workspace, backups, first, first.draftRevision());
+
+        assertEquals(AuthorOperationResult.Status.SUCCESS, switchedBack.status());
+        assertEquals(ActiveBookSelection.encode(first.book().id()),
+                Files.readString(ActiveBookSelection.file(workspace)));
+        assertTrue(Files.isRegularFile(workspace.resolve("data/test/brnquest/books/zeta.json")));
+        assertTrue(Files.isRegularFile(switchedBack.value().backup().resolve("data/test/brnquest/books/zeta.json")));
     }
 
     @Test void equalOrderGroupsPublishAfterCanonicalSorting() {

@@ -44,8 +44,11 @@ public final class DraftPersistenceService {
                 return AuthorOperationResult.failure(inspected.status(), inspected.code(), inspected.message());
             }
             RevisionCheck check = inspected.value();
-            if (check.hasConflicts()) {
-                RevisionConflict first = check.conflicts().getFirst();
+            // Saving only replaces this draft's disk files. A changed source book or workspace
+            // matters when publishing, but must not strand an otherwise valid author draft.
+            RevisionConflict diskConflict = blockingSaveConflict(check);
+            if (diskConflict != null) {
+                RevisionConflict first = diskConflict;
                 return AuthorOperationResult.failure(AuthorOperationResult.Status.CONFLICT, "REVISION_CONFLICT",
                         "Draft save rejected by revision guard: " + first.code() + " - " + first.message(),
                         new DraftSaveResult(state.snapshot(), state.savedRevision(), null, check, diagnostics));
@@ -64,5 +67,11 @@ public final class DraftPersistenceService {
                 ? result.value().snapshot().draftRevision() : expectedDraftRevision;
         AuthorAuditLog.record(player, "draft_save", bookId.toString(), expectedDraftRevision, after, result);
         return result;
+    }
+
+    static RevisionConflict blockingSaveConflict(RevisionCheck check) {
+        return check.conflicts().stream()
+                .filter(conflict -> "DISK_DRAFT_CHANGED".equals(conflict.code()))
+                .findFirst().orElse(null);
     }
 }

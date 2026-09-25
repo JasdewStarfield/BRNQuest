@@ -5,7 +5,7 @@ public final class BrnQuestConstants {
     public static final int DATA_SCHEMA = 1;
     public static final int PROGRESS_SCHEMA = 2;
     public static final int REPORT_SCHEMA = 1;
-    public static final String NETWORK_PROTOCOL = "19";
+    public static final String NETWORK_PROTOCOL = "21";
     public static final int MAX_BOOK_CHUNK_BYTES = 256 * 1024;
     public static final int MAX_BOOK_CHUNKS = 512;
     public static final int MAX_BOOK_BYTES = 8 * 1024 * 1024;

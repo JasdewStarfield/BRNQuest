@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.diagnostic.FileIoTrace;
 import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import yourscraft.jasdewstarfield.brnquest.data.ActiveBookSelection;
 import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.workspace.WorkspacePaths;
 
@@ -52,12 +53,17 @@ final class WorkspacePublishRepository {
                                 + " but disk has " + current.revision());
             }
             String encoded = NativeBookJson.encode(draft.book());
-            if (current.bookFile() != null && FileIoTrace.readString(current.bookFile(), StandardCharsets.UTF_8).equals(encoded)) {
+            Path root = workspace.toAbsolutePath().normalize();
+            Path selectedBookFile = ActiveBookSelection.file(root);
+            String selectedBook = ActiveBookSelection.encode(draft.book().id());
+            if (current.bookFile() != null
+                    && FileIoTrace.readString(current.bookFile(), StandardCharsets.UTF_8).equals(encoded)
+                    && Files.isRegularFile(selectedBookFile)
+                    && FileIoTrace.readString(selectedBookFile, StandardCharsets.UTF_8).equals(selectedBook)) {
                 return AuthorOperationResult.noChange("WORKSPACE_ALREADY_PUBLISHED",
                         "Workspace already contains this draft", basicResult(draft, current.revision(), null));
             }
 
-            Path root = workspace.toAbsolutePath().normalize();
             Path parent = root.getParent();
             Path staging = parent.resolve(".workspace.staging-" + UUID.randomUUID());
             Path backup = backupsRoot.toAbsolutePath().normalize().resolve("workspace")
@@ -77,6 +83,12 @@ final class WorkspacePublishRepository {
                 FileIoTrace.deleteIfExists(stagedBook);
                 writeForced(stagedBook, encoded);
                 verifyBook(stagedBook, draft);
+                // The marker travels with the deployed pack, so reload selects this book even
+                // when an older workspace book sorts first by resource ID.
+                Path stagedSelection = ActiveBookSelection.file(staging);
+                FileIoTrace.createDirectories(stagedSelection.getParent());
+                FileIoTrace.deleteIfExists(stagedSelection);
+                writeForced(stagedSelection, selectedBook);
                 transactionHook.checkpoint(TransactionStage.STAGING_WRITTEN);
 
                 if (current.packExists()) {

@@ -10,7 +10,6 @@ import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorActionGroup;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 
@@ -101,7 +100,8 @@ final class QuestTypedEntryListSection {
         String suffix = action == Action.EDIT ? "edit" : "more";
         Component label = Component.translatable("screen.brnquest.editor.action." + suffix);
         return new EditorActionGroup.Action<>(new ActionKey(id, action),
-                EditorButton.Definition.iconOnly(label, label, EditorIcon.glyph(Component.literal(glyph))),
+                // Use the shared PNG mapping; unsupported menu symbols keep their existing glyph.
+                EditorButton.Definition.iconOnly(label, label, QuestActionIcons.symbol(Component.literal(glyph))),
                 enabled, EditorButton.Tone.PRIMARY,
                 (x, y) -> pendingIntent = new Intent(action, id, x.intValue(), y.intValue()));
     }

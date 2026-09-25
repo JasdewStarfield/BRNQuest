@@ -63,9 +63,18 @@ final class QuestPresentation {
                 case CUSTOM -> VisualKind.CUSTOM;
                 case PLACEHOLDER -> VisualKind.PLACEHOLDER;
             };
+            // An unknown first task must not hide a later task with usable artwork.
+            if (kind == VisualKind.PLACEHOLDER && !ClientTaskPresentationRegistry.hasTypeIcon(task.typeId())) continue;
+            if (ClientTaskPresentationRegistry.hasTypeIcon(task.typeId())
+                    || !ClientTaskPresentationRegistry.hasPresentation(task.typeId())) {
+                // A quest without an authored icon follows its first task's registered type artwork.
+                return new QuestVisual(kind, itemSnbt,
+                        java.util.Optional.of(ClientTaskPresentationRegistry.typeIcon(task.typeId())), true);
+            }
             if (kind != VisualKind.PLACEHOLDER) return new QuestVisual(kind, itemSnbt);
         }
-        return new QuestVisual(VisualKind.PLACEHOLDER, "");
+        // A taskless quest or an unknown imported type has no instance icon to borrow.
+        return new QuestVisual(VisualKind.PLACEHOLDER, "", java.util.Optional.of(ClientTypeIconFallback.icon()), true);
     }
 
     static int requiredCount(TaskDefinition task) {
@@ -94,8 +103,14 @@ final class QuestPresentation {
     }
 
     record NavigationEntry(ChapterGroupDefinition group, ChapterDefinition chapter) {}
-    record QuestVisual(VisualKind kind, String value, java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon) {
-        QuestVisual(VisualKind kind, String value) { this(kind, value, java.util.Optional.empty()); }
+    record QuestVisual(VisualKind kind, String value,
+                       java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon,
+                       boolean defaultTypeIcon) {
+        QuestVisual(VisualKind kind, String value) { this(kind, value, java.util.Optional.empty(), false); }
+        QuestVisual(VisualKind kind, String value,
+                    java.util.Optional<yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon> icon) {
+            this(kind, value, icon, false);
+        }
         String itemSnbt() { return kind == VisualKind.ITEM ? value : ""; }
     }
     enum VisualKind { ITEM, TEXTURE, CHECKMARK, CUSTOM, PLACEHOLDER }

@@ -9,12 +9,12 @@ class QuestTypeIconsTest {
     @Test void registeredKillEntityUsesExistingKillAsset() {
         assertEquals(ResourceLocation.parse("brnquest:editor/type/kill"), QuestTypeIcons.sprite(
                 yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL));
-        assertEquals(ResourceLocation.parse("brnquest:editor/type/custom"),
+        assertEquals(ResourceLocation.parse("brnquest:editor/type/unknown"),
                 QuestTypeIcons.sprite(ResourceLocation.parse("example:kill_entity")));
     }
     @Test void reviewedBuiltinGlyphsFitTheirPixelSlotsAndKeepDistinctSemantics() throws Exception {
         for (String type : new String[]{"checkmark","item","item_choice","xp","xp_levels","command","location","observe",
-                "kill","advancement","biome","structure","dimension","custom","reward_table","loot_table"}) {
+                "kill","advancement","biome","structure","dimension","custom","reward_table","loot_table","unknown"}) {
             var sprite = QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:" + type));
             // Decode shipped assets so missing files and invalid PNGs fail before packaging.
             try (var stream = getClass().getResourceAsStream("/assets/brnquest/textures/gui/sprites/" + sprite.getPath() + ".png")) {
@@ -30,7 +30,9 @@ class QuestTypeIconsTest {
     }
 
     @Test void foreignSamePathUsesExtensionFallback() {
-        assertEquals(QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:custom")),
+        assertEquals(QuestTypeIcons.sprite(ResourceLocation.parse("example:other_type")),
+                QuestTypeIcons.sprite(ResourceLocation.parse("example:xp")));
+        assertNotEquals(QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:custom")),
                 QuestTypeIcons.sprite(ResourceLocation.parse("example:xp")));
         assertNotEquals(QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:xp")),
                 QuestTypeIcons.sprite(ResourceLocation.parse("example:xp")));

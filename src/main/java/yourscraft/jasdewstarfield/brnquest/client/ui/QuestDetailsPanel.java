@@ -103,10 +103,11 @@ final class QuestDetailsPanel {
         int statusTop = y;
         int statusWidth = Math.min(font.width(statusText), Math.max(1, contentWidth - 68));
         if (model.gameplay() && status == QuestStatus.LOCKED && !quest.behavior().hideLockIcon()) {
-            // Cyan underline and info glyph advertise that the locked reason is inspectable.
+            // Cyan underline and the info sprite advertise that the locked reason is inspectable.
             graphics.fill(contentLeft, y + font.lineHeight, contentLeft + statusWidth, y + font.lineHeight + 1, 0xFF68BDE8);
-            graphics.drawString(font, Component.literal("ⓘ"), contentLeft + statusWidth + 4, y, 0xFF68BDE8, false);
-            statusWidth += 4 + font.width("ⓘ");
+            QuestActionIcons.named("info").render(graphics, font,
+                    new UiRect(contentLeft + statusWidth + 4, y, contentLeft + statusWidth + 14, y + 10), 0xFF68BDE8);
+            statusWidth += 14;
         }
         if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
             int pinX = contentLeft + contentWidth - 10 - 42;

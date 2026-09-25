@@ -17,7 +17,7 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
     private static final int COMPACT_DETAILS_MIN = 184;
     private static final int COMPACT_DETAILS_MAX = 216;
     private static final int NAVIGATION_GAP = 4;
-    private static final int NAVIGATION_HANDLE_WIDTH = 10;
+    private static final int NAVIGATION_HANDLE_WIDTH = 14;
     private static final int TOOLBAR_HEIGHT = 20;
     public static final int EDITOR_CONTROL_HEIGHT = 16;
 

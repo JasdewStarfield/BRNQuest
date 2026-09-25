@@ -24,6 +24,7 @@ final class EditorCreationDefaultsScreen extends Screen {
     private EditorButtonWidget done;
     private final List<AbstractWidget> controls = new ArrayList<>();
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
+    private final EditorEnumDropdown enumDropdown = new EditorEnumDropdown();
     private double renderedScroll;
     private long previousFrameNanos;
     private static final int ROW_HEIGHT = 24;
@@ -62,19 +63,27 @@ final class EditorCreationDefaultsScreen extends Screen {
                     button.setMessage(hideLinesLabel());
                 }));
             } else if (key.equals("shape")) {
-                addControl(new EditorButtonWidget(left, y, half, 20, shapeLabel(), button -> {
-                    var shapes = List.of("", "chamfer", "square", "circle", "diamond");
-                    String next = shapes.get((shapes.indexOf(values.getOrDefault("shape", "")) + 1) % shapes.size());
-                    if (next.isEmpty()) values.remove("shape"); else values.put("shape", next);
-                    button.setMessage(shapeLabel()); validate();
-                }));
+                addControl(new EditorButtonWidget(left, y, half, 20,
+                        EditorButton.Definition.iconAndText(shapeLabel(), null, QuestActionIcons.named("unfold")), button ->
+                        openChoice((EditorButtonWidget) button, List.of("", "chamfer", "square", "circle", "diamond"),
+                                value -> value.isEmpty() ? Component.translatable("screen.brnquest.defaults.inherit",
+                                        Component.translatable("screen.brnquest.editor.value.shape." + inherited.values().getOrDefault("shape", "chamfer")))
+                                        : Component.translatable("screen.brnquest.editor.value.shape." + value),
+                                value -> {
+                                    if (value.isEmpty()) values.remove("shape"); else values.put("shape", value);
+                                    button.setMessage(shapeLabel()); validate();
+                                })));
             } else if (key.equals("dependency_requirement")) {
-                addControl(new EditorButtonWidget(left, y, half, 20, dependencyLabel(), button -> {
-                    var modes = List.of("", "all_completed", "one_completed", "all_started", "one_started");
-                    String next = modes.get((modes.indexOf(values.getOrDefault(key, "")) + 1) % modes.size());
-                    if (next.isEmpty()) values.remove(key); else values.put(key, next);
-                    button.setMessage(dependencyLabel()); validate();
-                }));
+                addControl(new EditorButtonWidget(left, y, half, 20,
+                        EditorButton.Definition.iconAndText(dependencyLabel(), null, QuestActionIcons.named("unfold")), button ->
+                        openChoice((EditorButtonWidget) button, List.of("", "all_completed", "one_completed", "all_started", "one_started"),
+                                value -> value.isEmpty() ? Component.translatable("screen.brnquest.defaults.inherit",
+                                        Component.translatable("screen.brnquest.defaults.dependency." + inherited.values().getOrDefault(key, "all_completed")))
+                                        : Component.translatable("screen.brnquest.defaults.dependency." + value),
+                                value -> {
+                                    if (value.isEmpty()) values.remove(key); else values.put(key, value);
+                                    button.setMessage(dependencyLabel()); validate();
+                                })));
             } else if (QuestCreationDefaults.numberField(key)) {
                 var input = new EditBox(font, left, y, half, 20, label(key));
                 input.setMaxLength(128); input.setValue(values.getOrDefault(key, ""));
@@ -103,6 +112,18 @@ final class EditorCreationDefaultsScreen extends Screen {
     }
     private Component hideLinesLabel() {
         return Component.translatable(hideDependencyLines ? "options.on" : "options.off");
+    }
+    private void openChoice(EditorButtonWidget button, List<String> choices,
+                            java.util.function.Function<String, Component> labels, Consumer<String> selection) {
+        UiRect bounds = new UiRect(button.getX(), button.getY(), button.getX() + button.getWidth(), button.getY() + button.getHeight());
+        enumDropdown.show(bounds, choices, labels, selection);
+        button.setIcon(QuestActionIcons.named("fold"));
+    }
+
+    private void closeChoice() {
+        enumDropdown.close();
+        controls.stream().filter(EditorButtonWidget.class::isInstance).map(EditorButtonWidget.class::cast)
+                .forEach(button -> button.setIcon(null));
     }
     private Component shapeLabel() {
         String shape = values.get("shape");
@@ -181,12 +202,19 @@ final class EditorCreationDefaultsScreen extends Screen {
             } finally { graphics.disableScissor(); }
             if (!done.active) graphics.drawCenteredString(font, Component.translatable("screen.brnquest.defaults.invalid"),
                     width / 2, panel.bottom() - 45, 0xFFFF8080);
-            super.render(graphics, x, y, partial); graphics.flush();
+            super.render(graphics, x, y, partial);
+            enumDropdown.render(graphics, font, width, viewport.top(), viewport.bottom(), x, y);
+            graphics.flush();
         } finally { graphics.pose().popPose(); }
     }
 
     @Override public boolean mouseClicked(double x, double y, int button) {
         UiRect viewport = viewport();
+        if (enumDropdown.open()) {
+            enumDropdown.click(x, y, button, width, viewport.top(), viewport.bottom());
+            closeChoice();
+            return true;
+        }
         if (button == 0 && scroll.handleTrackClick(x, y, viewport.right() + 2, viewport.top(), viewport.bottom(),
                 contentHeight(), viewport.height())) return true;
         // Clipped rows must never receive clicks through the title or fixed footer.
@@ -198,6 +226,7 @@ final class EditorCreationDefaultsScreen extends Screen {
     }
 
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (enumDropdown.open()) closeChoice();
         if (viewport().contains(x, y)) {
             scroll.scrollWheel(vertical, BrnQuestClientConfig.VALUES.scrollStep.get(), contentHeight(), viewport().height());
             return true;
@@ -211,6 +240,11 @@ final class EditorCreationDefaultsScreen extends Screen {
 
     @Override public boolean mouseReleased(double x, double y, int button) {
         return scroll.handleRelease(button) || super.mouseReleased(x, y, button);
+    }
+
+    @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (key == 256 && enumDropdown.open()) { closeChoice(); return true; }
+        return super.keyPressed(key, scanCode, modifiers);
     }
 
     private UiRect panel() {

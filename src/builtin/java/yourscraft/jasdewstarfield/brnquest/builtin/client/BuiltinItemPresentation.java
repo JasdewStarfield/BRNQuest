@@ -208,7 +208,7 @@ public final class BuiltinItemPresentation {
         }
 
         @Override
-        public boolean interactive(TaskView task) { return !craftingOnly(task); }
+        public boolean interactive(TaskView task) { return consumesItems(task) && !craftingOnly(task); }
 
         @Override
         public ItemStack displayedItem(TaskPresentationContext context) {
@@ -238,7 +238,7 @@ public final class BuiltinItemPresentation {
 
         @Override
         public boolean readyForSubmission(TaskPresentationContext context) {
-            if (craftingOnly(context.task())) return false;
+            if (craftingOnly(context.task()) || !consumesItems(context.task())) return false;
             ItemChoiceMatcher.MatchPlan plan = plan(context);
             return plan != null && plan.satisfied();
         }

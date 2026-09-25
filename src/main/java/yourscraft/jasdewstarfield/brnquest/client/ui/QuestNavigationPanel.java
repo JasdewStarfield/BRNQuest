@@ -1,9 +1,9 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -22,6 +22,9 @@ import java.util.List;
 final class QuestNavigationPanel {
     static final int GROUP_HEIGHT = 13;
     static final int CHAPTER_HEIGHT = 20;
+    private static final int DISCLOSURE_SIZE = 10;
+    private static final ResourceLocation FOLD_ICON = ResourceLocation.parse("brnquest:editor/action/fold");
+    private static final ResourceLocation UNFOLD_ICON = ResourceLocation.parse("brnquest:editor/action/unfold");
 
     enum Action { TOGGLE_DRAWER, ADD_GROUP, ADD_CHAPTER, OPEN_GROUP_CONTEXT, OPEN_CHAPTER_CONTEXT, SELECT_CHAPTER }
     record Intent(Action action, ResourceLocation targetId, int pointerX, int pointerY) {}
@@ -102,10 +105,14 @@ final class QuestNavigationPanel {
                         graphics.fill(0, y, layout.width(), y + GROUP_HEIGHT, 0xFF252821);
                         boolean hasIcon = !entry.group().icon().isBlank();
                         if (hasIcon) drawGroupIcon.accept(entry.group(), new UiRect(4, y + 1, 15, y + 12));
+                        int titleX = hasIcon ? 18 : 4;
+                        // The transparent PNG replaces only the inline glyph; the entire heading stays clickable.
+                        drawDisclosure(graphics, folded.contains(entry.group().id()) ? UNFOLD_ICON : FOLD_ICON,
+                                titleX - 2, y + 1, false);
                         EditorTextRenderer.drawFittedString(graphics, font,
-                                Component.literal((folded.contains(entry.group().id()) ? "▸ " : "▾ ") + BookText.structureTitle(
+                                Component.literal(BookText.structureTitle(
                                         model.book(), "chapter_group", entry.group().id(), locale, entry.group().title())),
-                                hasIcon ? 18 : 4, y + 2, layout.width() - (hasIcon ? 22 : 8), GraystonePalette.SECONDARY, 0.75F);
+                                titleX + 9, y + 2, layout.width() - titleX - 13, GraystonePalette.SECONDARY, 0.75F);
                         y += GROUP_HEIGHT;
                     } else {
                         ChapterDefinition chapter = entry.chapter();
@@ -152,8 +159,10 @@ final class QuestNavigationPanel {
         }
         graphics.fill(layout.visibleRight(), layout.top(), layout.visibleRight() + layout.handleWidth(),
                 layout.bottom(), 0xFF292C25);
-        graphics.drawCenteredString(font, layout.collapsed() ? "›" : "‹",
-                layout.visibleRight() + layout.handleWidth() / 2, layout.centerY() - 4, GraystonePalette.SECONDARY);
+        // Reuse the compact disclosure triangle in the plain handle; turn it left when the drawer is open.
+        drawDisclosure(graphics, UNFOLD_ICON,
+                layout.visibleRight() + (layout.handleWidth() - DISCLOSURE_SIZE) / 2,
+                layout.centerY() - DISCLOSURE_SIZE / 2, !layout.collapsed());
         // Resolve hover from the same clipped, translated list geometry used for chapter selection.
         if (layout.offset() == 0 && !layout.collapsed() && mouseX >= 0 && mouseX < layout.visibleRight()
                 && mouseY >= layout.top() && mouseY < layout.listBottom()) {
@@ -171,6 +180,24 @@ final class QuestNavigationPanel {
             }
         }
         return new RenderResult(dragging ? List.of() : tooltip);
+    }
+
+    private static void drawDisclosure(GuiGraphics graphics, ResourceLocation icon, int x, int y, boolean faceLeft) {
+        var sprite = Minecraft.getInstance().getGuiSprites().getSprite(icon);
+        graphics.pose().pushPose();
+        try {
+            if (faceLeft) {
+                // A half-turn mirrors this vertically symmetric triangle without reversing quad winding.
+                graphics.pose().translate(2 * x + DISCLOSURE_SIZE, 2 * y + DISCLOSURE_SIZE, 0);
+                graphics.pose().scale(-1, -1, 1);
+            }
+            graphics.blit(x, y, 0, DISCLOSURE_SIZE, DISCLOSURE_SIZE, sprite,
+                    (GraystonePalette.SECONDARY >> 16 & 255) / 255F,
+                    (GraystonePalette.SECONDARY >> 8 & 255) / 255F,
+                    (GraystonePalette.SECONDARY & 255) / 255F, 1F);
+        } finally {
+            graphics.pose().popPose();
+        }
     }
 
     /** Builds the immutable input frame independently so geometry tests do not need a rendering runtime. */

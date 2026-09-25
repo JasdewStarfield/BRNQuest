@@ -37,8 +37,8 @@ class QuestScreenLayoutTest {
         QuestScreenLayout expanded = new QuestScreenLayout(1920, 1080, false, false);
         QuestScreenLayout collapsedWithDetails = new QuestScreenLayout(1920, 1080, true, true);
 
-        assertEquals(146, expanded.canvasLeft());
-        assertEquals(10, collapsedWithDetails.canvasLeft());
+        assertEquals(150, expanded.canvasLeft());
+        assertEquals(14, collapsedWithDetails.canvasLeft());
         assertEquals(1696, collapsedWithDetails.canvasRight());
         assertEquals(1696, collapsedWithDetails.detailLeft());
     }
@@ -46,9 +46,9 @@ class QuestScreenLayoutTest {
     @Test void animatedDrawerBoundsStayBetweenTheirClosedAndOpenEndpoints() {
         QuestScreenLayout layout = new QuestScreenLayout(1920, 1080, false, true);
 
-        assertEquals(10, layout.canvasLeft(0));
-        assertEquals(78, layout.canvasLeft(0.5));
-        assertEquals(146, layout.canvasLeft(1));
+        assertEquals(14, layout.canvasLeft(0));
+        assertEquals(82, layout.canvasLeft(0.5));
+        assertEquals(150, layout.canvasLeft(1));
         assertEquals(1920, layout.canvasRight(0));
         assertEquals(1808, layout.canvasRight(0.5));
         assertEquals(1696, layout.canvasRight(1));
@@ -77,15 +77,15 @@ class QuestScreenLayoutTest {
         assertTrue(scaleThree720p.compact());
         assertEquals(100, scaleThree720p.navigationWidth());
         assertEquals(184, scaleThree720p.detailsWidth());
-        assertEquals(129, scaleThree720p.canvasRight() - scaleThree720p.canvasLeft());
+        assertEquals(125, scaleThree720p.canvasRight() - scaleThree720p.canvasLeft());
 
         assertTrue(scaleTwo720p.compact());
         assertEquals(124, scaleTwo720p.navigationWidth());
         assertEquals(216, scaleTwo720p.detailsWidth());
-        assertEquals(286, scaleTwo720p.canvasRight() - scaleTwo720p.canvasLeft());
+        assertEquals(282, scaleTwo720p.canvasRight() - scaleTwo720p.canvasLeft());
 
         assertFalse(scaleTwo1080p.compact());
-        assertEquals(590, scaleTwo1080p.canvasRight() - scaleTwo1080p.canvasLeft());
+        assertEquals(586, scaleTwo1080p.canvasRight() - scaleTwo1080p.canvasLeft());
     }
 
     @Test void responsiveRegionsNeverOverlapAtTheSupportedSmallestTarget() {

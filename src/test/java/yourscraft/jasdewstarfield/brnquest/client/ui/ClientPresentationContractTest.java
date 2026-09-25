@@ -28,7 +28,7 @@ class ClientPresentationContractTest {
         assertEquals(item.config().get("item"), ClientTaskPresentationRegistry.get(item.typeId()).itemSnbt(item));
         assertEquals(Component.translatable("screen.brnquest.type.task.item"),
                 ClientTaskPresentationRegistry.get(item.typeId()).typeName(item));
-        assertTrue(ClientTaskPresentationRegistry.get(item.typeId()).interactive(item));
+        assertFalse(ClientTaskPresentationRegistry.get(item.typeId()).interactive(item));
         assertEquals(ClientTaskPresentation.NodeStyle.CHECKMARK,
                 ClientTaskPresentationRegistry.get(checkmark.typeId()).nodeStyle(checkmark));
         assertTrue(ClientTaskPresentationRegistry.get(checkmark.typeId()).acceptsQuestCompletionIntent(checkmark));
@@ -66,7 +66,9 @@ class ClientPresentationContractTest {
         assertTrue(presentation.itemSnbt(choice).contains("minecraft:stone"));
         assertEquals(Component.translatable("screen.brnquest.type.task.item_choice"),
                 presentation.typeName(choice));
-        assertTrue(presentation.interactive(choice));
+        assertFalse(presentation.interactive(choice));
+        assertTrue(presentation.interactive(task(TaskTypes.ITEM_CHOICE,
+                Map.of("matcher", matcher, "consume_items", "true"))));
     }
 
     @Test void itemTaskConsumptionWordingHonorsCanonicalAndLegacyFields() {

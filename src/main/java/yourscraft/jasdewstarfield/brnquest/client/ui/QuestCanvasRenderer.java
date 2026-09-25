@@ -23,6 +23,8 @@ import java.util.Map;
 /** Renders one immutable canvas model and exposes the exact visible geometry used for input. */
 final class QuestCanvasRenderer {
     static final int NODE_BASE_SIZE = 18;
+    // Automatically chosen type artwork leaves a small margin inside the quest marker.
+    private static final float DEFAULT_TYPE_ICON_SCALE = 0.8F;
     private static final int ATTENTION_PING_SIZE = 10;
     private static final int STATUS_BADGE_SIZE = 10;
     private static final ResourceLocation TRACKED_BADGE = ResourceLocation.parse("brnquest:quest/status/tracked");
@@ -310,8 +312,19 @@ final class QuestCanvasRenderer {
 
     private static void renderQuestVisual(GuiGraphics graphics, Font font, NodeModel node, int x, int y, int size) {
         QuestPresentation.QuestVisual visual = node.visual();
-        if (visual.icon().isPresent()) {
+        if (visual.kind() == QuestPresentation.VisualKind.ITEM && !node.item().isEmpty()) {
+            // Real item art wins when available; the type icon covers an unresolved item only.
             float scale = Math.max(0.25F, (float) (size / 18.0F * safeScale(node.appearance().iconScale())));
+            graphics.pose().pushPose();
+            graphics.pose().translate(x - 8.0F * scale, y - 8.0F * scale, 0);
+            graphics.pose().scale(scale, scale, 1.0F);
+            graphics.renderItem(node.item(), 0, 0);
+            graphics.pose().popPose();
+            return;
+        }
+        if (visual.icon().isPresent()) {
+            float scale = Math.max(0.25F, (float) (size / 18.0F * safeScale(node.appearance().iconScale())))
+                    * (visual.defaultTypeIcon() ? DEFAULT_TYPE_ICON_SCALE : 1.0F);
             graphics.pose().pushPose();
             graphics.pose().translate(x - 8.0F * scale, y - 8.0F * scale, 0);
             graphics.pose().scale(scale, scale, 1.0F);
@@ -324,15 +337,6 @@ final class QuestCanvasRenderer {
             yourscraft.jasdewstarfield.brnquest.data.QuestIconValue.textureId(visual.value()).ifPresent(texture ->
                     graphics.blit(texture, x - iconSize / 2, y - iconSize / 2, 0.0F, 0.0F,
                             iconSize, iconSize, iconSize, iconSize));
-            return;
-        }
-        if (visual.kind() == QuestPresentation.VisualKind.ITEM && !node.item().isEmpty()) {
-            float scale = Math.max(0.25F, (float) (size / 18.0F * safeScale(node.appearance().iconScale())));
-            graphics.pose().pushPose();
-            graphics.pose().translate(x - 8.0F * scale, y - 8.0F * scale, 0);
-            graphics.pose().scale(scale, scale, 1.0F);
-            graphics.renderItem(node.item(), 0, 0);
-            graphics.pose().popPose();
             return;
         }
         String symbol = switch (visual.kind()) {

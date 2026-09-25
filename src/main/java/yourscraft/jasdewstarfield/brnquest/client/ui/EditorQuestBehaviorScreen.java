@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
@@ -177,8 +178,9 @@ public final class EditorQuestBehaviorScreen extends Screen {
         EditorPropertyRow.label(graphics, font,
                 Component.translatable("screen.brnquest.editor.behavior.dependency_requirement"),
                 layout.label(), null);
-        buttons.render(graphics, font, layout.field(), EditorButton.Definition.text(
-                        Component.translatable("screen.brnquest.editor.value.dependency." + requirement.serializedName()).append(" ▾"), null),
+        buttons.render(graphics, font, layout.field(), EditorButton.Definition.iconAndText(
+                        Component.translatable("screen.brnquest.editor.value.dependency." + requirement.serializedName()), null,
+                        QuestActionIcons.named(requirementDropdownOpen ? "fold" : "unfold")),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 

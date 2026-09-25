@@ -6,6 +6,9 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import java.util.*;
 import java.util.function.Consumer;
 
@@ -37,8 +40,14 @@ public final class EditorTextureBrowserScreen extends Screen {
                 .bounds(width - 130, 30, 110, 20).build());
         importButton.active = !importing;
         importButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(text("import_help")));
-        addRenderableWidget(Button.builder(Component.literal("<"), b -> { page = Math.max(0, page - 1); rebuildWidgets(); }).bounds(20, height - 28, 30, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(">"), b -> { page = Math.min(maxPage(), page + 1); rebuildWidgets(); }).bounds(55, height - 28, 30, 20).build());
+        // Retain the paging hitboxes while giving the arrows localized narration and PNG paint.
+        Component previous = text("previous_page"), next = text("next_page");
+        addRenderableWidget(new EditorButtonWidget(20, height - 28, 30, 20,
+                EditorButton.Definition.iconOnly(previous, previous, QuestActionIcons.named("back")),
+                b -> { page = Math.max(0, page - 1); rebuildWidgets(); }));
+        addRenderableWidget(new EditorButtonWidget(55, height - 28, 30, 20,
+                EditorButton.Definition.iconOnly(next, next, QuestActionIcons.named("forward")),
+                b -> { page = Math.min(maxPage(), page + 1); rebuildWidgets(); }));
         addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(width - 100, height - 28, 80, 20).build());
         refresh();
     }

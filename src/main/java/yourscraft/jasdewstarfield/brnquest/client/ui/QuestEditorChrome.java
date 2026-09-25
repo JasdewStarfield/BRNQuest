@@ -33,7 +33,17 @@ final class QuestEditorChrome {
                  boolean allowed, boolean editing, boolean hasLease, boolean live, boolean busy, boolean dirty,
                  boolean canUndo, boolean canRedo, int undoSteps, int redoSteps,
                  boolean publishSurfaceReady, boolean historySurfaceReady,
-                 Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid) {
+                 Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid,
+                 boolean catalogOpen) {
+        Model(QuestScreenFrameIdentity identity, String title, ResourceLocation bookId,
+              boolean allowed, boolean editing, boolean hasLease, boolean live, boolean busy, boolean dirty,
+              boolean canUndo, boolean canRedo, int undoSteps, int redoSteps,
+              boolean publishSurfaceReady, boolean historySurfaceReady,
+              Component status, boolean error, List<Component> errorTooltip, boolean snapToGrid) {
+            this(identity, title, bookId, allowed, editing, hasLease, live, busy, dirty, canUndo, canRedo,
+                    undoSteps, redoSteps, publishSurfaceReady, historySurfaceReady, status, error,
+                    errorTooltip, snapToGrid, false);
+        }
         Model {
             title = title == null ? "" : title;
             errorTooltip = errorTooltip == null ? List.of() : List.copyOf(errorTooltip);
@@ -82,13 +92,16 @@ final class QuestEditorChrome {
         graphics.fill(bottom.left(), bottom.top(), bottom.right(), bottom.top()+1, GraystonePalette.SEAM);
         graphics.fill(bottom.left(), bottom.top()+1, bottom.right(), bottom.top()+2, GraystonePalette.LIP);
         String title = model.title().isBlank() ? model.bookId().toString() : model.title();
-        String suffix = model.allowed() ? " ▾" : "";
+        int disclosureWidth = model.allowed() ? 14 : 0;
         String visibleTitle = font.plainSubstrByWidth(title,
-                Math.max(1, layout.title().width() - 16 - font.width(suffix)));
+                Math.max(1, layout.title().width() - 16 - disclosureWidth));
         // Dark lettering on light stone stays crisp without the default dark text shadow.
-        String titleText = visibleTitle + suffix;
-        graphics.drawString(font, titleText, layout.title().centerX() - font.width(titleText) / 2,
+        int titleLeft = layout.title().centerX() - (font.width(visibleTitle) + disclosureWidth) / 2;
+        graphics.drawString(font, visibleTitle, titleLeft,
                 layout.title().top() + 4, GraystonePalette.HEADER_TEXT, false);
+        if (model.allowed()) QuestActionIcons.named(model.catalogOpen() ? "fold" : "unfold").render(graphics, font,
+                new UiRect(titleLeft + font.width(visibleTitle) + 4, layout.title().top() + 3,
+                        titleLeft + font.width(visibleTitle) + 14, layout.title().top() + 13), GraystonePalette.HEADER_TEXT);
 
         List<Component> tooltip = List.of();
         if (model.allowed() || model.hasLease() || model.busy()) {
@@ -151,13 +164,20 @@ final class QuestEditorChrome {
                 mouseX, mouseY, tooltip);
 
         if (model.status() != null && layout.status().width() > 0) {
-            String statusText = font.plainSubstrByWidth(model.status().getString(), layout.status().width() - 10);
-            int statusWidth = Math.min(layout.status().width(), font.width(statusText) + 10);
+            // Reserve icon space before fitting text, keeping the footer's existing outer bounds.
+            String statusIcon = model.error() ? "error" : model.busy() ? "clock" : null;
+            int iconSpace = statusIcon == null ? 0 : 14;
+            String statusText = font.plainSubstrByWidth(model.status().getString(), Math.max(0, layout.status().width() - 10 - iconSpace));
+            int statusWidth = Math.min(layout.status().width(), font.width(statusText) + 10 + iconSpace);
             UiRect visibleStatus = new UiRect(layout.status().left(), layout.status().top(),
                     layout.status().left() + statusWidth, layout.status().bottom());
             graphics.fill(visibleStatus.left(), visibleStatus.top(), visibleStatus.right(),
                     visibleStatus.bottom(), GraystonePalette.FOOTER);
-            graphics.drawString(font, Component.literal(statusText), visibleStatus.left() + 5,
+            if (statusIcon != null) QuestActionIcons.named(statusIcon).render(graphics, font,
+                    new UiRect(visibleStatus.left() + 5, visibleStatus.top(),
+                            Math.min(visibleStatus.right(), visibleStatus.left() + 15), visibleStatus.bottom()),
+                    model.error() ? 0xFFFF8B8B : GraystonePalette.SECONDARY);
+            graphics.drawString(font, Component.literal(statusText), visibleStatus.left() + 5 + iconSpace,
                     visibleStatus.top() + 4, model.error() ? 0xFFFF8B8B : GraystonePalette.SECONDARY, false);
             if (model.error() && visibleStatus.contains(mouseX, mouseY)) tooltip = model.errorTooltip();
         }

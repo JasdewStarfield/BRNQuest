@@ -60,11 +60,12 @@ public record RewardEntryDetails(Component summary, ItemStack item, Optional<Edi
         Component summary = title.isBlank() || detail.getString().equals(title) ? detail
                 : Component.literal(title).append(" · ").append(detail);
         var decoration = presentation.icon(view);
-        // Frozen choices and table previews use the same registered fallback as live detail cells.
-        // Keep real items queryable, and retain legacy symbols when no addon icon was registered.
+        // Frozen choices, author rows and live cells share the same type sprite fallback.
+        // Installed symbol-only addons keep their symbol; unregistered types show the unknown sprite.
         if (decoration.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientRewardPresentationRegistry.typeIcon(view.typeId());
-            if (ClientRewardPresentationRegistry.hasTypeIcon(view.typeId())) decoration = Optional.of(typeIcon);
+            if (ClientRewardPresentationRegistry.hasTypeIcon(view.typeId())
+                    || !ClientRewardPresentationRegistry.hasPresentation(view.typeId())) decoration = Optional.of(typeIcon);
         }
         return new RewardEntryDetails(summary, stack, decoration, presentation.symbol(view));
     }

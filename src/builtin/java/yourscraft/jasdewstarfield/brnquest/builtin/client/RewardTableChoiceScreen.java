@@ -91,8 +91,13 @@ public final class RewardTableChoiceScreen extends Screen implements RecipeLooku
         list.invalidate(); lastFrame = 0;
         int left = Math.max(12,width/2-180), w = Math.min(360,width-24);
         more = addRenderableWidget(new EditorButtonWidget(left,height-58,w,20,Component.translatable("screen.brnquest.choice.more"), b -> request("",entries.size())));
-        addRenderableWidget(new EditorButtonWidget(left,height-30,w/2-3,20,Component.translatable("screen.brnquest.choice.later"), b -> onClose()));
-        confirm = addRenderableWidget(new EditorButtonWidget(left+w/2+3,height-30,w/2-3,20,Component.translatable("screen.brnquest.choice.confirm"), b -> request(selected,0)));
+        // Keep the explicit confirmation text next to the gift so selecting a row never implies a claim.
+        addRenderableWidget(new EditorButtonWidget(left,height-30,w/2-3,20,
+                EditorButton.Definition.iconAndText(Component.translatable("screen.brnquest.choice.later"), null,
+                        QuestActionIcons.named("back")), b -> onClose()));
+        confirm = addRenderableWidget(new EditorButtonWidget(left+w/2+3,height-30,w/2-3,20,
+                EditorButton.Definition.iconAndText(Component.translatable("screen.brnquest.choice.confirm"), null,
+                        QuestActionIcons.named("gift")), b -> request(selected,0)));
     }
     private void request(String entry, int offset) {
         if (waiting || !ClientQuestState.get().revision().equals(revision)) return;

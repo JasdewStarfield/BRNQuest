@@ -109,15 +109,15 @@ public final class EditorPopupMenu {
 
     public static void render(GuiGraphics graphics, Font font, CascadeLayout layout,
                               List<Entry> entries, int mouseX, int mouseY) {
-        renderLevel(graphics, font, layout.root(), entries, mouseX, mouseY, true);
+        renderLevel(graphics, font, layout.root(), entries, mouseX, mouseY, true, layout.submenuIndex());
         if (validSubmenu(entries, layout.submenuIndex())) {
             renderLevel(graphics, font, layout.submenu(), entries.get(layout.submenuIndex()).children(),
-                    mouseX, mouseY, false);
+                    mouseX, mouseY, false, -1);
         }
     }
 
     private static void renderLevel(GuiGraphics graphics, Font font, UiRect bounds, List<Entry> entries,
-                                    int mouseX, int mouseY, boolean showSubmenuArrow) {
+                                    int mouseX, int mouseY, boolean showSubmenuArrow, int expandedIndex) {
         GraystoneSurface.raised(graphics, bounds, GraystonePalette.PANEL, true);
         for (int index = 0; index < entries.size(); index++) {
             int top = bounds.top() + index * ROW_HEIGHT;
@@ -130,14 +130,15 @@ public final class EditorPopupMenu {
             int color = !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF;
             if (icon != null) icon.render(graphics, font,
                     new UiRect(bounds.left() + 5, top + 4, bounds.left() + 15, top + 14), color);
-            int reserved = showSubmenuArrow && entry.submenu() ? font.width("›") + 10 : 8;
+            // Reserve the native sprite and its gap independently of the active font.
+            int reserved = showSubmenuArrow && entry.submenu() ? 20 : 8;
             String label = font.plainSubstrByWidth(entry.label().getString(),
                     Math.max(1, row.width() - reserved - iconSpace));
             graphics.drawString(font, label, bounds.left() + 6 + iconSpace, top + 5,
                     !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF, false);
             if (showSubmenuArrow && entry.submenu()) {
-                graphics.drawString(font, "›", bounds.right() - font.width("›") - 5, top + 5,
-                        GraystonePalette.SECONDARY, false);
+                QuestActionIcons.named(expandedIndex == index ? "fold" : "unfold").render(graphics, font,
+                        new UiRect(bounds.right() - 15, top + 4, bounds.right() - 5, top + 14), GraystonePalette.SECONDARY);
             }
         }
     }

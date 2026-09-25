@@ -60,14 +60,22 @@ public final class RewardTableEditorScreen extends RewardEditorScreen {
                 32, entries.size(), i -> id(entries.get(i)), frameSeconds(), scrollSpeed(),
                 row -> content(find(row.key())), key -> List.of(new EditorActionGroup.Action<>(key,
                         EditorButton.Definition.iconOnly(Component.translatable("screen.brnquest.editor.action.more"),
-                                Component.translatable("screen.brnquest.editor.typed.more_hint"), EditorIcon.glyph(Component.literal("…"))),
+                                Component.translatable("screen.brnquest.editor.typed.more_hint"), QuestActionIcons.named("detail")),
                         !readOnly, EditorButton.Tone.NEUTRAL, (mx, my) -> openMenu(key, mx.intValue(), my.intValue()))),
                 List.of(), Component.translatable("screen.brnquest.editor.typed.empty"), x, y);
         var buttons = new ArrayList<>(footer(!readOnly, this::apply));
         var b = body();
-        buttons.add(button("mode", Component.translatable("screen.brnquest.reward_table.mode." + mode()),
-                new UiRect(b.left(), b.top(), b.centerX() - 3, b.top() + 20), !readOnly,
-                EditorButton.Tone.NEUTRAL, this::openModeMenu));
+        // The mode icon follows the configured mode while the localized name remains visible.
+        var modeLabel = Component.translatable("screen.brnquest.reward_table.mode." + mode());
+        buttons.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>("mode",
+                EditorButton.Definition.iconAndText(modeLabel, null,
+                        QuestActionIcons.named(switch (mode()) {
+                            case "choice" -> "choice";
+                            case "random" -> "random";
+                            default -> "reward_table";
+                        })),
+                !readOnly, EditorButton.Tone.NEUTRAL, (mx, my) -> openModeMenu()),
+                new UiRect(b.left(), b.top(), b.centerX() - 3, b.top() + 20), panel()));
         buttons.add(button("settings", Component.translatable("screen.brnquest.reward_table.settings"),
                 new UiRect(b.centerX() + 3, b.top(), b.right(), b.top() + 20), !readOnly && mode().equals("random"),
                 EditorButton.Tone.NEUTRAL, () -> editSettings(null)));

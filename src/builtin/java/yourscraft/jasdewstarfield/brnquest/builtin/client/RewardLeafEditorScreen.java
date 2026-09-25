@@ -91,9 +91,12 @@ public final class RewardLeafEditorScreen extends RewardEditorScreen {
         list.render(graphics, row -> {
             int index = row.key();
             if (form.schema().rawFallback()) {
-                buttons.add(new EditorActionGroup.Placed<>(button("raw", Component.translatable("screen.brnquest.config.edit"),
-                        row.bounds(), true, EditorButton.Tone.NEUTRAL, () -> minecraft.setScreen(
-                                new EditorRawConfigScreen(this, form.rawConfig(), form::replaceRawConfig))).action(), row.bounds(), row.visible()));
+                // Raw configuration keeps its explicit label alongside the same icon as the parent editor.
+                buttons.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>("raw",
+                        EditorButton.Definition.iconAndText(Component.translatable("screen.brnquest.config.edit"),
+                                null, QuestActionIcons.named("raw")), true, EditorButton.Tone.NEUTRAL,
+                        (mx, my) -> minecraft.setScreen(new EditorRawConfigScreen(this, form.rawConfig(), form::replaceRawConfig))),
+                        row.bounds(), row.visible()));
                 return;
             }
             if (index < 0) {
@@ -116,8 +119,14 @@ public final class RewardLeafEditorScreen extends RewardEditorScreen {
                 Component text = field.valueType() == ConfigValueType.ITEM_STACK
                         ? Component.translatable("screen.brnquest.editor.item_selector.title")
                         : valueLabel(field, value);
-                var action = button("field_" + index, text, layout.field(), true, EditorButton.Tone.NEUTRAL, () -> select(index));
-                buttons.add(new EditorActionGroup.Placed<>(action.action(), layout.field(), row.visible()));
+                // Preserve selected values and the row's clipped input bounds when adding selector icons.
+                String icon = field.valueType() == ConfigValueType.BOOLEAN ? null
+                        : field.valueType() == ConfigValueType.ENUM ? "fold"
+                        : field.valueType() == ConfigValueType.ITEM_STACK ? "search" : "detail";
+                var definition = icon == null ? EditorButton.Definition.text(text, null)
+                        : EditorButton.Definition.iconAndText(text, null, QuestActionIcons.named(icon));
+                buttons.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>("field_" + index,
+                        definition, true, EditorButton.Tone.NEUTRAL, (mx, my) -> select(index)), layout.field(), row.visible()));
             } else form.configField(index).show(layout.field(), true);
         }, () -> {});
         // Text widgets share the list clip, so scrolling never draws or activates a field over the footer.
@@ -133,7 +142,7 @@ public final class RewardLeafEditorScreen extends RewardEditorScreen {
     private Component valueLabel(ConfigFieldDescriptor field, String value) {
         if (field.valueType() == ConfigValueType.BOOLEAN) return Component.translatable(Boolean.parseBoolean(value) ? "options.on" : "options.off");
         return field.valueLabelKeys().containsKey(value) ? Component.translatable(field.valueLabelKeys().get(value))
-                : Component.literal(value.isBlank() ? "…" : value);
+                : Component.literal(value);
     }
 
     private boolean selector(ConfigFieldDescriptor field) {

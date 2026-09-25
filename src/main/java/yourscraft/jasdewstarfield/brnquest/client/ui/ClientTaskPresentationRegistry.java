@@ -42,6 +42,8 @@ public final class ClientTaskPresentationRegistry {
     }
     /** Keeps unknown types on their fallback glyph instead of inventing a registered decoration. */
     static boolean hasTypeIcon(ResourceLocation id) { return get(id).typeIcon().isPresent() || TYPE_ICONS.containsKey(id); }
+    /** An installed legacy addon may have a symbol but no type sprite. */
+    static boolean hasPresentation(ResourceLocation id) { return PRESENTATIONS.containsKey(id); }
     public static ClientTaskPresentation get(ResourceLocation id) {
         return PRESENTATIONS.getOrDefault(id, FALLBACK);
     }

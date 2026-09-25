@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewModel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewRows;
@@ -79,10 +80,13 @@ final class QuestPublishReviewSection {
         graphics.drawCenteredString(font, Component.translatable("screen.brnquest.editor.publish.review.title"),
                 panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
         int readinessColor = review.publishAllowed() ? 0xFF83D69A : 0xFFFF8B8B;
+        // The server's review result supplies the state; the icon only reinforces its existing label.
+        QuestActionIcons.named(review.publishAllowed() ? "check" : "error").render(graphics, font,
+                new UiRect(panel.left() + 12, panel.top() + 25, panel.left() + 22, panel.top() + 35), readinessColor);
         graphics.drawString(font, Component.translatable(review.publishAllowed()
                         ? "screen.brnquest.editor.publish.review.ready"
                         : "screen.brnquest.editor.publish.review.blocked"),
-                panel.left() + 12, panel.top() + 26, readinessColor, false);
+                panel.left() + 26, panel.top() + 26, readinessColor, false);
         graphics.drawString(font, Component.translatable("screen.brnquest.editor.publish.review.revisions",
                         shortRevision(review.fromRevision()), shortRevision(review.targetRevision())),
                 panel.left() + 12, panel.top() + 40, GraystonePalette.SECONDARY, false);
@@ -217,7 +221,10 @@ final class QuestPublishReviewSection {
             presentation.icon().render(graphics, font, new UiRect(row.left()+6, row.top()+4, row.left()+22, row.top()+20), -1);
         if (reviewRow.kind() != EditorPublishReviewRows.Kind.EMPTY) {
             var more = new UiRect(row.right()-23, row.top()+3, row.right()-3, row.bottom()-3);
-            renderButton(graphics, font, more, Component.literal("…"), true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            Component detailsLabel = Component.translatable("screen.brnquest.editor.publish.review.details");
+            buttons.render(graphics, font, more,
+                    EditorButton.Definition.iconOnly(detailsLabel, detailsLabel, QuestActionIcons.named("detail")),
+                    true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             if (more.contains(mouseX, mouseY)) tooltip = List.of(Component.translatable("screen.brnquest.editor.publish.review.details"));
         }
         int textWidth = Math.max(20, row.width() - inset - 28);

@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class QuestPresentationTest {
     @Test void authoredQuestTitleIsNotReplacedByItsNamedObjective() {
@@ -53,6 +54,9 @@ class QuestPresentationTest {
 
         assertEquals(QuestPresentation.VisualKind.ITEM, QuestPresentation.visual(quest).kind());
         assertEquals(item.config().get("item"), QuestPresentation.visual(quest).itemSnbt());
+        assertSame(ClientTaskPresentationRegistry.typeIcon(TaskTypes.ITEM),
+                QuestPresentation.visual(quest).icon().orElseThrow());
+        assertEquals(true, QuestPresentation.visual(quest).defaultTypeIcon());
     }
 
     @Test void samePathFromForeignNamespaceUsesPlaceholderPresentation() {
@@ -64,6 +68,8 @@ class QuestPresentationTest {
                 0, 0, List.of(), List.of(foreignItem), List.of(), "LEGACY");
 
         assertEquals(QuestPresentation.VisualKind.PLACEHOLDER, QuestPresentation.visual(quest).kind());
+        assertSame(ClientTypeIconFallback.icon(), QuestPresentation.visual(quest).icon().orElseThrow());
+        assertEquals(true, QuestPresentation.visual(quest).defaultTypeIcon());
     }
 
     @Test void explicitTextureIconBypassesItemSnbtPresentation() {
@@ -76,6 +82,7 @@ class QuestPresentationTest {
         assertEquals(QuestPresentation.VisualKind.TEXTURE, visual.kind());
         assertEquals(texture, QuestIconValue.textureId(visual.value()).orElseThrow());
         assertEquals("", visual.itemSnbt());
+        assertEquals(false, visual.defaultTypeIcon());
     }
 
     @Test void completedQuestWithoutRewardsUsesPlainCompletionAndNoBadge() {

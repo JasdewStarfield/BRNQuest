@@ -7,6 +7,11 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.data.CanvasScene;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEnumDropdown;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import java.util.*;
 import java.util.function.Predicate;
 
@@ -27,7 +32,8 @@ final class EditorCanvasScreen extends Screen {
     private double aspectRatio;
     private CanvasScene.Fit fit = CanvasScene.Fit.TILE;
     private CanvasScene previewScene;
-    private Button modeButton, fitButton;
+    private EditorButtonWidget modeButton, fitButton;
+    private final EditorEnumDropdown enumDropdown = new EditorEnumDropdown();
     private int backgroundMode; // 0 inherits, 1 explicitly disables, 2 uses this resource.
     private String error = "";
     private int formScroll;
@@ -58,7 +64,14 @@ final class EditorCanvasScreen extends Screen {
         if (buildingForm && x >= left()) formWidgets.put(widget, y);
         return widget;
     }
+    private EditorButtonWidget choiceButton(String key, int x, int y, int w, Runnable action) {
+        var widget = addRenderableWidget(new EditorButtonWidget(x, y, w, 20,
+                EditorButton.Definition.iconAndText(label(key), null, QuestActionIcons.named("unfold")), b -> action.run()));
+        formWidgets.put(widget, y);
+        return widget;
+    }
     @Override protected void init() {
+        enumDropdown.close();
         // Resize preserves raw input, including temporarily invalid numeric text.
         var retained = new LinkedHashMap<String, String>(); fields.forEach((k, v) -> retained.put(k, v.getValue()));
         fields.clear(); formWidgets.clear();
@@ -141,14 +154,20 @@ final class EditorCanvasScreen extends Screen {
         field("opacity", b == null ? "0.5" : "" + b.opacity(), 1);
         field("scale", b == null ? "1.0" : "" + b.scale(), 2);
         fields.get("scale").setTooltip(net.minecraft.client.gui.components.Tooltip.create(label("scale_help")));
-        modeButton = button("inherit", contentLeft(), 130, width - contentLeft() - 12, () -> {
-            // Changing mode retains the custom candidate; only Browse opens the resource picker.
-            backgroundMode = (backgroundMode + 1) % 3;
-            updateBackgroundControls();
+        modeButton = choiceButton("inherit", contentLeft(), 130, width - contentLeft() - 12, () -> {
+            openChoice(modeButton, List.of("inherit", "disabled", "custom"), EditorCanvasScreen::label, value -> {
+                // Changing mode retains the custom candidate; only Browse opens the resource picker.
+                backgroundMode = List.of("inherit", "disabled", "custom").indexOf(value);
+                updateBackgroundControls();
+            });
         });
-        fitButton = button("fit_" + fit.name().toLowerCase(Locale.ROOT), contentLeft(), 154, width - contentLeft() - 12, () -> {
-            fit = CanvasScene.Fit.values()[(fit.ordinal() + 1) % 3];
-            fitButton.setMessage(label("fit_" + fit.name().toLowerCase(Locale.ROOT)));
+        fitButton = choiceButton("fit_" + fit.name().toLowerCase(Locale.ROOT), contentLeft(), 154,
+                width - contentLeft() - 12, () -> {
+            openChoice(fitButton, Arrays.stream(CanvasScene.Fit.values()).map(Enum::name).toList(),
+                    value -> label("fit_" + value.toLowerCase(Locale.ROOT)), value -> {
+                        fit = CanvasScene.Fit.valueOf(value);
+                        fitButton.setMessage(label("fit_" + value.toLowerCase(Locale.ROOT)));
+                    });
         });
         button("browse", contentLeft(), 178, width - contentLeft() - 12, () -> minecraft.setScreen(new EditorTextureBrowserScreen(this, this::setBackgroundTexture)));
         // Reserve the thumbnail in the same scroll range as its controls.
@@ -160,6 +179,19 @@ final class EditorCanvasScreen extends Screen {
     private void updateBackgroundControls() {
         modeButton.setMessage(label(switch (backgroundMode) { case 0 -> "inherit"; case 1 -> "disabled"; default -> "custom"; }));
         fields.values().forEach(field -> field.active = backgroundMode == 2);
+    }
+    private void openChoice(EditorButtonWidget button, List<String> choices,
+                            java.util.function.Function<String, Component> labels,
+                            java.util.function.Consumer<String> selection) {
+        enumDropdown.show(new UiRect(button.getX(), button.getY(), button.getX() + button.getWidth(),
+                button.getY() + button.getHeight()), choices, labels, selection);
+        button.setIcon(QuestActionIcons.named("fold"));
+    }
+
+    private void closeChoice() {
+        enumDropdown.close();
+        if (modeButton != null) modeButton.setIcon(null);
+        if (fitButton != null) fitButton.setIcon(null);
     }
     /** Invalid in-progress input retains the last valid preview, but cannot be applied. */
     private CanvasScene.Background backgroundCandidate() {
@@ -221,6 +253,7 @@ final class EditorCanvasScreen extends Screen {
         return lines;
     }
     @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        if (enumDropdown.open()) closeChoice();
         if (tab != 0 && x >= 8 && x < left() && y >= 54 && y < height - 34) {
             helpScroll = Math.clamp(helpScroll - (int)(vertical * 3), 0,
                     Math.max(0, helpLines().size() - Math.max(1, (height - 128) / 11)));
@@ -294,6 +327,19 @@ final class EditorCanvasScreen extends Screen {
                         size == null ? 1 : size.width(), size == null ? 1 : size.height());
             }
         }
+        enumDropdown.render(g, font, width, 54, height - 34, x, y);
+    }
+    @Override public boolean mouseClicked(double x, double y, int button) {
+        if (enumDropdown.open()) {
+            enumDropdown.click(x, y, button, width, 54, height - 34);
+            closeChoice();
+            return true;
+        }
+        return super.mouseClicked(x, y, button);
+    }
+    @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (key == 256 && enumDropdown.open()) { closeChoice(); return true; }
+        return super.keyPressed(key, scanCode, modifiers);
     }
     /** Contain the authored rectangle in the preview without stretching it to the panel shape. */
     private void drawPreview(GuiGraphics g, String texture, int x, int y, int w, int h, double sourceW, double sourceH) {

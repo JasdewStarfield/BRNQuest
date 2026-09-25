@@ -45,6 +45,8 @@ public final class ClientRewardPresentationRegistry {
     static boolean hasTypeIcon(ResourceLocation id) {
         return get(id).typeIcon().isPresent() || TYPE_ICONS.containsKey(id);
     }
+    /** Distinguish an installed symbol-only addon from data whose type is truly unknown. */
+    static boolean hasPresentation(ResourceLocation id) { return PRESENTATIONS.containsKey(id); }
     public static ClientRewardPresentation get(ResourceLocation id) {
         return PRESENTATIONS.getOrDefault(id, FALLBACK);
     }

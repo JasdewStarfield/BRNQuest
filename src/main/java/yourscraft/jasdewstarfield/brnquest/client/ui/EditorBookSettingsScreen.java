@@ -16,6 +16,8 @@ final class EditorBookSettingsScreen extends Screen {
     private final Screen parent;
     private final Consumer<BookSettings> selection;
     private final Map<String, String> values = new HashMap<>();
+    private final EditorEnumDropdown enumDropdown = new EditorEnumDropdown();
+    private EditorButtonWidget claimButton;
     EditorBookSettingsScreen(Screen parent, BookSettings initial, Consumer<BookSettings> selection) {
         super(Component.translatable("screen.brnquest.book.settings"));
         this.parent = parent; this.selection = selection; values.putAll(initial.values());
@@ -26,13 +28,25 @@ final class EditorBookSettingsScreen extends Screen {
         int w = panelWidth(), left = (width - w) / 2;
         for (int i = 0; i < FIELDS.size(); i++) {
             String key = FIELDS.get(i);
-            var button = addRenderableWidget(new EditorButtonWidget(left + w / 2, top() + 34 + i * 26, w / 2, 20, valueLabel(key), clicked -> {
+            var button = addRenderableWidget(new EditorButtonWidget(left + w / 2, top() + 34 + i * 26, w / 2, 20,
+                    key.equals("reward_claim_policy")
+                            ? EditorButton.Definition.iconAndText(valueLabel(key), null, QuestActionIcons.named("unfold"))
+                            : EditorButton.Definition.text(valueLabel(key), null), clicked -> {
                 if (key.equals("reward_claim_policy")) {
                     var modes = Arrays.stream(RewardClaimPolicy.values()).map(RewardClaimPolicy::serializedName).toList();
-                    values.put(key, modes.get((modes.indexOf(values.get(key)) + 1) % modes.size()));
-                } else values.put(key, Boolean.toString(!Boolean.parseBoolean(values.get(key))));
-                clicked.setMessage(valueLabel(key));
+                    enumDropdown.show(new UiRect(clicked.getX(), clicked.getY(), clicked.getX() + clicked.getWidth(),
+                            clicked.getY() + clicked.getHeight()), modes,
+                            value -> Component.translatable("screen.brnquest.book.claim." + value), value -> {
+                                values.put(key, value);
+                                clicked.setMessage(valueLabel(key));
+                            });
+                    claimButton.setIcon(QuestActionIcons.named("fold"));
+                } else {
+                    values.put(key, Boolean.toString(!Boolean.parseBoolean(values.get(key))));
+                    clicked.setMessage(valueLabel(key));
+                }
             }));
+            if (key.equals("reward_claim_policy")) claimButton = button;
             button.setTooltip(Tooltip.create(Component.translatable("screen.brnquest.book.setting." + key + ".help")));
         }
         addRenderableWidget(new EditorButtonWidget(left, top() + 202, w / 2 - 4, 20, Component.translatable("gui.cancel"), button -> onClose()));
@@ -59,10 +73,24 @@ final class EditorBookSettingsScreen extends Screen {
             for (int i = 0; i < FIELDS.size(); i++) EditorPropertyRow.label(graphics, font,
                     Component.translatable("screen.brnquest.book.setting." + FIELDS.get(i)),
                     new UiRect(left, top() + 34 + i * 26, left + w / 2 - 6, top() + 54 + i * 26), null);
-            super.render(graphics, x, y, partial); graphics.flush();
+            super.render(graphics, x, y, partial);
+            enumDropdown.render(graphics, font, width, top() + 24, top() + 200, x, y);
+            graphics.flush();
         } finally { graphics.pose().popPose(); }
     }
     @Override public void tick() { parent.tick(); super.tick(); }
+    @Override public boolean mouseClicked(double x, double y, int button) {
+        if (enumDropdown.open()) {
+            enumDropdown.click(x, y, button, width, top() + 24, top() + 200);
+            claimButton.setIcon(null);
+            return true;
+        }
+        return super.mouseClicked(x, y, button);
+    }
+    @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
+        if (key == 256 && enumDropdown.open()) { enumDropdown.close(); claimButton.setIcon(null); return true; }
+        return super.keyPressed(key, scanCode, modifiers);
+    }
     @Override public void onClose() { minecraft.setScreen(parent); }
     @Override public boolean isPauseScreen() { return parent.isPauseScreen(); }
 }

@@ -17,7 +17,7 @@ public final class QuestTypeIcons {
         }
         // Foreign types with matching paths must not inherit built-in semantics.
         String name = type.getNamespace().equals("brnquest") && BUILTINS.contains(type.getPath())
-                ? type.getPath() : "custom";
+                ? type.getPath() : "unknown";
         return ResourceLocation.fromNamespaceAndPath("brnquest", "editor/type/" + name);
     }
 

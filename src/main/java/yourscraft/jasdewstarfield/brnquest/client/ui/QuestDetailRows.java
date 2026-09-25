@@ -32,10 +32,11 @@ final class QuestDetailRows {
         boolean locallySatisfied = presentation.satisfied(presentationContext);
         graphics.fill(x, y, x + width, y + 24, taskRowBackground(displayState));
         var icon = presentation.icon(taskView);
-        // Explicit type metadata fills missing visuals, while legacy addons retain their own symbol fallback.
+        // Registered type art and truly unknown types use sprites; symbol-only addons keep their glyphs.
         if (icon.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientTaskPresentationRegistry.typeIcon(taskView.typeId());
-            if (ClientTaskPresentationRegistry.hasTypeIcon(taskView.typeId())) icon = java.util.Optional.of(typeIcon);
+            if (ClientTaskPresentationRegistry.hasTypeIcon(taskView.typeId())
+                    || !ClientTaskPresentationRegistry.hasPresentation(taskView.typeId())) icon = java.util.Optional.of(typeIcon);
         }
         if (icon.isPresent()) icon.orElseThrow().render(graphics,font,new UiRect(x+3,y+4,x+19,y+20),0xFFFFFFFF);
         else if (!stack.isEmpty()) graphics.renderItem(stack, x + 3, y + 4);
@@ -56,8 +57,7 @@ final class QuestDetailRows {
             graphics.fill(candidateBounds.left(), candidateBounds.top(), candidateBounds.right(),
                     candidateBounds.bottom(), visibleCandidate != null && visibleCandidate.containsExclusive(mouseX, mouseY)
                             ? 0xFF62664F : 0xFF484C3E);
-            graphics.drawCenteredString(font, Component.literal("…"), candidateBounds.centerX(),
-                    candidateBounds.top() + 4, 0xFFFFFFFF);
+            QuestActionIcons.named("detail").render(graphics, font, candidateBounds, 0xFFFFFFFF);
 
         }
         int textInset = candidateMenu ? 43 : 28;
@@ -110,7 +110,8 @@ final class QuestDetailRows {
         var icon = presentation.icon(rewardView);
         if (icon.isEmpty() && stack.isEmpty()) {
             var typeIcon = ClientRewardPresentationRegistry.typeIcon(rewardView.typeId());
-            if (ClientRewardPresentationRegistry.hasTypeIcon(rewardView.typeId())) icon = java.util.Optional.of(typeIcon);
+            if (ClientRewardPresentationRegistry.hasTypeIcon(rewardView.typeId())
+                    || !ClientRewardPresentationRegistry.hasPresentation(rewardView.typeId())) icon = java.util.Optional.of(typeIcon);
         }
         // Reward cells retain compact quantity overlays while sharing the graystone inset surface.
         graphics.fill(x, y, x + 24, y + 24, claimed ? 0xFF30372F : claimable ? 0xFF514D36 : 0xFF34382F);
@@ -151,7 +152,8 @@ final class QuestDetailRows {
         if (candidates != null) {
             boolean hovered = candidates.containsExclusive(mouseX,mouseY);
             graphics.fill(candidates.left(),candidates.top(),candidates.right(),candidates.bottom(),hovered ? 0xFF62664F : 0xFF484C3E);
-            graphics.drawCenteredString(font,Component.literal("…"),x+32,y+8,0xFFFFFFFF);
+            // Center on the original button even when its visible hitbox is clipped by scrolling.
+            QuestActionIcons.named("detail").render(graphics, font, new UiRect(x+25,y+4,x+39,y+20), 0xFFFFFFFF);
             if (hovered) { hoveredLookup = null; hoveredText = Component.translatable("screen.brnquest.options.title"); }
         }
         return new Result(y + 24, clickable, candidates, hoveredLookup, hoveredText);

@@ -787,7 +787,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         detailsInteraction.invalidate();
         int left = detailLeft();
         graphics.fill(left, topToolbarHeight(), width, height - bottomToolbarHeight(), GraystonePalette.PANEL);
-        graphics.drawString(font, Component.literal("×"), width - 14, topToolbarHeight() + 4, 0xFFFFFF, false);
+        // Paint the existing close hitbox with the same native sprite as other close controls.
+        QuestActionIcons.named("close").render(graphics, font,
+                new UiRect(width - 18, topToolbarHeight(), width, topToolbarHeight() + 16), 0xFFFFFFFF);
 
         QuestDefinition quest = selectedQuest();
         boolean editing = ClientEditorState.get().editing();
@@ -1156,7 +1158,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (waiting) {
             graphics.pose().pushPose();
             graphics.pose().translate(0, 0, 300);
-            graphics.drawString(font, "…", x, y - 2, GraystonePalette.ACCENT, false);
+            QuestActionIcons.named("clock").render(graphics, font,
+                    new UiRect(x, y - 2, x + 10, y + 8), GraystonePalette.ACCENT);
             graphics.pose().popPose();
         }
         UiRect visibleCell = new UiRect(x, y, x + 24, y + 24).intersection(detailRecipeLookupViewport());
@@ -1613,7 +1616,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 book.id(), editor.allowed(), editor.editing(), editor.hasLease(), editor.live(), editor.busy(),
                 editor.dirty(), editor.canUndo(), editor.canRedo(), editor.undoSteps(), editor.redoSteps(),
                 publishSurfaceReady, editorHistorySurfaceReady(), status,
-                editor.mode() == ClientEditorState.Mode.ERROR, errorTooltip, BrnQuestClientConfig.VALUES.snapToGrid.get());
+                editor.mode() == ClientEditorState.Mode.ERROR, errorTooltip, BrnQuestClientConfig.VALUES.snapToGrid.get(),
+                editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG));
         QuestEditorChrome.RenderResult chromeResult = editorChrome.render(
                 graphics, font, layout(), chromeModel, mouseX, mouseY);
         if (chromeResult.hoveredDetail() != null) hoveredDetailText = chromeResult.hoveredDetail();
@@ -1656,6 +1660,15 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                         int mouseX, int mouseY) {
         renderEditorActionButton(graphics, bounds, EditorButton.Definition.text(label, tooltip),
                 enabled, tone, mouseX, mouseY);
+    }
+
+    /** Dropdown values remain localized text; the disclosure cue uses the shared native-size PNG. */
+    private void renderEditorDropdownButton(GuiGraphics graphics, UiRect bounds, Component label,
+                                            boolean enabled, int mouseX, int mouseY) {
+        renderEditorActionButton(graphics, bounds, EditorButton.Definition.iconAndText(
+                        label, null, QuestActionIcons.named(enumDropdownAnchor != null
+                                && enumDropdownAnchor.equals(bounds) ? "fold" : "unfold")),
+                enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     /** Compact icon buttons retain a localized semantic label for Tooltip and future narration. */
@@ -3434,15 +3447,28 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             ItemStack parsed = snbt.isBlank() ? ItemStack.EMPTY : item(task.id(), snbt);
             TaskPresentationContext context = new TaskPresentationContext(minecraft, view, status(quest),
                     ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L), parsed);
-            return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
-                    presentation.displayedItem(context), presentation.icon(view));
+            ItemStack displayed = presentation.displayedItem(context);
+            var icon = presentation.icon(view);
+            // Author rows use the registered type sprite when there is no instance artwork or real item.
+            if (icon.isEmpty() && displayed.isEmpty()
+                    && (ClientTaskPresentationRegistry.hasTypeIcon(task.typeId())
+                    || !ClientTaskPresentationRegistry.hasPresentation(task.typeId()))) {
+                icon = java.util.Optional.of(ClientTaskPresentationRegistry.typeIcon(task.typeId()));
+            }
+            return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view), displayed, icon);
         }
         RewardDefinition reward = quest.rewards().get(index);
         var view = ApiViews.reward(reward);
         var presentation = ClientRewardPresentationRegistry.get(reward.typeId());
         String snbt = presentation.itemSnbt(view);
-        return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view),
-                snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt), presentation.icon(view));
+        ItemStack displayed = snbt.isBlank() ? ItemStack.EMPTY : item(reward.id(), snbt);
+        var icon = presentation.icon(view);
+        if (icon.isEmpty() && displayed.isEmpty()
+                && (ClientRewardPresentationRegistry.hasTypeIcon(reward.typeId())
+                || !ClientRewardPresentationRegistry.hasPresentation(reward.typeId()))) {
+            icon = java.util.Optional.of(ClientRewardPresentationRegistry.typeIcon(reward.typeId()));
+        }
+        return new TypedRowPresentation(presentation.typeName(view), presentation.symbol(view), displayed, icon);
     }
 
     private void openTypedPropertyEditor(QuestDefinition quest, ResourceLocation typedId) {
@@ -3522,9 +3548,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(x, y, w, 68);
                 drawTypedLabel(g, "screen.brnquest.editor.typed.property.claim_policy", row.label(),
                         typedPropertySection.form().serverIssues().get("claim_policy"));
-                renderEditorTextButton(g, row.field(),
-                        authorValueLabel("claim", typedPropertySection.form().claim()).copy().append(" ▾"),
-                        null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                renderEditorDropdownButton(g, row.field(),
+                        authorValueLabel("claim", typedPropertySection.form().claim()), enabled, mouseX, mouseY);
             });
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.team_reward",
                     typedPropertySection.teamReward(), x, y, w, mouseX, mouseY));
@@ -3570,18 +3595,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 graphics.drawString(font, new String[]{"X", "Y", "Z"}[axis], bounds.left(), bounds.top() + 5, GraystonePalette.SECONDARY, false);
                 typedPropertySection.form().vectorField(index, axis).show(new UiRect(bounds.left() + 8, bounds.top(), bounds.right(), bounds.bottom()), !ClientEditorState.get().busy());
             }
-            if (vector.current() != null) renderEditorTextButton(graphics, vector.current(), Component.literal("@"),
-                    Component.translatable("screen.brnquest.field.current"), !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            if (vector.current() != null) renderEditorIconButton(graphics, vector.current(), Component.literal("@"),
+                    Component.translatable("screen.brnquest.field.current"), !ClientEditorState.get().busy(), false, mouseX, mouseY);
         } else if (descriptor.serverSource().isPresent()) {
-            renderEditorTextButton(graphics, row.field(), Component.literal(field.getValue() + " …"),
-                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            renderEditorActionButton(graphics, row.field(), EditorButton.Definition.iconAndText(
+                            Component.literal(field.getValue()), null, QuestActionIcons.named("detail")),
+                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             renderEditorTextButton(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
                     null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ENUM) {
-            renderEditorTextButton(graphics, row.field(), ConfigFieldLabels.value(descriptor, field.getValue()).copy().append(" ▾"),
-                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            renderEditorDropdownButton(graphics, row.field(), ConfigFieldLabels.value(descriptor, field.getValue()),
+                    !ClientEditorState.get().busy(), mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
             ItemStack stack = item(typedPropertySection.originalId(), field.getValue());
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");
@@ -3612,7 +3638,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         Component edit = Component.translatable(
                 "screen.brnquest.editor.typed.property.edit_raw", typedPropertySection.form().rawConfig().size());
         renderEditorActionButton(graphics, row.field(), EditorButton.Definition.iconAndText(
-                        edit, edit, EditorIcon.glyph(Component.literal("{}"))),
+                        edit, edit, QuestActionIcons.named("raw")),
                 !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
@@ -4365,9 +4391,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.editor.quest.shape"),
                 row.label(), null);
         questShapeDropdownBounds = row.field();
-        renderEditorTextButton(graphics, row.field(),
-                authorValueLabel("shape", questFields.field("shape").getValue()).copy().append(" ▾"), null,
-                enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        renderEditorDropdownButton(graphics, row.field(),
+                authorValueLabel("shape", questFields.field("shape").getValue()), enabled, mouseX, mouseY);
     }
 
     private void renderQuestBehaviorEditorField(GuiGraphics graphics, int left, int top, int width,

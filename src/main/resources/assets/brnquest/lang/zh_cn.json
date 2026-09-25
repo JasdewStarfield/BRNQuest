@@ -849,6 +849,7 @@
   "screen.brnquest.clipboard.too_large": "配置过大，无法复制（上限 64 KiB）",
   "screen.brnquest.clipboard.unavailable": "剪贴板中没有适用于当前任务书和类型的配置",
   "screen.brnquest.selection.copy": "整体复制（%s 个对象）",
+  "screen.brnquest.defaults.consume_items": "物品目标默认消耗",
   "screen.brnquest.selection.delete": "整体删除（%s 个对象）",
   "screen.brnquest.selection.clear": "取消选择",
   "screen.brnquest.selection.delete_warning": "将删除 %s 个所选对象；选中任务的目标、奖励也会删除，并移除 %s 个其他任务指向它们的依赖。可撤销。",

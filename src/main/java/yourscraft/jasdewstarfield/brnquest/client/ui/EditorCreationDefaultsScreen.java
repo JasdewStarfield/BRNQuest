@@ -19,6 +19,10 @@ final class EditorCreationDefaultsScreen extends Screen {
     // This chapter-wide inherited policy is staged beside defaults without changing its stored meaning.
     private boolean hideDependencyLines;
     private final Consumer<Boolean> hideLinesSelection;
+    // Item consumption is a chapter override staged with task defaults, not a QuestCreationDefaults field.
+    private Boolean consumeItems;
+    private final boolean inheritedConsumeItems;
+    private final Consumer<Boolean> consumeSelection;
     private final List<List<String>> groups;
     private final Map<String, String> values = new TreeMap<>();
     private EditorButtonWidget done;
@@ -44,11 +48,26 @@ final class EditorCreationDefaultsScreen extends Screen {
     EditorCreationDefaultsScreen(Screen parent, QuestCreationDefaults initial, QuestCreationDefaults inherited,
                                  Consumer<QuestCreationDefaults> selection, boolean hideDependencyLines,
                                  Consumer<Boolean> hideLinesSelection) {
+        this(parent, initial, inherited, selection, hideDependencyLines, hideLinesSelection,
+                null, false, null);
+    }
+    EditorCreationDefaultsScreen(Screen parent, QuestCreationDefaults initial, QuestCreationDefaults inherited,
+                                 Consumer<QuestCreationDefaults> selection, boolean hideDependencyLines,
+                                 Consumer<Boolean> hideLinesSelection, Boolean consumeItems,
+                                 boolean inheritedConsumeItems, Consumer<Boolean> consumeSelection) {
         super(Component.translatable("screen.brnquest.defaults.title"));
         this.hideDependencyLines = hideDependencyLines;
         this.hideLinesSelection = hideLinesSelection;
+        this.consumeItems = consumeItems;
+        this.inheritedConsumeItems = inheritedConsumeItems;
+        this.consumeSelection = consumeSelection;
         groups = new ArrayList<>(GROUPS);
         if (hideLinesSelection != null) groups.set(2, List.of("dependency_requirement", "hide_dependency_lines"));
+        if (consumeSelection != null) {
+            List<String> completion = new ArrayList<>(groups.get(3));
+            completion.add("consume_items");
+            groups.set(3, List.copyOf(completion));
+        }
         this.parent = parent; this.selection = selection; this.inherited = inherited;
         values.putAll(initial.values());
     }
@@ -61,6 +80,11 @@ final class EditorCreationDefaultsScreen extends Screen {
                 addControl(new EditorButtonWidget(left, y, half, 20, hideLinesLabel(), button -> {
                     hideDependencyLines = !hideDependencyLines;
                     button.setMessage(hideLinesLabel());
+                }));
+            } else if (key.equals("consume_items")) {
+                addControl(new EditorButtonWidget(left, y, half, 20, consumeItemsLabel(), button -> {
+                    consumeItems = consumeItems == null ? Boolean.TRUE : consumeItems ? Boolean.FALSE : null;
+                    button.setMessage(consumeItemsLabel());
                 }));
             } else if (key.equals("shape")) {
                 addControl(new EditorButtonWidget(left, y, half, 20,
@@ -106,12 +130,19 @@ final class EditorCreationDefaultsScreen extends Screen {
                 Component.translatable("screen.brnquest.editor.scope.apply_parent"), button -> {
             selection.accept(new QuestCreationDefaults(values));
             if (hideLinesSelection != null) hideLinesSelection.accept(hideDependencyLines);
+            if (consumeSelection != null) consumeSelection.accept(consumeItems);
             onClose();
         }));
         validate();
     }
     private Component hideLinesLabel() {
         return Component.translatable(hideDependencyLines ? "options.on" : "options.off");
+    }
+    private Component consumeItemsLabel() {
+        return consumeItems == null
+                ? Component.translatable("screen.brnquest.defaults.inherit",
+                        Component.translatable(inheritedConsumeItems ? "options.on" : "options.off"))
+                : Component.translatable(consumeItems ? "options.on" : "options.off");
     }
     private void openChoice(EditorButtonWidget button, List<String> choices,
                             java.util.function.Function<String, Component> labels, Consumer<String> selection) {

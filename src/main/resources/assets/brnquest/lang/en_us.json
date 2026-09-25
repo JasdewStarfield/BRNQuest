@@ -849,6 +849,7 @@
   "screen.brnquest.clipboard.too_large": "Configuration is too large to copy (64 KiB limit)",
   "screen.brnquest.clipboard.unavailable": "No matching configuration for this book and entry kind",
   "screen.brnquest.selection.copy": "Duplicate selection (%s objects)",
+  "screen.brnquest.defaults.consume_items": "Consume items by default",
   "screen.brnquest.selection.delete": "Delete selection (%s objects)",
   "screen.brnquest.selection.clear": "Clear selection",
   "screen.brnquest.selection.delete_warning": "Delete %s selected objects, including objectives and rewards of selected quests, and remove incoming dependencies from %s other quests. This can be undone.",

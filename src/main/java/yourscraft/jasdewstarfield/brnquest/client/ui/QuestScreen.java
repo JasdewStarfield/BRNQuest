@@ -2531,18 +2531,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         });
         if (structureFormKind == StructureFormKind.RENAME_CHAPTER) rows.add((g, x, y, w) -> {
-            // Share the existing row so the chapter dialog still fits the minimum GUI height.
+            // Both child editors share one row; their staged values still commit with this form.
             renderEditorTextButton(g, chapterDefaultsBounds(), Component.translatable("screen.brnquest.defaults.title"),
                     null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             renderEditorTextButton(g, chapterBackgroundBounds(),
                     EditorCanvasScreen.label("backgrounds"),
                     EditorCanvasScreen.label("backgrounds_help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-            Component value = Component.translatable(structureConsumeItems == null
-                    ? "screen.brnquest.defaults.inherit" : structureConsumeItems ? "options.on" : "options.off",
-                    Component.translatable(displaySnapshot().book().settings().consumeItems() ? "options.on" : "options.off"));
-            renderEditorTextButton(g, chapterConsumeBounds(),
-                    Component.translatable("screen.brnquest.chapter.consume_items", value),
-                    Component.translatable("screen.brnquest.book.setting.consume_items.help"), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         });
         EditorPropertyPanel.renderGraystone(graphics, font,
                 new EditorPropertyPanel.Layout(form, form.left() + 12, form.width() - 24,
@@ -2605,13 +2599,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return Map.copyOf(result);
     }
 
-    /** Keep both background entry points in the existing row at the minimum GUI height. */
+    /** Keep the background child beside the defaults child at the minimum GUI height. */
     private UiRect chapterBackgroundBounds() {
-        UiRect form = structureFormBounds();
-        return new UiRect(form.left() + 12, form.top() + 188, form.right() - 12, form.top() + 208);
-    }
-
-    private UiRect chapterConsumeBounds() {
         UiRect form = structureFormBounds();
         return new UiRect(form.centerX() + 4, form.top() + 160, form.right() - 12, form.top() + 180);
     }
@@ -2657,7 +2646,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect chapterIconClearBounds() {
         UiRect form = structureFormBounds();
-        return new UiRect(form.right() - 32, form.top() + 96, form.right() - 12, form.top() + 116);
+        // Match the selector row's shared 18-pixel field height for drawing and clicks.
+        int top = form.top() + 96;
+        return new UiRect(form.right() - 32, top, form.right() - 12,
+                top + EditorPropertyFormLayout.FIELD_HEIGHT);
     }
 
     private EditorTextField chapterIconInput() {
@@ -2702,13 +2694,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     return true;
                 }
             }
-            if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterConsumeBounds().contains(mouseX, mouseY)) {
-                structureConsumeItems = structureConsumeItems == null ? Boolean.TRUE : structureConsumeItems ? Boolean.FALSE : null;
-                return true;
-            }
             if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterDefaultsBounds().contains(mouseX, mouseY)) {
                 openChildScreen(new EditorCreationDefaultsScreen(this, structureDefaults, displaySnapshot().book().questDefaults(),
-                        value -> structureDefaults = value, structureHideDependencyLines, value -> structureHideDependencyLines = value));
+                        value -> structureDefaults = value, structureHideDependencyLines, value -> structureHideDependencyLines = value,
+                        structureConsumeItems, displaySnapshot().book().settings().consumeItems(),
+                        value -> structureConsumeItems = value));
                 return true;
             }
             if (structureFormKind == StructureFormKind.RENAME_CHAPTER && chapterGroupBounds().contains(mouseX, mouseY)) {
@@ -2885,7 +2875,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private UiRect structureFormBounds() {
         if (structureMetadataForm())
-            return layout().centeredDialog(420, 300, 20, structureFormKind == StructureFormKind.RENAME_CHAPTER ? 244 : 184);
+            return layout().centeredDialog(420, 300, 20, structureFormKind == StructureFormKind.RENAME_CHAPTER ? 216 : 184);
         return layout().centeredDialog(380, 260, 20, 126);
     }
 

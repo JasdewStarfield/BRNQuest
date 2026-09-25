@@ -2,7 +2,7 @@
 
 作者草稿、编辑会话、发布、部署、恢复及 FTB 草稿导入见 [`AUTHOR_API_zh.md`](AUTHOR_API_zh.md)。作者 API 与管理员命令共用服务器权威事务，不能直接修改 active 快照。
 
-> 当前 API 基线：`0.1.0-experimental.27`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
+> 当前 API 基线：`0.1.0-experimental.28`；首个承诺稳定版本：`1.0.0`。标记为 `EXPERIMENTAL` 的签名可在稳定前调整，但必须更新本文、迁移说明和契约测试。未在本文列出的包默认为 `INTERNAL`，外部模组不得依赖。详细规则见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。
 
 ## 稳定性分级
 
@@ -168,3 +168,7 @@ experimental.13 公开 ComposableReward、RewardLeafContext、RewardType.composi
 ## experimental.27：队伍进度策略
 
 `QuestBehaviorView.requireAllTeamMembers()` 暴露单任务的全员完成规则；原构造器保留，新字段默认 false。`QuestBookView.settings()` 增加默认 true 的 `share_team_progress`。全员任务的进度查询返回请求玩家自己的目标计数，任务状态、依赖解锁和奖励仍等待全员完成。`WAITING_FOR_TEAM` 表示个人完成已保存，队伍仍在等待；首次记录返回 SUCCESS，重复提交返回 NO_CHANGE。网络协议升级为 19，客户端与服务端需同步更新。成员变化、历史切换及重置规则见 [队伍进度](TEAM_PROGRESS_zh.md)。
+
+## experimental.28：类型创建列表可见性
+
+`TaskType.hiddenFromCreation()` 与 `RewardType.hiddenFromCreation()` 是默认返回 `false` 的实验性公共方法。插件可用 `true` 隐藏新建候选，同时保留既有定义的读取、编辑与执行。主创建栏及奖励表叶子创建栏遵循同一声明；排序仍按类型 ID 字母序。方法不影响服务端权限、校验或任务书格式。

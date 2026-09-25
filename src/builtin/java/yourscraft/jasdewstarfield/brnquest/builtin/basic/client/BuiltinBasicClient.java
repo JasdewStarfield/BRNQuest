@@ -95,7 +95,10 @@ public final class BuiltinBasicClient {
             public java.util.Optional<Component> contentSummary(RewardView reward) {
                 // XP units and config keys belong to this type, not the shared reward layout.
                 String key = levels ? "xp_levels" : "xp";
-                return java.util.Optional.of(typeName(reward).copy().append(" × " + reward.config().getOrDefault(key, "0")));
+                boolean showLevels = levels || !Boolean.parseBoolean(reward.config().getOrDefault("points", "true"));
+                String unitKey = showLevels ? "screen.brnquest.type.reward.xp_levels" : "screen.brnquest.type.reward.xp_points";
+                return java.util.Optional.of(Component.translatable(unitKey)
+                        .append(" × " + reward.config().getOrDefault(key, "0")));
             }
             public Component typeName(RewardView reward) {
                 return Component.translatable(levels ? "screen.brnquest.type.reward.xp_levels" : "screen.brnquest.type.reward.xp");

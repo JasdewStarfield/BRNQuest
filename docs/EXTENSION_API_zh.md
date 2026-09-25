@@ -2,7 +2,7 @@
 
 原生战利品组合使用 experimental.15 新增的默认 `ComposableReward.freeze(context)` 固定每个已选 occurrence 的生成数据；`prepare` 可被多次用于预检，不能抽取随机结果或发奖。默认 `freeze` 委托 `prepare`，既有非随机适配器无需修改。结果落盘后才调用 `execute`，恢复读取原结果而不再 freeze。
 
-公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.27` 基线中的 SPI 仍标记为实验性。
+公共面、稳定性、查询和写操作结果的总边界见 [`PUBLIC_API_zh.md`](PUBLIC_API_zh.md)，版本承诺见 [`API_VERSIONING_zh.md`](API_VERSIONING_zh.md)。本文继续说明任务与奖励类型契约；当前 `0.1.0-experimental.28` 基线中的 SPI 仍标记为实验性。
 
 任务和奖励扩展采用“服务端行为 + 可选客户端展示”两条独立注册链。原生任务书使用 schema 1 的字符串 `config`，注册类型的 `Codec` 会在加载时将其解码为类型自己的不可变配置，并将失败写入诊断报告。
 
@@ -86,7 +86,9 @@ schema 1 会把每个配置叶值作为 JSON 字符串交给 Codec；数字和�
 
 内置 `ITEM_MATCHER` 字段会打开下属物品属性 Screen，`brnquest:item` 与兼容保留的 `brnquest:item_choice` 共用该能力。规范 matcher 是 version 2 entries JSON：每个条目保存自己的物品展示栈或 tag 与需求数量，目标所需条目数由上层 `required_entries` 编辑；物品条目按物品类型接受组件不同的同类栈，玩家提交时再选择具体背包格。旧单物品及旧 tag/list matcher 会投影到相同表单；多 tag 物品通过二级列表明确选择。完成子级编辑后才一次性回填，取消不会修改原配置。该内置编辑控件属于内部实现边界；槽位选择提交使用上述公共实验接口；扩展自己的 matcher 仍必须由服务端 Codec 和提交事务重新校验，不能信任客户端槽位、ItemStack 或库存快照。
 
-内置 `brnquest:xp` 目标用 `value` 与 `points` 区分提交原始经验值或完整等级；`brnquest:xp`、`brnquest:xp_levels` 奖励分别发放原始经验值和完整等级。物品目标的 `only_from_crafting=true` 不接受手动背包提交，只统计服务端收到的玩家合成产出事件，并要求恰好一个匹配条目。
+内置 `brnquest:xp` 目标用 `value` 与 `points` 区分提交原始经验值或完整等级。新建经验奖励使用 `brnquest:xp`，以 `xp` 指定数量、`points` 选择经验点（`true`，也是旧配置的默认值）或完整等级（`false`）。旧有 `brnquest:xp_levels` 奖励继续按 `xp_levels` 发放完整等级，可读取、编辑和领取；创建栏不再列出它。FTB 导入仍分别保留源奖励类型。物品目标的 `only_from_crafting=true` 不接受手动背包提交，只统计服务端收到的玩家合成产出事件，并要求恰好一个匹配条目。
+
+`TaskType.hiddenFromCreation()` 与 `RewardType.hiddenFromCreation()` 由类型实现决定是否出现在新建类型列表，默认返回 `false`。返回 `true` 只影响主创建栏及奖励表叶子创建栏；已有定义仍可读取、编辑、执行，导入与服务端校验也不改变。内置 `item_choice` 与 `xp_levels` 通过各自类型声明隐藏。列表当前按类型 ID 字母序排列，排序契约另行确定。
 
 ## 注册与 reload 顺序
 

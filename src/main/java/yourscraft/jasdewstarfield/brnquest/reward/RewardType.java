@@ -28,6 +28,8 @@ public interface RewardType<TConfig> {
 
     /** Optional editor metadata; an empty list selects the safe raw-config fallback. */
     default List<ConfigFieldDescriptor> configFields() { return List.of(); }
+    /** Hide this type from new-object pickers while keeping existing definitions readable and editable. */
+    default boolean hiddenFromCreation() { return false; }
     /** Optional advanced claim path. The handler owns attempt safety; core retains eligibility and the final ledger. */
     default java.util.Optional<RewardClaimHandler> claimHandler() { return java.util.Optional.empty(); }
     /** Legacy extensions stay top-level only until they explicitly declare safe composition boundaries. */

@@ -36,9 +36,14 @@ class RewardEntryDetailsTest {
             String key = type.equals(RewardTypes.XP) ? "xp" : "xp_levels";
             var view = view(type, Map.of("title", "Travel", key, "12"));
             var presentation = ClientRewardPresentationRegistry.get(type);
-            assertEquals("Travel · " + presentation.typeName(view).getString() + " × 12",
+            String unitKey = type.equals(RewardTypes.XP) ? "screen.brnquest.type.reward.xp_points"
+                    : "screen.brnquest.type.reward.xp_levels";
+            assertEquals("Travel · " + Component.translatable(unitKey).getString() + " × 12",
                     RewardEntryDetails.resolve(null, view, presentation, ItemStack.EMPTY).summary().getString());
         }
+        var levelsViaXp = view(RewardTypes.XP, Map.of("title", "Travel", "xp", "12", "points", "false"));
+        assertEquals("Travel · " + Component.translatable("screen.brnquest.type.reward.xp_levels").getString() + " × 12", RewardEntryDetails.resolve(null, levelsViaXp,
+                ClientRewardPresentationRegistry.get(RewardTypes.XP), ItemStack.EMPTY).summary().getString());
     }
 
     @Test void decorativeExtensionIconDoesNotBecomeAnIngredientOrQueryState() {

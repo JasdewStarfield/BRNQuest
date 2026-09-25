@@ -11,6 +11,16 @@ import java.util.Map;
 
 /** Historical item IDs share one canonical matcher and authoritative submission path. */
 public final class UnifiedItemTask implements TaskType<Map<String, String>> {
+        private final boolean hiddenFromCreation;
+
+        public UnifiedItemTask() { this(false); }
+
+        /** The historical item_choice ID keeps its behavior but does not appear in new-task pickers. */
+        public UnifiedItemTask(boolean hiddenFromCreation) { this.hiddenFromCreation = hiddenFromCreation; }
+
+        @Override
+        public boolean hiddenFromCreation() { return hiddenFromCreation; }
+
         @Override
         public long craftedProgress(TaskContext context, Map<String, String> config, net.minecraft.world.item.ItemStack crafted) {
             if (!craftedOnly(config)) return context.progress();

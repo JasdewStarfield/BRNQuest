@@ -17,7 +17,7 @@ class QuestScreenTypedTypeCandidatesTest {
 
         List<ResourceLocation> candidates = QuestTypePickerModel.creatableTypeCandidates(
                 Set.of(unavailable, legacyAlias, extension, builtIn),
-                type -> !type.equals(unavailable), legacyAlias);
+                type -> !type.equals(unavailable) && !type.equals(legacyAlias));
 
         // Missing providers and read-only legacy aliases stay valid in old data, not in creation UI.
         assertEquals(List.of(builtIn, extension), candidates);

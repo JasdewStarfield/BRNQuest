@@ -21,6 +21,8 @@ class BuiltinBasicPluginTest {
             assertNotNull(TaskTypeRegistry.get(id));
         for (var id : java.util.List.of(RewardTypes.CUSTOM, RewardTypes.XP, RewardTypes.XP_LEVELS))
             assertNotNull(RewardTypeRegistry.get(id));
+        assertFalse(RewardTypeRegistry.get(RewardTypes.XP).hiddenFromCreation());
+        assertTrue(RewardTypeRegistry.get(RewardTypes.XP_LEVELS).hiddenFromCreation());
         assertThrows(IllegalArgumentException.class, () -> BrnQuestPlugins.register(new BuiltinBasicPlugin()));
     }
     @Test void oldMapsRetainUnknownKeysAndCustomStillRequiresExternalProgress() {
@@ -52,5 +54,11 @@ class BuiltinBasicPluginTest {
                 assertThrows(IllegalArgumentException.class, () -> adapter.validateConfig(Map.of(id.getPath(), "bad")));
             }
         }
+        // The unified XP receipt carries its selected unit; old point receipts may omit it.
+        var experience = RewardTypeRegistry.get(RewardTypes.XP).composition().orElseThrow();
+        assertDoesNotThrow(() -> experience.validateConfig(Map.of("xp", "2", "points", "false")));
+        assertDoesNotThrow(() -> experience.validateConfig(Map.of("xp", "2")));
+        assertThrows(IllegalArgumentException.class,
+                () -> experience.validateConfig(Map.of("xp", "2", "points", "levels")));
     }
 }

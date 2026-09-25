@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
+import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 
 import java.util.List;
 
@@ -40,5 +41,15 @@ class QuestTypePickerModelTest {
         assertEquals(QuestTypePickerModel.Route.PROPERTY_FORM,
                 QuestTypePickerModel.route(QuestTypedEntryKind.TASK,
                         ResourceLocation.parse("example:extension")));
+    }
+
+    @Test void legacyLevelsRewardIsHiddenOnlyFromCreationChoices() {
+        var candidates = QuestTypePickerModel.creatableTypeCandidates(
+                List.of(RewardTypes.XP, RewardTypes.XP_LEVELS), QuestTypedEntryKind.REWARD::addable);
+        assertEquals(List.of(RewardTypes.XP), candidates);
+        assertTrue(QuestTypedEntryKind.REWARD.known(RewardTypes.XP_LEVELS));
+        assertTrue(!QuestTypedEntryKind.REWARD.addable(RewardTypes.XP_LEVELS));
+        assertTrue(!QuestTypedEntryKind.TASK.addable(
+                ResourceLocation.parse("brnquest:item_choice")));
     }
 }

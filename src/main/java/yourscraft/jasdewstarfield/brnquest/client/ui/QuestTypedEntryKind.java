@@ -72,7 +72,7 @@ enum QuestTypedEntryKind {
     List<ResourceLocation> builtIns() {
         return this == TASK
                 ? List.of(TaskTypes.CHECKMARK, TaskTypes.CUSTOM, TaskTypes.ITEM, TaskTypes.XP)
-                : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM, RewardTypes.XP, RewardTypes.XP_LEVELS);
+                : List.of(RewardTypes.CUSTOM, RewardTypes.ITEM, RewardTypes.XP);
     }
 
     Set<ResourceLocation> registeredTypes() {
@@ -82,10 +82,14 @@ enum QuestTypedEntryKind {
     boolean known(ResourceLocation typeId) { return registeredTypes().contains(typeId); }
 
     boolean addable(ResourceLocation typeId) {
-        return this == TASK ? TaskTypeRegistry.get(typeId) != null : RewardTypeRegistry.get(typeId) != null;
+        if (this == TASK) {
+            var type = TaskTypeRegistry.get(typeId);
+            return type != null && !type.hiddenFromCreation();
+        }
+        var type = RewardTypeRegistry.get(typeId);
+        return type != null && !type.hiddenFromCreation();
     }
 
     boolean itemBacked(ResourceLocation typeId) { return this == REWARD && ClientConfigEditors.creation(true, typeId).isPresent(); }
     boolean choiceBacked(ResourceLocation typeId) { return this == TASK && ClientConfigEditors.creation(false, typeId).isPresent(); }
-    ResourceLocation hiddenLegacyAlias() { return this == TASK ? TaskTypes.ITEM_CHOICE : null; }
 }

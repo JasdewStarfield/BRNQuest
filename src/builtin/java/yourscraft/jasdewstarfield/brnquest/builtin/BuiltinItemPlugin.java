@@ -13,7 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.*;
 public final class BuiltinItemPlugin implements BrnQuestPlugin {
     public ResourceLocation id() { return ResourceLocation.parse("brnquest:builtin_item"); }
     public void register(BrnQuestExtensionRegistrar registrar) {
-        registrar.task(TaskTypes.ITEM, new UnifiedItemTask()).task(TaskTypes.ITEM_CHOICE, new UnifiedItemTask());
+        registrar.task(TaskTypes.ITEM, new UnifiedItemTask()).task(TaskTypes.ITEM_CHOICE, new UnifiedItemTask(true));
         registrar.reward(RewardTypes.ITEM, new ItemReward());
     }
 }

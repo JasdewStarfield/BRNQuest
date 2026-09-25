@@ -31,7 +31,7 @@ final class QuestTypePickerModel {
     private QuestTypePickerModel() {}
 
     static Frame frame(QuestScreenFrameIdentity identity, QuestTypedEntryKind kind) {
-        List<Entry> entries = creatableTypeCandidates(kind.registeredTypes(), kind::addable, kind.hiddenLegacyAlias())
+        List<Entry> entries = creatableTypeCandidates(kind.registeredTypes(), kind::addable)
                 .stream().map(typeId -> new Entry(typeId, kind.builtIns().contains(typeId), route(kind, typeId)))
                 .toList();
         return new Frame(identity, kind, entries);
@@ -39,11 +39,10 @@ final class QuestTypePickerModel {
 
     /** Existing unknown data stays preserved, while creation lists only advertise usable registrations. */
     static List<ResourceLocation> creatableTypeCandidates(Collection<ResourceLocation> registeredTypes,
-                                                          Predicate<ResourceLocation> addable,
-                                                          ResourceLocation hiddenLegacyAlias) {
+                                                          Predicate<ResourceLocation> addable) {
         SortedSet<ResourceLocation> ids = new TreeSet<>(Comparator.comparing(ResourceLocation::toString));
         ids.addAll(registeredTypes);
-        ids.removeIf(type -> !addable.test(type) || type.equals(hiddenLegacyAlias));
+        ids.removeIf(type -> !addable.test(type));
         return List.copyOf(ids);
     }
 

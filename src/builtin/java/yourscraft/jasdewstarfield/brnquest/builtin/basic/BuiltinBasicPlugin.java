@@ -83,20 +83,33 @@ public final class BuiltinBasicPlugin implements BrnQuestPlugin {
     }
 
     private record ExperienceReward(boolean levels) implements RewardType<Map<String, String>> {
+        /** The old levels ID remains executable but the unified XP type owns new rewards. */
+        public boolean hiddenFromCreation() { return levels; }
         public java.util.Optional<ComposableReward> composition() { return java.util.Optional.of(new BasicComposition(this, levels ? "xp_levels" : "xp")); }
         public Codec<Map<String, String>> configCodec() { return Codec.unboundedMap(Codec.STRING, Codec.STRING); }
         public List<ConfigFieldDescriptor> configFields() {
-            return List.of(ConfigFieldDescriptor.field(levels ? "xp_levels" : "xp", ConfigValueType.INTEGER)
+            var amount = ConfigFieldDescriptor.field(levels ? "xp_levels" : "xp", ConfigValueType.INTEGER)
                     .withDefault("1").withRange(1, Integer.MAX_VALUE)
-                    .withHelp(levels ? "Whole experience levels to grant" : "Raw experience points to grant"));
+                    .withHelp(levels ? "screen.brnquest.editor.config.xp_levels.help"
+                            : "screen.brnquest.editor.config.xp.help");
+            if (levels) return List.of(amount);
+            // New XP rewards select their unit here; old XP maps without this field remain point rewards.
+            return List.of(amount, ConfigFieldDescriptor.field("points", ConfigValueType.BOOLEAN)
+                    .withLabel("screen.brnquest.editor.config.xp_points")
+                    .withDefault("true").withHelp("screen.brnquest.editor.config.xp_points.help"));
         }
         public RewardResult execute(RewardContext context, Map<String, String> config) {
             String key = levels ? "xp_levels" : "xp";
             try {
                 int amount = Integer.parseInt(config.getOrDefault(key, "1").replaceAll("[^0-9-]", ""));
                 if (amount < 1) return RewardResult.failure("Experience reward must be positive");
-                if (levels) context.player().giveExperienceLevels(amount); else context.player().giveExperiencePoints(amount);
-                return RewardResult.success("Granted " + amount + (levels ? " experience levels" : " experience points"));
+                String pointMode = config.getOrDefault("points", "true");
+                // A malformed unit must never silently turn a point reward into a level reward.
+                if (!levels && !pointMode.equalsIgnoreCase("true") && !pointMode.equalsIgnoreCase("false"))
+                    return RewardResult.failure("Invalid experience unit");
+                boolean grantLevels = levels || !Boolean.parseBoolean(pointMode);
+                if (grantLevels) context.player().giveExperienceLevels(amount); else context.player().giveExperiencePoints(amount);
+                return RewardResult.success("Granted " + amount + (grantLevels ? " experience levels" : " experience points"));
             } catch (NumberFormatException exception) {
                 return RewardResult.failure("Invalid experience reward");
             }

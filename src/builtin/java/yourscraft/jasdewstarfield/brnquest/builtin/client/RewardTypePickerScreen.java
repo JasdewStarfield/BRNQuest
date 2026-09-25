@@ -25,6 +25,7 @@ public final class RewardTypePickerScreen extends RewardEditorScreen {
         this.select = select;
         // Nested tables and composable leaves are the only legal children of a reward table.
         types = RewardTypeRegistry.registeredIds().stream()
+                .filter(id -> !RewardTypeRegistry.get(id).hiddenFromCreation())
                 .filter(id -> id.toString().equals("brnquest:reward_table") || RewardTypeRegistry.get(id).composition().isPresent())
                 .sorted(java.util.Comparator.comparing(ResourceLocation::toString)).toList();
     }

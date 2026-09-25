@@ -54,6 +54,8 @@ public interface TaskType<TConfig> {
     default boolean reevaluateOnInventoryChange(TConfig config) { return false; }
     /** Optional editor metadata; an empty list selects the safe raw-config fallback. */
     default List<ConfigFieldDescriptor> configFields() { return List.of(); }
+    /** Hide this type from new-object pickers while keeping existing definitions readable and editable. */
+    default boolean hiddenFromCreation() { return false; }
     /** Optional canonical editor projection for transparently adapting legacy config shapes. */
     @ApiStatus(ApiStability.INTERNAL)
     default Map<String, String> editorConfig(TaskView task) { return task.config(); }

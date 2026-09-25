@@ -15,6 +15,11 @@ final class BasicComposition implements ComposableReward {
     public void validateConfig(Map<String, String> values) {
         if (!kind.equals("custom") && Integer.parseInt(values.getOrDefault(kind, "1")) < 1)
             throw new IllegalArgumentException("Experience must be positive");
+        // The optional unit flag belongs only to the unified XP type; legacy XP maps omit it.
+        if (kind.equals("xp") && values.containsKey("points")
+                && !values.get("points").equalsIgnoreCase("true")
+                && !values.get("points").equalsIgnoreCase("false"))
+            throw new IllegalArgumentException("Experience unit must be true or false");
     }
     public Map<String, String> prepare(RewardLeafContext leaf) {
         validateConfig(leaf.config());

@@ -673,7 +673,9 @@ public final class BrnQuestGameTests {
                 Map.of("xp", "7"), "manual", false);
         RewardDefinition levels = new RewardDefinition(id("book"), id("xp_levels_reward"), RewardTypes.XP_LEVELS,
                 Map.of("xp_levels", "2"), "manual", false);
-        QuestDefinition quest = quest("experience", List.of(), List.of(task), List.of(points, levels));
+        RewardDefinition selectedLevels = new RewardDefinition(id("book"), id("xp_selected_levels_reward"), RewardTypes.XP,
+                Map.of("xp", "2", "points", "false"), "manual", false);
+        QuestDefinition quest = quest("experience", List.of(), List.of(task), List.of(points, levels, selectedLevels));
         install(quest);
         ProgressEngine.get().reconcile(player);
 
@@ -690,6 +692,10 @@ public final class BrnQuestGameTests {
                 "the levels reward must claim once");
         helper.assertValueEqual(player.experienceLevel, levelBeforeReward + 2,
                 "the levels reward must add whole levels");
+        helper.assertTrue(ProgressEngine.get().claim(player, selectedLevels.id()).changed(),
+                "the unified experience reward must accept the levels unit");
+        helper.assertValueEqual(player.experienceLevel, levelBeforeReward + 4,
+                "two legacy levels and two selected levels must both grant exactly");
         int afterClaims = player.totalExperience;
         helper.assertTrue(!ProgressEngine.get().claim(player, points.id()).changed(),
                 "a duplicate experience claim must be an idempotent no-op");

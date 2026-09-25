@@ -66,7 +66,7 @@
 
 ## 当前版本线
 
-- 当前公共 API 基线为 `0.1.0-experimental.27`，由仓库内的编译后签名快照持续保护。
+- 当前公共 API 基线为 `0.1.0-experimental.28`，由仓库内的编译后签名快照持续保护。
 - 首个承诺稳定的 API 版本为 `1.0.0`。在到达该版本前，代码中标为 `EXPERIMENTAL` 的类型仍可调整，但每次变更必须同时更新文档、迁移说明和签名门禁。
 - `1.0.0` 起，标为 `STABLE` 的公开签名在同一 major 版本内保持源码与二进制兼容；删除、改名、缩窄可见性或改变参数/返回类型都需要下一个 major 版本。
 - `INTERNAL` 类型和未列入公共清单的包不进入兼容承诺，即使 Java 可见性是 `public` 也不能被外部集成依赖。
@@ -168,3 +168,7 @@ ClientTaskPresentation 与 ClientRewardPresentation 新增默认 `icon(view)`，
 ## experimental.27：队伍进度策略
 
 `QuestBehaviorView.requireAllTeamMembers()` 暴露单任务的全员完成规则；原构造器保留，新字段默认 false。`QuestBookView.settings()` 增加默认 true 的 `share_team_progress`。全员任务的进度查询返回请求玩家自己的目标计数，任务状态、依赖解锁和奖励仍等待全员完成。`WAITING_FOR_TEAM` 表示个人完成已保存，队伍仍在等待；首次记录返回 SUCCESS，重复提交返回 NO_CHANGE。网络协议升级为 19，客户端与服务端需同步更新。成员变化、历史切换及重置规则见 [队伍进度](TEAM_PROGRESS_zh.md)。
+
+## experimental.28：类型创建列表可见性
+
+`TaskType` 与 `RewardType` 新增默认返回 `false` 的 `hiddenFromCreation()`。旧扩展无需修改；返回 `true` 只把类型从新建目标／奖励及奖励表叶子候选中隐藏，已有定义、导入和执行仍可用。内置兼容别名由各自插件声明隐藏。列表仍按类型 ID 字母序排列，排序规则留待后续讨论；网络协议与任务书格式不变。

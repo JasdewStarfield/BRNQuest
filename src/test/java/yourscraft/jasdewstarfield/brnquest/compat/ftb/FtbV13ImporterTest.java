@@ -529,6 +529,9 @@ class FtbV13ImporterTest {
         assertEquals(ResourceLocation.parse("brnquest:xp"), quest.tasks().get(1).typeId());
         assertEquals(List.of(ResourceLocation.parse("brnquest:xp"), ResourceLocation.parse("brnquest:xp_levels")),
                 quest.rewards().subList(3, 5).stream().map(reward -> reward.typeId()).toList());
+        // FTB's two reward IDs retain their original amount keys through the compatibility boundary.
+        assertEquals("7", quest.rewards().get(3).config().get("xp"));
+        assertEquals("2", quest.rewards().get(4).config().get("xp_levels"));
         assertEquals("\"kept\"", result.book().chapters().getFirst().extensions().get("ftb.mystery"));
         assertTrue(result.fieldConversions().stream().anyMatch(conversion ->
                 conversion.sourceField().equals("optional_task") && conversion.targetField().equals("optional")));

@@ -1,5 +1,9 @@
 # Public API migration
 
+## experimental.27 to experimental.28
+
+`TaskType.hiddenFromCreation()` and `RewardType.hiddenFromCreation()` default to `false`, so existing compiled add-ons keep their creation choices. Return `true` for a compatibility type that should remain readable, editable, importable, and executable but should no longer appear in new-object pickers. This applies to top-level tasks and rewards and to composable reward-table leaves. Built-in `item_choice` and `xp_levels` now make this declaration in their plugins. The existing type-ID alphabetical order is unchanged; no network or book-format migration is required.
+
 ## experimental.26 to experimental.27
 
 `QuestBehaviorView.requireAllTeamMembers()` exposes the new per-quest completion rule. The previous constructor remains available and defaults this flag to false. `QuestBookView.settings()` adds `share_team_progress` (default true). Progress queries expose the requesting member's objective counters for all-member quests; quest status and rewards remain locked until every current member, including offline members, finishes. `WAITING_FOR_TEAM` acknowledges personal completion without declaring the shared quest complete. Update client and server together to network protocol 19.

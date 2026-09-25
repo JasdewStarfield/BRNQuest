@@ -8,6 +8,7 @@ import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
+import yourscraft.jasdewstarfield.brnquest.builtin.item.ItemChoiceMatcher;
 
 import java.net.URISyntaxException;
 import java.nio.file.Path;
@@ -19,6 +20,28 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+    @Test void itemComponentPoliciesBecomeNativeMatcherEntries() throws Exception {
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/a.snbt"), """
+                {id:'1000000000000001',quests:[{id:'2000000000000001',tasks:[
+                  {id:'3000000000000001',type:'item',item:{id:'minecraft:diamond_sword',components:{'minecraft:custom_name':'\"Named\"'}},count:2L},
+                  {id:'3000000000000002',type:'item',item:{id:'minecraft:diamond_sword'},match_components:'fuzzy'},
+                  {id:'3000000000000003',type:'item',item:{id:'minecraft:diamond_sword'},match_components:'strict'}]}]}
+                """, StandardCharsets.UTF_8);
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        var tasks = result.book().quests().getFirst().tasks();
+        var modes = List.of(ItemChoiceMatcher.ComponentMatch.NONE, ItemChoiceMatcher.ComponentMatch.FUZZY,
+                ItemChoiceMatcher.ComponentMatch.STRICT);
+        for (int index = 0; index < modes.size(); index++) {
+            var spec = ItemChoiceMatcher.parseConfig(tasks.get(index).config()).result().orElseThrow();
+            assertEquals(modes.get(index), spec.entries().getFirst().componentMatch());
+        }
+        assertEquals(2, ItemChoiceMatcher.parseConfig(tasks.getFirst().config()).result().orElseThrow()
+                .entries().getFirst().requiredCount());
+    }
     @Test void dependencyLineDefaultsKeepTaskInheritanceAndExplicitOverrides() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);

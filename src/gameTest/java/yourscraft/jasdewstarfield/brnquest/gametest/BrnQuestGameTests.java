@@ -53,6 +53,8 @@ import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
+import yourscraft.jasdewstarfield.brnquest.builtin.item.ItemChoiceMatcher;
+import yourscraft.jasdewstarfield.brnquest.builtin.item.UnifiedItemTask;
 
 import java.util.List;
 import java.util.Map;
@@ -354,6 +356,29 @@ public final class BrnQuestGameTests {
                 "the first player-selected entry must be consumed");
         helper.assertValueEqual(player.getInventory().countItem(Items.DIAMOND), 0,
                 "the second player-selected entry must be consumed");
+        helper.succeed();
+    }
+
+    @GameTest(template = "empty")
+    @PrefixGameTestTemplate(false)
+    public static void enchantedItemMatcherUsesLoadedRegistries(GameTestHelper helper) throws Exception {
+        var player = helper.makeMockServerPlayerInLevel();
+        String sword = "{id:\"minecraft:netherite_sword\",count:1,components:{\"minecraft:enchantments\":{levels:{\"minecraft:bane_of_arthropods\":5}}}}";
+        var spec = new ItemChoiceMatcher.Spec(List.of(ItemChoiceMatcher.Entry.item(
+                sword, 1, ItemChoiceMatcher.ComponentMatch.FUZZY)), 1);
+        var config = Map.of("matcher", spec.encode(), "required_entries", "1");
+
+        // Ordinary decoding is registry-free; server normalization and matching use the live datapack registries.
+        var decoded = StringMapConfigCodec.decode(new UnifiedItemTask().configCodec(), config).result().orElseThrow();
+        var normalized = ItemChoiceMatcher.normalizeConfig(player.registryAccess(), decoded).result().orElseThrow();
+        ItemStack matchingSword = ItemStack.parseOptional(player.registryAccess(),
+                net.minecraft.nbt.TagParser.parseTag(sword));
+
+        helper.assertTrue(!matchingSword.isEmpty(), "the enchanted sword must resolve in the level registry");
+        helper.assertTrue(ItemChoiceMatcher.accepts(player.registryAccess(), normalized, matchingSword),
+                "the saved enchanted component must still match");
+        helper.assertTrue(ItemChoiceMatcher.plan(player.registryAccess(), List.of(matchingSword), normalized).satisfied(),
+                "the item objective must accept the matching sword");
         helper.succeed();
     }
 
@@ -757,7 +782,7 @@ public final class BrnQuestGameTests {
 
     @GameTest(template = "empty")
     @PrefixGameTestTemplate(false)
-    public static void holdingObjectivesRequireSeparateReceiptsWithoutConsumingItems(GameTestHelper helper) {
+    public static void holdingObjectivesCompleteAutomaticallyWithoutConsumingItems(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel();
         var engine = ProgressEngine.get();
         Map<String, String> config = Map.of("item", "{count:1,id:\"minecraft:stone\"}", "count", "2",
@@ -769,17 +794,15 @@ public final class BrnQuestGameTests {
         engine.reconcile(player);
         player.getInventory().items.set(0, new ItemStack(Items.STONE, 2));
 
-        helper.assertTrue(!engine.complete(player, quest.id(), false).success(), "inventory checks cannot auto-complete");
-        engine.completeTask(player, quest.id(), first.id());
-        helper.assertValueEqual(engine.progress(player).taskProgress(first.id().toString()), 1L, "first receipt stored");
-        helper.assertValueEqual(engine.progress(player).taskProgress(second.id().toString()), 0L, "sibling remains unsubmitted");
-        helper.assertValueEqual(engine.progress(player).status(quest.id().toString()), QuestStatus.AVAILABLE,
-                "quest waits for the second click even when the same inventory satisfies both");
-        helper.assertTrue(engine.completeTask(player, quest.id(), second.id()).success(), "second click completes");
+        engine.submitInventoryTasks(player);
+        helper.assertValueEqual(engine.progress(player).taskProgress(first.id().toString()), 1L, "first receipt stored automatically");
+        helper.assertValueEqual(engine.progress(player).taskProgress(second.id().toString()), 1L, "second receipt stored automatically");
+        helper.assertValueEqual(engine.progress(player).status(quest.id().toString()), QuestStatus.COMPLETED,
+                "holding enough items completes both objectives without clicks");
         helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "holding objectives never consume");
         helper.assertTrue(!engine.completeTask(player, quest.id(), first.id()).changed(), "replayed click is a no-op");
-        helper.assertTrue(!TaskTypeExecutor.reevaluateOnInventoryChange(TaskTypeRegistry.get(first.typeId()), ApiViews.task(first)),
-                "built-in holding tasks no longer opt into passive inventory completion");
+        helper.assertTrue(TaskTypeExecutor.reevaluateOnInventoryChange(TaskTypeRegistry.get(first.typeId()), ApiViews.task(first)),
+                "holding tasks opt into server inventory completion");
         helper.succeed();
     }
 
@@ -797,6 +820,9 @@ public final class BrnQuestGameTests {
         engine.reconcile(player);
         player.getInventory().items.set(0, new ItemStack(Items.STONE, 2));
         player.getInventory().items.set(1, new ItemStack(Items.DIRT, 1));
+        engine.submitInventoryTasks(player);
+        helper.assertValueEqual(engine.progress(player).taskProgress(item.id().toString()), 0L,
+                "consuming items still require a submitted slot selection");
         engine.completeTask(player, quest.id(), check.id());
         helper.assertValueEqual(player.getInventory().countItem(Items.STONE), 2, "sibling's items stay untouched");
         helper.assertValueEqual(engine.progress(player).taskProgress(item.id().toString()), 0L, "item awaits explicit submission");

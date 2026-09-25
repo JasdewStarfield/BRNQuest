@@ -43,6 +43,30 @@ public final class ProgressEngine {
     private final Map<ProgressOwnerId, Object> locks = new WeakHashMap<>();
     private volatile TaskPollingPlan pollingPlan;
     private volatile QuestVisibilityPlan visibilityPlan;
+    private volatile InventoryTaskPlan inventoryTaskPlan;
+
+    /** Snapshot-scoped index avoids decoding every task on each player's inventory sample. */
+    private InventoryTaskPlan inventoryTaskPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
+        InventoryTaskPlan plan = inventoryTaskPlan;
+        if (plan == null || plan.snapshot != snapshot) {
+            plan = new InventoryTaskPlan(snapshot);
+            inventoryTaskPlan = plan;
+        }
+        return plan;
+    }
+
+    private static final class InventoryTaskPlan {
+        private final yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot;
+        private final List<QuestDefinition> quests;
+
+        private InventoryTaskPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
+            this.snapshot = snapshot;
+            this.quests = snapshot.book().quests().stream().filter(quest -> quest.tasks().stream().anyMatch(task -> {
+                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+                return type != null && TaskTypeExecutor.reevaluateOnInventoryChange(type, ApiViews.task(task));
+            })).toList();
+        }
+    }
 
     /** Replacement snapshots rebuild the index, including same-ID config edits and live authoring. */
     private TaskPollingPlan pollingPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
@@ -370,6 +394,44 @@ public final class ProgressEngine {
     public OperationResult submitTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
                                       TaskSubmissionSelection selection) {
         return submitTask(player, questId, taskId, selection, true);
+    }
+
+    /** Records eligible non-consuming inventory objectives without a client submission intent. */
+    public void submitInventoryTasks(ServerPlayer player) {
+        synchronizedOwner(player, () -> {
+            var snapshot = QuestBookManager.get().active().orElse(null);
+            if (snapshot == null) return null;
+            PlayerProgress progress = progress(player);
+            boolean changed = false;
+            for (QuestDefinition quest : inventoryTaskPlan(snapshot).quests) {
+                QuestStatus status = progress.status(quest.id().toString());
+                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE)
+                        || !dependenciesComplete(quest, progress)) continue;
+                boolean questChanged = false;
+                for (TaskDefinition task : quest.tasks()) {
+                    TaskType<?> type = TaskTypeRegistry.get(task.typeId());
+                    if (type == null || !TaskTypeExecutor.reevaluateOnInventoryChange(type, ApiViews.task(task))
+                            || taskLedger(player, quest, progress).taskProgress(task.id().toString()) >= 1
+                            || !taskIsCurrent(player, quest, task, progress)) continue;
+                    // The task validates the live stack and component policy on the server.
+                    // A rejected sample leaves both inventory and the receipt ledger untouched.
+                    try {
+                        if (!TaskTypeExecutor.submit(type, taskContext(player, quest, task, progress)).success()) continue;
+                    } catch (RuntimeException failure) {
+                        continue;
+                    }
+                    changeTaskProgress(player, quest, task, progress, 1);
+                    questChanged = true;
+                }
+                if (questChanged) {
+                    QuestProgressData.get(player.getServer()).setDirty();
+                    complete(player, quest.id(), false);
+                    changed = true;
+                }
+            }
+            if (changed) BrnQuestNetwork.syncProgress(player, true);
+            return null;
+        });
     }
 
     private OperationResult submitTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
@@ -718,6 +780,8 @@ public final class ProgressEngine {
             progress.status(quest.id().toString(), QuestStatus.REWARD_CLAIMED);
         }
         reconcile(player);
+        // Newly unlocked holding objectives should be checked on the next inventory sample.
+        yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor.mark(player);
         BrnQuestNetwork.syncProgress(player, true);
         return OperationResult.success("Quest completed");
     }

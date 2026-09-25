@@ -73,12 +73,14 @@ public final class PlatformModHooks {
     }
     private static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player && player.getServer() != null) {
+            ItemTaskMonitor.forget(player);
             yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.logout(player);
             // A remote administrator must not keep a server-side write lease after disconnecting.
             EditSessionService.get().releasePlayer(player.getServer(), player.getUUID());
         }
     }
     private static void onServerStopped(ServerStoppedEvent event) {
+        ItemTaskMonitor.clear();
         yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.stopped(event.getServer());
         EditSessionService.get().clearServer(event.getServer());
     }

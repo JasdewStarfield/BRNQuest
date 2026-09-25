@@ -41,21 +41,29 @@ public final class ItemChoiceMatcher {
 
     public enum EntryKind { ITEM, TAG }
 
+    /** NONE ignores components, FUZZY checks authored components, STRICT compares the whole stack. */
+    public enum ComponentMatch { NONE, FUZZY, STRICT }
+
     /** One independently editable accepted entry and its own required quantity. */
-    public record Entry(EntryKind kind, String value, int requiredCount) {
+    public record Entry(EntryKind kind, String value, int requiredCount, ComponentMatch componentMatch) {
         public Entry {
             Objects.requireNonNull(kind, "kind");
             value = Objects.requireNonNull(value, "value");
             if (value.isBlank()) throw new IllegalArgumentException("Item entry value is required");
             if (requiredCount < 1) throw new IllegalArgumentException("Item entry count must be positive");
+            Objects.requireNonNull(componentMatch, "componentMatch");
         }
 
         public static Entry item(String itemSnbt, int count) {
-            return new Entry(EntryKind.ITEM, canonicalSnbt(itemSnbt), count);
+            return item(itemSnbt, count, hasExplicitComponents(itemSnbt) ? ComponentMatch.STRICT : ComponentMatch.NONE);
+        }
+
+        public static Entry item(String itemSnbt, int count, ComponentMatch match) {
+            return new Entry(EntryKind.ITEM, canonicalSnbt(itemSnbt), count, match);
         }
 
         public static Entry tag(ResourceLocation tagId, int count) {
-            return new Entry(EntryKind.TAG, Objects.requireNonNull(tagId, "tagId").toString(), count);
+            return new Entry(EntryKind.TAG, Objects.requireNonNull(tagId, "tagId").toString(), count, ComponentMatch.NONE);
         }
     }
 
@@ -73,6 +81,16 @@ public final class ItemChoiceMatcher {
                     .distinct().count();
             if (uniqueEntries != entries.size()) {
                 throw new IllegalArgumentException("Item objective contains duplicate entries");
+            }
+            // Exact variants can share an item ID; a plain variant would overlap all of them.
+            Map<String, ComponentMatch> variantsByItem = new java.util.HashMap<>();
+            for (Entry entry : entries) {
+                if (entry.kind() != EntryKind.ITEM) continue;
+                String itemId = itemId(entry.value());
+                ComponentMatch previous = variantsByItem.putIfAbsent(itemId, entry.componentMatch());
+                if (previous != null && (previous != ComponentMatch.STRICT || entry.componentMatch() != ComponentMatch.STRICT)) {
+                    throw new IllegalArgumentException("Overlapping component match modes for the same item");
+                }
             }
             // A tag is one alternative group. Mixing it with exact entries would require
             // allocating overlapping inventory types and is deliberately deferred.
@@ -94,6 +112,7 @@ public final class ItemChoiceMatcher {
                 encoded.addProperty("kind", entry.kind() == EntryKind.ITEM ? "item" : "tag");
                 encoded.addProperty(entry.kind() == EntryKind.ITEM ? "stack" : "tag", entry.value());
                 encoded.addProperty("count", entry.requiredCount());
+                if (entry.kind() == EntryKind.ITEM) encoded.addProperty("component_match", entry.componentMatch().name().toLowerCase(java.util.Locale.ROOT));
                 encodedEntries.add(encoded);
             }
             json.add("entries", encodedEntries);
@@ -112,12 +131,18 @@ public final class ItemChoiceMatcher {
 
     /** Runtime result for one authored entry; entryIndex is the stable submission selector. */
     public record Candidate(int entryIndex, ItemStack stack, int present, int required, boolean selected,
-                            boolean exactComponents, List<Removal> removals) {
+                            ComponentMatch componentMatch, List<Removal> removals) {
         public Candidate {
             stack = stack.copyWithCount(1);
             present = Math.max(0, present);
             required = Math.max(1, required);
             removals = List.copyOf(removals);
+        }
+
+        public Candidate(int entryIndex, ItemStack stack, int present, int required, boolean selected,
+                         boolean exactComponents, List<Removal> removals) {
+            this(entryIndex, stack, present, required, selected,
+                    exactComponents ? ComponentMatch.STRICT : ComponentMatch.NONE, removals);
         }
 
         public boolean satisfied() { return present >= required; }
@@ -181,6 +206,22 @@ public final class ItemChoiceMatcher {
         return parseConfig(config).flatMap(spec -> normalize(registries, spec));
     }
 
+    /** Codec reads can check static item IDs without decoding registry-backed stack components. */
+    public static DataResult<Spec> validateItemIds(Spec spec) {
+        for (Entry entry : spec.entries()) {
+            if (entry.kind() != EntryKind.ITEM) continue;
+            try {
+                ResourceLocation id = ResourceLocation.parse(TagParser.parseTag(entry.value()).getString("id"));
+                if (!BuiltInRegistries.ITEM.containsKey(id)) {
+                    return DataResult.error(() -> "Item objective contains an unknown item: " + id);
+                }
+            } catch (Exception exception) {
+                return DataResult.error(() -> "Invalid item entry: " + conciseMessage(exception));
+            }
+        }
+        return DataResult.success(spec);
+    }
+
     public static DataResult<Spec> normalize(net.minecraft.core.HolderLookup.Provider registries, String raw) {
         return parse(raw).flatMap(spec -> normalize(registries, spec));
     }
@@ -194,7 +235,7 @@ public final class ItemChoiceMatcher {
                 if (entry.kind() == EntryKind.ITEM) {
                     ItemStack stack = parseStack(registries, entry.value());
                     if (stack.isEmpty()) return DataResult.error(() -> "Item objective contains an unknown item");
-                    value = Entry.item(stack.copyWithCount(1).save(registries).toString(), entry.requiredCount());
+                    value = Entry.item(stack.copyWithCount(1).save(registries).toString(), entry.requiredCount(), entry.componentMatch());
                 } else {
                     ResourceLocation tagId = ResourceLocation.tryParse(entry.value());
                     if (tagId == null || registries.lookupOrThrow(Registries.ITEM)
@@ -224,11 +265,9 @@ public final class ItemChoiceMatcher {
             Entry entry = spec.entries().get(index);
             ItemStack expected = parseStack(registries, entry.value());
             int present = expected.isEmpty() ? 0 : inventory.stream()
-                    .filter(stack -> stack.is(expected.getItem()))
+                    .filter(stack -> matches(stack, expected, entry.componentMatch()))
                     .mapToInt(ItemStack::getCount).sum();
-            // Authored ItemStacks provide identity and presentation; players choose the exact
-            // component-bearing stacks to sacrifice later through inventory slot selection.
-            candidates.add(new Candidate(index, expected, present, entry.requiredCount(), false, false, List.of()));
+            candidates.add(new Candidate(index, expected, present, entry.requiredCount(), false, entry.componentMatch(), List.of()));
         }
         return applySelection(inventory, candidates, spec.requiredEntries(), selectedSlots);
     }
@@ -275,7 +314,7 @@ public final class ItemChoiceMatcher {
             return stack.is(TagKey.create(Registries.ITEM, ResourceLocation.parse(entry.value())));
         }
         ItemStack expected = parseStack(registries, entry.value());
-        return !expected.isEmpty() && stack.is(expected.getItem());
+        return !expected.isEmpty() && matches(stack, expected, entry.componentMatch());
     }
 
     private static DataResult<Spec> parse(String raw, int legacyCount, Integer requiredOverride) {
@@ -317,7 +356,13 @@ public final class ItemChoiceMatcher {
                 JsonObject entry = element.getAsJsonObject();
                 String kind = requiredString(entry, "kind");
                 int count = entry.has("count") ? entry.get("count").getAsInt() : 1;
-                if ("item".equals(kind)) entries.add(Entry.item(requiredString(entry, "stack"), count));
+                if ("item".equals(kind)) {
+                    String stack = requiredString(entry, "stack");
+                    ComponentMatch match = entry.has("component_match")
+                            ? ComponentMatch.valueOf(requiredString(entry, "component_match").toUpperCase(java.util.Locale.ROOT))
+                            : hasExplicitComponents(stack) ? ComponentMatch.STRICT : ComponentMatch.NONE;
+                    entries.add(Entry.item(stack, count, match));
+                }
                 else if ("tag".equals(kind)) {
                     ResourceLocation tag = ResourceLocation.tryParse(requiredString(entry, "tag"));
                     if (tag == null) throw new IllegalArgumentException("Item entry tag must be namespaced");
@@ -357,7 +402,7 @@ public final class ItemChoiceMatcher {
                 valid = false;
             } else {
                 representative = selectedStack.copyWithCount(1);
-                selectedRemovals = removalsFromSlots(inventory, representative, false,
+                selectedRemovals = removalsFromSlots(inventory, representative, ComponentMatch.NONE,
                         entry.requiredCount(), selectedSlots);
                 valid = !selectedRemovals.isEmpty() && usesEverySlot(selectedRemovals, selectedSlots);
             }
@@ -365,7 +410,7 @@ public final class ItemChoiceMatcher {
         boolean selected = present >= entry.requiredCount() && valid;
         Candidate candidate = new Candidate(0, representative, present, entry.requiredCount(), selected, false,
                 selected ? explicit ? selectedRemovals
-                        : removals(inventory, representative, false, entry.requiredCount()) : List.of());
+                        : removals(inventory, representative, ComponentMatch.NONE, entry.requiredCount()) : List.of());
         return new MatchPlan(List.of(candidate), 1, candidate.satisfied() ? 1 : 0, explicit,
                 valid && candidate.satisfied());
     }
@@ -382,8 +427,8 @@ public final class ItemChoiceMatcher {
         for (Candidate candidate : base) {
             boolean chosen = indicesValid && selected.contains(candidate.entryIndex());
             planned.add(new Candidate(candidate.entryIndex(), candidate.stack(), candidate.present(), candidate.required(),
-                    chosen, candidate.exactComponents(), chosen
-                    ? removals(inventory, candidate.stack(), candidate.exactComponents(), candidate.required()) : List.of()));
+                    chosen, candidate.componentMatch(), chosen
+                    ? removals(inventory, candidate.stack(), candidate.componentMatch(), candidate.required()) : List.of()));
         }
         int satisfied = (int) base.stream().filter(Candidate::satisfied).count();
         return new MatchPlan(planned, required, satisfied, explicit, indicesValid);
@@ -397,14 +442,14 @@ public final class ItemChoiceMatcher {
         int selectedEntries = 0;
         for (Candidate candidate : base) {
             List<Removal> candidateRemovals = removalsFromSlots(inventory, candidate.stack(),
-                    candidate.exactComponents(), candidate.required(), selectedSlots);
+                    candidate.componentMatch(), candidate.required(), selectedSlots);
             boolean chosen = !candidateRemovals.isEmpty();
             if (chosen) {
                 selectedEntries++;
                 candidateRemovals.forEach(removal -> usedSlots.add(removal.slot()));
             }
             planned.add(new Candidate(candidate.entryIndex(), candidate.stack(), candidate.present(),
-                    candidate.required(), chosen, candidate.exactComponents(), candidateRemovals));
+                    candidate.required(), chosen, candidate.componentMatch(), candidateRemovals));
         }
         boolean valid = selectedEntries == required && usedSlots.size() == selectedSlots.size()
                 && selectedSlots.stream().allMatch(slot -> slot >= 0 && slot < inventory.size());
@@ -414,21 +459,28 @@ public final class ItemChoiceMatcher {
 
     private static boolean matches(ItemStack stack, Candidate candidate) {
         if (stack.isEmpty()) return false;
-        return candidate.exactComponents()
-                ? ItemStack.isSameItemSameComponents(stack, candidate.stack())
-                : stack.is(candidate.stack().getItem());
+        return matches(stack, candidate.stack(), candidate.componentMatch());
+    }
+
+    /** FUZZY requires each component present on the filter stack and permits extra actual components. */
+    private static boolean matches(ItemStack actual, ItemStack expected, ComponentMatch match) {
+        if (actual.isEmpty() || expected.isEmpty() || !actual.is(expected.getItem())) return false;
+        return switch (match) {
+            case NONE -> true;
+            case STRICT -> ItemStack.isSameItemSameComponents(actual, expected);
+            case FUZZY -> expected.getComponents().stream()
+                    .allMatch(component -> actual.getComponents().has(component.type())
+                            && Objects.equals(actual.getComponents().get(component.type()), component.value()));
+        };
     }
 
     private static List<Removal> removals(List<ItemStack> inventory, ItemStack expected,
-                                          boolean exactComponents, int required) {
+                                          ComponentMatch match, int required) {
         List<Removal> result = new ArrayList<>();
         int remaining = required;
         for (int slot = 0; slot < inventory.size() && remaining > 0; slot++) {
             ItemStack stack = inventory.get(slot);
-            boolean matches = exactComponents
-                    ? ItemStack.isSameItemSameComponents(stack, expected)
-                    : stack.is(expected.getItem());
-            if (!stack.isEmpty() && matches) {
+            if (matches(stack, expected, match)) {
                 int count = Math.min(remaining, stack.getCount());
                 result.add(new Removal(slot, count));
                 remaining -= count;
@@ -438,17 +490,14 @@ public final class ItemChoiceMatcher {
     }
 
     private static List<Removal> removalsFromSlots(List<ItemStack> inventory, ItemStack expected,
-                                                   boolean exactComponents, int required,
+                                                   ComponentMatch match, int required,
                                                    List<Integer> selectedSlots) {
         List<Removal> result = new ArrayList<>();
         int remaining = required;
         for (int slot : selectedSlots) {
             if (remaining <= 0 || slot < 0 || slot >= inventory.size()) break;
             ItemStack stack = inventory.get(slot);
-            boolean matches = exactComponents
-                    ? ItemStack.isSameItemSameComponents(stack, expected)
-                    : stack.is(expected.getItem());
-            if (!stack.isEmpty() && matches) {
+            if (matches(stack, expected, match)) {
                 int count = Math.min(remaining, stack.getCount());
                 result.add(new Removal(slot, count));
                 remaining -= count;
@@ -498,13 +547,30 @@ public final class ItemChoiceMatcher {
         }
     }
 
+    private static boolean hasExplicitComponents(String snbt) {
+        try {
+            return TagParser.parseTag(snbt).contains("components");
+        } catch (Exception exception) {
+            return false;
+        }
+    }
+
     private static String entryIdentity(Entry entry) {
         if (entry.kind() == EntryKind.TAG) return "TAG\u0000" + entry.value();
         try {
             CompoundTag tag = TagParser.parseTag(entry.value());
-            return "ITEM\u0000" + tag.getString("id");
+            return "ITEM\u0000" + tag.getString("id") + "\u0000" + entry.componentMatch()
+                    + (entry.componentMatch() == ComponentMatch.NONE ? "" : "\u0000" + tag.getCompound("components"));
         } catch (Exception exception) {
             return "ITEM\u0000" + entry.value();
+        }
+    }
+
+    private static String itemId(String snbt) {
+        try {
+            return TagParser.parseTag(snbt).getString("id");
+        } catch (Exception exception) {
+            return snbt;
         }
     }
 

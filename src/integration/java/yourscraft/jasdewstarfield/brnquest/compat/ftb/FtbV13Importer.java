@@ -13,6 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.compat.ftb.text.FtbRichTextParser;
 import yourscraft.jasdewstarfield.brnquest.compat.ftb.text.FtbTextDiagnostic;
 import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
+import yourscraft.jasdewstarfield.brnquest.builtin.item.ItemChoiceMatcher;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -447,6 +448,28 @@ public final class FtbV13Importer implements FtbImportBackend {
                 conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", "consume_items", "config.consume_items",
                         raw.contains("consume_items", Tag.TAG_BYTE) ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.DEFAULTED,
                         "Resolved task > chapter > book consumption: " + consume));
+                // Translate the source match policy at import time; runtime item checks stay BRNQuest-owned.
+                if (raw.contains("item", Tag.TAG_COMPOUND)) {
+                    String sourceMode = raw.contains("match_components") ? raw.getString("match_components") : "none";
+                    ItemChoiceMatcher.ComponentMatch match = switch (sourceMode.toLowerCase(Locale.ROOT)) {
+                        case "none" -> ItemChoiceMatcher.ComponentMatch.NONE;
+                        case "fuzzy" -> ItemChoiceMatcher.ComponentMatch.FUZZY;
+                        case "strict" -> ItemChoiceMatcher.ComponentMatch.STRICT;
+                        default -> null;
+                    };
+                    if (match != null) {
+                        int count = raw.contains("count", Tag.TAG_ANY_NUMERIC) ? Math.max(1, raw.getInt("count")) : 1;
+                        config.put("matcher", new ItemChoiceMatcher.Spec(List.of(
+                                ItemChoiceMatcher.Entry.item(raw.getCompound("item").toString(), count, match)), 1).encode());
+                        conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", "match_components",
+                                "config.matcher.entries[0].component_match", raw.contains("match_components")
+                                ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.DEFAULTED, sourceMode));
+                    } else {
+                        report.add(problem(Diagnostic.Severity.WARN, "BQF-110", file,
+                                "tasks[" + legacy + "].match_components", legacy,
+                                "Unknown component match mode retained for manual review: " + sourceMode));
+                    }
+                }
             }
             advancementFields(mappedType, raw, config);
             String encounterError=FtbEncounterFields.apply(mappedType,raw,config);

@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.task;
 import yourscraft.jasdewstarfield.brnquest.builtin.item.ItemChoiceMatcher;
+import yourscraft.jasdewstarfield.brnquest.builtin.item.UnifiedItemTask;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -9,12 +10,59 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ItemChoiceMatcherTest {
+    @Test void taskCodecReadsEnchantedMatcherWithoutAWorldRegistry() {
+        String sword = "{id:\"minecraft:netherite_sword\",count:1,components:{\"minecraft:enchantments\":{levels:{\"minecraft:bane_of_arthropods\":5}}}}";
+        var spec = new ItemChoiceMatcher.Spec(List.of(ItemChoiceMatcher.Entry.item(
+                sword, 1, ItemChoiceMatcher.ComponentMatch.FUZZY)), 1);
+        var config = Map.of("matcher", spec.encode(), "required_entries", "1");
+
+        // The ordinary task codec has no level registry, yet it must retain authored components.
+        var decoded = yourscraft.jasdewstarfield.brnquest.data.StringMapConfigCodec.decode(
+                new UnifiedItemTask().configCodec(), config);
+        assertEquals(config, decoded.result().orElseThrow());
+    }
+
+    @Test void onlyHoldingObjectivesOptIntoAutomaticInventorySubmission() {
+        var task = new UnifiedItemTask();
+        assertTrue(task.reevaluateOnInventoryChange(Map.of("consume_items", "false")));
+        assertFalse(task.reevaluateOnInventoryChange(Map.of("consume_items", "true")));
+        assertFalse(task.reevaluateOnInventoryChange(Map.of("only_from_crafting", "true")));
+    }
+    @Test void componentPoliciesKeepTheirDifferentAcceptanceScopes() {
+        var registries = net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(
+                net.minecraft.core.registries.BuiltInRegistries.REGISTRY);
+        ItemStack filter = new ItemStack(Items.DIAMOND_SWORD);
+        filter.set(DataComponents.CUSTOM_NAME, Component.literal("Required"));
+        ItemStack same = filter.copy();
+        ItemStack extra = filter.copy();
+        extra.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true);
+        ItemStack wrong = new ItemStack(Items.DIAMOND_SWORD);
+        wrong.set(DataComponents.CUSTOM_NAME, Component.literal("Wrong"));
+        String snbt = filter.save(registries).toString();
+        var none = new ItemChoiceMatcher.Spec(List.of(ItemChoiceMatcher.Entry.item(
+                snbt, 1, ItemChoiceMatcher.ComponentMatch.NONE)), 1);
+        var fuzzy = new ItemChoiceMatcher.Spec(List.of(ItemChoiceMatcher.Entry.item(
+                snbt, 1, ItemChoiceMatcher.ComponentMatch.FUZZY)), 1);
+        var strict = new ItemChoiceMatcher.Spec(List.of(ItemChoiceMatcher.Entry.item(
+                snbt, 1, ItemChoiceMatcher.ComponentMatch.STRICT)), 1);
+
+        assertTrue(ItemChoiceMatcher.accepts(registries, none, wrong));
+        assertFalse(ItemChoiceMatcher.accepts(registries, fuzzy, wrong));
+        assertTrue(ItemChoiceMatcher.accepts(registries, fuzzy, same));
+        assertTrue(ItemChoiceMatcher.accepts(registries, fuzzy, extra));
+        assertFalse(ItemChoiceMatcher.accepts(registries, strict, extra));
+        assertEquals(ItemChoiceMatcher.ComponentMatch.FUZZY,
+                ItemChoiceMatcher.parse(fuzzy.encode()).result().orElseThrow().entries().getFirst().componentMatch());
+        assertTrue(ItemChoiceMatcher.plan(registries, new ArrayList<>(List.of(extra)), fuzzy).selectionValid());
+    }
     @Test void tagMatcherRoundTripsCanonicalShape() {
         var parsed = ItemChoiceMatcher.parse("{\"tag\":\"minecraft:planks\",\"mode\":\"tag\"}")
                 .result().orElseThrow();
@@ -104,6 +152,58 @@ class ItemChoiceMatcherTest {
         assertTrue(ItemChoiceMatcher.consume(inventory, selectedPlainSword));
         assertEquals(1, inventory.get(0).getCount(), "the unselected component-bearing sword must remain");
         assertEquals(0, inventory.get(1).getCount(), "the explicitly selected plain sword must be consumed");
+    }
+
+    @Test void authoredComponentsRequireTheMatchingStackForProgressAndConsumption() {
+        var registries = net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(
+                net.minecraft.core.registries.BuiltInRegistries.REGISTRY);
+        ItemStack named = new ItemStack(Items.DIAMOND_SWORD);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("Required name"));
+        ItemStack plain = new ItemStack(Items.DIAMOND_SWORD);
+        ItemChoiceMatcher.Spec spec = new ItemChoiceMatcher.Spec(List.of(
+                ItemChoiceMatcher.Entry.item(named.save(registries).toString(), 1)), 1);
+        List<ItemStack> inventory = new ArrayList<>(List.of(plain, named));
+
+        assertFalse(ItemChoiceMatcher.accepts(registries, spec, plain));
+        assertTrue(ItemChoiceMatcher.accepts(registries, spec, named));
+        assertFalse(ItemChoiceMatcher.plan(registries, inventory, spec, List.of(0)).selectionValid());
+        ItemChoiceMatcher.MatchPlan plan = ItemChoiceMatcher.plan(registries, inventory, spec);
+        assertEquals(1, plan.candidates().getFirst().present());
+        assertTrue(ItemChoiceMatcher.consume(inventory, plan));
+        assertEquals(1, inventory.get(0).getCount());
+        assertEquals(0, inventory.get(1).getCount());
+    }
+
+    @Test void normalizedPlainItemStillAcceptsComponentVariants() {
+        var registries = net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(
+                net.minecraft.core.registries.BuiltInRegistries.REGISTRY);
+        ItemChoiceMatcher.Spec plain = new ItemChoiceMatcher.Spec(List.of(
+                ItemChoiceMatcher.Entry.item("{count:1,id:\"minecraft:diamond_sword\"}", 1)), 1);
+        ItemChoiceMatcher.Spec normalized = ItemChoiceMatcher.normalize(registries, plain).result().orElseThrow();
+        ItemStack named = new ItemStack(Items.DIAMOND_SWORD);
+        named.set(DataComponents.CUSTOM_NAME, Component.literal("Variant"));
+
+        assertTrue(ItemChoiceMatcher.accepts(registries, normalized, named));
+    }
+
+    @Test void distinctComponentVariantsStaySeparateWithoutOverlappingPlainItem() {
+        var registries = net.minecraft.core.RegistryAccess.fromRegistryOfRegistries(
+                net.minecraft.core.registries.BuiltInRegistries.REGISTRY);
+        ItemStack first = new ItemStack(Items.DIAMOND_SWORD);
+        first.set(DataComponents.CUSTOM_NAME, Component.literal("First"));
+        ItemStack second = new ItemStack(Items.DIAMOND_SWORD);
+        second.set(DataComponents.CUSTOM_NAME, Component.literal("Second"));
+        ItemChoiceMatcher.Entry firstEntry = ItemChoiceMatcher.Entry.item(first.save(registries).toString(), 1);
+        ItemChoiceMatcher.Entry secondEntry = ItemChoiceMatcher.Entry.item(second.save(registries).toString(), 1);
+        ItemChoiceMatcher.Spec both = new ItemChoiceMatcher.Spec(List.of(firstEntry, secondEntry), 2);
+        List<ItemStack> inventory = new ArrayList<>(List.of(first, second));
+
+        assertEquals(2, ItemChoiceMatcher.plan(registries, inventory, both).satisfiedEntries());
+        assertTrue(ItemChoiceMatcher.consume(inventory, ItemChoiceMatcher.plan(registries, inventory, both)));
+        assertEquals(0, inventory.get(0).getCount());
+        assertEquals(0, inventory.get(1).getCount());
+        assertThrows(IllegalArgumentException.class, () -> new ItemChoiceMatcher.Spec(List.of(firstEntry,
+                ItemChoiceMatcher.Entry.item("{count:1,id:\"minecraft:diamond_sword\"}", 1)), 1));
     }
 
     @Test void extraSelectedSlotThatWouldNotBeConsumedIsRejected() {

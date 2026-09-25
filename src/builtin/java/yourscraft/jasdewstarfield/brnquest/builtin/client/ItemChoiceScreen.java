@@ -15,6 +15,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorItemSlot;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEnumDropdown;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
@@ -33,13 +34,14 @@ import java.util.function.Consumer;
  */
 public final class ItemChoiceScreen extends Screen implements RecipeLookupSource {
     private static final int PANEL_WIDTH = 220;
-    private static final int EDIT_PANEL_HEIGHT = 254;
+    private static final int EDIT_PANEL_HEIGHT = 274;
     private static final int VIEW_PANEL_HEIGHT = 142;
     private static final int SLOT_SIZE = 18;
     private static final int COLUMNS = 9;
 
     /** Tab focuses actions; activation reuses the pointer route and never moves real inventory stacks. */
     @Override public boolean keyPressed(int key, int scan, int modifiers) {
+        if (key == 256 && matchDropdown.open()) { matchDropdown.close(); return true; }
         // F6 switches the two item regions; Tab remains dedicated to fields and actions.
         if (key == 295 && editing) {
             setFocused(null); buttonInput.clearFocus();
@@ -47,6 +49,8 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             candidateKeyboard = inventoryKeyboard < 0 && !candidates().isEmpty() ? 0 : -1;
             return true;
         }
+        // Numeric editing owns its arrow keys and shortcuts before grid navigation.
+        if (countField != null && countField.isFocused()) return super.keyPressed(key, scan, modifiers);
         if (key == 258) inventoryKeyboard = -1;
         if (inventoryKeyboard >= 0 && key >= 262 && key <= 269) {
             int next = switch(key) {
@@ -90,7 +94,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             return true;
         }
         if ((key == 257 || key == 335) && candidateKeyboard >= 0 && candidateKeyboard < count) {
-            if (editing && !tagMode) selectedIndex = candidateKeyboard;
+            if (editing && !tagMode) { selectedIndex = candidateKeyboard; syncCountFieldValue(); }
             return true;
         }
         if (buttonInput.keyPressed(key, (modifiers & 1) != 0, area -> {
@@ -100,6 +104,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         return super.keyPressed(key, scan, modifiers);
     }
     private final EditorButtonInput buttonInput = new EditorButtonInput();
+    private Component actionTooltip;
     private int candidateKeyboard = -1;
     private int inventoryKeyboard = -1;
     private final Screen parent;
@@ -107,6 +112,8 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     private final Consumer<ItemChoiceMatcher.Spec> resultConsumer;
     private final List<ItemStack> listCandidates = new ArrayList<>();
     private final List<Integer> listCounts = new ArrayList<>();
+    private final List<ItemChoiceMatcher.ComponentMatch> listMatches = new ArrayList<>();
+    private final EditorEnumDropdown matchDropdown = new EditorEnumDropdown();
     private final EditorSmoothScroll candidateScroll = new EditorSmoothScroll();
     private ItemChoiceMatcher.Spec original;
     private boolean tagMode;
@@ -114,6 +121,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     private int tagRequiredCount = 1;
     private int selectedIndex = -1;
     private EditBox tagField;
+    private EditBox countField;
     private String tagValue = "";
     private boolean candidatesInitialized;
     private Component message;
@@ -161,9 +169,20 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 && original != null && original.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.ITEM) {
             listCandidates.addAll(ItemChoiceMatcher.displayedCandidates(minecraft.level.registryAccess(), original));
             original.entries().forEach(entry -> listCounts.add(entry.requiredCount()));
+            original.entries().forEach(entry -> listMatches.add(entry.componentMatch()));
             candidatesInitialized = true;
         }
+        countField = new EditBox(font, 0, 0, 10, 18,
+                Component.translatable("screen.brnquest.item_choice.count_label"));
+        countField.setMaxLength(10);
+        countField.setFilter(value -> value.chars().allMatch(Character::isDigit));
+        countField.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
+                Component.translatable("screen.brnquest.item_choice.count_help")));
+        countField.setResponder(this::countChanged);
+        addRenderableWidget(countField);
         updateTagFieldGeometry();
+        updateCountFieldGeometry();
+        syncCountFieldValue();
     }
 
     @Override
@@ -179,6 +198,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         buttonInput.begin();
+        actionTooltip = null;
         ChildScreenBackground.render(parent, graphics, width, height, partialTick);
         super.renderBackground(graphics, mouseX, mouseY, partialTick);
         graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
@@ -193,6 +213,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
         renderButtons(graphics, panel, mouseX, mouseY);
         updateTagFieldGeometry();
+        updateCountFieldGeometry();
         super.render(graphics, mouseX, mouseY, partialTick);
 
         // Native Tooltip and optional recipe hints must resolve the exact same clipped slot.
@@ -202,6 +223,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                     .orElseGet(() -> inventoryStackAt(mouseX, mouseY));
             graphics.renderTooltip(font, hovered, mouseX, mouseY);
         });
+        // Draw action help after the candidate panel and native widgets so it stays above them.
+        if (actionTooltip != null) graphics.renderTooltip(font, actionTooltip, mouseX, mouseY);
+        matchDropdown.render(graphics, font, width, panel.top(), panel.bottom(), mouseX, mouseY);
     }
     private void renderEditorChrome(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
         buttonInput.render(graphics, font, modeListBounds(),
@@ -214,26 +238,24 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         if (tagMode) {
             graphics.drawString(font, Component.translatable("screen.brnquest.item_choice.tag"),
                     panel.left() + 7, panel.top() + 49, GraystonePalette.SECONDARY, false);
-            graphics.drawString(font, Component.literal("×" + tagRequiredCount),
-                    panel.right() - 104, panel.top() + 49, GraystonePalette.SECONDARY, false);
-            renderSmallButton(graphics, decrementBounds(), "−", tagRequiredCount > 1, mouseX, mouseY);
-            renderSmallButton(graphics, incrementBounds(), "+", tagRequiredCount < Integer.MAX_VALUE, mouseX, mouseY);
         } else {
-            int selectedCount = selectedIndex >= 0 && selectedIndex < listCounts.size()
-                    ? listCounts.get(selectedIndex) : 1;
-            Component requirement = Component.translatable("screen.brnquest.item_choice.entry_count", selectedCount);
-            int requirementWidth = Math.max(1, decrementBounds().left() - panel.left() - 11);
+            Component requirement = Component.translatable("screen.brnquest.item_choice.count_label");
+            int requirementWidth = Math.max(1, listCountBounds().left() - panel.left() - 11);
             graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
                     requirement.getString(), requirementWidth)), panel.left() + 7, panel.top() + 49,
                     GraystonePalette.SECONDARY, false);
-            renderSmallButton(graphics, decrementBounds(), "−", selectedIndex >= 0 && selectedCount > 1,
-                    mouseX, mouseY);
-            renderSmallButton(graphics, incrementBounds(), "+",
-                    selectedIndex >= 0 && selectedCount < Integer.MAX_VALUE, mouseX, mouseY);
+            renderSmallButton(graphics, componentsBounds(), "{}", selectedIndex >= 0, mouseX, mouseY);
             renderSmallButton(graphics, moveLeftBounds(), "←", selectedIndex > 0, mouseX, mouseY);
             renderSmallButton(graphics, moveRightBounds(), "→",
                     selectedIndex >= 0 && selectedIndex + 1 < listCandidates.size(), mouseX, mouseY);
             renderSmallButton(graphics, removeBounds(), "×", selectedIndex >= 0, mouseX, mouseY);
+            // The mode belongs to the selected entry; the menu shows the three scopes explicitly.
+            Component mode = Component.translatable("screen.brnquest.item_choice.match."
+                    + (selectedIndex >= 0 ? listMatches.get(selectedIndex).name().toLowerCase(java.util.Locale.ROOT) : "none"));
+            buttonInput.render(graphics, font, matchBounds(), EditorButton.Definition.iconAndText(
+                    mode, Component.translatable("screen.brnquest.item_choice.match.help"),
+                    QuestActionIcons.named(matchDropdown.open() ? "fold" : "unfold")),
+                    selectedIndex >= 0, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         }
     }
 
@@ -308,15 +330,24 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     private void renderSmallButton(GuiGraphics graphics, UiRect bounds, String glyph,
                                    boolean enabled, int mouseX, int mouseY) {
+        // Keep count/order semantics in the tooltip while available PNGs replace the font symbols.
+        String action = switch (glyph) {
+            case "{}" -> "components.edit";
+            case "←" -> "move_left";
+            case "→" -> "move_right";
+            case "×" -> "remove";
+            default -> throw new IllegalArgumentException("Unknown item choice action: " + glyph);
+        };
+        Component label = Component.translatable("screen.brnquest.item_choice." + action);
         buttonInput.render(graphics, font, bounds,
-                "+".equals(glyph)
-                        ? EditorButton.Definition.iconOnly(Component.literal(glyph), null, QuestActionIcons.named("plus"))
-                        : EditorButton.Definition.text(Component.literal(glyph), null),
+                EditorButton.Definition.iconOnly(label, label, QuestActionIcons.symbol(Component.literal(glyph))),
                 enabled, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+        if (bounds.containsExclusive(mouseX, mouseY)) actionTooltip = label;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (matchDropdown.click(mouseX, mouseY, button, width, panelBounds().top(), panelBounds().bottom())) return true;
         buttonInput.clicked(mouseX, mouseY, button);
         if (!editing && closeBounds().contains(mouseX, mouseY)) {
             onClose();
@@ -332,6 +363,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         }
         if (editing && modeListBounds().contains(mouseX, mouseY)) {
             tagMode = false;
+            syncCountFieldValue();
             candidateScroll.snap(0);
             message = null;
             return true;
@@ -339,6 +371,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         if (editing && modeTagBounds().contains(mouseX, mouseY)) {
             tagMode = true;
             selectedIndex = -1;
+            syncCountFieldValue();
             candidateScroll.snap(0);
             message = null;
             return true;
@@ -348,6 +381,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         if (editing && !tagMode && candidate.isPresent()) {
             selectedIndex = candidate.get();
             if (button == 1) removeSelected();
+            else syncCountFieldValue();
             return true;
         }
         if (editing && button == 0) {
@@ -361,27 +395,26 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     }
 
     private boolean handleControlClick(double mouseX, double mouseY) {
-        if (decrementBounds().contains(mouseX, mouseY) && tagMode && tagRequiredCount > 1) {
-            tagRequiredCount--;
+        if (!tagMode && selectedIndex >= 0 && matchBounds().contains(mouseX, mouseY)) {
+            int index = selectedIndex;
+            matchDropdown.show(matchBounds(), List.of("none", "fuzzy", "strict"),
+                    value -> Component.translatable("screen.brnquest.item_choice.match." + value),
+                    value -> listMatches.set(index, ItemChoiceMatcher.ComponentMatch.valueOf(
+                            value.toUpperCase(java.util.Locale.ROOT))));
             return true;
         }
-        if (incrementBounds().contains(mouseX, mouseY) && tagMode && tagRequiredCount < Integer.MAX_VALUE) {
-            tagRequiredCount++;
-            return true;
-        }
-        if (decrementBounds().contains(mouseX, mouseY) && !tagMode && selectedIndex >= 0
-                && listCounts.get(selectedIndex) > 1) {
-            listCounts.set(selectedIndex, listCounts.get(selectedIndex) - 1);
-            return true;
-        }
-        if (incrementBounds().contains(mouseX, mouseY) && !tagMode && selectedIndex >= 0
-                && listCounts.get(selectedIndex) < Integer.MAX_VALUE) {
-            listCounts.set(selectedIndex, listCounts.get(selectedIndex) + 1);
+        if (!tagMode && componentsBounds().contains(mouseX, mouseY) && selectedIndex >= 0) {
+            int index = selectedIndex;
+            minecraft.setScreen(new ItemComponentsScreen(this, listCandidates.get(index), stack -> {
+                if (index < listCandidates.size()) listCandidates.set(index, stack);
+                message = null;
+            }));
             return true;
         }
         if (moveLeftBounds().contains(mouseX, mouseY) && selectedIndex > 0) {
             java.util.Collections.swap(listCandidates, selectedIndex, selectedIndex - 1);
             java.util.Collections.swap(listCounts, selectedIndex, selectedIndex - 1);
+            java.util.Collections.swap(listMatches, selectedIndex, selectedIndex - 1);
             selectedIndex--;
             return true;
         }
@@ -389,6 +422,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 && selectedIndex + 1 < listCandidates.size()) {
             java.util.Collections.swap(listCandidates, selectedIndex, selectedIndex + 1);
             java.util.Collections.swap(listCounts, selectedIndex, selectedIndex + 1);
+            java.util.Collections.swap(listMatches, selectedIndex, selectedIndex + 1);
             selectedIndex++;
             return true;
         }
@@ -448,14 +482,19 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
             return;
         }
         ItemStack candidate = stack.copyWithCount(1);
-        boolean duplicate = listCandidates.stream().anyMatch(existing -> existing.is(candidate.getItem()));
+        boolean duplicate = listCandidates.stream().anyMatch(existing -> existing.is(candidate.getItem())
+                && (existing.getComponentsPatch().isEmpty() || candidate.getComponentsPatch().isEmpty()
+                    || ItemStack.isSameItemSameComponents(existing, candidate)));
         if (duplicate) {
             message = Component.translatable("screen.brnquest.item_choice.duplicate");
             return;
         }
         listCandidates.add(candidate);
         listCounts.add(1);
+        listMatches.add(candidate.getComponentsPatch().isEmpty()
+                ? ItemChoiceMatcher.ComponentMatch.NONE : ItemChoiceMatcher.ComponentMatch.STRICT);
         selectedIndex = listCandidates.size() - 1;
+        syncCountFieldValue();
         message = null;
     }
 
@@ -504,22 +543,28 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     private void finishEditing() {
         if (!canFinish() || minecraft == null || minecraft.level == null) return;
         ItemChoiceMatcher.Spec spec;
-        if (tagMode) {
-            ResourceLocation tag = ResourceLocation.tryParse(tagField.getValue().strip());
-            if (tag == null) {
-                message = Component.translatable("screen.brnquest.item_choice.invalid_tag");
-                return;
+        try {
+            if (tagMode) {
+                ResourceLocation tag = ResourceLocation.tryParse(tagField.getValue().strip());
+                if (tag == null) {
+                    message = Component.translatable("screen.brnquest.item_choice.invalid_tag");
+                    return;
+                }
+                spec = new ItemChoiceMatcher.Spec(List.of(
+                        ItemChoiceMatcher.Entry.tag(tag, tagRequiredCount)), 1);
+            } else {
+                List<ItemChoiceMatcher.Entry> entries = new ArrayList<>();
+                for (int index = 0; index < listCandidates.size(); index++) {
+                    entries.add(ItemChoiceMatcher.Entry.item(listCandidates.get(index).copyWithCount(1)
+                            .save(minecraft.level.registryAccess()).toString(), listCounts.get(index), listMatches.get(index)));
+                }
+                spec = new ItemChoiceMatcher.Spec(entries,
+                        Math.min(Math.max(1, targetRequiredEntries), entries.size()));
             }
-            spec = new ItemChoiceMatcher.Spec(List.of(
-                    ItemChoiceMatcher.Entry.tag(tag, tagRequiredCount)), 1);
-        } else {
-            List<ItemChoiceMatcher.Entry> entries = new ArrayList<>();
-            for (int index = 0; index < listCandidates.size(); index++) {
-                entries.add(ItemChoiceMatcher.Entry.item(listCandidates.get(index).copyWithCount(1)
-                        .save(minecraft.level.registryAccess()).toString(), listCounts.get(index)));
-            }
-            spec = new ItemChoiceMatcher.Spec(entries,
-                    Math.min(Math.max(1, targetRequiredEntries), entries.size()));
+        } catch (IllegalArgumentException invalid) {
+            // Raw component edits can create duplicates after insertion; report them in the editor.
+            message = Component.literal(invalid.getMessage());
+            return;
         }
         var normalized = ItemChoiceMatcher.normalize(minecraft.level.registryAccess(), spec.encode());
         if (normalized.result().isEmpty()) {
@@ -533,6 +578,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     private boolean canFinish() {
         if (!editing) return true;
+        if (countField != null && (tagMode || selectedIndex >= 0) && parseCount(countField.getValue()) == null) return false;
         if (tagMode) return tagField != null && ResourceLocation.tryParse(tagField.getValue().strip()) != null;
         return !listCandidates.isEmpty();
     }
@@ -569,7 +615,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
 
     private UiRect candidateViewport() {
         UiRect panel = panelBounds();
-        int top = editing ? panel.top() + 69 : panel.top() + 27;
+        int top = editing ? panel.top() + 89 : panel.top() + 27;
         // Reserve the status line, inventory hint/grid and bottom buttons first. At low GUI
         // heights only the candidate viewport shrinks, so scrolling and hit testing never leak
         // beneath fixed controls.
@@ -587,6 +633,44 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         tagField.setWidth(tagMode ? panel.width() - 145 : panel.width() - 71);
         tagField.setVisible(editing && tagMode);
         tagField.active = editing && tagMode;
+    }
+
+    private void updateCountFieldGeometry() {
+        if (countField == null) return;
+        UiRect bounds = tagMode ? tagCountBounds() : listCountBounds();
+        countField.setX(bounds.left());
+        countField.setY(bounds.top());
+        countField.setWidth(bounds.width());
+        countField.setVisible(editing && (tagMode || selectedIndex >= 0));
+        countField.active = editing && (tagMode || selectedIndex >= 0);
+    }
+
+    private void syncCountFieldValue() {
+        if (countField == null) return;
+        countField.setValue(tagMode ? Integer.toString(tagRequiredCount)
+                : selectedIndex >= 0 && selectedIndex < listCounts.size()
+                        ? Integer.toString(listCounts.get(selectedIndex)) : "");
+    }
+
+    private void countChanged(String value) {
+        if (!tagMode && selectedIndex < 0) { message = null; return; }
+        Integer count = parseCount(value);
+        if (count == null) {
+            message = Component.translatable("screen.brnquest.item_choice.count_invalid");
+            return;
+        }
+        if (tagMode) tagRequiredCount = count;
+        else if (selectedIndex >= 0 && selectedIndex < listCounts.size()) listCounts.set(selectedIndex, count);
+        message = null;
+    }
+
+    private static Integer parseCount(String raw) {
+        try {
+            int value = Integer.parseInt(raw);
+            return value > 0 ? value : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
     }
 
     private int inventoryTop() {
@@ -616,8 +700,10 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         if (selectedIndex < 0 || selectedIndex >= listCandidates.size()) return;
         listCandidates.remove(selectedIndex);
         listCounts.remove(selectedIndex);
+        listMatches.remove(selectedIndex);
         selectedIndex = Math.min(selectedIndex, listCandidates.size() - 1);
         targetRequiredEntries = Math.min(targetRequiredEntries, Math.max(1, listCandidates.size()));
+        syncCountFieldValue();
     }
 
     private int displayedRequiredCount(int index) {
@@ -639,11 +725,13 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         return new UiRect(panel.centerX() + 3, panel.top() + 23, panel.right() - 7, panel.top() + 41);
     }
 
-    private UiRect decrementBounds() { return controlBounds(0); }
-    private UiRect incrementBounds() { return controlBounds(1); }
-    private UiRect moveLeftBounds() { return controlBounds(2); }
-    private UiRect moveRightBounds() { return controlBounds(3); }
-    private UiRect removeBounds() { return controlBounds(4); }
+    private UiRect tagCountBounds() { UiRect panel = panelBounds(); return new UiRect(panel.right() - 75, panel.top() + 44, panel.right() - 7, panel.top() + 62); }
+    private UiRect listCountBounds() { UiRect panel = panelBounds(); return new UiRect(panel.right() - 135, panel.top() + 44, panel.right() - 83, panel.top() + 62); }
+    private UiRect componentsBounds() { return controlBounds(0); }
+    private UiRect matchBounds() { UiRect panel = panelBounds(); return new UiRect(panel.left() + 7, panel.top() + 66, panel.right() - 7, panel.top() + 84); }
+    private UiRect moveLeftBounds() { return controlBounds(1); }
+    private UiRect moveRightBounds() { return controlBounds(2); }
+    private UiRect removeBounds() { return controlBounds(3); }
 
     private UiRect controlBounds(int index) {
         UiRect panel = panelBounds();

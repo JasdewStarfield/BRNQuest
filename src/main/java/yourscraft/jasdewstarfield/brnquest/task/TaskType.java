@@ -50,6 +50,7 @@ public interface TaskType<TConfig> {
     default boolean consume(TaskContext context, TConfig config) { return true; }
     default boolean allowsManualSubmission(TConfig config) { return false; }
     default boolean acceptsQuestCompletionIntent(TConfig config) { return false; }
+    /** Opt into server inventory checks for a non-consuming objective. Failed checks must have no side effects. */
     default boolean reevaluateOnInventoryChange(TConfig config) { return false; }
     /** Optional editor metadata; an empty list selects the safe raw-config fallback. */
     default List<ConfigFieldDescriptor> configFields() { return List.of(); }

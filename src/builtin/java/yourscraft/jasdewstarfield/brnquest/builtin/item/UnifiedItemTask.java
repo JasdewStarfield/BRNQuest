@@ -2,8 +2,6 @@ package yourscraft.jasdewstarfield.brnquest.builtin.item;
 import yourscraft.jasdewstarfield.brnquest.task.*;
 
 import com.mojang.serialization.Codec;
-import net.minecraft.core.RegistryAccess;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
@@ -42,9 +40,10 @@ public final class UnifiedItemTask implements TaskType<Map<String, String>> {
         }
 
         private static final Codec<Map<String, String>> CODEC = Codec.unboundedMap(Codec.STRING, Codec.STRING)
-                .flatXmap(config -> ItemChoiceMatcher.normalizeConfig(
-                                RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY), config)
-                                .map(ignored -> config),
+                // Reads can reject unknown static item IDs without decoding dynamic stack components.
+                // Enchantment validation still belongs to normalizeConfig with the live server registries.
+                .flatXmap(config -> ItemChoiceMatcher.parseConfig(config)
+                                .flatMap(ItemChoiceMatcher::validateItemIds).map(ignored -> config),
                         config -> ItemChoiceMatcher.parseConfig(config).map(ignored -> config));
 
         @Override
@@ -142,7 +141,11 @@ public final class UnifiedItemTask implements TaskType<Map<String, String>> {
         public boolean allowsManualSubmission(Map<String, String> config) { return !craftedOnly(config); }
 
         @Override
-        public boolean reevaluateOnInventoryChange(Map<String, String> config) { return false; }
+        public boolean reevaluateOnInventoryChange(Map<String, String> config) {
+            // Holding an item completes the objective without a click; consuming and crafting-only
+            // objectives retain their explicit submission and crafting provenance paths.
+            return !consumesItems(config) && !craftedOnly(config);
+        }
 
         @Override
         public Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task,

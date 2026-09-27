@@ -59,7 +59,7 @@ SUCCESS 与 NO_CHANGE 的 `success()` 均为 true，仅 SUCCESS 的 `changed()` 
 - `submitTaskResult` 报告单目标提交（`SUCCESS/TASK_SUBMITTED`），同任务其他目标可尚未完成；重复提交为 NO_CHANGE。
 - 旧 `completeTaskResult` 报告整任务完成，因此可能在记录所选目标后返回 `UNSATISFIED`。
 - `claimAllRewardsResult` 逐项执行领取事务，后续失败不撤回之前的奖励，以 `PARTIAL_FAILURE` 报告。
-- 槽位选择为有界意图，服务端类型必须检查当前库存。客户端预览不能证明进度或资格。
+- 槽位选择表示玩家请求提交的背包格，服务端类型负责检查当前库存、进度与资格。
 
 ## 作者 API 与恢复
 
@@ -79,13 +79,13 @@ SUCCESS 与 NO_CHANGE 的 `success()` 均为 true，仅 SUCCESS 的 `changed()` 
 
 恢复流程为 `backups` → `previewRestore` → `restore(..., expectedCurrentRevision)`，只接受服务器生成的相对 backup ID。目标变化返回 `RESTORE_TARGET_CHANGED`，被覆盖目标先备份；恢复前关闭相关会话。恢复只修改一个磁盘层，不隐式 reload。
 
-常见代码：`STALE_DRAFT_REVISION`、`REVISION_CONFLICT`、`WORKSPACE_CHANGED`、`UNSAVED_DRAFT`、`RESTORE_TARGET_CHANGED`、`DRAFT_EXISTS`、`RELOAD_VALIDATION_FAILED`。`AuthorOperationResult.message` 用于解释，不作为程序契约。审计写入失败会记录错误，不撤销已提交的内容事务。
+常见代码：`STALE_DRAFT_REVISION`、`REVISION_CONFLICT`、`WORKSPACE_CHANGED`、`UNSAVED_DRAFT`、`RESTORE_TARGET_CHANGED`、`DRAFT_EXISTS`、`RELOAD_VALIDATION_FAILED`。`AuthorOperationResult.message` 提供显示文本，程序逻辑使用状态与结果代码。审计写入失败会记录错误，不撤销已提交的内容事务。
 
 ## 事件与重载生命周期
 
 通过 `BrnQuestEvents.subscribe` 订阅 `QuestCompletedEvent`、`TaskProgressChangedEvent`、`RewardClaimedEvent`、`QuestBookReloadedEvent` 或 `ProgressOwnerChangedEvent`。事件不可变、不可取消，只在提交后发布。监听器错误独立记录，不回滚事务或阻止后续监听器。无需订阅时关闭 `EventSubscription`。
 
-owner 变化事件在服务端对账后发出。首次登录只建立身份；party UUID 不变的成员变化不伪造 owner 切换。授权判断始终重新查询。
+owner 变化事件在服务端对账后发出。首次登录只建立身份；party UUID 不变时，成员变化保留当前 owner。授权判断始终重新查询。
 
 Java 注册在首次服务端资源重载监听器建立前冻结，客户端 presentation 在 client setup 冻结。KubeJS 在服务端脚本加载时构建候选，仅脚本与任务书都校验成功后一起替换活动类型及任务书。失败保留旧 revision，成功后发布事件、对账在线进度并同步。跨 reload 保存 ID，不把旧内部定义或视图当当前状态。
 

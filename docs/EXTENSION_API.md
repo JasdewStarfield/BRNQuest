@@ -95,11 +95,11 @@ Only `composition()` opt-in types can be table leaves:
 4. `execute` receives root context, stable logical path and unique occurrence after forced STARTED evidence. Do not call top-level claims recursively or create leaf receipts in the normal ledger.
 5. PENDING pauses later leaves. `recover` needs verifiable evidence; its default is unknown. Never implement recovery by blindly replaying execute. Change adapter `version()` when persisted data/recovery semantics become incompatible.
 
-An effect and its receipt are not a universal atomic transaction. Uncertain recovery stops for review. Built-in custom records an acknowledgement. See [content recovery commands](CONTENT_REFERENCE.md).
+Recovery must check both the effect and its receipt; uncertain outcomes stop for review. Built-in custom records an acknowledgement. See [content recovery commands](CONTENT_REFERENCE.md).
 
 ## Example add-on and integration checks
 
-[`src/exampleAddon`](../src/exampleAddon) is a separately compiled real NeoForge mod, `brnquest_example`, included in development runs unless `-PexcludeExampleAddon` is set. It is excluded from production packaging and only consumes the public surface.
+[`src/exampleAddon`](../src/exampleAddon) is a separately compiled real NeoForge mod, `brnquest_example`, included in development runs unless `-PexcludeExampleAddon` is set. It is a development-only example using the public API.
 
 Examples include tag-sampled `marker`, individually submitted `signal`, quest-intent `checkmark`, independent slot-selecting/crafting `item`, XP `experience`, and pending/refused/successful `guarded_tag`. The latter demonstrates idempotent tag insertion. The `player_tags` source demonstrates server-backed fields. `brnquest_example:reward_experience` is a function granting 4 XP to its executor.
 

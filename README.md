@@ -38,7 +38,7 @@ Use Java 21 and the included Gradle wrapper:
 .\gradlew.bat build --no-configuration-cache --no-daemon --console=plain
 ```
 
-The distributable is written to `build/libs/`. `runClient` and `runServer` start development instances. Their example add-on can be excluded with `-PexcludeExampleAddon`; it is never included in the production JAR. Common code, built-in types and integrations compile separately and ship as one JAR. See the [extension guide](docs/EXTENSION_API.md) for the public-only example add-on.
+The distributable is written to `build/libs/`. `runClient` and `runServer` start development instances. Their development-only example add-on can be excluded with `-PexcludeExampleAddon`. Common code, built-in types and integrations compile separately and ship as one JAR. See the [extension guide](docs/EXTENSION_API.md) for the public-only example add-on.
 
 ## AI and developer responsibilities
 

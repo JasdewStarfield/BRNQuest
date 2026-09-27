@@ -95,11 +95,11 @@ handler 负责副作用的预检、重入、持久化与恢复。非幂等效果
 4. `execute` 在强制 STARTED 证据后接收根上下文、稳定逻辑路径及唯一 occurrence。不得递归调用顶层领取或为叶子写普通收据。
 5. PENDING 暂停后续叶子。`recover` 需可核实证据，默认结果未知，不能通过盲目重跑 execute 恢复。持久数据或恢复语义不兼容时改变适配器 `version()`。
 
-效果与收据不构成通用原子事务，不确定恢复会停止等待核查。内置 custom 用于记录确认。管理命令见[内容恢复说明](CONTENT_REFERENCE_zh.md)。
+恢复时需核对效果与收据，结果不确定时停止并等待核查。内置 custom 用于记录确认。管理命令见[内容恢复说明](CONTENT_REFERENCE_zh.md)。
 
 ## 示例附属与集成检查
 
-[`src/exampleAddon`](../src/exampleAddon) 为独立编译的真实 NeoForge 模组 `brnquest_example`，开发运行默认加载，可用 `-PexcludeExampleAddon` 排除。它不进入正式产物，只使用公共面。
+[`src/exampleAddon`](../src/exampleAddon) 为独立编译的真实 NeoForge 模组 `brnquest_example`，开发运行默认加载，可用 `-PexcludeExampleAddon` 排除。这是使用公共 API 的开发专用示例。
 
 示例包括按标签采样的 `marker`、单项提交 `signal`、支持整任务意图的 `checkmark`、独立槽位选择与合成计数 `item`、经验 `experience`，以及等待、拒绝、成功三态的 `guarded_tag`。后者展示幂等标签写入。`player_tags` 展示服务端字段来源，`brnquest_example:reward_experience` 函数给执行者增加 4 点经验。
 

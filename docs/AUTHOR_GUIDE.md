@@ -32,7 +32,7 @@ Book settings also control automatic-claim suppression and single-player UI paus
 
 Use **Browse loaded textures** for icons, decorations and backgrounds. Books store `namespace:textures/path.png` resource IDs. Other clients need the same resource pack. Canvas backgrounds follow pan/zoom; screen backgrounds follow the window. Both support tile/contain/cover, opacity and scale. Confirm the child background page and then the outer properties form.
 
-**Import local PNG** and drag/drop support static PNGs up to 8 MiB and 4096 pixels per dimension. Images receive `brnquest_local:textures/imported/<hash>.png` IDs and are stored under `brnquest/local-assets/assets/brnquest_local/textures/imported/` in the game directory. They remain local: publication does not upload image bytes. Back up this library separately or supply distributable textures through a resource pack.
+**Import local PNG** and drag/drop support static PNGs up to 8 MiB and 4096 pixels per dimension. Images receive `brnquest_local:textures/imported/<hash>.png` IDs and are stored under `brnquest/local-assets/assets/brnquest_local/textures/imported/` in the game directory. Back up this local library separately and include the textures in a resource pack when distributing the book.
 
 The language button edits a locale without changing game language. Missing translations appear as fallback placeholders; untouched fields create no translation. Pending inputs survive locale switches. The description editor offers Plain and Markdown v1 with preview; see the [content reference](CONTENT_REFERENCE.md) for supported syntax.
 
@@ -118,7 +118,7 @@ A full reset clears member objectives and receipts and creates a new claim gener
 
 ## Backup, recovery and diagnosis
 
-Back up the whole world, workspace, drafts and local assets as appropriate. Keep command/reward-table journals together with progress; restoring only `brnquest_progress.dat` is not a complete reward rollback. Schema-2 progress upgrades preserve legacy personal records. Downgrading to a build that cannot read schema 2 requires a pre-upgrade backup.
+Back up the whole world, workspace, drafts and local assets as appropriate. Reward recovery requires both player progress and command/reward-table journals; back them up together. Schema-2 progress upgrades preserve legacy personal records. Downgrading to a build that cannot read schema 2 requires a pre-upgrade backup.
 
 Author backups use `draft`, `workspace` and `deployed` kinds:
 

@@ -59,7 +59,7 @@ Structured entry points: `completeQuestResult`, `completeTaskResult`, `submitTas
 - `submitTaskResult` reports individual objective submission (`SUCCESS/TASK_SUBMITTED`) even if other objectives remain unfinished. Duplicate submissions return NO_CHANGE.
 - Legacy `completeTaskResult` reports whole-quest completion and may return `UNSATISFIED` after recording the selected objective.
 - `claimAllRewardsResult` runs individual claim transactions. Earlier successful rewards remain delivered if a later one fails; `PARTIAL_FAILURE` reports that boundary.
-- Slot selections are bounded intentions; the server type must check current inventory. Client previews never prove progress or entitlement.
+- Slot selections describe the player's requested inventory slots; the server type checks current inventory, progress and eligibility.
 
 ## Author API and recovery
 
@@ -79,13 +79,13 @@ Stop on failure. Import dry-run only reports; actual import creates an `IMPORT` 
 
 Recovery is `backups` → `previewRestore` → `restore(..., expectedCurrentRevision)`. Only server-issued relative backup IDs are accepted. Changed targets fail with `RESTORE_TARGET_CHANGED`; the overwritten target is backed up. Close relevant edit sessions first. Restoration changes one disk layer and never implicitly reloads.
 
-Useful author codes: `STALE_DRAFT_REVISION`, `REVISION_CONFLICT`, `WORKSPACE_CHANGED`, `UNSAVED_DRAFT`, `RESTORE_TARGET_CHANGED`, `DRAFT_EXISTS`, `RELOAD_VALIDATION_FAILED`. `AuthorOperationResult.message` is explanatory, not a machine contract. Audit write failure is logged without undoing a committed content transaction.
+Useful author codes: `STALE_DRAFT_REVISION`, `REVISION_CONFLICT`, `WORKSPACE_CHANGED`, `UNSAVED_DRAFT`, `RESTORE_TARGET_CHANGED`, `DRAFT_EXISTS`, `RELOAD_VALIDATION_FAILED`. `AuthorOperationResult.message` provides display text; program logic uses status and result codes. Audit write failure is logged without undoing a committed content transaction.
 
 ## Events and reload lifecycle
 
 Subscribe with `BrnQuestEvents.subscribe` to `QuestCompletedEvent`, `TaskProgressChangedEvent`, `RewardClaimedEvent`, `QuestBookReloadedEvent` or `ProgressOwnerChangedEvent`. Events are immutable, non-cancellable and post-commit. Listener failures are logged independently; they neither undo the committed transaction nor prevent later listeners. Close `EventSubscription` when no longer needed.
 
-Owner-change events follow server reconciliation. Initial login establishes identity without a change event; roster changes with the same party UUID do not invent an owner switch. Always requery for authorization.
+Owner-change events follow server reconciliation. Initial login establishes identity without a change event; roster changes with the same party UUID retain the current owner. Always requery for authorization.
 
 Java registration freezes before the first server resource-reload listener is established. Client presentation freezes at client setup. KubeJS builds a temporary candidate during server-script evaluation; only successful script and book validation replace the active script types and book together. Failed candidates retain the previous revision. Successful reload publishes events, reconciles online progress and synchronizes players. Cache IDs, not internal definitions or views as current state across reloads.
 

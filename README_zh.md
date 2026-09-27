@@ -38,7 +38,7 @@ BRNQuest 是面向 Minecraft 整合包的服务端权威任务系统，提供游
 .\gradlew.bat build --no-configuration-cache --no-daemon --console=plain
 ```
 
-产物位于 `build/libs/`。`runClient` 和 `runServer` 启动开发实例，可加 `-PexcludeExampleAddon` 排除示例附属模组；示例不会进入正式 JAR。核心、内置类型与适配层独立编译，最终合并为一个 JAR。只依赖公共接口的示例附属说明见[类型扩展](docs/EXTENSION_API_zh.md)。
+产物位于 `build/libs/`。`runClient` 和 `runServer` 启动开发实例，可加 `-PexcludeExampleAddon` 排除开发专用的示例附属模组。核心、内置类型与适配层独立编译，最终合并为一个 JAR。只依赖公共接口的示例附属说明见[类型扩展](docs/EXTENSION_API_zh.md)。
 
 ## AI 与开发者职责
 

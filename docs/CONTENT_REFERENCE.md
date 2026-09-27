@@ -56,7 +56,7 @@ Kills default to `minecraft:zombie`, count 1 (positive long). Direct lethal play
 | `mode` | `any` (default) or `all` | Groups grant every member |
 | `title` | Optional | Optional |
 
-Criterion selection requires a single ID, not a group. Missing references fail validation/execution. Existing vanilla progress can satisfy an objective once eligible. Later revocation does not undo recorded BRNQuest completion. BRNQuest reset does not revoke vanilla progress, so another cycle can complete again.
+Criterion selection uses a single advancement ID. Missing references fail validation/execution. Existing vanilla progress can satisfy an objective once eligible. Later revocation does not undo recorded BRNQuest completion. BRNQuest reset does not revoke vanilla progress, so another cycle can complete again.
 
 Rewards validate the entire selection before granting to the claimant, including team-once rewards. Vanilla XP, recipes, functions and notifications may run; parents are not automatically granted. Already-awarded criteria count as no change and do not retrigger completion rewards.
 

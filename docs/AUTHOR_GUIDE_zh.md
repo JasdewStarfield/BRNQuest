@@ -32,7 +32,7 @@
 
 图标、装饰与背景可使用“浏览已加载贴图”。任务书保存 `namespace:textures/path.png` 资源 ID，其他客户端需要安装相同资源包。画布背景随平移缩放，界面背景随窗口适配；两者支持平铺、包含、覆盖、不透明度及缩放。应用背景子页后，还需确认外层属性表单。
 
-“导入本地 PNG”和拖放支持不超过 8 MiB、每边不超过 4096 像素的静态 PNG。图片使用 `brnquest_local:textures/imported/<hash>.png` ID，保存在游戏目录 `brnquest/local-assets/assets/brnquest_local/textures/imported/`。发布任务书不会上传图片字节。本地库需单独备份；面向其他玩家分发时应通过资源包提供贴图。
+“导入本地 PNG”和拖放支持不超过 8 MiB、每边不超过 4096 像素的静态 PNG。图片使用 `brnquest_local:textures/imported/<hash>.png` ID，保存在游戏目录 `brnquest/local-assets/assets/brnquest_local/textures/imported/`。本地库需单独备份；分发任务书时通过资源包附带贴图。
 
 语言按钮可在不切换游戏语言的情况下编辑译文。缺失译文显示回退占位，未编辑字段不会新增翻译。切换语言保留待提交输入。正文编辑器提供纯文本、Markdown v1 及预览；语法见[内容配置参考](CONTENT_REFERENCE_zh.md)。
 
@@ -118,7 +118,7 @@ Dry-run 生成报告，不改变任务内容。正式导入创建 `IMPORT` 草�
 
 ## 备份、恢复与诊断
 
-按需要备份整个世界、工作区、草稿与本地素材。命令及奖励表日志应与进度一并保存；只恢复 `brnquest_progress.dat` 不构成完整奖励回滚。进度 schema 2 升级保留旧个人记录。回退到不支持 schema 2 的版本前，需恢复升级前备份。
+按需要备份整个世界、工作区、草稿与本地素材。奖励恢复需要玩家进度与命令、奖励表日志，应一并备份。进度 schema 2 升级保留旧个人记录。回退到不支持 schema 2 的版本前，需恢复升级前备份。
 
 作者备份分为 `draft`、`workspace` 和 `deployed`：
 

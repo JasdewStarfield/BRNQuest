@@ -7,7 +7,8 @@ issueTrackerURL = "https://github.com/JasdewStarfield/BRNQuest/issues"
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
-logoFile = "assets/brnquest/textures/gui/icon.png"
+# The mod list uses the enlarged logo; in-game buttons retain their 16x16 texture.
+logoFile = "brnquest.png"
 displayURL = "https://github.com/JasdewStarfield/BRNQuest"
 authors = "${mod_authors}"
 description = '''${mod_description}'''

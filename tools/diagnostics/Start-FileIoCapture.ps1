@@ -25,7 +25,7 @@ for ($ancestor=Get-Item -LiteralPath $TestRoot; $null -ne $ancestor; $ancestor=$
 }
 $elevated=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($Mode -eq 'Capture') {
-    if (-not $FilterConfig -or -not $ConfirmDirectoryFilter) { throw 'Export a directory-filtered PMC first; pass -FilterConfig and -ConfirmDirectoryFilter. See docs/FILE_IO_DIAGNOSTICS_zh.md.' }
+    if (-not $FilterConfig -or -not $ConfirmDirectoryFilter) { throw 'Export a directory-filtered PMC first; pass -FilterConfig and -ConfirmDirectoryFilter. See docs/AUTHOR_GUIDE.md (Backup, recovery and diagnosis).' }
     $FilterConfig=(Resolve-Path -LiteralPath $FilterConfig).ProviderPath
     if (-not $elevated) { throw 'Capture requires an administrator PowerShell terminal.' }
     Assert-MicrosoftTool $ProcmonPath

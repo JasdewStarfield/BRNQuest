@@ -1,7 +1,9 @@
-# Third-party notices
+# Third-party notices / 第三方声明
 
-BRNQuest embeds the following library in its distributable JAR:
+## English
 
-- `org.commonmark:commonmark:0.30.0`, Copyright (c) 2015 Robin Stocker, licensed under the BSD 2-Clause License. The complete license is distributed at `META-INF/licenses/commonmark.txt`.
+BRNQuest embeds `org.commonmark:commonmark:0.30.0`, Copyright (c) 2015 Robin Stocker, under the BSD 2-Clause License. The complete license is shipped inside the mod JAR at `META-INF/licenses/commonmark.txt` and maintained in [the source resource](src/main/resources/META-INF/licenses/commonmark.txt).
 
-No MarkdownManual or Oracle Index source code is included. Those projects were reviewed only as design references for the P4 document implementation.
+## 简体中文
+
+BRNQuest 内嵌 `org.commonmark:commonmark:0.30.0`，Copyright (c) 2015 Robin Stocker，使用 BSD 2-Clause 许可证。完整许可证随模组 JAR 放置于 `META-INF/licenses/commonmark.txt`，仓库对应[许可证资源](src/main/resources/META-INF/licenses/commonmark.txt)。

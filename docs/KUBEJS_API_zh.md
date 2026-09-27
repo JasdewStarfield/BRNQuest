@@ -1,6 +1,10 @@
 # BRNQuest KubeJS 服务端脚本 API
 
-BRNQuest 在安装兼容版本的 KubeJS 与 Rhino 后，为 `server_scripts` 注册全局对象 `BRNQuest`。该对象不会出现在 `startup_scripts` 或 `client_scripts`，所有进度写入仍由 Minecraft 服务端主线程和 BRNQuest 事务处理。
+[English](KUBEJS_API.md) | [首页](../README_zh.md) | [Java API](API_zh.md)
+
+此脚本 API 仍为实验性。
+
+BRNQuest 在安装兼容版本的 KubeJS 与 Rhino 后，为 `server_scripts` 注册全局对象 `BRNQuest`。该对象仅用于服务端脚本，所有进度写入由 Minecraft 服务端主线程和 BRNQuest 事务处理。
 
 当前验证基线：
 
@@ -9,7 +13,7 @@ BRNQuest 在安装兼容版本的 KubeJS 与 Rhino 后，为 `server_scripts` �
 - KubeJS `2101.7.2-build.374`
 - Rhino `2101.2.8-build.91`
 
-KubeJS 是可选依赖。未安装时不会加载 `compat.kubejs` 中的类，也不影响任务书加载、进度或奖励。
+KubeJS 是可选依赖。
 
 ## 服务端观察事件
 
@@ -33,7 +37,7 @@ BRNQuestEvents.taskProgressChanged('eow:radio_signal', event => {
 })
 ```
 
-`quest`、`task`、`reward` 和 `progress` 与全局 API 一样是普通只读投影，不是可变 Java 运行时对象。玩家已离线时不会向脚本转发该玩家的事件。
+`quest`、`task`、`reward` 和 `progress` 与全局 API 一样是只读快照。玩家已离线时不会向脚本转发该玩家的事件。
 
 ## 脚本任务与奖励类型
 
@@ -56,13 +60,13 @@ BRNQuest.registerRewardType('eow:play_dialogue')
 | `required_progress` | 否，默认 `1` | 正整数阈值 |
 | `title` | 否 | 目标行标题；空值回退为完整 type ID |
 
-只能通过 `BRNQuest.addTaskProgress(player, taskId, amount)` 在服务端权威地推进；它不会将任意 KubeJS 回调当作客户端完成证据。
+通过 `BRNQuest.addTaskProgress(player, taskId, amount)` 在服务端推进目标进度。
 
 脚本 reward 的 `config` 可以携带任意字符串键值（约定 `title` 用于编辑器标题），副作用由必需目标的 `customReward` 事件执行：
 
 ```js
 BRNQuestEvents.customReward('eow:play_dialogue', event => {
-  // 对外部持久化、命令或消息发送，都以此键去重。
+  // 外部副作用应使用此键，在自己的持久化存储中去重。
   const once = event.idempotencyKey
   console.info(`reward ${event.rewardId}: ${once}`)
 })
@@ -81,7 +85,7 @@ BRNQuestEvents.customReward('eow:play_dialogue', event => {
 
 脚本错误会由 KubeJS 记录原始脚本和行号，BRNQuest 同时记录 fatal 诊断 `BQV-006`。脚本或任务书任意一方失败时，新类型候选会被丢弃，上一份任务书 revision、来源资源键和脚本类型注册表继续生效。中断在 BRNQuest 应用阶段之前的 reload 也不会替换活动状态；下一次尝试会先覆盖上次未完成的候选。
 
-KubeJS 会在每次脚本 reload 时卸载它自己的 JavaScript 监听器。BRNQuest 不保留旧 Rhino 函数或把它们跨 reload 重新调用；脚本失败后，旧任务书和类型仍可查询/推进，但依赖 `customReward` 回调的奖励会在无当前监听器时明确拒绝，而不是进入已卸载的脚本上下文。
+KubeJS 会在每次脚本 reload 时卸载它自己的 JavaScript 监听器。脚本失败后，旧任务书和类型仍可查询/推进，但依赖 `customReward` 回调的奖励会在无当前监听器时明确拒绝。
 
 所有查询结果都是调用时生成的普通不可变投影。脚本只应跨 tick/reload 保存稳定 ID，不应缓存 `quest`、`task`、`reward`、`progress` 或事件对象。
 
@@ -110,7 +114,7 @@ KubeJS 会在每次脚本 reload 时卸载它自己的 JavaScript 监听器。BR
 | `toggleTracked(player, questId)` | 切换当前玩家的追踪状态 |
 | `openQuest(player[, questId])` | 先同步权威快照，再请求客户端打开任务界面 |
 
-所有写操作固定使用集成来源 `brnquest:kubejs`，脚本不能自造管理员或系统权限，也不能调用重置接口。玩家为空、离线、当前不在服务端主线程、任务书未就绪或 ID 非法时不会造成脚本侧崩溃，而是返回结构化结果：
+所有写操作固定使用集成来源 `brnquest:kubejs`，脚本不能自造管理员或系统权限，也不能调用重置接口。玩家为空、离线、当前不在服务端主线程、任务书未就绪或 ID 非法时返回结构化结果：
 
 ```js
 {
@@ -123,6 +127,8 @@ KubeJS 会在每次脚本 reload 时卸载它自己的 JavaScript 监听器。BR
 ```
 
 `NO_CHANGE` 的 `success` 仍为 `true`、`changed` 为 `false`，便于安全重试。脚本逻辑应判断 `status` 或 `code`，不要解析可能调整或本地化的 `message`。
+
+`completeTask` 保留整任务结果语义：记录当前目标后，其他目标未完成时仍可能返回未满足。一次全领中的后续失败不回滚先前成功领取。
 
 ## 示例
 

@@ -61,6 +61,22 @@ KubeJS 服务端脚本和 Java API 可用于查询进度、处理事件、推进
 3. 使用拥有 **权限等级 2** 的账号进入编辑模式，创建章节、任务、目标和奖励。
 4. 整合包作者可随整合包分发任务工作区，并通过资源包提供贴图。具体编辑、部署与恢复步骤见[作者指引](https://github.com/JasdewStarfield/BRNQuest/blob/mc%2F1.21.1-neoforge/docs/AUTHOR_GUIDE_zh.md)。
 
+## 快速转换当前 FTB 任务
+
+使用 **BRNQuest 1.0.1 或更新版本**，先在 FTB Quests 中保存任务书，再用拥有 **权限等级 2** 的账号执行：
+
+```text
+/brnquest import_ftb_local
+```
+
+命令直接读取当前实例的 `config/ftbquests/quests/`，将受支持的 FTB Quests v13 任务内容转换为 BRNQuest 的 `ftbquests:main` 草稿，包含章节、语言和奖励表，无需手动复制文件。多人游戏读取服务端的文件。
+
+按 **J** 打开任务书，进入编辑器的**高级草稿目录**，打开导入的任务书。根据聊天提示和 `config/brnquest/reports/` 中的报告检查转换结果，调整后**发布并应用到当前世界**。
+
+如需先预览转换结果，可执行 `/brnquest import_ftb_local --dry-run`，只生成诊断报告。已有同名草稿时不会覆盖；再次导入可使用新名称，例如 `/brnquest import_ftb_local mypack retry`。
+
+转换保留 FTB 源文件，仅导入任务定义，不迁移玩家或队伍进度。自定义图片仍需保留对应资源包。详细支持范围见[导入说明](https://github.com/JasdewStarfield/BRNQuest/blob/mc%2F1.21.1-neoforge/docs/CONTENT_REFERENCE_zh.md#ftb-导入)。
+
 ## AI 与开发者职责
 
 BRNQuest 由开发者主导设计与维护，使用 AI 工具参与开发。

@@ -61,6 +61,22 @@ KubeJS server scripts and the Java API provide progress queries, events, quest o
 3. With **permission level 2**, enter editing mode and create chapters, quests, objectives, and rewards.
 4. Modpack authors can distribute the quest workspace with their pack and supply textures through a resource pack. See the [author guide](https://github.com/JasdewStarfield/BRNQuest/blob/mc%2F1.21.1-neoforge/docs/AUTHOR_GUIDE.md) for editing, deployment, and recovery instructions.
 
+## Quickly convert your current FTB quests
+
+With **BRNQuest 1.0.1 or later**, save your quest book in FTB Quests, then run this command with **permission level 2**:
+
+```text
+/brnquest import_ftb_local
+```
+
+The command reads `config/ftbquests/quests/` in the current instance and converts supported FTB Quests v13 content into the BRNQuest draft `ftbquests:main`, including chapters, languages, and reward tables. No manual file copying is needed. Multiplayer imports read the server's files.
+
+Press **J**, open the editor's **advanced draft catalog**, and select the imported book. Review the chat diagnostics and the report in `config/brnquest/reports/`, make any adjustments, then **publish and apply it to the current world**.
+
+To preview the conversion first, run `/brnquest import_ftb_local --dry-run`; this only generates a diagnostic report. Existing drafts are never overwritten. For another import, choose a new name, such as `/brnquest import_ftb_local mypack retry`.
+
+Conversion preserves the FTB source files and imports quest definitions only; player and team progress are not migrated. Keep the resource packs that provide any custom images. See the [import reference](https://github.com/JasdewStarfield/BRNQuest/blob/mc%2F1.21.1-neoforge/docs/CONTENT_REFERENCE.md#ftb-import) for supported content.
+
 ## AI and developer responsibilities
 
 BRNQuest is designed and maintained by its developer, with AI tools participating in development.

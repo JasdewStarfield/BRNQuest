@@ -14,7 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
-/** Clean-room parser for the rich-text branches used by FTB Quests v2101.1.34. */
+/** Independent compatibility parser for the rich-text syntax accepted by FTB Quests v2101.1.34. */
 public final class FtbRichTextParser {
     public static final int DEFAULT_NODE_BUDGET = 4096;
     public static final int DEFAULT_RECURSION_BUDGET = 8;
@@ -71,7 +71,7 @@ public final class FtbRichTextParser {
                     context.add(new FtbTextNode.Text("", FtbTextStyle.EMPTY, FtbTextNode.Action.NONE, source));
                 return;
             } catch (JsonParseException ignored) {
-                // FTB deliberately falls back to its concise legacy parser when JSON parsing fails.
+                // A non-JSON line can still contain valid legacy formatting or substitutions.
             }
         }
         int start = context.nodes.size();
@@ -154,7 +154,7 @@ public final class FtbRichTextParser {
 
     private void parseSubstitution(String value, FtbTextSource source, FtbTextStyle style,
                                    FtbTextNode.Action action, Context context, int depth) {
-        Map<String, String> properties = splitProperties(value);
+        Map<String, String> properties = readProperties(value);
         if (properties.containsKey("image")) {
             String image = properties.get("image");
             int width = positiveInt(properties.get("width"), 100);
@@ -306,7 +306,7 @@ public final class FtbRichTextParser {
 
     private void malformed(String value, FtbTextSource source, Context context,
                            int nodeStart, int diagnosticStart, String message) {
-        // FTB reports a whole-line parse failure; retain the whole source exactly once rather than mixing partial runs.
+        // Keep a malformed line intact so authors can repair it without reconstructing partial runs.
         context.rollback(nodeStart, diagnosticStart);
         context.add(new FtbTextNode.Unknown(value, source));
         context.diagnostic(FtbTextDiagnostic.Severity.ERROR, "BQF-TEXT-MALFORMED", source, message);
@@ -320,14 +320,35 @@ public final class FtbRichTextParser {
         text.setLength(0);
     }
 
-    private static Map<String, String> splitProperties(String value) {
-        java.util.LinkedHashMap<String, String> result = new java.util.LinkedHashMap<>();
-        for (String token : value.split(" ")) {
-            if (token.isEmpty()) continue;
-            String[] pair = token.split(":", 2);
-            result.put(pair[0], pair.length == 2 ? pair[1].replace("%20", " ") : "");
+    /** Reads space-delimited properties; only the first colon separates a key from its value. */
+    private static Map<String, String> readProperties(String source) {
+        Map<String, String> properties = new java.util.LinkedHashMap<>();
+        int start = 0;
+        int separator = -1;
+        StringBuilder decoded = new StringBuilder();
+        // A final synthetic space commits the last property, including a bare key or empty value.
+        for (int cursor = 0; cursor <= source.length(); cursor++) {
+            char current = cursor == source.length() ? ' ' : source.charAt(cursor);
+            if (current == ' ') {
+                if (cursor > start) {
+                    int keyEnd = separator < 0 ? cursor : separator;
+                    // Repeated keys keep their last value, even when that value is empty.
+                    properties.put(source.substring(start, keyEnd), decoded.toString());
+                }
+                start = cursor + 1;
+                separator = -1;
+                decoded.setLength(0);
+            } else if (separator < 0) {
+                if (current == ':') separator = cursor;
+            } else if (source.startsWith("%20", cursor)) {
+                // Decode spaces only in values; URL escapes and literal plus signs stay intact.
+                decoded.append(' ');
+                cursor += 2;
+            } else {
+                decoded.append(current);
+            }
         }
-        return result;
+        return properties;
     }
 
     private static int positiveInt(String value, int fallback) {
@@ -350,7 +371,7 @@ public final class FtbRichTextParser {
         }
     }
 
-    /** Matches the unicode-only pre-pass used by the pinned FTB Quests source without consuming other escapes. */
+    /** Decodes Unicode escapes before parsing; other escapes remain for JSON or legacy text handling. */
     private static String unescapeUnicode(String value) {
         StringBuilder result = new StringBuilder(value.length());
         for (int i = 0; i < value.length(); i++) {

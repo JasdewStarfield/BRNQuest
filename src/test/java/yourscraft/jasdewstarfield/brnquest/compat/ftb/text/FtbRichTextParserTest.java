@@ -10,6 +10,57 @@ import static org.junit.jupiter.api.Assertions.*;
 class FtbRichTextParserTest {
     private final FtbRichTextParser parser = new FtbRichTextParser();
 
+    @Test void propertyBoundariesPreserveResourceIdsAndLastValues() {
+        // Synthetic data exercises spacing, duplicate keys, and colons inside values together.
+        var result = parse("{  image:demo:textures/old.png image:demo:textures/new.png "
+                + "width:12 width:45 height:23 text:Old text:New%20caption align:right  }");
+        var image = assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+        assertEquals(1, result.nodes().size());
+        assertEquals("demo:textures/new.png", image.resourceId());
+        assertEquals(45, image.width());
+        assertEquals(23, image.height());
+        assertEquals("New caption", image.alt());
+        assertEquals("right", image.align());
+        assertTrue(result.diagnostics().isEmpty());
+    }
+
+    @Test void bareAndEmptyPropertiesOverwritePreviousValues() {
+        // Both spellings denote an empty value, including when they end the substitution.
+        for (String empty : List.of("text", "text:")) {
+            var result = parse("{image:demo:textures/a.png width:45 width height:23 height: text:Old " + empty + "}");
+            var image = assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+            assertEquals("", image.alt());
+            assertEquals(100, image.width());
+            assertEquals(100, image.height());
+            assertTrue(result.diagnostics().isEmpty());
+        }
+    }
+
+    @Test void valuesDecodeOnlySpaceEscapesAndKeepOtherWhitespace() {
+        // Tabs/newlines belong to a value; only an ASCII space separates properties.
+        var result = parse("{image:demo:textures/a.png text:%20A%20%20B+%2F%2520%2\tC\nD:%20}");
+        var image = assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+        assertEquals(" A  B+%2F%2520%2\tC\nD: ", image.alt());
+        assertTrue(result.diagnostics().isEmpty());
+    }
+
+    @Test void propertyNamesRemainLiteralAndEmptyNamesAreHarmless() {
+        // Encoded key text must not become a recognized property or consume its neighbor.
+        var result = parse("{image:demo:textures/a.png :ignored text%20:ignored text:caption}");
+        var image = assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+        assertEquals("caption", image.alt());
+        assertTrue(result.diagnostics().isEmpty());
+    }
+
+    @Test void linkPropertiesPreserveUrlPunctuation() {
+        var result = parse("{open_url:https://example.com:8443/a:b?q=a+b%2Fc text:Read%20more}");
+        var link = assertInstanceOf(FtbTextNode.Text.class, result.nodes().getFirst());
+        assertEquals("Read more", link.value());
+        assertEquals("https://example.com:8443/a:b?q=a+b%2Fc", link.action().value());
+        assertEquals(FtbTextNode.Action.Kind.OPEN_URL, link.action().kind());
+        assertTrue(result.diagnostics().isEmpty());
+    }
+
     @Test void acceptsExplicitNoActionImagesWithoutLosingImageProperties() {
         // Both the bare marker and FTB's serialized marker describe an ordinary, non-clickable image.
         for (String action : List.of("none", "none:")) {

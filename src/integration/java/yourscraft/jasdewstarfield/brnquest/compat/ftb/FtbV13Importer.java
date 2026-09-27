@@ -603,7 +603,7 @@ public final class FtbV13Importer implements FtbImportBackend {
         document.addProperty("version", 1); document.addProperty("mode", random ? "random" : mode.equals("choice") ? "choice" : "all");
         double totalWeight = 0;
         if (random) {
-            // FTB readData uses getInt, so missing loot_size means zero; silently defaulting it would create rewards.
+            // Missing loot_size denotes zero draws; require an author decision before creating reward rolls.
             if (!table.contains("loot_size", Tag.TAG_ANY_NUMERIC) || table.getDouble("loot_size") != table.getInt("loot_size")
                     || table.getInt("loot_size") < 1 || table.getInt("loot_size") > 64)
                 throw new IllegalArgumentException("Missing or invalid loot_size; author must choose rolls 1..64");
@@ -647,7 +647,7 @@ public final class FtbV13Importer implements FtbImportBackend {
                 throw new IllegalArgumentException("Non-numeric source weight at root/entry_" + i);
             double weight = child.contains("weight") ? child.getFloat("weight") : 1;
             if (!Double.isFinite(weight) || weight < 0) throw new IllegalArgumentException("Invalid source weight at root/entry_" + i);
-            // FTB accumulates floats: diagnose its overflow even when a double sum would still be finite.
+            // Source weight totals have single precision; reject overflow before converting the distribution.
             totalWeight = (float) (totalWeight + weight);
             entry.addProperty("weight", weight == 0 ? 1 : weight); entry.addProperty("always", weight == 0);
             entries.add(entry);

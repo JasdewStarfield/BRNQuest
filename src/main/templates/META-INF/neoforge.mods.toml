@@ -7,6 +7,7 @@ issueTrackerURL = "https://github.com/JasdewStarfield/BRNQuest/issues"
 modId = "${mod_id}"
 version = "${mod_version}"
 displayName = "${mod_name}"
+logoFile = "assets/brnquest/textures/gui/icon.png"
 displayURL = "https://github.com/JasdewStarfield/BRNQuest"
 authors = "${mod_authors}"
 description = '''${mod_description}'''

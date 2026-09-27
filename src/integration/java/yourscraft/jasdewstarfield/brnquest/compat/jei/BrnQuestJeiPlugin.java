@@ -7,6 +7,7 @@ import mezz.jei.api.constants.VanillaTypes;
 import mezz.jei.api.gui.handlers.IGhostIngredientHandler;
 import mezz.jei.api.gui.handlers.IGlobalGuiHandler;
 import mezz.jei.api.gui.handlers.IGuiProperties;
+import mezz.jei.api.gui.handlers.IGuiContainerHandler;
 import mezz.jei.api.gui.builder.IClickableIngredientFactory;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
@@ -14,6 +15,7 @@ import mezz.jei.api.runtime.IClickableIngredient;
 import mezz.jei.api.runtime.IJeiRuntime;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.Rect2i;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -29,6 +31,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.EditorLocalizedQuestTextScr
 import yourscraft.jasdewstarfield.brnquest.builtin.client.ItemChoiceScreen;
 import yourscraft.jasdewstarfield.brnquest.builtin.client.ItemSubmissionScreen;
 import yourscraft.jasdewstarfield.brnquest.client.ui.QuestScreen;
+import yourscraft.jasdewstarfield.brnquest.client.ui.InventoryQuestButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupHint;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.TransientChildScreenParent;
@@ -60,6 +63,23 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
 
     @Override
     public void registerGuiHandlers(IGuiHandlerRegistration registration) {
+        registration.addGenericGuiContainerHandler(AbstractContainerScreen.class, new IGuiContainerHandler<>() {
+            @Override
+            public List<Rect2i> getGuiExtraAreas(AbstractContainerScreen<?> screen) {
+                for (var child : screen.children()) {
+                    if (child instanceof InventoryQuestButton button) {
+                        // JEI may query before the first render. Resolve the same placement here
+                        // so its exclusion area already accounts for BRNTalk and other widgets.
+                        button.place(screen);
+                        if (button.visible) {
+                            return List.of(new Rect2i(button.getX(), button.getY(),
+                                    button.getWidth(), button.getHeight()));
+                        }
+                    }
+                }
+                return List.of();
+            }
+        });
         // Registering a plain Screen makes JEI render its ingredient list beside the selector layer.
         registration.addGuiScreenHandler(EditorItemSelectorScreen.class, BrnQuestJeiPlugin::selectorProperties);
         registration.addGuiScreenHandler(ItemChoiceScreen.class, BrnQuestJeiPlugin::choiceProperties);

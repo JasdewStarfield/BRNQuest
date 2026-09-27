@@ -20,7 +20,7 @@ BRNQuest is a server-authoritative quest system with an in-game visual editor fo
 
 ## Start here
 
-Press **J** to open the quest book; the key is rebindable. Authors need permission level 2. Use normal editing for immediate world changes or advanced drafts for review and publication. Distribute a task workspace with your modpack and referenced artwork through a resource pack.
+Press **J** or click the quest icon in the upper-left corner of the inventory screen to open the quest book; the key is rebindable. Authors need permission level 2. Use normal editing for immediate world changes or advanced drafts for review and publication. Distribute a task workspace with your modpack and referenced artwork through a resource pack.
 
 | Guide | English | 简体中文 |
 | --- | --- | --- |

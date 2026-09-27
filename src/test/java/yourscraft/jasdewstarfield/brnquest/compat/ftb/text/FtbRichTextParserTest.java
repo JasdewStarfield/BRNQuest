@@ -10,6 +10,30 @@ import static org.junit.jupiter.api.Assertions.*;
 class FtbRichTextParserTest {
     private final FtbRichTextParser parser = new FtbRichTextParser();
 
+    @Test void acceptsExplicitNoActionImagesWithoutLosingImageProperties() {
+        // Both the bare marker and FTB's serialized marker describe an ordinary, non-clickable image.
+        for (String action : List.of("none", "none:")) {
+            var result = parse("{image:picture:textures/horrrsteam/hudong1.png width:100 height:160 "
+                    + "align:center fit:true click_action:" + action + "}");
+            var image = assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+            assertEquals("picture:textures/horrrsteam/hudong1.png", image.resourceId());
+            assertEquals(100, image.width());
+            assertEquals(160, image.height());
+            assertTrue(result.diagnostics().isEmpty(), action);
+        }
+    }
+
+    @Test void continuesToReportRealAndUnknownImageActions() {
+        // Do not let a prefix match for "none" silence malformed or unsupported actions.
+        for (String action : List.of("run_command:/say%20hello", "open_url:https://example.com",
+                "unknown:value", "none:unexpected")) {
+            var result = parse("{image:demo:textures/a.png click_action:" + action + "}");
+            assertInstanceOf(FtbTextNode.Image.class, result.nodes().getFirst());
+            assertTrue(result.diagnostics().stream().anyMatch(d -> d.code().equals("BQF-TEXT-IMAGE-ACTION")
+                    && d.severity() == FtbTextDiagnostic.Severity.ERROR), action);
+        }
+    }
+
     @Test void parsesPinnedLegacyFormattingResetAndEscapes() {
         var result = parse("plain &c&lred bold&r normal \\& literal &#12AbEfhex §nunder");
 

@@ -161,7 +161,10 @@ public final class FtbRichTextParser {
             int height = positiveInt(properties.get("height"), 100);
             context.add(new FtbTextNode.Image(image, properties.getOrDefault("text", ""), width, height,
                     properties.getOrDefault("align", "center"), source));
-            if (properties.containsKey("click_action") && !properties.get("click_action").isBlank()) {
+            String clickAction = properties.getOrDefault("click_action", "");
+            // FTB serializes an image with no action as "none:"; it needs no clickable behavior.
+            // Match only the no-action marker so real or unknown actions still receive diagnostics.
+            if (!clickAction.isBlank() && !clickAction.equals("none") && !clickAction.equals("none:")) {
                 context.diagnostic(FtbTextDiagnostic.Severity.ERROR, "BQF-TEXT-IMAGE-ACTION", source,
                         "Image click actions are not safe BRNQuest document actions");
             }

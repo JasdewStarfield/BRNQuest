@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 
 /** Applies path containment and non-overwrite rules around the pure v13 importer. */
 public final class FtbImportService {
+    public static final String LOCAL_SOURCE = "config/ftbquests/quests";
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[a-zA-Z0-9._-]+");
 
     public ImportExecution execute(MinecraftServer server, String sourceName, String namespace, String bookId, boolean dryRun) throws IOException {
@@ -38,16 +39,46 @@ public final class FtbImportService {
             throw new IOException("Import source is outside the allowed root or does not exist: " + sourceName);
         }
         validateSourceTree(importRoot, source);
+        return executeSource(server, source, sourceName, namespace, bookId, dryRun);
+    }
+
+    /** Reads the current instance's saved FTB book directly, without copying or modifying its files. */
+    public ImportExecution executeLocal(MinecraftServer server, String namespace, String bookId, boolean dryRun) throws IOException {
+        requireSegment(namespace, "namespace");
+        requireSegment(bookId, "book_id");
+        return executeSource(server, localSource(server.getServerDirectory()), LOCAL_SOURCE, namespace, bookId, dryRun);
+    }
+
+    /** Resolves against the server instance, including the integrated server's game directory. */
+    static Path localSource(Path serverDirectory) throws IOException {
+        Path root = serverDirectory.toAbsolutePath().normalize();
+        Path source = root.resolve(LOCAL_SOURCE);
+        if (!Files.isDirectory(source) || !Files.isRegularFile(source.resolve("data.snbt"))) {
+            throw new NoSuchFileException(source.resolve("data.snbt").toString());
+        }
+        // Check ancestors too: a linked config/ftbquests directory must not bypass containment.
+        for (Path path = source; !path.equals(root); path = path.getParent()) {
+            if (Files.isSymbolicLink(path)) throw new IOException("Symbolic links are not allowed in import sources");
+        }
+        validateSourceTree(root, source);
+        return source;
+    }
+
+    /** Both entry points share conversion, live item validation and non-overwriting draft storage. */
+    private ImportExecution executeSource(MinecraftServer server, Path source, String sourceName,
+                                          String namespace, String bookId, boolean dryRun) throws IOException {
         FtbImportResult result = withImportSource(FtbImportBackend.installed().importBook(source,
                 namespace.toLowerCase(Locale.ROOT), bookId.toLowerCase(Locale.ROOT)), sourceName);
         validateItems(server, result);
+        // Persist diagnostics before draft handling so previews and fatal imports remain inspectable.
+        Path reportPath = writeReport(WorkspacePaths.reports(server), namespace, bookId, result);
         String json = NativeBookJson.encode(result.book());
         AuthorOperationResult<DraftSnapshot> draft = null;
-        if (!dryRun && !result.report().hasFatal()) draft = writeDraft(server, namespace, bookId, result);
-        return new ImportExecution(result, json, dryRun, ImportTarget.DRAFT, draft);
+        if (!dryRun && !result.report().hasFatal()) draft = writeDraft(server, result);
+        return new ImportExecution(result, json, dryRun, ImportTarget.DRAFT, draft, reportPath);
     }
 
-    /** Keeps the safe inbox name with the draft so catalog entries can distinguish separate FTB imports. */
+    /** Keeps the inbox name or fixed local path with the draft so the catalog identifies its source. */
     static FtbImportResult withImportSource(FtbImportResult result, String sourceName) {
         var sourceBook = result.book();
         var extensions = new java.util.TreeMap<>(sourceBook.extensions());
@@ -59,18 +90,18 @@ public final class FtbImportService {
                 result.questCount(), result.taskCount(), result.rewardCount(), result.fieldConversions());
     }
 
-    private AuthorOperationResult<DraftSnapshot> writeDraft(MinecraftServer server, String namespace, String bookId,
-                                                             FtbImportResult result) throws IOException {
+    private AuthorOperationResult<DraftSnapshot> writeDraft(MinecraftServer server, FtbImportResult result) throws IOException {
         DraftSnapshot draft = DraftSnapshot.from(result.book(), DraftOrigin.IMPORT, "");
-        AuthorOperationResult<DraftSnapshot> created = new DraftRepository().create(server, draft);
-        writeReport(WorkspacePaths.reports(server), namespace, bookId, result);
-        return created;
+        return new DraftRepository().create(server, draft);
     }
 
-    private void writeReport(Path reports, String namespace, String bookId, FtbImportResult result) throws IOException {
+    /** Replaces the previous report for this target, including failed conversion attempts. */
+    static Path writeReport(Path reports, String namespace, String bookId, FtbImportResult result) throws IOException {
         Files.createDirectories(reports);
-        Files.writeString(reports.resolve("import-" + namespace + "-" + bookId + ".json"), result.reportJson() + "\n",
+        Path reportPath = reports.resolve("import-" + namespace + "-" + bookId + ".json");
+        Files.writeString(reportPath, result.reportJson() + "\n",
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        return reportPath;
     }
 
     private void requireSegment(String value, String name) {
@@ -79,7 +110,7 @@ public final class FtbImportService {
         }
     }
 
-    private void validateSourceTree(Path importRoot, Path source) throws IOException {
+    private static void validateSourceTree(Path importRoot, Path source) throws IOException {
         Path realRoot = importRoot.toRealPath();
         Path realSource = source.toRealPath();
         if (!realSource.startsWith(realRoot)) throw new IOException("Import source escapes the allowed root");
@@ -139,5 +170,5 @@ public final class FtbImportService {
 
     public enum ImportTarget { DRAFT }
     public record ImportExecution(FtbImportResult result, String nativeJson, boolean dryRun, ImportTarget target,
-                                  AuthorOperationResult<DraftSnapshot> draftResult) {}
+                                  AuthorOperationResult<DraftSnapshot> draftResult, Path reportPath) {}
 }

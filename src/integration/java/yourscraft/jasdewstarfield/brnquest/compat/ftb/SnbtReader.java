@@ -42,6 +42,9 @@ public final class SnbtReader {
 
     private static boolean needsComma(String current, String next) {
         if (current.isEmpty() || next.isEmpty() || current.endsWith(",") || current.endsWith("{") || current.endsWith("[")) return false;
+        // A typed-array header opens its elements, including nested forms such as [[I;.
+        // Inserting a separator here would turn valid FTB output into the invalid [I;,.
+        if (current.endsWith("[I;") || current.endsWith("[B;") || current.endsWith("[L;")) return false;
         return !next.startsWith("}") && !next.startsWith("]");
     }
 }

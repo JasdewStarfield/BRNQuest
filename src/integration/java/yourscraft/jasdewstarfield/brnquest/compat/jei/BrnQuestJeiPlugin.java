@@ -8,7 +8,6 @@ import mezz.jei.api.gui.handlers.IGhostIngredientHandler;
 import mezz.jei.api.gui.handlers.IGlobalGuiHandler;
 import mezz.jei.api.gui.handlers.IGuiProperties;
 import mezz.jei.api.gui.handlers.IGuiContainerHandler;
-import mezz.jei.api.gui.builder.IClickableIngredientFactory;
 import mezz.jei.api.ingredients.ITypedIngredient;
 import mezz.jei.api.registration.IGuiHandlerRegistration;
 import mezz.jei.api.runtime.IClickableIngredient;
@@ -111,9 +110,9 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
         Screen current = event.getCurrentScreen();
         if (runtime == null || !(current instanceof TransientChildScreenParent parent)
                 || event.getNewScreen() == current) return;
-        // JEI assigns its parent before setScreen fires Opening. Mark only that exact transition,
-        // leaving ordinary inventory, disconnect, and explicit editor-close lifecycles untouched.
-        if (runtime.getRecipesGui().getParentScreen().orElse(null) == current) {
+        // The runtime exposes the recipe screen itself on both old and new JEI 19 releases.
+        // Match that exact destination without resolving the newer getParentScreen API.
+        if (event.getNewScreen() == runtime.getRecipesGui()) {
             parent.prepareForTransientChildScreen();
         }
     }
@@ -203,19 +202,27 @@ public final class BrnQuestJeiPlugin implements IModPlugin {
                                        int guiXSize, int guiYSize, int screenWidth,
                                        int screenHeight) implements IGuiProperties {}
 
-    private static final class BrnQuestClickableItemHandler implements IGlobalGuiHandler {
+    private final class BrnQuestClickableItemHandler implements IGlobalGuiHandler {
         @Override
-        public Optional<IClickableIngredient<?>> getClickableIngredientUnderMouse(
-                IClickableIngredientFactory builder, double mouseX, double mouseY) {
+        public Optional<IClickableIngredient<?>> getClickableIngredientUnderMouse(double mouseX, double mouseY) {
             Screen screen = Minecraft.getInstance().screen;
-            if (!(screen instanceof RecipeLookupSource source)) return Optional.empty();
+            if (runtime == null || !(screen instanceof RecipeLookupSource source)) return Optional.empty();
             return source.recipeLookupTargetAt(mouseX, mouseY).flatMap(target -> {
                 UiRect area = target.bounds();
                 // JEI wraps plugin-provided GUI ingredients with canClickToFocus=false. Its
                 // recipe/use keys work, while ordinary mouse clicks remain owned by BRNQuest.
-                return builder.createBuilder(target.stack())
-                        .buildWithArea(area.left(), area.top(), area.width(), area.height())
-                        .map(clickable -> (IClickableIngredient<?>) clickable);
+                // JEI 19's newer factory overload delegates to this original API by default.
+                // Construct the two-field value directly so older releases can load this class.
+                return runtime.getIngredientManager().createTypedIngredient(VanillaTypes.ITEM_STACK, target.stack())
+                        .map(ingredient -> new IClickableIngredient<ItemStack>() {
+                            @Override
+                            public ITypedIngredient<ItemStack> getTypedIngredient() { return ingredient; }
+
+                            @Override
+                            public Rect2i getArea() {
+                                return new Rect2i(area.left(), area.top(), area.width(), area.height());
+                            }
+                        });
             });
         }
     }

@@ -30,7 +30,7 @@ side = "BOTH"
 [[dependencies."${mod_id}"]]
 modId = "jei"
 type = "optional"
-versionRange = "[19.25.1.334,20)"
+versionRange = "${jei_version_range}"
 ordering = "AFTER"
 side = "CLIENT"
 
@@ -38,7 +38,7 @@ side = "CLIENT"
 [[dependencies."${mod_id}"]]
 modId = "kubejs"
 type = "optional"
-versionRange = "[${kubejs_version},2102)"
+versionRange = "${kubejs_version_range}"
 ordering = "AFTER"
 side = "BOTH"
 

@@ -82,14 +82,24 @@ config/brnquest/
 
 使用完整 `namespace:path` ID，并在每次修改后采用返回的新 revision。配置 JSON 为只含原始值的扁平对象，不接受嵌套对象或数组；最终类型接收字符串值。
 
-导入 FTB v13 时，将源文件放在 `config/brnquest/imports/<source>/`：
+直接转换当前整合包已保存的 FTB v13 任务书，使用权限等级 2 的管理员命令：
+
+```text
+/brnquest import_ftb_local
+/brnquest import_ftb_local --dry-run
+/brnquest import_ftb_local <namespace> [book_id] [--dry-run]
+```
+
+命令直接读取服务端实例的 `config/ftbquests/quests/`（单人游戏为游戏目录），包括章节、语言和奖励表，无需移动文件，也不需要运行 FTB 模组。请先在 FTB Quests 中保存待导入的编辑。默认创建 `ftbquests:main` 草稿；指定命名空间后，省略任务书 ID 时仍使用 `main`。多人服务器读取服务端文件。`/brnquest workspace import_ftb_local` 支持相同参数。任务定义沿用现有[导入限制](CONTENT_REFERENCE_zh.md#ftb-导入)，不迁移玩家或队伍进度。源文件保持原样，同 ID 草稿已存在时拒绝覆盖；再次导入可指定新的 ID。
+
+导入其他 FTB v13 任务书时，将源文件放在 `config/brnquest/imports/<source>/`：
 
 ```text
 /brnquest workspace import_ftb <source> <namespace> [book_id] --dry-run
 /brnquest workspace import_ftb <source> <namespace> [book_id]
 ```
 
-Dry-run 生成报告，不改变任务内容。正式导入创建 `IMPORT` 草稿，保留源文件，同 ID 草稿已存在时拒绝覆盖。旧 `/brnquest import_ftb` 名称遵循同样的草稿导入流程。先检查诊断并打开草稿，再发布，具体转换规则见[导入限制](CONTENT_REFERENCE_zh.md#ftb-导入)。
+Dry-run 显示诊断，并将转换报告写入 `config/brnquest/reports/`，不创建草稿。转换出现致命错误时也会保存报告。正式导入在没有致命错误时创建 `IMPORT` 草稿，保留源文件，同 ID 草稿已存在时拒绝覆盖。旧 `/brnquest import_ftb` 名称遵循同样的草稿导入流程。在编辑器的草稿目录中打开导入的任务书、检查诊断，再发布并应用到当前世界即可使用，具体转换规则见[导入限制](CONTENT_REFERENCE_zh.md#ftb-导入)。
 
 命令行发布按以下顺序执行，任一步失败即停止：
 

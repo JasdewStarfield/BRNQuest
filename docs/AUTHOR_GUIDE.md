@@ -82,14 +82,24 @@ Use the in-game draft catalog for creating from the active book, saving versions
 
 Use full `namespace:path` IDs and the new revision returned by every edit. Config JSON is a flat object of primitive values; nested objects/arrays are rejected. Types ultimately receive string values.
 
-To import FTB v13, place the source under `config/brnquest/imports/<source>/`:
+To convert this modpack's saved FTB v13 book directly, run with operator permission level 2:
+
+```text
+/brnquest import_ftb_local
+/brnquest import_ftb_local --dry-run
+/brnquest import_ftb_local <namespace> [book_id] [--dry-run]
+```
+
+This reads `config/ftbquests/quests/` in the server instance (the game directory in singleplayer), including chapters, languages and reward tables. No file moves or FTB runtime dependency are required. Save any pending edits in FTB Quests first. The default destination is the draft `ftbquests:main`; a custom namespace defaults to book ID `main`. On multiplayer servers the files must be on the server. `/brnquest workspace import_ftb_local` accepts the same arguments. Quest definitions are converted using the existing [import limits](CONTENT_REFERENCE.md#ftb-import); player/team progress is not migrated. The source files remain unchanged, and an existing draft ID is refused; choose another ID to import again.
+
+To import another FTB v13 book, place the source under `config/brnquest/imports/<source>/`:
 
 ```text
 /brnquest workspace import_ftb <source> <namespace> [book_id] --dry-run
 /brnquest workspace import_ftb <source> <namespace> [book_id]
 ```
 
-Dry-run writes a report without changing task content. Import creates an `IMPORT` draft, preserves the source, and refuses an existing draft ID. The legacy `/brnquest import_ftb` name has the same draft-only behavior. Inspect diagnostics and open the draft before publishing. See [import limits](CONTENT_REFERENCE.md#ftb-import).
+Dry-run displays diagnostics and writes a conversion report under `config/brnquest/reports/` without creating a draft. Reports are also saved when conversion has fatal errors. Import creates an `IMPORT` draft when there are no fatal errors, preserves the source, and refuses an existing draft ID. The legacy `/brnquest import_ftb` name has the same draft-only behavior. Open the imported book from the editor's draft catalog, inspect diagnostics, then publish and apply it to use it in the current world. See [import limits](CONTENT_REFERENCE.md#ftb-import).
 
 For command-driven publication, stop if any step fails:
 

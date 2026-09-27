@@ -13,7 +13,7 @@ BRNQuest 在安装兼容版本的 KubeJS 与 Rhino 后，为 `server_scripts` �
 - KubeJS `2101.7.2-build.374`
 - Rhino `2101.2.8-build.91`
 
-KubeJS 是可选依赖。
+KubeJS 是可选依赖，加载范围为 `[2101.7.0-build.126,2102)`，与开发基线分别维护；下限版本的 API 已通过编译检查。Rhino 请使用所安装 KubeJS 版本允许的版本。
 
 ## 服务端观察事件
 

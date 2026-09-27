@@ -2,7 +2,7 @@
 
 [简体中文](KUBEJS_API_zh.md) | [Home](../README.md) | [Java API](API.md)
 
-With compatible KubeJS and Rhino installed, BRNQuest exposes `BRNQuest` in `server_scripts` only. Progress writes run on Minecraft's server thread through BRNQuest transactions. Baselines: Minecraft 1.21.1, NeoForge 21.1.216, KubeJS 2101.7.2-build.374 and Rhino 2101.2.8-build.91. KubeJS is an optional dependency. This scripting API remains experimental.
+With compatible KubeJS and Rhino installed, BRNQuest exposes `BRNQuest` in `server_scripts` only. Progress writes run on Minecraft's server thread through BRNQuest transactions. Development baselines: Minecraft 1.21.1, NeoForge 21.1.216, KubeJS 2101.7.2-build.374 and Rhino 2101.2.8-build.91. The optional KubeJS loader range is `[2101.7.0-build.126,2102)`, independent of the development baseline; the lower-bound API passes compilation. Use a Rhino version accepted by your KubeJS release. This scripting API remains experimental.
 
 ## Observation events
 

@@ -18,6 +18,8 @@ BRNQuest is a server-authoritative quest system with an in-game visual editor fo
 | KubeJS + Rhino | Server scripts, events and custom types | 2101.7.2-build.374 + 2101.2.8-build.91 |
 | BRNTalk | Dialogue tasks/rewards through BRNTalk's adapter | Use a version compatible with BRNQuest's API |
 
+Development baselines are independent of loader requirements. Optional dependency ranges are JEI `[19.8.4.110,20)` and KubeJS `[2101.7.0-build.126,2102)`; OPAC has no minimum-version gate. Both lower-bound APIs compile successfully with BRNQuest. Older releases still need in-game integration checks; KubeJS determines its own Rhino requirements.
+
 ## Start here
 
 Press **J** or click the quest icon in the upper-left corner of the inventory screen to open the quest book; the key is rebindable. Authors need permission level 2. Use normal editing for immediate world changes or advanced drafts for review and publication. Distribute a task workspace with your modpack and referenced artwork through a resource pack.

@@ -10,6 +10,18 @@ class EditorAdaptivePropertyLayoutTest {
     private final EditorPropertyPanel.Layout layout = new EditorPropertyPanel.Layout(
             new UiRect(424, 20, 640, 354), 434, 192, 27, 40, 22);
 
+    @Test void twoLineActionNeedsPaddingAndPushesTheNextRowBelowItsButton() {
+        int height = EditorTextLayout.buttonHeight(2, 9);
+        assertEquals(22, height);
+        assertTrue(height > 18);
+        var action = EditorPropertyFormLayout.stacked(434, 40, 192, 9, height);
+        var rows = EditorPropertyPanel.rows(layout, List.of(
+                EditorPropertyPanel.sized(w -> action.field().bottom() - 40, EMPTY), EMPTY));
+        assertTrue(rows.get(1).top() > action.field().bottom());
+        assertEquals(4, height - 2 * 9);
+        assertEquals(18, EditorTextLayout.buttonHeight(1, 9));
+    }
+
     @Test void threeLineLabelMovesFollowingRowsAndKeepsTheirGap() {
         var rows = EditorPropertyPanel.rows(layout, List.of(EMPTY,
                 EditorPropertyPanel.sized(w -> 27, EMPTY), EMPTY));

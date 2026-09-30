@@ -6,6 +6,11 @@ import java.util.function.ToIntFunction;
 public final class EditorTextLayout {
     private EditorTextLayout() {}
 
+    /** Every text line needs its normal height plus two pixels above and below the complete block. */
+    public static int buttonHeight(int lines, int lineHeight) {
+        return Math.max(EditorPropertyFormLayout.FIELD_HEIGHT, lines * lineHeight + 4);
+    }
+
     public static float fittedScale(int measuredWidth, int availableWidth, float minimumScale) {
         if (measuredWidth <= 0 || availableWidth >= measuredWidth) return 1.0F;
         float safeMinimum = Math.max(0.1F, Math.min(1.0F, minimumScale));

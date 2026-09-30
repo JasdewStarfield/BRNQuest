@@ -16,3 +16,5 @@
 
 - Aligned the dependency editor footer actions in two full-width rows, with matching input targets.
 - Kept property scroll ranges and typed field hitboxes aligned after long labels expand their rows. Fixed diagnostic labels reporting truncated remainder text as fitting.
+
+- Type-owned configuration actions reserve their icon width and move below full-width labels when needed; multiline buttons now require vertical padding. Compact editor tabs pair Tasks with Rewards and use the explicit Dependency label.

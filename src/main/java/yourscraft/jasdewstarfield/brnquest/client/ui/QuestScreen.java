@@ -193,6 +193,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private double propertyDrawnScroll;
     private int propertyContentHeight;
     private List<UiRect> propertyRowLayouts = List.of();
+    private final Map<Integer, UiRect> typedConfigRenderedFields = new java.util.HashMap<>();
     private boolean questEditorOpen;
     private List<Object> formBaseline = List.of();
     private ResourceLocation questEditorQuestId;
@@ -3796,6 +3797,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 "screen.brnquest.editor.typed.property.id", 68,
                 typedPropertySection.form().serverIssues().get("id"), enabled));
         typedPropertySection.hide();
+        typedConfigRenderedFields.clear();
         List<ConfigFieldDescriptor> descriptors = typedPropertySection.form().schema() == null
                 ? List.of() : typedPropertySection.form().schema().fields();
         rows.add(EditorPropertyPanel.section(font, "screen.brnquest.editor.section.configuration"));
@@ -3804,11 +3806,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             int fieldIndex = index;
             String issue = issues.getOrDefault(descriptor.key(),
                     typedPropertySection.form().serverIssues().get(descriptor.key()));
-            Component label = Component.translatable(descriptor.labelKey().isBlank()
-                    ? typedConfigLabel(descriptor.key()) : descriptor.labelKey());
             // Each descriptor reserves the actual wrapped label height; other rows keep their compact spacing.
-            rows.add(EditorPropertyPanel.sized(w -> EditorPropertyRow.height(font, label, 68, issue),
-                    (g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w, issue, mouseX, mouseY)));
+            rows.add(EditorPropertyPanel.sized(w -> {
+                var row = typedConfigRowLayout(descriptor, fieldIndex, 0, 0, w, issue);
+                return Math.max(row.label().bottom(), row.field().bottom());
+            }, (g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w, issue, mouseX, mouseY)));
         }
         if (typedPropertySection.form().schema() != null && typedPropertySection.form().schema().rawFallback()) {
             rows.add((g, x, y, w) -> {
@@ -3850,12 +3852,33 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : ClientRewardPresentationRegistry.get(entry.typeId()).typeName(ApiViews.reward(entry.reward()));
     }
 
+    /** Long type-owned actions use a full-width row with enough height for their complete caption and icon. */
+    private EditorPropertyFormLayout.Row typedConfigRowLayout(ConfigFieldDescriptor descriptor, int index,
+                                                             int left, int top, int width, String issue) {
+        Component label = Component.translatable(descriptor.labelKey().isBlank()
+                ? typedConfigLabel(descriptor.key()) : descriptor.labelKey());
+        var editor = ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key());
+        if (editor.isPresent()) {
+            String value = typedPropertySection.form().configField(index).getValue();
+            var factory = editor.orElseThrow();
+            int iconWidth = factory.icon(value).map(icon -> icon.width(font)).orElse(0);
+            return EditorPropertyRow.action(font, label, factory.label(value), left, top, width, 68, iconWidth, issue);
+        }
+        if (descriptor.valueType() == ConfigValueType.ITEM_STACK && descriptor.serverSource().isEmpty()) {
+            return EditorPropertyRow.action(font, label,
+                    Component.translatable("screen.brnquest.editor.typed.property.select_item"),
+                    left, top, width, 68, 16, issue);
+        }
+        return EditorPropertyFormLayout.row(left, top, width, 68, EditorPropertyRow.height(font, label, 68, issue));
+    }
+
     private void renderTypedConfigRow(GuiGraphics graphics, ConfigFieldDescriptor descriptor, int index,
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
         Component label = Component.translatable(descriptor.labelKey().isBlank()
                 ? typedConfigLabel(descriptor.key()) : descriptor.labelKey());
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68,
-                EditorPropertyRow.height(font, label, 68, issue));
+        EditorPropertyFormLayout.Row row = typedConfigRowLayout(descriptor, index, left, top, width, issue);
+        // Capture the actual painted field: stacked buttons cannot reuse the old side-by-side input rectangle.
+        typedConfigRenderedFields.put(index, row.field());
         EditorPropertyRow.label(graphics, font, label, row.label(), issue);
         // Types may supply either a translated help key or existing literal help text.
         if (row.label().containsExclusive(mouseX, mouseY)) {
@@ -3956,7 +3979,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void captureTypedPropertyInteractionFrame(List<ConfigFieldDescriptor> descriptors) {
         List<QuestTypedPropertySection.FieldHit> fields = new ArrayList<>();
         for (int index = 0; index < Math.min(descriptors.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
-            UiRect bounds = visiblePropertyBounds(typedPropertyConfigBounds(index));
+            UiRect painted = typedConfigRenderedFields.get(index);
+            UiRect bounds = painted == null ? null : visiblePropertyBounds(painted);
             if (bounds != null) fields.add(new QuestTypedPropertySection.FieldHit(index, descriptors.get(index), bounds));
         }
         int semanticsTop = typedPropertySemanticsTop();
@@ -4143,12 +4167,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int raw = typedPropertySection.form().schema() != null
                 && typedPropertySection.form().schema().rawFallback() ? 1 : 0;
         return drawnPropertyRow(5 + typedPropertyFieldCount() + raw).top();
-    }
-
-    /** Hit testing reads the same measured rows used by rendering, including the centered native input. */
-    private UiRect typedPropertyConfigBounds(int index) {
-        UiRect bounds = drawnPropertyRow(4 + index);
-        return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), 68, bounds.height()).field();
     }
 
     private UiRect typedPropertyRawBounds() {

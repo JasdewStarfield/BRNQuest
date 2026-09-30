@@ -44,11 +44,11 @@ class EditorTextOverflowTest {
         var third = layout.detailEditorButton(2);
         var fourth = layout.detailEditorButton(3);
         assertTrue(first.width() >= 80);
-        assertEquals(first.top(), second.top());
-        assertEquals(third.top(), fourth.top());
+        assertEquals(first.top(), fourth.top());
+        assertEquals(second.top(), third.top());
         assertTrue(first.bottom() < third.top());
-        assertTrue(first.right() < second.left());
-        assertEquals(first.left(), third.left());
-        assertTrue(fourth.bottom() < layout.bottomToolbar().top());
+        assertTrue(second.right() < third.left());
+        assertEquals(first.left(), second.left());
+        assertTrue(third.bottom() < layout.bottomToolbar().top());
     }
 }

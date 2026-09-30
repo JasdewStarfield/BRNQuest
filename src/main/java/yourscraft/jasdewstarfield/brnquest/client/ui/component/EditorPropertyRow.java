@@ -18,10 +18,19 @@ public final class EditorPropertyRow {
     /** Keep a full action name by moving its button below the label before considering text wrapping. */
     public static EditorPropertyFormLayout.Row action(Font font, Component label, Component action,
                                                        int left, int top, int width, int labelWidth) {
-        if (font.width(action) + 8 <= width - labelWidth)
-            return EditorPropertyFormLayout.row(left, top, width, labelWidth, height(font, label, labelWidth, null));
-        int labelHeight = Math.max(font.lineHeight, font.split(label, Math.max(1, width - 4)).size() * font.lineHeight);
-        int buttonHeight = Math.max(18, font.split(action, Math.max(1, width - 8)).size() * font.lineHeight + 4);
+        return action(font, label, action, left, top, width, labelWidth, 0, null);
+    }
+
+    /** Reserve the icon and gap in the same width calculation used by the button renderer. */
+    public static EditorPropertyFormLayout.Row action(Font font, Component label, Component action,
+                                                       int left, int top, int width, int labelWidth,
+                                                       int iconWidth, String issue) {
+        int reserved = 8 + (iconWidth > 0 ? iconWidth + EditorButton.CONTENT_GAP : 0);
+        if (font.width(action) + reserved <= width - labelWidth)
+            return EditorPropertyFormLayout.row(left, top, width, labelWidth, height(font, label, labelWidth, issue));
+        Component fullLabel = issue != null && !issue.isBlank() ? Component.literal("! ").append(label) : label;
+        int labelHeight = Math.max(font.lineHeight, font.split(fullLabel, Math.max(1, width - 4)).size() * font.lineHeight);
+        int buttonHeight = EditorTextLayout.buttonHeight(font.split(action, Math.max(1, width - reserved)).size(), font.lineHeight);
         return EditorPropertyFormLayout.stacked(left, top, width, labelHeight, buttonHeight);
     }
 

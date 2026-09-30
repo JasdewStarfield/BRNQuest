@@ -105,7 +105,9 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
         if (index < 0 || index >= 4) throw new IllegalArgumentException("Editor action index must be between 0 and 3");
         int left = detailLeft() + 10, available = width - 10 - left, gap = 3;
         int columns = available >= 400 ? 4 : 2;
-        int rows = 4 / columns, column = index % columns, row = index / columns;
+        // Semantic order stays properties/tasks/rewards/dependency; compact visual order pairs tasks with rewards.
+        int position = columns == 2 ? switch (index) { case 1 -> 2; case 2 -> 3; case 3 -> 1; default -> 0; } : index;
+        int rows = 4 / columns, column = position % columns, row = position / columns;
         int buttonWidth = (available - gap * (columns - 1)) / columns;
         int x = left + column * (buttonWidth + gap);
         int bottom = height - bottomToolbarHeight() - 6;

@@ -373,7 +373,7 @@
   "screen.brnquest.editor.item_selector.title": "Select item",
   "screen.brnquest.editor.item_selector.target": "Selected item",
   "screen.brnquest.editor.item_selector.target_help": "Right-click the selected item slot to clear it.",
-  "screen.brnquest.editor.dependency.short": "Links",
+  "screen.brnquest.editor.dependency.short": "Dependency",
   "screen.brnquest.editor.item_selector.inventory": "Select from player inventory",
   "screen.brnquest.editor.raw_config.title": "Edit raw configuration",
   "screen.brnquest.editor.raw_config.help": "Use a flat JSON object; apply, then submit the property form to validate and save",

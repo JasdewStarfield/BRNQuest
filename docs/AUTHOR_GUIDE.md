@@ -101,6 +101,8 @@ To import another FTB v13 book, place the source under `config/brnquest/imports/
 
 Dry-run displays diagnostics and writes a conversion report under `config/brnquest/reports/` without creating a draft. Reports are also saved when conversion has fatal errors. Import creates an `IMPORT` draft when there are no fatal errors, preserves the source, and refuses an existing draft ID. The legacy `/brnquest import_ftb` name has the same draft-only behavior. Open the imported book from the editor's draft catalog, inspect diagnostics, then publish and apply it to use it in the current world. See [import limits](CONTENT_REFERENCE.md#ftb-import).
 
+Import diagnostics distinguish **FATAL**, which blocks draft creation, from **ERROR**, which reports a local conversion failure while allowing other content to be imported. **WARN** describes compatibility losses, such as omitted link styling or click-to-copy behavior, and **INFO** records conversions such as flattened pages. Chat summaries count fatal errors and errors separately. Review errors before publishing; creating a draft does not confirm that every imported feature works.
+
 For command-driven publication, stop if any step fails:
 
 ```text

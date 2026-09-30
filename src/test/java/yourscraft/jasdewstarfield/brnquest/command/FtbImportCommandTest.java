@@ -12,6 +12,39 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Parse commands without executing imports or requiring a running world. */
 class FtbImportCommandTest {
+    @Test void summariesSeparateBlockingFatalsFromRecoverableErrors() {
+        var report = new yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport();
+        var book = new yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition(
+                net.minecraft.resources.ResourceLocation.parse("test:main"), 1, "Book",
+                java.util.List.of(), java.util.List.of(), java.util.Map.of());
+        var result = new yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportResult(book, report,
+                0, 2, 3, 0, 0, java.util.List.of());
+        // A recoverable error still reports a completed import; warnings remain a distinct count.
+        report.add(new yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic(
+                yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR, "TEST", "", "", "", "Partial loss"));
+        report.add(new yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic(
+                yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN, "TEST", "", "", "", "Layout loss"));
+        var completed = BrnQuestCommands.importSummary(result, false);
+        var content = assertInstanceOf(net.minecraft.network.chat.contents.TranslatableContents.class, completed.getContents());
+        assertEquals("command.brnquest.import.summary", content.getKey());
+        assertArrayEquals(new Object[]{2, 3, 0L, 1L, 1L}, content.getArgs());
+        assertEquals("command.brnquest.import.summary_dry_run", assertInstanceOf(
+                net.minecraft.network.chat.contents.TranslatableContents.class,
+                BrnQuestCommands.importSummary(result, true).getContents()).getKey());
+
+        // Fatal results must never say that a draft was imported, even during a preview.
+        report.add(new yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic(
+                yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.FATAL, "TEST", "", "", "", "Invalid book"));
+        for (boolean preview : new boolean[]{false, true}) {
+            var blocked = BrnQuestCommands.importSummary(result, preview);
+            var blockedContent = assertInstanceOf(net.minecraft.network.chat.contents.TranslatableContents.class, blocked.getContents());
+            assertEquals("command.brnquest.import.summary_fatal", blockedContent.getKey());
+            assertArrayEquals(new Object[]{2, 3, 1L, 1L, 1L}, blockedContent.getArgs());
+            assertEquals(net.minecraft.network.chat.TextColor.fromLegacyFormat(net.minecraft.ChatFormatting.RED),
+                    blocked.getStyle().getColor());
+        }
+    }
+
     @Test void diagnosticIncludesCodeSourceLocationObjectAndMessage() {
         // Keep enough context in chat to identify the failing source without opening the report.
         var diagnostic = new yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic(

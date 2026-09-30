@@ -113,6 +113,12 @@ public final class FtbV13Importer implements FtbImportBackend {
             report.add(problem(Diagnostic.Severity.FATAL, "BQF-002", source.toString(), "", "", exception.getMessage()));
         }
 
+        // FTB permits chapters outside declared groups; their native group must also exist.
+        ResourceLocation ungroupedId = ResourceLocation.fromNamespaceAndPath(namespace, "ungrouped");
+        if (chapters.stream().anyMatch(chapter -> chapter.groupId().equals(ungroupedId))
+                && groups.stream().noneMatch(group -> group.id().equals(ungroupedId))) {
+            groups.add(new ChapterGroupDefinition(bookId, ungroupedId, "Ungrouped", groups.size()));
+        }
         validateGraph(chapters, report);
         String sourceTextLocale = localeTranslations.containsKey(fallbackLocale) ? fallbackLocale
                 : localeTranslations.containsKey("zh_cn") ? "zh_cn"
@@ -727,7 +733,9 @@ public final class FtbV13Importer implements FtbImportBackend {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
         boolean supported = BUILT_IN_TYPES.contains(builtInPath(type));
         if (!supported && !normalized.contains(":")) {
-            report.add(problem(Diagnostic.Severity.ERROR, "BQF-102", file, path, id, "Unsupported type: " + type));
+            // Keep the source type/config as an unknown extension; importing other content can continue.
+            report.add(problem(Diagnostic.Severity.WARN, "BQF-102", file, path, id,
+                    "Unsupported type preserved as unknown: " + type));
         }
     }
 

@@ -20,6 +20,93 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class FtbV13ImporterTest {
     @TempDir Path temporary;
+
+    @Test void ungroupedChaptersReceiveOneGroupAlongsideDeclaredGroups() throws Exception {
+        // Cover mixed FTB books: declared groups do not include chapters with a blank group field.
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}");
+        Files.writeString(temporary.resolve("chapter_groups.snbt"),
+                "{chapter_groups:[{id:'4000000000000001'}]}");
+        Files.writeString(temporary.resolve("chapters/a.snbt"),
+                "{id:'1000000000000001',group:'4000000000000001',quests:[]}");
+        Files.writeString(temporary.resolve("chapters/b.snbt"),
+                "{id:'1000000000000002',quests:[]}");
+        Files.writeString(temporary.resolve("chapters/c.snbt"),
+                "{id:'1000000000000003',group:'',quests:[]}");
+
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        assertEquals(2, result.book().chapterGroups().size());
+        assertEquals(1, result.book().chapterGroups().stream()
+                .filter(group -> group.id().equals(ResourceLocation.parse("test:ungrouped"))).count());
+        var restored = NativeBookJson.decode(com.google.gson.JsonParser.parseString(
+                NativeBookJson.encode(result.book())).getAsJsonObject());
+        var report = new yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport();
+        yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator.validate(restored, report);
+        assertFalse(report.hasErrors(), report.toJson());
+    }
+
+    @Test void explicitMissingGroupRemainsAValidationError() throws Exception {
+        // Only the implicit default group is synthesized; a broken explicit reference stays diagnosable.
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}");
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}");
+        Files.writeString(temporary.resolve("chapters/a.snbt"),
+                "{id:'1000000000000001',group:'4000000000000001',quests:[]}");
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        var report = new yourscraft.jasdewstarfield.brnquest.diagnostic.DiagnosticReport();
+        yourscraft.jasdewstarfield.brnquest.data.QuestBookValidator.validate(result.book(), report);
+        assertTrue(report.diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQV-114")));
+    }
+
+    @Test void importsChineseNewlinesAndPreservesUnknownTasksAlongsideSupportedQuests() throws Exception {
+        // Reproduce the reported language failure together with a stat placeholder and a normal quest.
+        Files.createDirectories(temporary.resolve("chapters"));
+        Files.createDirectories(temporary.resolve("lang"));
+        Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapter_groups.snbt"), "{}", StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("chapters/a.snbt"), """
+                {id:'1000000000000001',quests:[
+                    {id:'2000000000000001',tasks:[
+                        {id:'3000000000000001',type:'stat',stat:'minecraft:jump',value:100L,
+                            extra:{keep:[I;1,2,3]}}]},
+                    {id:'2000000000000002',tasks:[{id:'3000000000000002',type:'checkmark'}]}
+                ]}
+                """, StandardCharsets.UTF_8);
+        Files.writeString(temporary.resolve("lang/zh_cn.snbt"), """
+                {
+                    quest.2000000000000001.title: "统计任务"
+                    quest.2000000000000001.quest_desc: ["移动速度 +10%；\\n下一行"]
+                    quest.2000000000000002.title: "正常任务"
+                }
+                """, StandardCharsets.UTF_8);
+
+        var result = new FtbV13Importer().importBook(temporary, "test", "main");
+        assertFalse(result.report().hasErrors(), result.report().toJson());
+        assertEquals(2, result.questCount());
+        var unknownQuest = result.book().quests().stream()
+                .filter(quest -> quest.legacyId().equals("2000000000000001")).findFirst().orElseThrow();
+        assertEquals("统计任务", unknownQuest.title());
+        assertEquals("移动速度 +10%；\n下一行", unknownQuest.description());
+        var unknown = unknownQuest.tasks().getFirst();
+        assertEquals(ResourceLocation.parse("ftbquests:stat"), unknown.typeId());
+        assertEquals("minecraft:jump", net.minecraft.nbt.TagParser.parseTag("{stat:" + unknown.config().get("stat") + "}").getString("stat"));
+        assertEquals("100L", unknown.config().get("value"));
+        assertArrayEquals(new int[]{1, 2, 3}, net.minecraft.nbt.TagParser.parseTag(unknown.config().get("extra")).getIntArray("keep"));
+        assertTrue(result.report().diagnostics().stream().anyMatch(diagnostic -> diagnostic.code().equals("BQF-102")
+                && diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN));
+        var normal = result.book().quests().stream().filter(quest -> quest.legacyId().equals("2000000000000002"))
+                .findFirst().orElseThrow();
+        assertEquals("正常任务", normal.title());
+        assertEquals(ResourceLocation.parse("brnquest:checkmark"), normal.tasks().getFirst().typeId());
+
+        // Persistence must retain every unknown configuration field for later editing or extension support.
+        var restored = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(result.book())).getAsJsonObject());
+        var restoredUnknown = restored.quests().stream().flatMap(quest -> quest.tasks().stream())
+                .filter(task -> task.id().equals(unknown.id())).findFirst().orElseThrow();
+        assertEquals(unknown, restoredUnknown);
+    }
+
     @Test void itemComponentPoliciesBecomeNativeMatcherEntries() throws Exception {
         Files.createDirectories(temporary.resolve("chapters"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);

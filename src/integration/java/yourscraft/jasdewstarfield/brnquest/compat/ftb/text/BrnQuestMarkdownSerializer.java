@@ -64,7 +64,7 @@ public final class BrnQuestMarkdownSerializer {
         if (node.action().kind() == FtbTextNode.Action.Kind.OPEN_URL) {
             if (!extended.isEmpty()) diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.WARN,
                     "BQF-TEXT-LINK-STYLE", node.source(),
-                    "Extended color/decorations were dropped because markdown_v1 does not nest style and URL links"));
+                    "URL link preserved; some link colors/decorations were not converted"));
             output.append('[').append(label).append("](<").append(normalizedUrl(node.action().value())).append(">)");
             return;
         }
@@ -73,7 +73,7 @@ public final class BrnQuestMarkdownSerializer {
             if (target != null) {
                 if (!extended.isEmpty()) diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.WARN,
                         "BQF-TEXT-LINK-STYLE", node.source(),
-                        "Extended color/decorations were dropped because markdown_v1 does not nest style and quest links"));
+                        "Quest navigation preserved; some link colors/decorations were not converted"));
                 output.append('[').append(label).append("](brnquest:quest/").append(target).append(')');
                 if (node.action().value().contains("/"))
                     diagnostics.add(diagnostic(FtbTextDiagnostic.Severity.INFO, "BQF-TEXT-SUBPAGE-FLATTENED",

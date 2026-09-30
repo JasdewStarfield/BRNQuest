@@ -16,10 +16,30 @@ public final class SnbtReader {
         try {
             return TagParser.parseTag(source);
         } catch (CommandSyntaxException strictFailure) {
-            // FTB's writer omits commas between line-delimited fields. Normalize only structural
-            // line boundaries, then still delegate all value parsing to Minecraft's TagParser.
-            return TagParser.parseTag(addStructuralCommas(source));
+            // Normalize FTB's omitted commas before decoding quoted newline escapes, so generated
+            // text line breaks never participate in structural comma insertion.
+            return TagParser.parseTag(decodeQuotedNewlines(addStructuralCommas(source)));
         }
+    }
+
+    /** Accepts FTB newline escapes while preserving escaped backslashes, quotes and invalid escapes. */
+    private static String decodeQuotedNewlines(String source) {
+        StringBuilder result = new StringBuilder(source.length());
+        char quote = 0;
+        for (int i = 0; i < source.length(); i++) {
+            char current = source.charAt(i);
+            if (quote != 0 && current == '\\' && i + 1 < source.length()) {
+                char escaped = source.charAt(++i);
+                // Consume each escape once: a literal \\n must not become a line break.
+                if (escaped == 'n') result.append('\n');
+                else result.append(current).append(escaped);
+            } else {
+                result.append(current);
+                if (quote == 0 && (current == '"' || current == '\'')) quote = current;
+                else if (current == quote) quote = 0;
+            }
+        }
+        return result.toString();
     }
 
     static String addStructuralCommas(String source) {

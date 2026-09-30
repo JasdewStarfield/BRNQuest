@@ -59,6 +59,37 @@ class QuestBookValidatorTest {
     }
 
     @Test
+    void importedAliasesCanReferenceEveryExistingObjectKind() {
+        // FTB uses one untyped legacy-ID table for groups, chapters, quests, tasks and rewards.
+        QuestDefinition plain = quest("first", List.of());
+        var task = new TaskDefinition(id("book"), id("task"), id("unknown_task"), Map.of(), false);
+        var reward = new RewardDefinition(id("book"), id("reward"), id("unknown_reward"), Map.of(), "manual", false);
+        var original = book(new QuestDefinition(plain.bookId(), plain.id(), plain.chapterId(), plain.title(),
+                plain.subtitle(), plain.description(), plain.icon(), plain.x(), plain.y(), plain.dependencies(),
+                List.of(task), List.of(reward), plain.legacyId()));
+        var aliases = Map.of("GROUP", id("group"), "CHAPTER", id("chapter"), "QUEST", plain.id(),
+                "TASK", task.id(), "REWARD", reward.id(), "@task:old", task.id(), "@reward:old", reward.id());
+        var restored = NativeBookJson.decode(com.google.gson.JsonParser.parseString(NativeBookJson.encode(
+                new QuestBookDefinition(original.id(), original.schemaVersion(), original.title(),
+                        original.chapterGroups(), original.chapters(), aliases))).getAsJsonObject());
+        var report = new DiagnosticReport();
+        QuestBookValidator.validate(restored, report);
+        assertFalse(report.hasErrors(), report.toJson());
+    }
+
+    @Test
+    void typedAliasesMustMatchTheirTargetKind() {
+        // An editor task/reward alias pointing to a quest is still an invalid mapping.
+        var original = book(quest("first", List.of()));
+        var candidate = new QuestBookDefinition(original.id(), original.schemaVersion(), original.title(),
+                original.chapterGroups(), original.chapters(),
+                Map.of("@task:old", id("first"), "@reward:old", id("first")));
+        var report = new DiagnosticReport();
+        QuestBookValidator.validate(candidate, report);
+        assertEquals(2, report.diagnostics().stream().filter(diagnostic -> diagnostic.code().equals("BQV-121")).count());
+    }
+
+    @Test
     void malformedExplicitTextureIconIsRejected() {
         QuestDefinition valid = quest("textured", List.of());
         QuestDefinition malformed = new QuestDefinition(valid.bookId(), valid.id(), valid.chapterId(), valid.title(),

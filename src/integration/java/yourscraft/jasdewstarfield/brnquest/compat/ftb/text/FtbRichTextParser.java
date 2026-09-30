@@ -294,6 +294,12 @@ public final class FtbRichTextParser {
             return new FtbTextNode.Action(FtbTextNode.Action.Kind.OPEN_URL, value);
         if (action.equals("change_page"))
             return new FtbTextNode.Action(FtbTextNode.Action.Kind.CHANGE_PAGE, value);
+        if (action.equals("copy_to_clipboard")) {
+            // Keep the visible text without turning the copied payload into a link or executable action.
+            context.diagnostic(FtbTextDiagnostic.Severity.WARN, "BQF-TEXT-COPY-DROPPED", source,
+                    "Text preserved; click-to-copy behavior was not converted");
+            return FtbTextNode.Action.NONE;
+        }
         context.diagnostic(FtbTextDiagnostic.Severity.ERROR, "BQF-TEXT-UNSAFE-ACTION", source,
                 "Raw JSON click action cannot be imported: " + action);
         return new FtbTextNode.Action(FtbTextNode.Action.Kind.UNSAFE, value);

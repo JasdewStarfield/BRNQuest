@@ -100,8 +100,11 @@ public final class QuestBookValidator {
         Set<ResourceLocation> rewardIds = book.quests().stream().flatMap(quest -> quest.rewards().stream())
                 .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
         book.legacyIds().forEach((legacyId, targetId) -> {
+            // Imported aliases cover all source objects; editor aliases with a type prefix stay type-specific.
             boolean validTarget = legacyId.startsWith("@task:") ? taskIds.contains(targetId)
-                    : legacyId.startsWith("@reward:") ? rewardIds.contains(targetId) : quests.containsKey(targetId);
+                    : legacyId.startsWith("@reward:") ? rewardIds.contains(targetId)
+                    : quests.containsKey(targetId) || taskIds.contains(targetId) || rewardIds.contains(targetId)
+                    || chapters.contains(targetId) || groups.contains(targetId);
             if (!validTarget) add(report, Diagnostic.Severity.ERROR, "BQV-121", targetId,
                     "Legacy alias " + legacyId + " targets a missing object");
         });

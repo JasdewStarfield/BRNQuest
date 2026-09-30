@@ -23,6 +23,9 @@ final class EditorDiagnosticPresentation {
     static Component diagnostic(EditorPublishReviewModel.Diagnostic diagnostic) {
         String key = DIAGNOSTIC_PREFIX + safeCode(diagnostic.code());
         if (I18n.exists(key)) return Component.translatable(key);
+        // Keep the server's actual reason visible when a code has no localized summary yet.
+        if (diagnostic.message() != null && !diagnostic.message().isBlank())
+            return Component.literal(diagnostic.message());
         String path = diagnostic.path() == null || diagnostic.path().isBlank()
                 ? Component.translatable("screen.brnquest.editor.diagnostic.unknown_field").getString()
                 : diagnostic.path();

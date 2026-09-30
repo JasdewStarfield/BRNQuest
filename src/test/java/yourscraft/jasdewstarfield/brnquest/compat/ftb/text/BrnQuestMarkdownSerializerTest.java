@@ -15,6 +15,32 @@ class BrnQuestMarkdownSerializerTest {
     private final FtbRichTextParser parser = new FtbRichTextParser();
     private final BrnQuestMarkdownSerializer serializer = new BrnQuestMarkdownSerializer();
 
+    @Test void clipboardActionKeepsVisibleTextAsAWarningWithoutCreatingALink() {
+        // The copied value may differ from the label; preserve the label without exposing a new action.
+        var converted = convert(List.of("{\"text\":\"Copy address\",\"bold\":true,\"clickEvent\":{"
+                + "\"action\":\"copy_to_clipboard\",\"value\":\"example.invalid\"}}"));
+        assertEquals("**Copy address**", converted.markdown());
+        assertEquals(1, converted.diagnostics().size());
+        assertEquals("BQF-TEXT-COPY-DROPPED", converted.diagnostics().getFirst().code());
+        assertEquals(FtbTextDiagnostic.Severity.WARN, converted.diagnostics().getFirst().severity());
+        assertFalse(converted.markdown().contains("example.invalid"));
+    }
+
+    @Test void styledQuestAndUrlWarningsExplicitlyConfirmPreservedNavigation() {
+        // Check the actual generated targets as well as the explanation of the style loss.
+        var parsed = parser.parse(List.of("{\"text\":\"Quest\",\"underlined\":true,\"clickEvent\":{"
+                + "\"action\":\"change_page\",\"value\":\"ABCD\"}}",
+                "{\"text\":\"Site\",\"color\":\"red\",\"clickEvent\":{"
+                + "\"action\":\"open_url\",\"value\":\"https://example.com\"}}"),
+                "en_us.snbt", "quest.A.quest_desc", Map.of());
+        var converted = serializer.serialize(parsed, target -> "demo:quest");
+        assertEquals("[Quest](brnquest:quest/demo:quest)\n[Site](<https://example.com>)", converted.markdown());
+        assertEquals(List.of("Quest navigation preserved; some link colors/decorations were not converted",
+                        "URL link preserved; some link colors/decorations were not converted"),
+                converted.diagnostics().stream().map(FtbTextDiagnostic::message).toList());
+        assertTrue(converted.diagnostics().stream().allMatch(d -> d.severity() == FtbTextDiagnostic.Severity.WARN));
+    }
+
     @Test void escapesLiteralMarkdownAndPreservesListEntryBoundaries() {
         var converted = convert(List.of("literal * _ [x](y)", "", "next"));
 

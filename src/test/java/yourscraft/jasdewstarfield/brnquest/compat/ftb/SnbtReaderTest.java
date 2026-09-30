@@ -12,6 +12,34 @@ import static org.junit.jupiter.api.Assertions.*;
 class SnbtReaderTest {
     @TempDir Path directory;
 
+    @Test void readsQuotedNewlinesWithoutChangingLiteralEscapesOrFollowingFields() throws Exception {
+        // Real pack descriptions combine FTB line separators with escapes inside both quote styles.
+        Path source = directory.resolve("newlines.snbt");
+        Files.writeString(source, """
+                {
+                    text: "移动速度 +10%；\\n下一行"
+                    single: 'before\\nafter'
+                    literal: "keep\\\\n"
+                    quoted: "say \\"hello\\"\\nnext"
+                    after: 42
+                }
+                """);
+        var tag = new SnbtReader().read(source);
+        assertEquals("移动速度 +10%；\n下一行", tag.getString("text"));
+        assertEquals("before\nafter", tag.getString("single"));
+        assertEquals("keep\\n", tag.getString("literal"));
+        assertEquals("say \"hello\"\nnext", tag.getString("quoted"));
+        assertEquals(42, tag.getInt("after"));
+    }
+
+    @Test void stillRejectsInvalidQuotedEscapes() throws Exception {
+        // Accepting the known newline escape must not silently repair arbitrary invalid data.
+        Path source = directory.resolve("invalid-escape.snbt");
+        Files.writeString(source, "{text: \"bad\\q\"}");
+        assertThrows(com.mojang.brigadier.exceptions.CommandSyntaxException.class,
+                () -> new SnbtReader().read(source));
+    }
+
     @Test void readsMultilineTypedArraysWithoutChangingTheirValues() throws Exception {
         // Exercise the public reader's fallback with storage IDs, nested positions and blueprint bytes.
         Path source = directory.resolve("typed-arrays.snbt");

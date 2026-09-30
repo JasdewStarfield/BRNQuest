@@ -187,7 +187,9 @@ public final class BrnQuestCommands {
                     ? service.executeLocal(context.getSource().getServer(), namespace, bookId, dryRun)
                     : service.execute(context.getSource().getServer(), source, namespace, bookId, dryRun);
             var result = execution.result();
-            long errors = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity().ordinal() >= yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR.ordinal()).count();
+            // Blocking failures and recoverable content errors have separate counts and outcomes.
+            long fatals = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.FATAL).count();
+            long errors = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR).count();
             long warnings = result.report().diagnostics().stream().filter(diagnostic -> diagnostic.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN).count();
             // Show the report even when storing the converted draft subsequently fails.
             context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.import.report",
@@ -197,19 +199,17 @@ public final class BrnQuestCommands {
                     .sorted(java.util.Comparator.comparing(yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic::severity).reversed())
                     .limit(5)
                     .forEach(diagnostic -> context.getSource().sendSuccess(() -> importDiagnostic(diagnostic), false));
-            if (errors + warnings > 5) context.getSource().sendSuccess(() -> Component.translatable(
-                    "command.brnquest.import.more_diagnostics", errors + warnings - 5), false);
+            if (fatals + errors + warnings > 5) context.getSource().sendSuccess(() -> Component.translatable(
+                    "command.brnquest.import.more_diagnostics", fatals + errors + warnings - 5), false);
             if (!dryRun && execution.draftResult() != null && !execution.draftResult().success()) {
                 context.getSource().sendFailure(Component.translatable("command.brnquest.import.failed_code",
                         execution.draftResult().code()));
                 return 0;
             }
-            context.getSource().sendSuccess(() -> Component.translatable(dryRun
-                            ? "command.brnquest.import.summary_dry_run" : "command.brnquest.import.summary",
-                            result.chapterCount(), result.questCount(), errors, warnings)
-                    .withStyle(errors == 0 ? ChatFormatting.GREEN : ChatFormatting.YELLOW), true);
-            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} errors={} warnings={}",
-                    context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), errors, warnings);
+            if (result.report().hasFatal()) context.getSource().sendFailure(importSummary(result, dryRun));
+            else context.getSource().sendSuccess(() -> importSummary(result, dryRun), true);
+            yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.debug("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} chapters={} quests={} fatals={} errors={} warnings={}",
+                    context.getSource().getTextName(), source, namespace, bookId, dryRun, result.chapterCount(), result.questCount(), fatals, errors, warnings);
             return result.report().hasFatal() ? 0 : result.questCount();
         } catch (Exception exception) {
             yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.warn("[BRNQuest/AUDIT] actor={} action=import_ftb source={} namespace={} book={} dryRun={} result=failure message={}",
@@ -218,6 +218,17 @@ public final class BrnQuestCommands {
                     ? "command.brnquest.import.local_missing" : "command.brnquest.import.failed"));
             return 0;
         }
+    }
+
+    /** A fatal import never claims to have created a draft; ERROR only describes partial conversion loss. */
+    static Component importSummary(yourscraft.jasdewstarfield.brnquest.compat.ftb.FtbImportResult result, boolean dryRun) {
+        long fatals = result.report().diagnostics().stream().filter(d -> d.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.FATAL).count();
+        long errors = result.report().diagnostics().stream().filter(d -> d.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.ERROR).count();
+        long warnings = result.report().diagnostics().stream().filter(d -> d.severity() == yourscraft.jasdewstarfield.brnquest.diagnostic.Diagnostic.Severity.WARN).count();
+        String key = result.report().hasFatal() ? "command.brnquest.import.summary_fatal"
+                : dryRun ? "command.brnquest.import.summary_dry_run" : "command.brnquest.import.summary";
+        return Component.translatable(key, result.chapterCount(), result.questCount(), fatals, errors, warnings)
+                .withStyle(fatals > 0 ? ChatFormatting.RED : errors + warnings > 0 ? ChatFormatting.YELLOW : ChatFormatting.GREEN);
     }
 
     /** Literal diagnostic fields preserve source locations and cannot introduce chat formatting actions. */

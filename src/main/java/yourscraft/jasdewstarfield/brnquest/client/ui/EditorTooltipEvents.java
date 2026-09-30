@@ -38,6 +38,8 @@ public final class EditorTooltipEvents {
     }
 
     @SubscribeEvent public static void tooltip(RenderTooltipEvent.Pre event) {
+        // Debug measurements stay visible even when the normal tooltip input rule is suppressing hints.
+        if (yourscraft.jasdewstarfield.brnquest.client.ui.component.TextLayoutDebug.drawingTooltip()) return;
         var input = state(Minecraft.getInstance().screen);
         if (input != null && input.suppressTooltip()) event.setCanceled(true);
     }

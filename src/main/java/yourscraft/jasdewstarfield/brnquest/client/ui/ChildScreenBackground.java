@@ -10,6 +10,8 @@ public final class ChildScreenBackground {
     public static void render(Screen parent, GuiGraphics graphics, int width, int height, float partialTick) {
         resizeIfNeeded(parent, width, height);
         parent.render(graphics, -1, -1, partialTick);
+        // Only the active child's text participates in diagnostic hover hit testing.
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.TextLayoutDebug.discardBackdrop();
         // Keep the parent's color image but start a fresh depth layer for every nested child screen.
         // Item renderers and modal parents use different Z values; those must never cover child controls.
         graphics.flush();

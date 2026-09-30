@@ -42,6 +42,12 @@ Use Java 21 and the included Gradle wrapper:
 
 The distributable is written to `build/libs/`. `runClient` and `runServer` start development instances. Their development-only example add-on can be excluded with `-PexcludeExampleAddon`. Common code, built-in types and integrations compile separately and ship as one JAR. See the [extension guide](docs/EXTENSION_API.md) for the public-only example add-on.
 
+## Client text layout diagnostics
+
+In the quest editor's client settings, enable **Debug → Text layout diagnostics**, or set `textLayoutDebug = true` under `[debug]` in `config/brnquest-client.toml`. Hover interface text to inspect available space, original and rendered size, scaling, truncation, and clipping. Disable the option to restore normal tooltips.
+
+Measurements use the current font and GUI coordinates. Shared buttons and fitted text renderers provide text slots; wrapped text is measured per rendered line. Text without a declared slot reports an unknown control area and shows the screen/scissor boundary. Diagnostics apply to BRNQuest screens.
+
 ## AI and developer responsibilities
 
 BRNQuest is designed and maintained by its developer, with AI tools participating in development.

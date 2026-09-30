@@ -42,6 +42,12 @@ BRNQuest 是面向 Minecraft 整合包的服务端权威任务系统，提供游
 
 产物位于 `build/libs/`。`runClient` 和 `runServer` 启动开发实例，可加 `-PexcludeExampleAddon` 排除开发专用的示例附属模组。核心、内置类型与适配层独立编译，最终合并为一个 JAR。只依赖公共接口的示例附属说明见[类型扩展](docs/EXTENSION_API_zh.md)。
 
+## 客户端文字布局诊断
+
+在任务编辑器的客户端设置中，打开“调试 → 文字布局调试”，或在 `config/brnquest-client.toml` 中设置 `[debug]` 下的 `textLayoutDebug = true`。悬停界面文字可查看可用区域、原始与最终占用、缩放比例、截断及裁剪情况；关闭开关后恢复普通提示。
+
+测量使用当前字体和 GUI 坐标。共享按钮和文字适配组件提供文字区域，换行文字按当前行测量；其他未声明区域的文字显示“控件空间未知”，并提供屏幕与裁剪边界。诊断仅作用于 BRNQuest 界面。
+
 ## AI 与开发者职责
 
 BRNQuest 由开发者主导设计与维护，使用 AI 工具参与开发。

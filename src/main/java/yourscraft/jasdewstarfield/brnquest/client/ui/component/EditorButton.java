@@ -111,26 +111,41 @@ public final class EditorButton {
         if (content.icon().width() > 0) {
             definition.icon().render(graphics, font, content.icon(), foreground);
         }
+        if (definition.contentMode() != ContentMode.ICON_ONLY && content.label().width() == 0)
+            TextLayoutDebug.emptyButton(graphics, font, definition.label(), bounds);
         if (content.label().width() > 0) {
             // Compact localized labels shrink before truncation, retaining more meaning in narrow sidebars.
             int unscaledAvailable = Math.max(1, (int) Math.floor(content.label().width() / labelScale));
             Component visibleLabel = unscaledAvailable < labelWidth
                     ? Component.literal(font.plainSubstrByWidth(definition.label().getString(), unscaledAvailable))
                     : definition.label();
+            int reservedIcon = definition.contentMode() == ContentMode.TEXT ? 0 : iconWidth;
+            int reservedGap = reservedIcon > 0 ? CONTENT_GAP : 0;
+            // Diagnose the full label before fitting; measuring only the final substring would hide the defect.
+            TextLayoutDebug.fitted(graphics, font, definition.label(), visibleLabel,
+                    new UiRect(Math.min(bounds.right(), bounds.left() + reservedIcon + reservedGap),
+                            bounds.top(), bounds.right(), bounds.bottom()),
+                    content.label().left(), content.label().centerY() - (font.lineHeight / 2) * labelScale,
+                    labelScale, "editor_button");
+            TextLayoutDebug.mute();
             graphics.pose().pushPose();
             graphics.pose().translate(content.label().left(), content.label().centerY(), 0);
             graphics.pose().scale(labelScale, labelScale, 1.0F);
             graphics.drawString(font, visibleLabel, 0, -font.lineHeight / 2, foreground, false);
             graphics.pose().popPose();
+            TextLayoutDebug.unmute();
         }
         if (state.focused()) {
             // The outline is a shape cue, so keyboard focus is visible without color perception.
             graphics.renderOutline(bounds.left() - 1, bounds.top() - 1,
                     bounds.width() + 2, bounds.height() + 2, palette.focus());
             if (definition.contentMode() != ContentMode.ICON_ONLY && bounds.width() >= 32) {
+                // The keyboard-focus glyph is decoration; its probe must not replace the button label.
+                TextLayoutDebug.mute();
                 graphics.drawString(font, "›", bounds.left() + 2,
                         bounds.top() + Math.max(0, (bounds.height() - font.lineHeight) / 2),
                         palette.focus(), false);
+                TextLayoutDebug.unmute();
             }
         }
     }

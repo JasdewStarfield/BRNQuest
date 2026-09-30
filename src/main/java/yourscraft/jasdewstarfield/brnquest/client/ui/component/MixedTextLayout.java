@@ -22,10 +22,13 @@ public final class MixedTextLayout {
     /** Returns render-ready lines while retaining the root style of the supplied component. */
     public static List<FormattedCharSequence> split(Font font, Component text, int maximumWidth) {
         List<String> wrapped = wrap(text == null ? "" : text.getString(), maximumWidth, font::width);
-        return wrapped.stream()
+        var lines = wrapped.stream()
                 .map(line -> Component.literal(line).withStyle(text == null ? net.minecraft.network.chat.Style.EMPTY : text.getStyle())
                         .getVisualOrderText())
                 .toList();
+        // Preserve this custom wrapper's line slots alongside vanilla Font.split diagnostics.
+        TextLayoutDebug.wrapped(font, text == null ? Component.empty() : text, maximumWidth, lines);
+        return lines;
     }
 
     /**

@@ -35,6 +35,7 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.DoubleValue focusSmoothSpeed;
         public final ModConfigSpec.BooleanValue autoFocusSelectedQuest;
         public final ModConfigSpec.BooleanValue snapToGrid;
+        public final ModConfigSpec.BooleanValue textLayoutDebug;
 
         private Values(ModConfigSpec.Builder builder) {
             // Zero widths select the existing responsive layout; custom widths are additionally clamped on screen.
@@ -45,6 +46,11 @@ public final class BrnQuestClientConfig {
             navigationWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("navigationWidth", 0, 0, 400);
             detailsWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("detailsWidth", 0, 0, 600);
             showGrid = builder.defineEnum("showGrid", GridVisibility.ALWAYS);
+            builder.pop();
+            // Local rendering diagnostics are read each frame and never change book or server state.
+            builder.comment("Client development diagnostics").push("debug");
+            textLayoutDebug = builder.comment("Replace BRNQuest text tooltips with text layout measurements.")
+                    .define("textLayoutDebug", false);
             builder.pop();
             // Author preference only: toggling this must never create a book revision.
             builder.comment("Quest editor preferences").push("editor");

@@ -22,11 +22,15 @@ public final class EditorTextRenderer {
         float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
         String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
+        TextLayoutDebug.fitted(graphics, font, text, visible,
+                new UiRect(x, y, x + Math.max(0, maximumWidth), y + font.lineHeight), x, y, scale, "fitted");
+        TextLayoutDebug.mute();
         graphics.pose().pushPose();
         graphics.pose().translate(x, y, 0);
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.drawString(font, visible, 0, 0, color, false);
         graphics.pose().popPose();
+        TextLayoutDebug.unmute();
     }
 
     public static void drawFittedStringRight(GuiGraphics graphics, Font font, Component text, int right, int y,
@@ -36,10 +40,15 @@ public final class EditorTextRenderer {
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
         String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
         int left = right - Math.round(font.width(visible) * scale);
+        TextLayoutDebug.fitted(graphics, font, text, visible,
+                new UiRect(right - Math.max(0, maximumWidth), y, right, y + font.lineHeight),
+                left, y, scale, "fitted_right");
+        TextLayoutDebug.mute();
         graphics.pose().pushPose();
         graphics.pose().translate(left, y, 0);
         graphics.pose().scale(scale, scale, 1.0F);
         graphics.drawString(font, visible, 0, 0, color, false);
         graphics.pose().popPose();
+        TextLayoutDebug.unmute();
     }
 }

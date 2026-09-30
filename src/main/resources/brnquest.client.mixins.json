@@ -5,7 +5,10 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "MultiLineEditBoxAccessor",
-    "MultilineTextFieldAccessor"
+    "MultilineTextFieldAccessor",
+    "TextDebugGuiGraphicsMixin",
+    "TextDebugFontMixin",
+    "TextDebugWidgetMixin"
   ],
   "injectors": {
     "defaultRequire": 1

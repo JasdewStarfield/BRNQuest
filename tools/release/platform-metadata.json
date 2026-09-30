@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "project": {
+    "name": "BRNQuest",
+    "repository_url": "https://github.com/JasdewStarfield/BRNQuest",
+    "changelog_branch": "mc/1.21.1-neoforge"
+  },
+  "targets": {
+    "neoforge_1_21_1": {
+      "minecraft_version": "1.21.1",
+      "modrinth_loader": "neoforge",
+      "curseforge_loader": "NeoForge",
+      "jar_name": "brnquest-mc{minecraft_version}-{version}.jar"
+    }
+  },
+  "release": {
+    "name": "BRNQuest {version}",
+    "version_number": "mc{minecraft_version}-{version}"
+  },
+  "modrinth": {
+    "featured": false,
+    "status": "listed",
+    "environment": "client_and_server",
+    "dependencies": []
+  },
+  "curseforge": {
+    "display_name": "BRNQuest {version} - {minecraft_version} {loader}",
+    "changelog_type": "markdown",
+    "game_version_names": ["Client", "Server", "{minecraft_version}", "{loader}"],
+    "is_marked_for_manual_release": false,
+    "relations": { "projects": [] }
+  }
+}

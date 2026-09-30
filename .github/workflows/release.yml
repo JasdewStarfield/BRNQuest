@@ -1,0 +1,184 @@
+name: Release BRNQuest
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: BRNQuest version without a leading v (must match gradle.properties)
+        required: true
+        type: string
+      release_type:
+        description: Distribution channel
+        required: true
+        default: release
+        type: choice
+        options: [release, beta, alpha]
+      draft:
+        description: Keep GitHub Release as a draft (disables third-party uploads)
+        required: true
+        default: false
+        type: boolean
+      publish_modrinth:
+        description: Upload the jar to Modrinth
+        required: true
+        default: false
+        type: boolean
+      publish_curseforge:
+        description: Upload the jar to CurseForge
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brnquest-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+# Inputs enter scripts through environment variables, never through executable source interpolation.
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_TYPE: ${{ inputs.release_type }}
+  MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID || 'REPLACE_WITH_MODRINTH_PROJECT_ID' }}
+  CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || 'REPLACE_WITH_CURSEFORGE_PROJECT_ID' }}
+
+jobs:
+  build:
+    name: Validate and build NeoForge 1.21.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out the selected source commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Check release inputs and selected platforms
+        shell: pwsh
+        env:
+          PUBLISH_MODRINTH: ${{ inputs.publish_modrinth }}
+          PUBLISH_CURSEFORGE: ${{ inputs.publish_curseforge }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/mc/1.21.1-neoforge') {
+            throw 'Run releases from mc/1.21.1-neoforge.'
+          }
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw 'Invalid release version.'
+          }
+          if ($env:RELEASE_TYPE -eq 'release' -and $env:RELEASE_VERSION -match '^\d+\.\d+\.\d+-') {
+            throw 'Prerelease versions require the beta or alpha channel.'
+          }
+          # Fail before publishing to GitHub if a requested third-party destination is unconfigured.
+          if ($env:RELEASE_DRAFT -ne 'true') {
+            if ($env:PUBLISH_MODRINTH -eq 'true' -and ($env:MODRINTH_PROJECT_ID -like 'REPLACE_*' -or -not $env:MODRINTH_TOKEN)) {
+              throw 'Set MODRINTH_PROJECT_ID variable and MODRINTH_TOKEN secret.'
+            }
+            if ($env:PUBLISH_CURSEFORGE -eq 'true' -and ($env:CURSEFORGE_PROJECT_ID -notmatch '^\d+$' -or -not $env:CURSEFORGE_TOKEN)) {
+              throw 'Set numeric CURSEFORGE_PROJECT_ID variable and CURSEFORGE_TOKEN secret.'
+            }
+          }
+          $tagCommit = git rev-parse --verify "refs/tags/$($env:RELEASE_VERSION)^{commit}" 2>$null
+          $tagExists = $LASTEXITCODE -eq 0
+          if ($tagExists -and $tagCommit -ne $env:GITHUB_SHA) { throw 'Version tag already points to another commit.' }
+          # Missing tags are expected before a first publication.
+          $global:LASTEXITCODE = 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Verify release metadata and build
+        shell: pwsh
+        run: |
+          chmod +x ./gradlew
+          ./tools/release/test-release.ps1 -ProjectRoot . -Version $env:RELEASE_VERSION -MinecraftVersion 1.21.1 -Loader NeoForge -JavaVersion 21
+
+      - name: Render bilingual notes and platform metadata
+        shell: pwsh
+        run: |
+          ./tools/release/render-platform-metadata.ps1 -ProjectRoot . -Version $env:RELEASE_VERSION -Target neoforge_1_21_1 -ReleaseType $env:RELEASE_TYPE -OutputPath ./build/release-metadata/neoforge_1_21_1.json
+          ./tools/release/get-release-notes.ps1 -ProjectRoot . -Version $env:RELEASE_VERSION -OutputPath ./build/release-metadata/release-notes.md
+
+      - name: Store the release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: |
+            build/libs/brnquest-mc1.21.1-${{ inputs.version }}.jar
+            build/release-metadata/*
+          if-no-files-found: error
+
+  github_release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+      - name: Create or resume release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DRAFT: ${{ inputs.draft }}
+        run: |
+          ./tools/release/publish-github.ps1 -Repository $env:GITHUB_REPOSITORY -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -JarPath "./dist/libs/brnquest-mc1.21.1-$($env:RELEASE_VERSION).jar" -NotesPath ./dist/release-metadata/release-notes.md -ReleaseType $env:RELEASE_TYPE -Draft:($env:RELEASE_DRAFT -eq 'true') -Confirm:$false
+
+  modrinth:
+    name: Publish Modrinth
+    if: ${{ inputs.publish_modrinth && !inputs.draft }}
+    needs: github_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+      - name: Upload to Modrinth
+        shell: pwsh
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          ./tools/release/publish-modrinth.ps1 -ProjectId $env:MODRINTH_PROJECT_ID -Token $env:MODRINTH_TOKEN -JarPath "./dist/libs/brnquest-mc1.21.1-$($env:RELEASE_VERSION).jar" -MetadataPath ./dist/release-metadata/neoforge_1_21_1.json -Confirm:$false
+
+  curseforge:
+    name: Publish CurseForge
+    if: ${{ inputs.publish_curseforge && !inputs.draft }}
+    needs: github_release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+      - name: Upload to CurseForge
+        shell: pwsh
+        env:
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          ./tools/release/publish-curseforge.ps1 -ProjectId $env:CURSEFORGE_PROJECT_ID -Token $env:CURSEFORGE_TOKEN -JarPath "./dist/libs/brnquest-mc1.21.1-$($env:RELEASE_VERSION).jar" -MetadataPath ./dist/release-metadata/neoforge_1_21_1.json -Confirm:$false

@@ -26,6 +26,15 @@ class TextDebugMixinTargetsTest {
         target("net/minecraft/client/gui/GuiGraphics", "drawCenteredString", "(" + font + component + "III)V");
         target("net/minecraft/client/gui/GuiGraphics", "enableScissor", "(IIII)V");
         target("net/minecraft/client/gui/GuiGraphics", "disableScissor", "()V");
+        target("net/minecraft/client/gui/GuiGraphics", "renderTooltipInternal",
+                "(" + font + "Ljava/util/List;IILnet/minecraft/client/gui/screens/inventory/tooltip/ClientTooltipPositioner;)V");
+        try (var bytes = getClass().getClassLoader().getResourceAsStream("net/minecraft/client/gui/screens/inventory/tooltip/ClientTextTooltip.class")) {
+            assertNotNull(bytes);
+            var node = new ClassNode();
+            new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE);
+            assertTrue(node.fields.stream().anyMatch(field -> field.name.equals("text")
+                    && field.desc.equals("Lnet/minecraft/util/FormattedCharSequence;")));
+        }
         target("net/minecraft/client/gui/Font", "plainSubstrByWidth", "(Ljava/lang/String;I)Ljava/lang/String;");
         target("net/minecraft/client/gui/Font", "plainSubstrByWidth", "(Ljava/lang/String;IZ)Ljava/lang/String;");
         target("net/minecraft/client/gui/Font", "split", "(Lnet/minecraft/network/chat/FormattedText;I)Ljava/util/List;");

@@ -8,7 +8,8 @@
     "MultilineTextFieldAccessor",
     "TextDebugGuiGraphicsMixin",
     "TextDebugFontMixin",
-    "TextDebugWidgetMixin"
+    "TextDebugWidgetMixin",
+    "ClientTextTooltipAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

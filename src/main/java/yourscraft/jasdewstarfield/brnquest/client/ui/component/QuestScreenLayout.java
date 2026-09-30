@@ -100,6 +100,19 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
         return width - detailsWidth();
     }
 
+    /** Narrow drawers use two rows so editor action names remain readable at their normal font size. */
+    public UiRect detailEditorButton(int index) {
+        if (index < 0 || index >= 4) throw new IllegalArgumentException("Editor action index must be between 0 and 3");
+        int left = detailLeft() + 10, available = width - 10 - left, gap = 3;
+        int columns = available >= 400 ? 4 : 2;
+        int rows = 4 / columns, column = index % columns, row = index / columns;
+        int buttonWidth = (available - gap * (columns - 1)) / columns;
+        int x = left + column * (buttonWidth + gap);
+        int bottom = height - bottomToolbarHeight() - 6;
+        int y = bottom - rows * 20 - (rows - 1) * gap + row * (20 + gap);
+        return new UiRect(x, y, column == columns - 1 ? width - 10 : x + buttonWidth, y + 20);
+    }
+
     public int contentCenterY() {
         return content().centerY();
     }

@@ -24,6 +24,8 @@ public final class TextLayoutDebugEvents {
     @SubscribeEvent
     public static void tooltip(RenderTooltipEvent.Pre event) {
         // Normal tooltips are replaced only for this mod's active screen; diagnostics allow themselves through.
-        if (TextLayoutDebug.active() && !TextLayoutDebug.drawingTooltip()) event.setCanceled(true);
+        // Shift temporarily reveals the normal tooltip for direct visual inspection.
+        if (TextLayoutDebug.active() && !net.minecraft.client.gui.screens.Screen.hasShiftDown()
+                && !TextLayoutDebug.drawingTooltip()) event.setCanceled(true);
     }
 }

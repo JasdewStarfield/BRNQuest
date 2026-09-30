@@ -923,8 +923,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderDetailEditorEntry(GuiGraphics graphics, UiRect bounds, String glyph,
                                          String translationKey, int mouseX, int mouseY) {
         Component label = Component.translatable(translationKey);
+        Component visible = translationKey.equals("screen.brnquest.editor.dependency.edit")
+                ? Component.translatable("screen.brnquest.editor.dependency.short") : label;
         renderEditorActionButton(graphics, bounds, EditorButton.Definition.iconAndText(
-                        label, label, QuestActionIcons.symbol(Component.literal(glyph))),
+                        visible, label, QuestActionIcons.symbol(Component.literal(glyph))),
                 true, EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
@@ -3849,8 +3851,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
         drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
         // Types may supply either a translated help key or existing literal help text.
-        if (!descriptor.helpText().isBlank() && row.label().containsExclusive(mouseX, mouseY))
-            hoveredDetailText = Component.translatable(descriptor.helpText());
+        if (row.label().containsExclusive(mouseX, mouseY)) {
+            // Keep long descriptor labels and their help available even if an extension needs more than two lines.
+            var help = new ArrayList<Component>();
+            help.add(Component.translatable(descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey()));
+            if (!descriptor.helpText().isBlank()) help.add(Component.translatable(descriptor.helpText()));
+            if (issue != null && !issue.isBlank()) help.add(Component.literal(issue));
+            hoveredComponentTooltip = help;
+        }
         EditorTextField field = typedPropertySection.form().configField(index);
         if (ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).isPresent()) {
             var editor = ClientConfigEditors.find(typedPropertySection.typeId(), descriptor.key()).orElseThrow();
@@ -5047,13 +5055,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private UiRect questEditorTabBounds(int index, int bottom) {
-        int left = detailLeft() + 10;
-        int available = width - 10 - left;
-        int gap = 3;
-        int tabWidth = (available - gap * 3) / 4;
-        int tabLeft = left + index * (tabWidth + gap);
-        int tabRight = index == 3 ? width - 10 : tabLeft + tabWidth;
-        return new UiRect(tabLeft, bottom - 20, tabRight, bottom);
+        // The same responsive rectangles drive painting, scrolling boundaries, pointer input and keyboard focus.
+        return layout().detailEditorButton(index);
     }
 
     private UiRect questEditorCancelBounds() {
@@ -6021,7 +6024,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private int navigationListBottom() {
-        return height - bottomToolbarHeight() - (ClientEditorState.get().editing() ? 20 : 0);
+        return height - bottomToolbarHeight() - (ClientEditorState.get().editing() ? 38 : 0);
     }
 
     private int detailViewportHeight() {

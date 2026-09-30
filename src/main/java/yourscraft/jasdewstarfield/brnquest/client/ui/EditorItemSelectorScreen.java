@@ -139,7 +139,14 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
         // Render.Post overlay intentionally remains above them when the optional mod is present.
         if (!carriedGhost.isEmpty()) graphics.renderItem(carriedGhost, mouseX - 8, mouseY - 8);
         ItemStack hovered = hoveredStack(layout, mouseX, mouseY);
-        if (!hovered.isEmpty() && carriedGhost.isEmpty()) {
+        UiRect targetHint = new UiRect(panel.left() + 7, panel.top() + 27, panel.right() - 7, panel.top() + 45);
+        if (targetHint.containsExclusive(mouseX, mouseY) && hovered.isEmpty() && carriedGhost.isEmpty()) {
+            // Keep the persistent label concise while retaining the right-click instruction beside the target slot.
+            var help = new java.util.ArrayList<Component>();
+            if (!selected.isEmpty()) help.add(selected.getHoverName());
+            help.add(Component.translatable("screen.brnquest.editor.item_selector.target_help"));
+            graphics.renderComponentTooltip(font, help, mouseX, mouseY);
+        } else if (!hovered.isEmpty() && carriedGhost.isEmpty()) {
             graphics.renderTooltip(font, hovered, mouseX, mouseY);
         }
     }

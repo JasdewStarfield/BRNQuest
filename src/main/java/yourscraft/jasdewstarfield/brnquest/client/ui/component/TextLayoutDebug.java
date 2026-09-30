@@ -34,6 +34,9 @@ public final class TextLayoutDebug {
     private static Object trimmedResult;
     private static Hint trimmedHint;
     private static int muted;
+    private record TooltipMeasurement(int originalWidth, int width, int height, int availableWidth,
+                                      int availableHeight, int originalRows, int rows) {}
+    private static TooltipMeasurement normalTooltip;
 
     private TextLayoutDebug() {}
 
@@ -52,6 +55,7 @@ public final class TextLayoutDebug {
         ENTRIES.clear(); HINTS.clear(); EMPTY_LABEL_TARGETS.clear(); SLOTS.clear(); CLIPS.clear();
         trimmedResult = null; trimmedHint = null; muted = 0;
         active = false; collecting = false; tooltip = false;
+        normalTooltip = null;
     }
 
     public static boolean collecting() { return collecting && muted == 0; }
@@ -60,11 +64,18 @@ public final class TextLayoutDebug {
 
     /** Suspended parents are only a backdrop; their labels must not receive child-screen hover. */
     public static void discardBackdrop() {
-        if (active) { ENTRIES.clear(); HINTS.clear(); EMPTY_LABEL_TARGETS.clear(); trimmedResult = null; trimmedHint = null; }
+        if (active) { ENTRIES.clear(); HINTS.clear(); EMPTY_LABEL_TARGETS.clear(); trimmedResult = null; trimmedHint = null; normalTooltip = null; }
     }
 
     public static void mute() { if (active) muted++; }
     public static void unmute() { if (active && muted > 0) muted--; }
+
+    /** Normal tooltips are measured before Pre can suppress them, so debug mode can report their final layout. */
+    public static void normalTooltip(int originalWidth, int width, int height, int availableWidth,
+                                      int availableHeight, int originalRows, int rows) {
+        if (active && !tooltip) normalTooltip = new TooltipMeasurement(originalWidth, width, height,
+                availableWidth, availableHeight, originalRows, rows);
+    }
 
     public static void pushSlot(GuiGraphics graphics, UiRect bounds, String source) {
         if (active) SLOTS.push(new Slot(transform(graphics.pose().last().pose(), bounds), source));
@@ -208,7 +219,7 @@ public final class TextLayoutDebug {
     /** Render last and stop collecting first, so the diagnostic never measures its own tooltip. */
     public static void finish(GuiGraphics graphics, int mouseX, int mouseY) {
         collecting = false;
-        if (!active) return;
+        if (!active || Screen.hasShiftDown()) return;
         TextLayoutMeasurement selected = TextLayoutMeasurement.pick(ENTRIES, mouseX, mouseY);
         for (int index = ENTRIES.size() - 1; selected == null && index >= 0; index--) {
             TextLayoutMeasurement entry = ENTRIES.get(index);
@@ -217,37 +228,46 @@ public final class TextLayoutDebug {
                 selected = entry; break;
             }
         }
-        if (selected == null) return;
+        if (selected == null && normalTooltip == null) return;
         var font = Minecraft.getInstance().font;
         var lines = new ArrayList<Component>();
         lines.add(label("title", screen.getClass().getSimpleName()));
         lines.add(label("context", Minecraft.getInstance().getLanguageManager().getSelected(),
                 screen.width, screen.height, number(Minecraft.getInstance().getWindow().getGuiScale())));
-        // Long quest descriptions must not push the diagnostic numbers off the screen.
-        String preview = selected.text().replace("\n", " ↵ ").replace("\r", "");
-        int codePoints = preview.codePointCount(0, preview.length());
-        if (codePoints > 120) preview = preview.substring(0, preview.offsetByCodePoints(0, 120)) + "…";
-        lines.add(label(codePoints > 120 ? "text_preview" : "text", preview));
-        lines.add(label("source", selected.source()));
-        lines.add(label("available", selected.available().width(), selected.available().height(),
-                selected.available().left(), selected.available().top()));
-        lines.add(label("required", number(selected.requiredWidth()), number(selected.requiredHeight())));
-        lines.add(label("rendered", number(selected.renderedWidth()), number(selected.renderedHeight())));
-        lines.add(label("scale", number(selected.scaleX()), number(selected.scaleY())));
-        if (selected.knownSlot()) {
-            lines.add(label("overflow", number(selected.widthOverflow()), number(selected.heightOverflow()),
-                    Double.isFinite(selected.occupancyPercent()) ? number(selected.occupancyPercent()) + "%" : "∞"));
-        } else lines.add(label("unknown"));
-        var states = new ArrayList<Component>();
-        if (selected.overflow()) states.add(label("state.overflow"));
-        if (selected.truncated()) states.add(label("state.truncated"));
-        if (selected.clipped()) states.add(label("state.clipped"));
-        if (selected.wrapped()) states.add(label("state.wrapped"));
-        if (selected.scaleX() < 0.999 || selected.scaleY() < 0.999) states.add(label("state.scaled"));
-        if (states.isEmpty()) states.add(label(selected.knownSlot() ? "state.fits" : "state.measured"));
-        Component state = Component.empty();
-        for (Component value : states) state = state.copy().append(value).append(" ");
-        lines.add(label("state", state));
+        if (selected != null) {
+            // Long quest descriptions must not push the diagnostic numbers off the screen.
+            String preview = selected.text().replace("\n", " ↵ ").replace("\r", "");
+            int codePoints = preview.codePointCount(0, preview.length());
+            if (codePoints > 120) preview = preview.substring(0, preview.offsetByCodePoints(0, 120)) + "…";
+            lines.add(label(codePoints > 120 ? "text_preview" : "text", preview));
+            lines.add(label("source", selected.source()));
+            lines.add(label("available", selected.available().width(), selected.available().height(),
+                    selected.available().left(), selected.available().top()));
+            lines.add(label("required", number(selected.requiredWidth()), number(selected.requiredHeight())));
+            lines.add(label("rendered", number(selected.renderedWidth()), number(selected.renderedHeight())));
+            lines.add(label("scale", number(selected.scaleX()), number(selected.scaleY())));
+            if (selected.knownSlot()) {
+                lines.add(label("overflow", number(selected.widthOverflow()), number(selected.heightOverflow()),
+                        Double.isFinite(selected.occupancyPercent()) ? number(selected.occupancyPercent()) + "%" : "∞"));
+            } else lines.add(label("unknown"));
+            var states = new ArrayList<Component>();
+            if (selected.overflow()) states.add(label("state.overflow"));
+            if (selected.truncated()) states.add(label("state.truncated"));
+            if (selected.clipped()) states.add(label("state.clipped"));
+            if (selected.wrapped()) states.add(label("state.wrapped"));
+            if (selected.scaleX() < 0.999 || selected.scaleY() < 0.999) states.add(label("state.scaled"));
+            if (states.isEmpty()) states.add(label(selected.knownSlot() ? "state.fits" : "state.measured"));
+            Component state = Component.empty();
+            for (Component value : states) state = state.copy().append(value).append(" ");
+            lines.add(label("state", state));
+        }
+        if (normalTooltip != null) {
+            lines.add(label("tooltip_size", normalTooltip.originalWidth(), normalTooltip.width(), normalTooltip.height(),
+                    normalTooltip.originalRows(), normalTooltip.rows()));
+            lines.add(label("tooltip_overflow", Math.max(0, normalTooltip.width() - normalTooltip.availableWidth()),
+                    Math.max(0, normalTooltip.height() - normalTooltip.availableHeight())));
+        }
+        lines.add(label("shift_hint"));
         lines.add(label("summary", ENTRIES.size(), ENTRIES.stream().filter(e -> e.overflow() || e.truncated() || e.clipped()).count()));
         List<FormattedCharSequence> wrapped = lines.stream().flatMap(line ->
                 font.split(line, Math.max(40, Math.min(340, screen.width - 24))).stream()).toList();

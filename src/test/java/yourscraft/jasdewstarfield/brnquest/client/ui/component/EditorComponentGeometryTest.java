@@ -168,10 +168,10 @@ class EditorComponentGeometryTest {
         assertEquals(new UiRect(20, 0, 20, 20), layout.label());
     }
 
-    @Test void compactIconButtonsShrinkLabelsWithoutShrinkingTheirHitbox() {
+    @Test void compactIconButtonsKeepNormalFontSizeAndTheirHitbox() {
         UiRect compactTab = new UiRect(0, 0, 38, 20);
 
-        assertEquals(0.75F, EditorButton.labelScale(
+        assertEquals(1.0F, EditorButton.labelScale(
                 compactTab, EditorButton.ContentMode.ICON_AND_TEXT, 9, 36, 4));
         assertEquals(1.0F, EditorButton.labelScale(
                 compactTab, EditorButton.ContentMode.ICON_ONLY, 9, 36, 4));

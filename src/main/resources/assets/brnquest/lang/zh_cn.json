@@ -371,7 +371,7 @@
   "screen.brnquest.editor.config.script_id": "对话脚本 ID",
   "screen.brnquest.editor.config.message_id": "消息节点 ID",
   "screen.brnquest.editor.item_selector.title": "选择物品",
-  "screen.brnquest.editor.item_selector.target": "已选择的幽灵物品（右键清除）",
+  "screen.brnquest.editor.item_selector.target": "已选物品",
   "screen.brnquest.editor.item_selector.inventory": "从玩家物品栏选择",
   "screen.brnquest.editor.raw_config.title": "编辑原始配置",
   "screen.brnquest.editor.raw_config.help": "使用扁平 JSON 对象；应用后，提交属性表单以验证并保存",
@@ -1015,5 +1015,10 @@
   "screen.brnquest.text_debug.state.scaled": "已缩放",
   "screen.brnquest.text_debug.state.fits": "可容纳",
   "screen.brnquest.text_debug.state.measured": "已测量；控件适配待确认",
-  "screen.brnquest.text_debug.summary": "本帧：%s 项测量，%s 项超出、截断或裁剪"
+  "screen.brnquest.text_debug.summary": "本帧：%s 项测量，%s 项超出、截断或裁剪",
+  "screen.brnquest.text_debug.tooltip_size": "普通提示：重排前宽 %s → 最终 %s × %s GUI px，%s → %s 行",
+  "screen.brnquest.text_debug.tooltip_overflow": "普通提示超出量：宽 %s / 高 %s GUI px",
+  "screen.brnquest.text_debug.shift_hint": "按住 Shift 查看普通提示。",
+  "screen.brnquest.editor.item_selector.target_help": "右键点击已选物品槽位可清空选择。",
+  "screen.brnquest.editor.dependency.short": "依赖"
 }

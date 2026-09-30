@@ -5,3 +5,9 @@
 ### Added
 
 - Added an opt-in client text layout diagnostic mode. Hover BRNQuest interface text to inspect available space, original and rendered size, scaling, truncation, clipping, and the current frame's issue count. Text without a declared control slot reports its measurement boundary; wrapped text is measured per rendered line.
+
+### Changed
+
+- Stacked the navigation creation buttons and arranged editor tabs in two rows on narrow panels. Property labels can use two lines; action buttons retain normal font size and show explicit ellipsis when needed. Long identifier buttons preserve both ends and expose the full value in their tooltip.
+- Shortened the selected-item label and moved its clearing instruction into the tooltip.
+- Wrapped normal tooltips, including space-free IDs, while preserving text styles. Text diagnostics now report normal tooltip dimensions and offer a Shift preview.

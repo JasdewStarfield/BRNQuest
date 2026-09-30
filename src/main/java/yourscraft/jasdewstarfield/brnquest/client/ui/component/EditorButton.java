@@ -9,6 +9,7 @@ import java.util.List;
 /** Shared editor button presentation; actions and authority remain owned by the calling screen. */
 public final class EditorButton {
     public static final int CONTENT_GAP = 4;
+    public static final int CONTENT_PADDING = 4;
 
     /** Determines which visual slots are drawn without removing the semantic label. */
     public enum ContentMode { TEXT, ICON_AND_TEXT, ICON_ONLY }
@@ -26,7 +27,8 @@ public final class EditorButton {
             if (contentMode != ContentMode.TEXT && icon == null) {
                 throw new IllegalArgumentException("Icon content modes require an icon");
             }
-            tooltip = tooltip == null ? List.of() : List.copyOf(tooltip);
+            // The full semantic label remains available when a variable value needs ellipsis.
+            tooltip = tooltip == null || tooltip.isEmpty() ? List.of(label) : List.copyOf(tooltip);
         }
 
         public static Definition text(Component label, Component tooltip) {
@@ -105,26 +107,28 @@ public final class EditorButton {
 
         int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
         int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());
-        float labelScale = labelScale(bounds, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
-        int scaledLabelWidth = (int) Math.ceil(labelWidth * labelScale);
-        ContentLayout content = contentLayout(bounds, definition.contentMode(), iconWidth, scaledLabelWidth, CONTENT_GAP);
+        // Tiny icon-only controls retain their original icon area; text controls reserve horizontal padding.
+        UiRect inner = definition.contentMode() == ContentMode.ICON_ONLY ? bounds : contentBounds(bounds);
+        float labelScale = labelScale(inner, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
+        ContentLayout content = contentLayout(inner, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
         if (content.icon().width() > 0) {
             definition.icon().render(graphics, font, content.icon(), foreground);
         }
         if (definition.contentMode() != ContentMode.ICON_ONLY && content.label().width() == 0)
             TextLayoutDebug.emptyButton(graphics, font, definition.label(), bounds);
         if (content.label().width() > 0) {
-            // Compact localized labels shrink before truncation, retaining more meaning in narrow sidebars.
-            int unscaledAvailable = Math.max(1, (int) Math.floor(content.label().width() / labelScale));
-            Component visibleLabel = unscaledAvailable < labelWidth
-                    ? Component.literal(font.plainSubstrByWidth(definition.label().getString(), unscaledAvailable))
-                    : definition.label();
+            // Keep the pixel font at its normal size. Action layouts make space; variable values use explicit omission.
+            String visible = EditorTextLayout.ellipsize(definition.label().getString(), content.label().width(),
+                    value -> font.width(Component.literal(value).withStyle(definition.label().getStyle())),
+                    EditorTextLayout.identifier(definition.label().getString()));
+            Component visibleLabel = visible.equals(definition.label().getString()) ? definition.label()
+                    : Component.literal(visible).withStyle(definition.label().getStyle());
             int reservedIcon = definition.contentMode() == ContentMode.TEXT ? 0 : iconWidth;
             int reservedGap = reservedIcon > 0 ? CONTENT_GAP : 0;
             // Diagnose the full label before fitting; measuring only the final substring would hide the defect.
             TextLayoutDebug.fitted(graphics, font, definition.label(), visibleLabel,
-                    new UiRect(Math.min(bounds.right(), bounds.left() + reservedIcon + reservedGap),
-                            bounds.top(), bounds.right(), bounds.bottom()),
+                    new UiRect(Math.min(inner.right(), inner.left() + reservedIcon + reservedGap),
+                            inner.top(), inner.right(), inner.bottom()),
                     content.label().left(), content.label().centerY() - (font.lineHeight / 2) * labelScale,
                     labelScale, "editor_button");
             TextLayoutDebug.mute();
@@ -181,18 +185,19 @@ public final class EditorButton {
     public static UiRect iconBounds(Font font, UiRect bounds, Definition definition) {
         int iconWidth = definition.icon() == null ? 0 : definition.icon().width(font);
         int labelWidth = definition.contentMode() == ContentMode.ICON_ONLY ? 0 : font.width(definition.label());
-        float scale = labelScale(bounds, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP);
-        int scaledLabelWidth = (int) Math.ceil(labelWidth * scale);
-        return contentLayout(bounds, definition.contentMode(), iconWidth, scaledLabelWidth, CONTENT_GAP).icon();
+        UiRect inner = definition.contentMode() == ContentMode.ICON_ONLY ? bounds : contentBounds(bounds);
+        return contentLayout(inner, definition.contentMode(), iconWidth, labelWidth, CONTENT_GAP).icon();
     }
 
-    /** Computes the text-only part of a button without shrinking icons or click targets. */
+    /** Insets only horizontal paint; the owning input target keeps its full size. */
+    public static UiRect contentBounds(UiRect bounds) {
+        int padding = Math.min(CONTENT_PADDING, bounds.width() / 2);
+        return new UiRect(bounds.left() + padding, bounds.top(), bounds.right() - padding, bounds.bottom());
+    }
+
+    /** Buttons keep a consistent pixel-font size even when their value is longer than the slot. */
     static float labelScale(UiRect bounds, ContentMode mode, int iconWidth, int labelWidth, int gap) {
-        if (mode == ContentMode.ICON_ONLY || labelWidth <= 0) return 1.0F;
-        int safeIconWidth = mode == ContentMode.TEXT ? 0 : Math.max(0, iconWidth);
-        int safeGap = safeIconWidth > 0 ? Math.max(0, gap) : 0;
-        int available = Math.max(0, bounds.width() - safeIconWidth - safeGap);
-        return EditorTextLayout.fittedScale(labelWidth, available, 0.75F);
+        return 1.0F;
     }
 
 }

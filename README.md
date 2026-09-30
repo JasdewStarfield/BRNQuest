@@ -44,9 +44,9 @@ The distributable is written to `build/libs/`. `runClient` and `runServer` start
 
 ## Client text layout diagnostics
 
-In the quest editor's client settings, enable **Debug → Text layout diagnostics**, or set `textLayoutDebug = true` under `[debug]` in `config/brnquest-client.toml`. Hover interface text to inspect available space, original and rendered size, scaling, truncation, and clipping. Disable the option to restore normal tooltips.
+In the quest editor's client settings, enable **Debug → Text layout diagnostics**, or set `textLayoutDebug = true` under `[debug]` in `config/brnquest-client.toml`. Hover interface text to inspect available space, original and rendered size, scaling, truncation, and clipping. Hold Shift to preview normal tooltips while diagnostics are enabled. Diagnostics also report their width before reflow, final size, row count, and remaining overflow. Disable the option to restore normal tooltips.
 
-Measurements use the current font and GUI coordinates. Shared buttons and fitted text renderers provide text slots; wrapped text is measured per rendered line. Text without a declared slot reports an unknown control area and shows the screen/scissor boundary. Diagnostics apply to BRNQuest screens.
+Measurements use the current font and GUI coordinates. Shared buttons and fitted text renderers provide text slots; wrapped text is measured per rendered line. Text without a declared slot reports an unknown control area and shows the screen/scissor boundary. Diagnostics apply to BRNQuest screens. Normal tooltip text wraps within 320 GUI pixels or the screen width minus 24 pixels, whichever is smaller; long IDs break between glyphs while keeping text styles. Oversized custom images and tooltips that exceed the screen height remain visible in the diagnostic report.
 
 ## AI and developer responsibilities
 

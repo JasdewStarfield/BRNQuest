@@ -35,12 +35,12 @@ final class QuestNavigationPanel {
     record Layout(int width, int top, int bottom, int listBottom, int visibleRight, int offset,
                   int handleWidth, int centerY, boolean collapsed) {
         UiRect groupButton() {
-            int buttonTop = bottom - 18;
-            return new UiRect(2, buttonTop, width / 2, buttonTop + 16);
+            int buttonTop = bottom - 36;
+            return new UiRect(2, buttonTop, width - 2, buttonTop + 16);
         }
         UiRect chapterButton() {
             int buttonTop = bottom - 18;
-            return new UiRect(width / 2 + 2, buttonTop, width - 2, buttonTop + 16);
+            return new UiRect(2, buttonTop, width - 2, buttonTop + 16);
         }
     }
     record Model(QuestScreenFrameIdentity identity, QuestBookDefinition book,

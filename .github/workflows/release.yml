@@ -40,8 +40,9 @@ concurrency:
 env:
   RELEASE_VERSION: ${{ inputs.version }}
   RELEASE_TYPE: ${{ inputs.release_type }}
-  MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID || 'REPLACE_WITH_MODRINTH_PROJECT_ID' }}
-  CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || 'REPLACE_WITH_CURSEFORGE_PROJECT_ID' }}
+  # Project IDs are public; repository variables remain available as explicit overrides.
+  MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID || 'k2cwPRGW' }}
+  CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || '1714617' }}
 
 jobs:
   build:
@@ -75,11 +76,11 @@ jobs:
           }
           # Fail before publishing to GitHub if a requested third-party destination is unconfigured.
           if ($env:RELEASE_DRAFT -ne 'true') {
-            if ($env:PUBLISH_MODRINTH -eq 'true' -and ($env:MODRINTH_PROJECT_ID -like 'REPLACE_*' -or -not $env:MODRINTH_TOKEN)) {
-              throw 'Set MODRINTH_PROJECT_ID variable and MODRINTH_TOKEN secret.'
+            if ($env:PUBLISH_MODRINTH -eq 'true' -and (-not $env:MODRINTH_PROJECT_ID -or $env:MODRINTH_PROJECT_ID -like 'REPLACE_*' -or -not $env:MODRINTH_TOKEN)) {
+              throw 'Set MODRINTH_TOKEN secret; MODRINTH_PROJECT_ID defaults to k2cwPRGW.'
             }
             if ($env:PUBLISH_CURSEFORGE -eq 'true' -and ($env:CURSEFORGE_PROJECT_ID -notmatch '^\d+$' -or -not $env:CURSEFORGE_TOKEN)) {
-              throw 'Set numeric CURSEFORGE_PROJECT_ID variable and CURSEFORGE_TOKEN secret.'
+              throw 'Set CURSEFORGE_TOKEN upload secret; CURSEFORGE_PROJECT_ID defaults to 1714617.'
             }
           }
           $tagCommit = git rev-parse --verify "refs/tags/$($env:RELEASE_VERSION)^{commit}" 2>$null

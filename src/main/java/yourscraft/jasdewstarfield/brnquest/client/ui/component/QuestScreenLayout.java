@@ -117,6 +117,14 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
         return content().centerY();
     }
 
+    /** Dependency editing has two full-width actions, independent of the four entry tabs. */
+    public UiRect dependencyFooterButton(int index) {
+        if (index < 0 || index > 1) throw new IllegalArgumentException("Dependency action index must be 0 or 1");
+        int bottom = height - bottomToolbarHeight() - 6;
+        int top = bottom - 43 + index * 23;
+        return new UiRect(detailLeft() + 10, top, width - 10, top + 20);
+    }
+
     public boolean isContentY(double y) {
         return y >= content().top() && y < content().bottom();
     }

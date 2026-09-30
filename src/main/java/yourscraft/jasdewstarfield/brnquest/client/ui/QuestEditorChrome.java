@@ -69,7 +69,10 @@ final class QuestEditorChrome {
     private Action focused;
 
     Layout advance(QuestScreenLayout screen, Model model) {
-        Layout layout = layout(screen, model.live(), model.hasLease(), model.allowed());
+        return advance(model, layout(screen, model.live(), model.hasLease(), model.allowed()));
+    }
+
+    private Layout advance(Model model, Layout layout) {
         frame = new Frame(model, layout);
         if (focused != null && !focusOrder(model).contains(focused)) focused = null;
         return layout;
@@ -77,7 +80,19 @@ final class QuestEditorChrome {
 
     RenderResult render(GuiGraphics graphics, Font font, QuestScreenLayout screen, Model model,
                         int mouseX, int mouseY) {
-        Layout layout = advance(screen, model);
+        // Measure translated action names before assigning footer widths; paint and click use this same frame.
+        Component exitLabel = Component.translatable(model.editing() || model.hasLease()
+                ? "screen.brnquest.editor.exit" : "screen.brnquest.editor.edit_current");
+        int saveWidth = model.hasLease()
+                ? Math.max(font.width(Component.translatable("screen.brnquest.editor.save")),
+                        font.width(Component.translatable("screen.brnquest.editor.saved"))) + 24
+                : font.width(Component.translatable("screen.brnquest.editor.live.advanced")) + 8;
+        int historyWidth = Math.max(font.width(Component.translatable("screen.brnquest.editor.undo", model.undoSteps())),
+                font.width(Component.translatable("screen.brnquest.editor.redo", model.redoSteps()))) + 8;
+        Layout layout = advance(model, layout(screen, model.live(), model.hasLease(), model.allowed(),
+                Math.max(EXIT_WIDTH, font.width(exitLabel) + 8), Math.max(SAVE_WIDTH, saveWidth),
+                Math.max(PUBLISH_WIDTH, font.width(Component.translatable("screen.brnquest.editor.publish")) + 8),
+                Math.max(HISTORY_WIDTH, historyWidth)));
         graphics.fill(layout.topToolbar().left(), layout.topToolbar().top(),
                 layout.topToolbar().right(), layout.topToolbar().bottom(), GraystonePalette.HEADER);
         graphics.fill(layout.bottomToolbar().left(), layout.bottomToolbar().top(),
@@ -277,17 +292,23 @@ final class QuestEditorChrome {
     void invalidate() { frame = null; }
 
     static Layout layout(QuestScreenLayout screen, boolean live, boolean hasLease, boolean allowed) {
+        return layout(screen, live, hasLease, allowed, EXIT_WIDTH, SAVE_WIDTH, PUBLISH_WIDTH, HISTORY_WIDTH);
+    }
+
+    /** Widths include normal-size text, icon and padding; the footer expands into its status space. */
+    static Layout layout(QuestScreenLayout screen, boolean live, boolean hasLease, boolean allowed,
+                         int exitWidth, int saveWidth, int publishWidth, int historyWidth) {
         int chromeHeight = QuestScreenLayout.EDITOR_CONTROL_HEIGHT;
         int right = screen.width() - 4;
         // Reserve the two-pixel footer seam plus one pixel for the keyboard focus outline.
         int buttonTop = screen.bottomToolbar().top() + 3;
-        UiRect exit = new UiRect(right - EXIT_WIDTH, buttonTop, right, buttonTop + chromeHeight);
-        UiRect save = new UiRect(exit.left() - SAVE_WIDTH - 4, exit.top(), exit.left() - 4, exit.bottom());
-        UiRect publish = new UiRect(save.left() - PUBLISH_WIDTH - 4, save.top(), save.left() - 4, save.bottom());
+        UiRect exit = new UiRect(right - exitWidth, buttonTop, right, buttonTop + chromeHeight);
+        UiRect save = new UiRect(exit.left() - saveWidth - 4, exit.top(), exit.left() - 4, exit.bottom());
+        UiRect publish = new UiRect(save.left() - publishWidth - 4, save.top(), save.left() - 4, save.bottom());
         UiRect historyAnchor = live ? exit : publish;
-        UiRect redo = new UiRect(historyAnchor.left() - HISTORY_WIDTH - 4, historyAnchor.top(),
+        UiRect redo = new UiRect(historyAnchor.left() - historyWidth - 4, historyAnchor.top(),
                 historyAnchor.left() - 4, historyAnchor.bottom());
-        UiRect undo = new UiRect(redo.left() - HISTORY_WIDTH - 4, redo.top(), redo.left() - 4, redo.bottom());
+        UiRect undo = new UiRect(redo.left() - historyWidth - 4, redo.top(), redo.left() - 4, redo.bottom());
         // Reserve equal margins so the centered title never overlaps the expandable shortcut strip.
         int titleWidth = Math.min(260, Math.max(0, screen.width() - 96));
         int center = screen.width() / 2;

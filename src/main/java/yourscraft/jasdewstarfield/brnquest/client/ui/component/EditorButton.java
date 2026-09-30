@@ -116,7 +116,21 @@ public final class EditorButton {
         }
         if (definition.contentMode() != ContentMode.ICON_ONLY && content.label().width() == 0)
             TextLayoutDebug.emptyButton(graphics, font, definition.label(), bounds);
-        if (content.label().width() > 0) {
+        // Fixed actions can use all available lines; variable IDs retain their deliberate middle omission.
+        var wrapped = labelWidth > content.label().width() && content.label().width() > 0
+                && definition.label().getContents() instanceof net.minecraft.network.chat.contents.TranslatableContents
+                ? font.split(definition.label(), content.label().width()) : List.<net.minecraft.util.FormattedCharSequence>of();
+        if (wrapped.size() > 1 && wrapped.size() * font.lineHeight <= content.label().height()) {
+            int top = content.label().centerY() - wrapped.size() * font.lineHeight / 2;
+            TextLayoutDebug.pushSlot(graphics, content.label(), "editor_button");
+            try {
+                for (int index = 0; index < wrapped.size(); index++) {
+                    var line = wrapped.get(index);
+                    graphics.drawString(font, line, content.label().centerX() - font.width(line) / 2,
+                            top + index * font.lineHeight, foreground, false);
+                }
+            } finally { TextLayoutDebug.popSlot(); }
+        } else if (content.label().width() > 0) {
             // Keep the pixel font at its normal size. Action layouts make space; variable values use explicit omission.
             String visible = EditorTextLayout.ellipsize(definition.label().getString(), content.label().width(),
                     value -> font.width(Component.literal(value).withStyle(definition.label().getStyle())),

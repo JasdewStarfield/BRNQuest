@@ -13,6 +13,7 @@ public final class EditorPropertyPanel {
     @FunctionalInterface
     public interface RowContent {
         void render(GuiGraphics graphics, int left, int top, int width);
+        default int height(int width) { return EditorPropertyFormLayout.FIELD_HEIGHT; }
     }
     @FunctionalInterface
     public interface ButtonRenderer {
@@ -27,6 +28,28 @@ public final class EditorPropertyPanel {
     }
 
     private EditorPropertyPanel() {}
+
+    /** A row measures itself before painting so scrolling and pointer targets share its final geometry. */
+    public static RowContent sized(java.util.function.IntUnaryOperator height, RowContent content) {
+        return new RowContent() {
+            @Override public int height(int width) { return height.applyAsInt(width); }
+            @Override public void render(GuiGraphics graphics, int left, int top, int width) {
+                content.render(graphics, left, top, width);
+            }
+        };
+    }
+
+    /** Calculate every row, including offscreen rows, without relying on which widgets were painted. */
+    public static List<UiRect> rows(Layout layout, List<RowContent> contents) {
+        var result = new java.util.ArrayList<UiRect>();
+        int top = layout.firstRowY(), gap = Math.max(0, layout.pitch() - EditorPropertyFormLayout.FIELD_HEIGHT);
+        for (RowContent content : contents) {
+            int height = Math.max(EditorPropertyFormLayout.FIELD_HEIGHT, content.height(layout.width()));
+            result.add(new UiRect(layout.left(), top, layout.left() + layout.width(), top + height));
+            top += height + gap;
+        }
+        return List.copyOf(result);
+    }
 
     public static RowContent text(Font font, EditorTextField field, String label, int labelWidth,
                                   String issue, boolean enabled) {

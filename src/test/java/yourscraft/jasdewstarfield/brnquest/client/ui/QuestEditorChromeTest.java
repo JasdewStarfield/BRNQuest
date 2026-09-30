@@ -13,6 +13,16 @@ import static org.junit.jupiter.api.Assertions.*;
 class QuestEditorChromeTest {
     private static final ResourceLocation BOOK = ResourceLocation.fromNamespaceAndPath("brnquest", "test");
 
+    @Test void measuredActionWidthsExpandIntoStatusSpaceWithoutChangingFooterAlignment() {
+        var screen = new QuestScreenLayout(640, 374, false, false);
+        var layout = QuestEditorChrome.layout(screen, false, false, true, 136, 106, 92, 48);
+        assertEquals(136, layout.exit().width());
+        assertEquals(106, layout.save().width());
+        assertEquals(layout.exit().top(), layout.save().top());
+        assertEquals(4, layout.exit().left() - layout.save().right());
+        assertTrue(layout.status().right() <= layout.save().left() - 4);
+    }
+
     @Test void layoutKeepsFullWidthToolbarsAndCollapsesLiveHistoryGap() {
         QuestScreenLayout screen = new QuestScreenLayout(900, 600, false, false);
         QuestEditorChrome.Layout draft = QuestEditorChrome.layout(screen, false, true, true);

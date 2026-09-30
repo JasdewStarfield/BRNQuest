@@ -191,7 +191,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component quickTextIssue;
     private final yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll propertyScroll = new yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll();
     private double propertyDrawnScroll;
-    private int propertyRowCount;
+    private int propertyContentHeight;
+    private List<UiRect> propertyRowLayouts = List.of();
     private boolean questEditorOpen;
     private List<Object> formBaseline = List.of();
     private ResourceLocation questEditorQuestId;
@@ -1212,7 +1213,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
         if ((questEditorOpen || typedPropertySection.open()) && detailsPanelAcceptsPointer(mouseX) && button == 0
                 && propertyScroll.handleTrackClick(mouseX, mouseY, propertyViewport().right() + 2,
-                propertyViewport().top(), propertyViewport().bottom(), propertyRowCount * 22, propertyViewport().height())) return true;
+                propertyViewport().top(), propertyViewport().bottom(), propertyContentHeight, propertyViewport().height())) return true;
         if (typedEditorOpen && detailsPanelAcceptsPointer(mouseX)) {
             return handleTypedEditorClick(mouseX, mouseY, button);
         }
@@ -1376,7 +1377,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return true;
         }
         if ((questEditorOpen || typedPropertySection.open()) && detailsPanelAcceptsPointer(x) && propertyViewport().contains(x, y)) {
-            propertyScroll.scrollWheel(vertical, scrollStep(), propertyRowCount * 22, propertyViewport().height());
+            propertyScroll.scrollWheel(vertical, scrollStep(), propertyContentHeight, propertyViewport().height());
             return true;
         }
         if (navigationPanelVisibleAt(x) && isContentY(y)) {
@@ -3801,10 +3802,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         for (int index = 0; index < Math.min(descriptors.size(), MAX_TYPED_CONFIG_FIELDS); index++) {
             ConfigFieldDescriptor descriptor = descriptors.get(index);
             int fieldIndex = index;
-            rows.add((g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w,
-                    issues.getOrDefault(descriptor.key(),
-                            typedPropertySection.form().serverIssues().get(descriptor.key())),
-                    mouseX, mouseY));
+            String issue = issues.getOrDefault(descriptor.key(),
+                    typedPropertySection.form().serverIssues().get(descriptor.key()));
+            Component label = Component.translatable(descriptor.labelKey().isBlank()
+                    ? typedConfigLabel(descriptor.key()) : descriptor.labelKey());
+            // Each descriptor reserves the actual wrapped label height; other rows keep their compact spacing.
+            rows.add(EditorPropertyPanel.sized(w -> EditorPropertyRow.height(font, label, 68, issue),
+                    (g, x, y, w) -> renderTypedConfigRow(g, descriptor, fieldIndex, x, y, w, issue, mouseX, mouseY)));
         }
         if (typedPropertySection.form().schema() != null && typedPropertySection.form().schema().rawFallback()) {
             rows.add((g, x, y, w) -> {
@@ -3848,11 +3852,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderTypedConfigRow(GuiGraphics graphics, ConfigFieldDescriptor descriptor, int index,
                                       int left, int top, int width, String issue, int mouseX, int mouseY) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68);
-        drawTypedLabel(graphics, descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey(), row.label(), issue);
+        Component label = Component.translatable(descriptor.labelKey().isBlank()
+                ? typedConfigLabel(descriptor.key()) : descriptor.labelKey());
+        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 68,
+                EditorPropertyRow.height(font, label, 68, issue));
+        EditorPropertyRow.label(graphics, font, label, row.label(), issue);
         // Types may supply either a translated help key or existing literal help text.
         if (row.label().containsExclusive(mouseX, mouseY)) {
-            // Keep long descriptor labels and their help available even if an extension needs more than two lines.
+            // Keep long descriptor labels and their help available alongside the fully wrapped descriptor label.
             var help = new ArrayList<Component>();
             help.add(Component.translatable(descriptor.labelKey().isBlank() ? typedConfigLabel(descriptor.key()) : descriptor.labelKey()));
             if (!descriptor.helpText().isBlank()) help.add(Component.translatable(descriptor.helpText()));
@@ -3959,7 +3966,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedPropertySection.captureInteractionFrame(new QuestTypedPropertySection.InteractionFrame(
                 currentFrameIdentity(), typedEditorKind, questEditorCancelBounds(), questEditorSaveBounds(),
                 task ? null : visiblePropertyBounds(typedPropertySemanticBounds(semanticsTop)), fields,
-                raw ? visiblePropertyBounds(typedPropertySemanticBounds(semanticsTop - 44)) : null,
+                raw ? visiblePropertyBounds(typedPropertyRawBounds()) : null,
                 task ? visiblePropertyBounds(typedPropertySemanticBounds(semanticsTop)) : null,
                 task ? null : visiblePropertyBounds(typedPropertySemanticBounds(semanticsTop + 22))));
     }
@@ -4127,18 +4134,30 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         setFocused(null);
     }
 
-    private int typedPropertySemanticsTop() {
-        int fields = typedPropertySection.form().schema() == null ? 0
+    private int typedPropertyFieldCount() {
+        return typedPropertySection.form().schema() == null ? 0
                 : Math.min(typedPropertySection.form().schema().fields().size(), MAX_TYPED_CONFIG_FIELDS);
-        return topToolbarHeight() + 20 + 110 + fields * 22 - (int) Math.round(propertyDrawnScroll)
-                + (typedPropertySection.form().schema() != null
-                && typedPropertySection.form().schema().rawFallback() ? 22 : 0);
     }
 
+    private int typedPropertySemanticsTop() {
+        int raw = typedPropertySection.form().schema() != null
+                && typedPropertySection.form().schema().rawFallback() ? 1 : 0;
+        return drawnPropertyRow(5 + typedPropertyFieldCount() + raw).top();
+    }
+
+    /** Hit testing reads the same measured rows used by rendering, including the centered native input. */
     private UiRect typedPropertyConfigBounds(int index) {
-        int left = detailLeft() + 10;
-        return EditorPropertyFormLayout.row(left, topToolbarHeight() + 20 + 88 + index * 22 - (int) Math.round(propertyDrawnScroll),
-                detailsWidth() - 24, 68).field();
+        UiRect bounds = drawnPropertyRow(4 + index);
+        return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), 68, bounds.height()).field();
+    }
+
+    private UiRect typedPropertyRawBounds() {
+        UiRect bounds = drawnPropertyRow(4 + typedPropertyFieldCount());
+        return EditorPropertyFormLayout.row(bounds.left(), bounds.top(), bounds.width(), 68).field();
+    }
+
+    private UiRect drawnPropertyRow(int index) {
+        return propertyRowLayouts.get(index).translated(0, -(int)Math.round(propertyDrawnScroll));
     }
 
     private UiRect typedPropertySemanticBounds(int top) {
@@ -4602,11 +4621,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private UiRect dependencyAddBounds() {
-        return questPropertyButtonBounds();
+        return layout().dependencyFooterButton(0);
     }
 
     private UiRect dependencyDoneBounds() {
-        return questDependencyButtonBounds();
+        return layout().dependencyFooterButton(1);
     }
 
     /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
@@ -4635,8 +4654,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questIconRowLayout = null;
         rows.add(EditorPropertyPanel.text(font, questFields.field("id"),
                 "screen.brnquest.editor.quest.id", 78, null, enabled));
-        rows.add((g, x, y, w) -> renderQuestLocalizedTextEditorField(g, x, y, w,
-                enabled, mouseX, mouseY));
+        rows.add(questActionRow("screen.brnquest.editor.quest.localized_text",
+                "screen.brnquest.editor.quest.localized_text_open",
+                (g, x, y, w) -> renderQuestLocalizedTextEditorField(g, x, y, w, enabled, mouseX, mouseY)));
         rows.add(EditorPropertyPanel.section(font, "screen.brnquest.editor.section.appearance"));
         rows.add((g, x, y, w) -> renderQuestShapeEditorField(g, x, y, w, enabled, mouseX, mouseY));
         for (String key : List.of("size", "icon_scale", "min_width")) {
@@ -4646,7 +4666,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         rows.add((g, x, y, w) -> renderQuestIconEditorField(g, x, y, w, mouseX, mouseY));
         rows.add(this::renderQuestPositionEditorField);
         rows.add(EditorPropertyPanel.section(font, "screen.brnquest.editor.section.quest_rules"));
-        rows.add((g, x, y, w) -> renderQuestBehaviorEditorField(g, x, y, w, enabled, mouseX, mouseY));
+        rows.add(questActionRow("screen.brnquest.editor.quest.behavior",
+                "screen.brnquest.editor.quest.behavior_open",
+                (g, x, y, w) -> renderQuestBehaviorEditorField(g, x, y, w, enabled, mouseX, mouseY)));
         Component heading = questEditorMessage == null
                 ? Component.translatable("screen.brnquest.editor.quest.heading") : questEditorMessage;
         renderPropertyPanel(graphics, heading, questEditorMessage == null ? 0xFFFFFFFF : 0xFFFF8B8B,
@@ -4655,7 +4677,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderQuestLocalizedTextEditorField(GuiGraphics graphics, int left, int top, int width, boolean enabled,
                                                      int mouseX, int mouseY) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 78);
+        EditorPropertyFormLayout.Row row = EditorPropertyRow.action(font,
+                Component.translatable("screen.brnquest.editor.quest.localized_text"),
+                Component.translatable("screen.brnquest.editor.quest.localized_text_open"), left, top, width, 78);
         EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.editor.quest.localized_text"),
                 row.label(), null);
         questLocalizedTextEditorBounds = row.field();
@@ -4677,13 +4701,25 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void renderQuestBehaviorEditorField(GuiGraphics graphics, int left, int top, int width,
                                                 boolean enabled, int mouseX, int mouseY) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 78);
+        EditorPropertyFormLayout.Row row = EditorPropertyRow.action(font,
+                Component.translatable("screen.brnquest.editor.quest.behavior"),
+                Component.translatable("screen.brnquest.editor.quest.behavior_open"), left, top, width, 78);
         EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.editor.quest.behavior"),
                 row.label(), null);
         questBehaviorEditorBounds = row.field();
         renderEditorTextButton(graphics, row.field(),
                 Component.translatable("screen.brnquest.editor.quest.behavior_open"), null,
                 enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+    }
+
+    /** The row and its renderer both ask the same layout helper, so expanded actions remain clickable. */
+    private EditorPropertyPanel.RowContent questActionRow(String labelKey, String actionKey,
+                                                         EditorPropertyPanel.RowContent content) {
+        return EditorPropertyPanel.sized(w -> {
+            var row = EditorPropertyRow.action(font, Component.translatable(labelKey), Component.translatable(actionKey),
+                    0, 0, w, 78);
+            return Math.max(row.label().bottom(), row.field().bottom());
+        }, content);
     }
 
     /** Keep native fields in input/focus routing while drawing them ourselves inside the property viewport. */
@@ -4709,7 +4745,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                      List<EditorPropertyPanel.RowContent> rows, Component done,
                                      EditorButton.Tone tone, int mouseX, int mouseY) {
         var viewport = propertyViewport();
-        propertyRowCount = rows.size();
         var form = new EditorPropertyPanel.Layout(new UiRect(detailLeft(), topToolbarHeight(), width,
                 height - bottomToolbarHeight() - 4), viewport.left(), viewport.width(),
                 topToolbarHeight() + 7, viewport.top(), 22);
@@ -4717,16 +4752,19 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 new EditorPropertyPanel.Footer(questEditorCancelBounds(), questEditorSaveBounds(), done,
                         !ClientEditorState.get().busy(), tone),
                 (g, bounds, label, enabled, buttonTone) -> renderEditorTextButton(g, bounds, label, null, enabled, buttonTone, mouseX, mouseY));
+        propertyRowLayouts = EditorPropertyPanel.rows(form, rows);
+        propertyContentHeight = propertyRowLayouts.isEmpty() ? 0
+                : propertyRowLayouts.getLast().bottom() - viewport.top() + 4;
         propertyDrawnScroll = propertyScroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
-                rows.size() * 22, viewport.height(), currentMotionFrameSeconds, scrollSmoothSpeed());
+                propertyContentHeight, viewport.height(), currentMotionFrameSeconds, scrollSmoothSpeed());
         graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
         formButtons.viewport(viewport.translated(detailsDrawerOffsetX(), 0), detailsDrawerOffsetX());
         try {
             for (int index = 0; index < rows.size(); index++) {
-                int y = viewport.top() + index * 22 - (int)Math.round(propertyDrawnScroll);
+                UiRect row = drawnPropertyRow(index);
                 // Keep edge rows; the scissor clips their hidden pixels instead of removing the whole control.
-                if (y + 18 <= viewport.top() || y >= viewport.bottom()) continue;
-                rows.get(index).render(graphics, viewport.left(), y, viewport.width());
+                if (row.bottom() <= viewport.top() || row.top() >= viewport.bottom()) continue;
+                rows.get(index).render(graphics, row.left(), row.top(), row.width());
             }
         } finally { graphics.disableScissor(); }
         graphics.drawString(font, Component.translatable(localFormChanged() ? "screen.brnquest.editor.scope.form"

@@ -1,0 +1,35 @@
+name: Check release platform access
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Check project and credential access without uploading
+        shell: pwsh
+        env:
+          MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID || 'k2cwPRGW' }}
+          CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || '1714617' }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+          CURSEFORGE_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
+        run: |
+          ./tools/release/test-platform-access.ps1 -ModrinthProjectId $env:MODRINTH_PROJECT_ID -CurseForgeProjectId $env:CURSEFORGE_PROJECT_ID
+      # The report contains only credential-presence flags and whitelisted public metadata.
+      - name: Save sanitized preflight report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platform-access
+          path: build/reports/platform-access.json
+          if-no-files-found: error
+          retention-days: 7

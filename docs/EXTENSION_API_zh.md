@@ -2,7 +2,7 @@
 
 [English](EXTENSION_API.md) | [首页](../README_zh.md) | [Java API](API_zh.md)
 
-以下契约在 `0.1.0-experimental.28` 仍为实验性。类型负责服务端行为、配置及可选客户端展示。原生 schema 1 把配置叶值作为 JSON 字符串传给 Codec，数字和布尔值应从 `Codec.STRING` 校验解析。简单外部进度目标与事件奖励可使用 [KubeJS](KUBEJS_API_zh.md)。
+以下契约在 `0.1.0-experimental.29` 仍为实验性。类型负责服务端行为、配置及可选客户端展示。原生 schema 1 把配置叶值作为 JSON 字符串传给 Codec，数字和布尔值应从 `Codec.STRING` 校验解析。简单外部进度目标与事件奖励可使用 [KubeJS](KUBEJS_API_zh.md)。
 
 ## 注册与所有权
 
@@ -13,6 +13,8 @@
 完整 ID 各自独立，`example:item` 不继承 `brnquest:item`。新类型应通过公共契约接入，避免在核心界面、网络或进度中添加类型 ID 分支。内置实现类属于内部代码。
 
 `TaskType.hiddenFromCreation()` 与 `RewardType.hiddenFromCreation()` 默认 false。true 隐藏主创建栏和奖励表叶子创建候选，已有定义、编辑、执行、导入及校验保留。内置 `item_choice` 与 `xp_levels` 用此保留兼容。当前列表按类型 ID 排序，尚未引入插件排序契约。
+
+`ClientTaskPresentation.completionDescription(context)` 为悬浮通知提供具体目标要求，默认委托 `objectiveTitle(context)`，旧展示实现继续有效。自定义短标题省略数量或条件时，可覆盖此方法；根据配置描述要求，避免依赖提交后的实时背包数量。示例物品展示提供了该钩子的实现。任务属性与默认值表单共用的属性目录属于编辑器内部实现。
 
 ## 目标执行与选择
 

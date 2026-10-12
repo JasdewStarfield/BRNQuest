@@ -74,26 +74,31 @@ public final class BuiltinItemPresentation {
 
     /** Generated item name without an author override, used as the override's explanatory Tooltip. */
     public static Component defaultItemObjectiveTitle(TaskPresentationContext context) {
-        ItemChoiceMatcher.Spec spec = itemSpec(context.task());
+        return defaultItemObjectiveTitle(context.task(), context.displayedItem());
+    }
+
+    private static Component defaultItemObjectiveTitle(TaskView task, ItemStack displayedItem) {
+        ItemChoiceMatcher.Spec spec = itemSpec(task);
         if (spec != null && spec.entries().size() > 1) {
-            return multipleItemObjectiveTitle(context.task(), spec);
+            return multipleItemObjectiveTitle(task, spec);
         }
         Component itemTitle;
         if (spec != null && spec.entries().getFirst().kind() == ItemChoiceMatcher.EntryKind.TAG) {
             itemTitle = Component.translatable("screen.brnquest.task.item_choice.tag_title");
         } else if (spec != null && spec.entries().size() == 1
-                && context.displayedItem() != null && !context.displayedItem().isEmpty()) {
-            itemTitle = context.displayedItem().getHoverName();
+                && displayedItem != null && !displayedItem.isEmpty()) {
+            itemTitle = displayedItem.getHoverName();
         } else {
             itemTitle = Component.translatable("screen.brnquest.task.item_choice.list_title",
                     spec == null ? 0 : spec.entries().size());
         }
-        String key = consumesItems(context.task())
+        String key = consumesItems(task)
                 ? "screen.brnquest.task.item.require" : "screen.brnquest.task.item.hold";
-        return Component.translatable(key, itemTitle, requiredCount(context.task()));
+        return Component.translatable(key, itemTitle, requiredCount(task));
     }
 
     private static final class ItemPresentation implements ClientTaskPresentation {
+        public Component completionDescription(TaskPresentationContext context) { return BuiltinItemPresentation.completionDescription(context); }
         public boolean confirmed(TaskView task, long storedProgress) { return itemObjectiveSubmitted(task, storedProgress); }
         public NodeStyle nodeStyle(TaskView task) { return NodeStyle.ITEM; }
         public String itemSnbt(TaskView task) { return task.config().getOrDefault("item", ""); }
@@ -150,6 +155,7 @@ public final class BuiltinItemPresentation {
     }
 
     public static final class ItemChoicePresentation implements ClientTaskPresentation {
+        public Component completionDescription(TaskPresentationContext context) { return BuiltinItemPresentation.completionDescription(context); }
         public int requiredCount(TaskView task) { return BuiltinItemPresentation.requiredCount(task); }
         public java.util.Optional<TitleDecoration> titleDecoration(TaskPresentationContext context) {
             String configured = context.task().config().getOrDefault("title", "");
@@ -294,6 +300,22 @@ public final class BuiltinItemPresentation {
         private ItemChoiceMatcher.Spec spec(TaskView task) {
             return itemSpec(task);
         }
+    }
+
+    /** Completion cards retain item/count semantics even when an author supplied a shorter row title. */
+    public static Component completionDescription(TaskPresentationContext context) {
+        return completionDescription(context.task(), context.displayedItem());
+    }
+
+    /** Pure requirement projection also used for notification regression checks. */
+    public static Component completionDescription(TaskView task, ItemStack displayedItem) {
+        if (craftingOnly(task)) {
+            Component subject = displayedItem.isEmpty()
+                    ? Component.translatable("screen.brnquest.task.item_choice.list_title", 1)
+                    : displayedItem.getHoverName();
+            return Component.translatable("message.brnquest.notification.crafted", subject, requiredCount(task));
+        }
+        return defaultItemObjectiveTitle(task, displayedItem);
     }
 
     private static boolean booleanConfig(TaskView task, String key) {

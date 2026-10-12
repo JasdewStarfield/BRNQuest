@@ -4,7 +4,7 @@
 
 ## Versions and supported surface
 
-The mod release is **1.0.0**. The Java API baseline remains **0.1.0-experimental.28**; network protocol is **21**. Book schema 1 and progress schema 2 are separate formats. Update clients and server together.
+The development Java API baseline is **0.1.0-experimental.29**; mod 1.0.0 used experimental.28. Network protocol is **21**. Book schema 1 and progress schema 2 are separate formats. Update clients and server together.
 
 `api.ApiStatus` and the documented surface define compatibility. `STABLE` contracts preserve source/binary compatibility within their API major; incompatible changes require a new major and migration guidance. `EXPERIMENTAL` contracts may change with an updated baseline, documentation and signature checks. `INTERNAL` marks implementation details for internal use.
 
@@ -101,5 +101,6 @@ Mod 1.0.0 changes no Java signatures relative to experimental.28. Recent API tra
 | experimental.26 | Type-owned title/claim UI hooks, config patches/creation screens, read-only claim-state query |
 | experimental.27 | All-member completion projection and team-sharing setting |
 | experimental.28 | Default `hiddenFromCreation()` on task/reward types |
+| experimental.29 | Optional `ClientTaskPresentation.completionDescription` for concrete notification requirements; defaults to `objectiveTitle` |
 
 Default methods and retained constructors preserve the documented older call paths. Consumers relying on record-component reflection, generated equality or deconstruction must review added components. Use the current contracts and compile the example add-on when upgrading.

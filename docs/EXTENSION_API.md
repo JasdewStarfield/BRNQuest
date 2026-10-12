@@ -2,7 +2,7 @@
 
 [简体中文](EXTENSION_API_zh.md) | [Home](../README.md) | [Java API](API.md)
 
-The contracts below remain experimental at `0.1.0-experimental.28`. Types own server behavior, configuration and optional client presentation. Native schema 1 passes configuration leaves as JSON strings to the type's Codec: parse numeric/boolean values from `Codec.STRING` with validation. Simple externally advanced objectives and event rewards can use [KubeJS](KUBEJS_API.md).
+The contracts below remain experimental at `0.1.0-experimental.29`. Types own server behavior, configuration and optional client presentation. Native schema 1 passes configuration leaves as JSON strings to the type's Codec: parse numeric/boolean values from `Codec.STRING` with validation. Simple externally advanced objectives and event rewards can use [KubeJS](KUBEJS_API.md).
 
 ## Registration and ownership
 
@@ -13,6 +13,8 @@ The plugin facade and common registries freeze before the first server resource-
 Complete IDs are independent: `example:item` inherits no behavior from `brnquest:item`. New types should integrate through these contracts without type-ID branches in core screens, networking or progress code. Built-in implementation classes are internal.
 
 `TaskType.hiddenFromCreation()` and `RewardType.hiddenFromCreation()` default to false. True hides a type from main creation and reward-table leaf creation, while retaining existing definitions, editing, execution, import and validation. Built-in `item_choice` and `xp_levels` use this for compatibility. Lists currently sort by type ID; no plugin ordering contract has been introduced.
+
+`ClientTaskPresentation.completionDescription(context)` supplies concrete objective requirements for floating notices. Its default delegates to `objectiveTitle(context)`, preserving older presentations. Override it when a short authored caption omits quantities or conditions; describe the configured requirement independently of live inventory after submission. The example item presentation demonstrates the hook. The shared quest-property/default-form catalog is an internal editor implementation.
 
 ## Task execution and selection
 

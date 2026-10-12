@@ -38,6 +38,18 @@ public final class AdvancementPresentation {
         String title = values.getOrDefault("title", "");
         return title.isBlank() ? Component.translatable("screen.brnquest.advancement.task_title") : Component.literal(title);
     }
+    /** A compact native target/criterion summary keeps requirements ahead of optional author captions. */
+    public static Component completionDescription(Map<String,String> values) {
+        String selector = values.getOrDefault("advancement", "");
+        var text = Component.translatable("screen.brnquest.advancement.task_title").append(": ")
+                .append(advancementTitle(selector));
+        String criterion = values.getOrDefault("criterion", "");
+        if (!criterion.isBlank()) text.append("\n").append(Component.translatable("screen.brnquest.advancement.criterion"))
+                .append(": " + criterion);
+        if (selector.startsWith("#")) text.append("\n").append(
+                Component.translatable("screen.brnquest.advancement." + values.getOrDefault("mode", "any")));
+        return text;
+    }
     private static Component advancementTitle(String selector) {
         var minecraft = net.minecraft.client.Minecraft.getInstance();
         var connection = minecraft == null ? null : minecraft.getConnection();
@@ -97,6 +109,8 @@ public final class AdvancementPresentation {
         public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task.advancement"); }
         public Component title(TaskPresentationContext context) { return taskTitle(context.task().config()); }
         public Component interactionHint(TaskPresentationContext context, boolean interactive) { return detail(context.task().config(),true); }
+        /** Native names, criteria and any/all mode replace the generic advancement row title. */
+        public Component completionDescription(TaskPresentationContext context) { return AdvancementPresentation.completionDescription(context.task().config()); }
     }
     public static final class Reward implements ClientRewardPresentation {
         public java.util.Optional<java.util.List<Component>> resolvedOptions(RewardView view) { return java.util.Optional.of(options(view.config())); }

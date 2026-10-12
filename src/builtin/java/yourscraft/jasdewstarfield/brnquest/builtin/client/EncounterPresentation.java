@@ -14,6 +14,17 @@ public record EncounterPresentation(boolean observe) implements ClientTaskPresen
     public NodeStyle nodeStyle(TaskView task) { return NodeStyle.CUSTOM; }
     public Optional<EditorIcon> icon(TaskView task) { return Optional.of(EditorIcon.item(new ItemStack(observe ? Items.SPYGLASS : Items.IRON_SWORD))); }
     public Component typeName(TaskView task) { return Component.translatable("screen.brnquest.type.task."+(observe ? "observe" : "kill_entity")); }
+    /** Share the native target name and observation parameters, adding the required kill count. */
+    public Component completionDescription(TaskPresentationContext context) {
+        return completionDescription(context.task(), observe);
+    }
+    /** Definition-only wording retains the threshold even after the live progress or inventory changes. */
+    public static Component completionDescription(TaskView task, boolean observe) {
+        var config = EncounterConfig.parse(task.config(), observe);
+        return observe ? Component.translatable("message.brnquest.notification.observed",
+                targetName(config), config.distance(), config.duration())
+                : Component.translatable("message.brnquest.notification.killed", targetName(config), config.count());
+    }
     public Component title(TaskPresentationContext context) {
         String title=context.task().config().getOrDefault("title","");
         return title.isBlank() ? typeName(context.task()).copy().append(": ").append(targetName(EncounterConfig.parse(context.task().config(),observe))) : Component.literal(title);

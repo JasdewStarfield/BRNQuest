@@ -13,6 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftBookEditor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestNodeGeometry;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.data.QuestAppearance;
+import yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,7 +49,15 @@ final class QuestCanvasRenderer {
                      boolean attentionTask, boolean pendingReward,
                      QuestPresentation.QuestVisual visual, ItemStack item,
                      List<Component> tooltip, List<ResourceLocation> dependencies,
-                     yourscraft.jasdewstarfield.brnquest.progress.QuestStatus status) {
+                     yourscraft.jasdewstarfield.brnquest.progress.QuestStatus status, DisplayOverrides.NamePosition namePosition) {
+        NodeModel(ResourceLocation id, QuestAppearance appearance, DraftBookEditor.Position position,
+                  DraftBookEditor.Position snapPosition, int fillColor, boolean selected, boolean tracked,
+                  boolean pickedUp, boolean attentionTask, boolean pendingReward,
+                  QuestPresentation.QuestVisual visual, ItemStack item, List<Component> tooltip,
+                  List<ResourceLocation> dependencies, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus status) {
+            this(id, appearance, position, snapPosition, fillColor, selected, tracked, pickedUp,
+                    attentionTask, pendingReward, visual, item, tooltip, dependencies, status, DisplayOverrides.NamePosition.INHERIT);
+        }
         NodeModel(ResourceLocation id, QuestAppearance appearance, DraftBookEditor.Position position,
                   DraftBookEditor.Position snapPosition, int fillColor, boolean selected, boolean tracked,
                   boolean pickedUp, boolean attentionTask, boolean pendingReward,
@@ -123,6 +132,10 @@ final class QuestCanvasRenderer {
                 .forEach(d -> renderDependency(graphics, d, edgeColor(d, model.focusedQuestId()), 2));
         frame.nodes().forEach(node -> renderSnapGhost(graphics, font, node, frame.graphBounds()));
         frame.nodes().forEach(node -> renderNode(graphics, font, node, model.attentionPingOffsetY()));
+        frame.nodes().forEach(node -> {
+            var position = effectiveNamePosition(node.model());
+            if (position != DisplayOverrides.NamePosition.OFF) renderName(graphics, font, node, position);
+        });
         graphics.pose().popPose();
         graphics.disableScissor();
 
@@ -150,7 +163,10 @@ final class QuestCanvasRenderer {
             NodeFrame frame = new NodeFrame(node, x, y, visualSize,
                     QuestNodeGeometry.hitRadius(NODE_BASE_SIZE, node.appearance()));
             allNodes.put(node.id(), frame);
-            if (QuestViewportMath.intersectsViewport(x, y, visualSize / 2,
+            // Labels can remain on-screen while their node is just outside the canvas edge.
+            int margin = effectiveNamePosition(node) == DisplayOverrides.NamePosition.OFF
+                    ? visualSize / 2 : Math.max(60, visualSize / 2 + 48);
+            if (QuestViewportMath.intersectsViewport(x, y, margin,
                     bounds.left(), bounds.right(), bounds.top(), bounds.bottom())) {
                 visibleNodes.add(frame);
             }
@@ -170,7 +186,35 @@ final class QuestCanvasRenderer {
                 visibleNodes, dependencies);
     }
 
-    /** Returns the topmost visible node only when this geometry belongs to the current screen frame. */
+    /** Names follow the graph camera without expanding the node's clickable area. */
+    private static void renderName(GuiGraphics graphics, Font font, NodeFrame node,
+                                   DisplayOverrides.NamePosition position) {
+        // The first tooltip line already resolves localization, title fallbacks and hidden-text rules.
+        if (node.model().tooltip().isEmpty()) return;
+        var lines = font.split(node.model().tooltip().getFirst(), 100);
+        // Bound tall labels on dense graphs; the existing node tooltip retains the complete title.
+        int count = Math.min(3, lines.size());
+        int height = count * font.lineHeight;
+        int y = position == DisplayOverrides.NamePosition.ABOVE
+                ? node.graphY() - node.visualSize() / 2 - height - 12
+                : node.graphY() + node.visualSize() / 2 + 12;
+        for (int index = 0; index < count; index++) {
+            var line = lines.get(index);
+            boolean shortened = index == count - 1 && lines.size() > count;
+            int left = node.graphX() - (font.width(line) + (shortened ? font.width("…") : 0)) / 2;
+            graphics.drawString(font, line, left, y, GraystonePalette.TEXT, true);
+            if (shortened) graphics.drawString(font, "…", left + font.width(line), y, GraystonePalette.TEXT, true);
+            y += font.lineHeight;
+        }
+    }
+
+    /** An authored property overrides only this node; inherited nodes keep the player's preference. */
+    private static DisplayOverrides.NamePosition effectiveNamePosition(NodeModel node) {
+        return node.namePosition().resolve(DisplayOverrides.NamePosition.valueOf(
+                BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.questNamePosition).name()));
+    }
+
+    /** Labels are decorative; input continues to use the original node shape and radius. */
     static ResourceLocation nodeAt(Frame frame, QuestScreenFrameIdentity current,
                                    double screenX, double screenY) {
         if (frame == null || !frame.matches(current) || !frame.viewport().containsExclusive(screenX, screenY)) {

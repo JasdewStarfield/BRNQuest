@@ -60,21 +60,19 @@ final class AuthoringQuestUpdateHandler {
         }
         double replacementX = hasX ? wire.x() : quest.x();
         double replacementY = hasY ? wire.y() : quest.y();
-        var appearanceInput = wire.appearance();
-        QuestAppearance appearance = appearanceInput == null ? quest.appearance() : new QuestAppearance(
-                appearanceInput.shape(), appearanceInput.size(), appearanceInput.iconScale(), appearanceInput.minWidth(), quest.appearance().hideDependencyLines());
-        if (wire.hideDependencyLines() != null) appearance = new QuestAppearance(appearance.shape(), appearance.size(), appearance.iconScale(), appearance.minWidth(),
-                wire.hideDependencyLines().equals("default") ? null : Boolean.valueOf(wire.hideDependencyLines()));
-        var behaviorInput = wire.behavior();
-        QuestBehavior behavior = behaviorInput == null ? quest.behavior() : new QuestBehavior(
-                behaviorInput.hideUntilDependenciesVisible(), behaviorInput.hideUntilDependenciesComplete(),
-                behaviorInput.invisibleUntilComplete(), behaviorInput.visibleAfterTasks(), behaviorInput.hideDetailsUntilStartable(),
-                behaviorInput.hideTextUntilComplete(), behaviorInput.hideLockIcon(), behaviorInput.dependencyRequirement(),
-                behaviorInput.minimumRequiredDependencies(), behaviorInput.sequentialTasks(), behaviorInput.repeatable(),
-                behaviorInput.repeatCooldownSeconds(), behaviorInput.ignoreRewardBlocking(), behaviorInput.requireAllTeamMembers());
+        // Merge registered patches onto the source so omitted properties and opaque extensions survive older clients.
+        var values = new java.util.TreeMap<>(yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.values(
+                quest.appearance(), quest.behavior(), quest.extensions()));
+        if (wire.appearance() != null) values.putAll(wire.appearance().values());
+        if (wire.behavior() != null) values.putAll(wire.behavior().values());
+        if (wire.hideDependencyLines() != null) values.put("hide_dependency_lines", wire.hideDependencyLines());
+        QuestAppearance appearance = yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.appearance(values);
+        QuestBehavior behavior = yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.behavior(values);
         QuestDefinition replacement = new QuestDefinition(quest.bookId(), replacementQuestId, quest.chapterId(),
                 wire.title(), wire.subtitle(), wire.description(), quest.descriptionFormat(), icon, replacementX, replacementY,
-                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior, quest.extensions());
+                quest.dependencies(), quest.tasks(), quest.rewards(), quest.legacyId(), appearance, behavior,
+                yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.CATALOG.extensions(
+                        DisplayOverrides.updateName(quest.extensions(), wire.namePosition()), wire.properties()));
         // Same-ID property saves may atomically update exact coordinates. Renames keep the dedicated
         // alias-migration path, while legacy/quick-text callers omit coordinates and preserve position.
         var updated = replacementQuestId.equals(questId) && hasX

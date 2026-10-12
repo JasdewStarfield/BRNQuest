@@ -89,6 +89,8 @@ public final class ClientQuestState {
     public Map<String, Long> taskProgress() { return taskProgress; }
     public Set<String> claimed() { return claimed; }
     public boolean visible(ResourceLocation questId) { return !visibilityAuthoritative || visible.contains(questId.toString()); }
+    /** Aggregate counts wait for the server visibility snapshot to avoid revealing hidden totals during sync. */
+    public boolean hasAuthoritativeVisibility() { return visibilityAuthoritative; }
     public int completionCycles(ResourceLocation questId) { return completionCycles.getOrDefault(questId.toString(), 0); }
     public long nextAvailableAt(ResourceLocation questId) { return nextAvailable.getOrDefault(questId.toString(), 0L); }
     public ResourceLocation selected() { return selected; }

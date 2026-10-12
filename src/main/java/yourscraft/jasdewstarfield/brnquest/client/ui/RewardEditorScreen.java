@@ -70,8 +70,9 @@ public abstract class RewardEditorScreen extends Screen {
         GraystoneSurface.raised(graphics, p, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(title.getString(), p.width() - 24)),
                 p.centerX(), p.top() + 10, -1);
-        graphics.drawString(font, font.plainSubstrByWidth(issue.isBlank() ? Component.translatable("screen.brnquest.editor.scope.child").getString() : issue, p.width() - 24),
-                p.left() + 12, p.bottom() - 44, issue.isBlank() ? GraystonePalette.SECONDARY : 0xFFFF7070, false);
+        // Keep the footer quiet during normal editing and reserve it for validation errors.
+        if (!issue.isBlank()) graphics.drawString(font, font.plainSubstrByWidth(issue, p.width() - 24),
+                p.left() + 12, p.bottom() - 44, 0xFFFF7070, false);
     }
 
     @Override protected void init() { controls.clear(); lastFrame = 0; }

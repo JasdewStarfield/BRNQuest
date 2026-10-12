@@ -44,7 +44,13 @@ final class QuestNavigationPanel {
         }
     }
     record Model(QuestScreenFrameIdentity identity, QuestBookDefinition book,
-                 ChapterDefinition selected, boolean editing, boolean canAddChapter) {}
+                 ChapterDefinition selected, boolean editing, boolean canAddChapter,
+                 java.util.Map<ResourceLocation, ChapterProgress> progress) {
+        Model(QuestScreenFrameIdentity identity, QuestBookDefinition book,
+              ChapterDefinition selected, boolean editing, boolean canAddChapter) {
+            this(identity, book, selected, editing, canAddChapter, java.util.Map.of());
+        }
+    }
     record RenderResult(List<Component> tooltip) {
         RenderResult { tooltip = tooltip == null ? List.of() : List.copyOf(tooltip); }
     }
@@ -126,10 +132,16 @@ final class QuestNavigationPanel {
                         if (model.selected() != null && chapter.id().equals(model.selected().id()))
                             graphics.fill(4, y + 1, 6, y + CHAPTER_HEIGHT - 1, GraystonePalette.ACCENT);
                         drawIcon.accept(chapter, new UiRect(9, y + 2, 25, y + 18));
+                        var progress = model.progress().get(chapter.id());
                         EditorTextRenderer.drawFittedString(graphics, font, Component.literal(
                                 BookText.structureTitle(
                                         model.book(), "chapter", chapter.id(), locale, chapter.title())),
-                                30, y + 6, Math.max(1, layout.width() - 34), 0xFFFFFFFF, 0.75F);
+                                30, y + (progress == null ? 6 : 2), Math.max(1, layout.width() - 34), 0xFFFFFFFF, 0.75F);
+                        // Two compact lines keep scrolling, chapter dragging and click geometry unchanged.
+                        if (progress != null) EditorTextRenderer.drawFittedString(graphics, font,
+                                Component.translatable("screen.brnquest.chapter.progress", progress.completed(),
+                                        progress.total(), progress.percent()),
+                                30, y + 11, Math.max(1, layout.width() - 34), GraystonePalette.SECONDARY, 0.75F);
                         y += CHAPTER_HEIGHT;
                     }
                 }
@@ -173,6 +185,11 @@ final class QuestNavigationPanel {
                         : BookText.structureTitle(model.book(), "chapter", hovered.chapter().id(), locale, hovered.chapter().title());
                 tooltip = new java.util.ArrayList<>();
                 tooltip.add(Component.literal(title));
+                if (hovered.chapter() != null) {
+                    var progress = model.progress().get(hovered.chapter().id());
+                    if (progress != null) tooltip.add(Component.translatable("screen.brnquest.chapter.progress",
+                            progress.completed(), progress.total(), progress.percent()));
+                }
                 if (hovered.group() != null && !hovered.group().description().isBlank()) {
                     // Separate tooltip entries preserve authored newlines instead of embedding them in one line.
                     for (String line : hovered.group().description().split("\\R")) tooltip.add(Component.literal(line));

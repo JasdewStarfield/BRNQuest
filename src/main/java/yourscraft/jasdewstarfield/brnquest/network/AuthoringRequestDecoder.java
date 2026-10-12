@@ -156,17 +156,42 @@ final class AuthoringRequestDecoder {
                         text(wire.activeRevision(), "activeRevision", 32767, true)));
     }
     enum IconKind { ITEM, TEXTURE }
-    record AppearanceRequest(String shape, double size, double iconScale, double minWidth) {}
-    record BehaviorRequest(boolean hideUntilDependenciesVisible, boolean hideUntilDependenciesComplete,
-                           boolean invisibleUntilComplete, int visibleAfterTasks, boolean hideDetailsUntilStartable,
-                           boolean hideTextUntilComplete, boolean hideLockIcon,
-                           yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement dependencyRequirement,
-                           int minimumRequiredDependencies, boolean sequentialTasks, boolean repeatable,
-                           int repeatCooldownSeconds, boolean ignoreRewardBlocking, boolean requireAllTeamMembers) {}
+    /** Sparse registered patches preserve fields omitted by older clients and quick-text requests. */
+    record AppearanceRequest(java.util.Map<String, String> values) {
+        AppearanceRequest { values = java.util.Map.copyOf(values); }
+    }
+    record BehaviorRequest(java.util.Map<String, String> values) {
+        BehaviorRequest { values = java.util.Map.copyOf(values); }
+        boolean repeatable() { return yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.behavior(values).repeatable(); }
+        int repeatCooldownSeconds() { return yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.behavior(values).repeatCooldownSeconds(); }
+    }
     record QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
                         ResourceLocation replacementQuestId, String title, String subtitle, String description,
                         IconKind iconKind, ResourceLocation iconId, boolean preserveIcon, Double x, Double y,
-                        AppearanceRequest appearance, BehaviorRequest behavior, String hideDependencyLines) {
+                        AppearanceRequest appearance, BehaviorRequest behavior, String hideDependencyLines, String namePosition,
+                        java.util.Map<String, String> properties) {
+        /** Legacy callers retain their notification-only projection while storage uses all registered properties. */
+        public java.util.Map<String, String> notifications() {
+            var flags = new java.util.TreeMap<String, String>();
+            yourscraft.jasdewstarfield.brnquest.data.QuestNotificationPolicy.DEFAULT.fields().keySet().forEach(key -> {
+                if (properties.containsKey(key)) flags.put(key, properties.get(key));
+            });
+            return java.util.Map.copyOf(flags);
+        }
+        QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
+                ResourceLocation replacementQuestId, String title, String subtitle, String description, IconKind iconKind,
+                ResourceLocation iconId, boolean preserveIcon, Double x, Double y, AppearanceRequest appearance,
+                BehaviorRequest behavior, String hideDependencyLines, String namePosition) {
+            this(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle, description, iconKind,
+                    iconId, preserveIcon, x, y, appearance, behavior, hideDependencyLines, namePosition, java.util.Map.of());
+        }
+        QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
+                ResourceLocation replacementQuestId, String title, String subtitle, String description, IconKind iconKind,
+                ResourceLocation iconId, boolean preserveIcon, Double x, Double y, AppearanceRequest appearance,
+                BehaviorRequest behavior, String hideDependencyLines) {
+            this(sessionId, bookId, draftRevision, questId, replacementQuestId, title, subtitle, description, iconKind,
+                    iconId, preserveIcon, x, y, appearance, behavior, hideDependencyLines, null);
+        }
         QuestRequest(UUID sessionId, ResourceLocation bookId, String draftRevision, ResourceLocation questId,
                 ResourceLocation replacementQuestId, String title, String subtitle, String description, IconKind iconKind,
                 ResourceLocation iconId, boolean preserveIcon, Double x, Double y, AppearanceRequest appearance, BehaviorRequest behavior) {
@@ -211,31 +236,69 @@ final class AuthoringRequestDecoder {
                         || !Double.isFinite(wire.iconScale()) || wire.iconScale() <= 0
                         || !Double.isFinite(wire.minWidth()) || wire.minWidth() < 0)
                     throw invalid("INVALID_QUEST_APPEARANCE", "appearance", "Quest appearance values must be finite and positive");
-                appearance = new AppearanceRequest(wire.shape(), wire.size(), wire.iconScale(), wire.minWidth());
+                appearance = new AppearanceRequest(java.util.Map.of("shape", wire.shape(), "size", Double.toString(wire.size()),
+                        "icon_scale", Double.toString(wire.iconScale()), "min_width", Double.toString(wire.minWidth())));
             }
             BehaviorRequest behavior = null;
             if (wire.behavior() != null && !wire.behavior().isEmpty()) {
+                var values = boundedConfig(wire.behavior());
                 try {
-                    var values = boundedConfig(wire.behavior());
-                    String requirement = values.getOrDefault("dependency_requirement", "all_completed");
-                    var dependency = yourscraft.jasdewstarfield.brnquest.data.DependencyRequirement.valueOf(
-                            requirement.strip().toUpperCase(java.util.Locale.ROOT));
-                    behavior = new BehaviorRequest(bool(values, "hide_until_dependencies_visible"),
-                            bool(values, "hide_until_dependencies_complete"), bool(values, "invisible_until_complete"),
-                            integer(values, "visible_after_tasks"), bool(values, "hide_details_until_startable"),
-                            bool(values, "hide_text_until_complete"), bool(values, "hide_lock_icon"), dependency,
-                            integer(values, "minimum_required_dependencies"), bool(values, "sequential_tasks"),
-                            bool(values, "repeatable"), integer(values, "repeat_cooldown_seconds"), bool(values, "ignore_reward_blocking"), bool(values, "require_all_team_members"));
+                    var registered = registeredValues(values, yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.Storage.BEHAVIOR);
+                    if (!registered.isEmpty()) behavior = new BehaviorRequest(registered);
                 } catch (RuntimeException invalid) {
-                    throw invalid("INVALID_QUEST_BEHAVIOR", "behavior", "Quest behavior contains an invalid number or enum");
+                    throw invalid("INVALID_QUEST_BEHAVIOR", "behavior", "Quest behavior contains an invalid value");
+                }
+                try {
+                    var registered = new java.util.TreeMap<>(registeredValues(values,
+                            yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.Storage.APPEARANCE));
+                    if (appearance != null) registered.putAll(appearance.values());
+                    if (!registered.isEmpty()) appearance = new AppearanceRequest(registered);
+                } catch (RuntimeException invalid) {
+                    throw invalid("INVALID_QUEST_APPEARANCE", "appearance", "Quest appearance contains an invalid value");
                 }
             }
             String hideLines = wire.behavior() == null ? null : wire.behavior().get("hide_dependency_lines");
             if (hideLines != null && !java.util.Set.of("default", "true", "false").contains(hideLines))
                 throw invalid("INVALID_QUEST_APPEARANCE", "hide_dependency_lines", "Expected default, true or false");
+            String namePosition = wire.behavior() == null ? null : wire.behavior().get("quest_name_position");
+            if (namePosition != null) {
+                try { yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides.parseName(namePosition); }
+                catch (RuntimeException invalid) {
+                    throw invalid("INVALID_QUEST_APPEARANCE", "quest_name_position", "Expected inherit, off, above or below");
+                }
+            }
+            var properties = new java.util.HashMap<String, String>();
+            // Registered extension properties travel in the existing property map alongside legacy notification flags.
+            if (wire.behavior() != null) for (String field : yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.CATALOG.properties().stream()
+                    .filter(property -> property.storage() == yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.Storage.EXTENSION)
+                    .map(yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.Property::key).toList()) {
+                if (wire.behavior().containsKey(field)) properties.put(field, wire.behavior().get(field));
+            }
+            try { yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.CATALOG.extensions(java.util.Map.of(), properties); }
+            catch (RuntimeException invalid) { throw invalid("INVALID_QUEST_APPEARANCE", "properties", "Registered quest properties contain an invalid value"); }
             return new QuestRequest(session, book, revision, quest, replacement, wire.title(), wire.subtitle(),
-                    wire.description(), kind, icon, wire.preserveIcon(), wire.x(), wire.y(), appearance, behavior, hideLines);
+                    wire.description(), kind, icon, wire.preserveIcon(), wire.x(), wire.y(), appearance, behavior, hideLines, namePosition,
+                    java.util.Map.copyOf(properties));
         });
+    }
+
+    /** Registration drives request decoding too; legacy SNBT scalar suffixes remain accepted for native behavior. */
+    private static java.util.Map<String, String> registeredValues(java.util.Map<String, String> input,
+            yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.Storage storage) {
+        var fields = yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.CATALOG.properties().stream()
+                .filter(property -> property.storage() == storage).toList();
+        var values = new java.util.TreeMap<String, String>();
+        for (var property : fields) {
+            if (!input.containsKey(property.key())) continue;
+            String value = input.get(property.key());
+            values.put(property.key(), switch (property.field().valueType()) {
+                case BOOLEAN -> Boolean.toString(bool(input, property.key()));
+                case INTEGER -> Integer.toString(integer(input, property.key()));
+                case ENUM -> value.strip().toLowerCase(java.util.Locale.ROOT);
+                default -> value;
+            });
+        }
+        return yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema.CATALOG.normalize(values, fields);
     }
 
     private static boolean bool(java.util.Map<String, String> values, String key) {

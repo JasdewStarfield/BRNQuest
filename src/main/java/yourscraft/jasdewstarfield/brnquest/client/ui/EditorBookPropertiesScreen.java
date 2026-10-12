@@ -52,7 +52,7 @@ final class EditorBookPropertiesScreen extends Screen {
         fallbackInput.setResponder(value -> { fallback = value; if (done != null) done.active = EditorLocalizedText.validLocale(value); });
         fallbackInput.show(new UiRect(left + 85, top + 60, left + panelWidth, top + 80), true); addRenderableWidget(fallbackInput);
         addRenderableWidget(new EditorButtonWidget(left, top + 92, panelWidth, 20, Component.translatable("screen.brnquest.defaults.title"), button ->
-                minecraft.setScreen(new EditorCreationDefaultsScreen(this, defaults, QuestCreationDefaults.EMPTY, value -> defaults = value))));
+                minecraft.setScreen(new EditorCreationDefaultsScreen(this, defaults, value -> defaults = value))));
         addRenderableWidget(new EditorButtonWidget(left, top + 118, panelWidth, 20,
                 Component.translatable("screen.brnquest.book.settings"), button ->
                 minecraft.setScreen(new EditorBookSettingsScreen(this, settings, value -> settings = value))));

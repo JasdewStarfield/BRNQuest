@@ -22,12 +22,16 @@ public final class BrnQuestClientConfig {
     }
 
     public enum GridVisibility { ALWAYS, EDITING_ONLY, NEVER }
+    /** A local label preference leaves authored titles and quest visibility unchanged. */
+    public enum QuestNamePosition { OFF, ABOVE, BELOW }
 
     public static final class Values {
         public final ModConfigSpec.BooleanValue autoCollapseNavigation, reduceMotion, rememberEditingMode, rememberViewport;
         public final ModConfigSpec.DoubleValue zoomStep;
         public final ModConfigSpec.IntValue nodeDragHoldMillis, navigationWidth, detailsWidth;
         public final ModConfigSpec.EnumValue<GridVisibility> showGrid;
+        public final ModConfigSpec.EnumValue<QuestNamePosition> questNamePosition;
+        public final ModConfigSpec.BooleanValue showChapterProgress;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
         public final ModConfigSpec.DoubleValue zoomSmoothSpeed;
@@ -46,6 +50,10 @@ public final class BrnQuestClientConfig {
             navigationWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("navigationWidth", 0, 0, 400);
             detailsWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("detailsWidth", 0, 0, 600);
             showGrid = builder.defineEnum("showGrid", GridVisibility.ALWAYS);
+            questNamePosition = builder.comment("Always show visible quest names above or below their nodes; OFF hides labels.")
+                    .defineEnum("questNamePosition", QuestNamePosition.OFF);
+            showChapterProgress = builder.comment("Show completed / visible quests and percentage in chapter navigation.")
+                    .define("showChapterProgress", false);
             builder.pop();
             // Local rendering diagnostics are read each frame and never change book or server state.
             builder.comment("Client development diagnostics").push("debug");

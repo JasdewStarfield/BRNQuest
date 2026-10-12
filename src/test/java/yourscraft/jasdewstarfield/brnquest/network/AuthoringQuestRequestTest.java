@@ -7,6 +7,31 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Quest-specific optional fields are normalized once while rename decisions remain server-owned. */
 class AuthoringQuestRequestTest {
+    @Test void notificationSwitchesAreValidatedWithoutChangingLegacyRequests() {
+        var json = request();
+        assertTrue(AuthoringRequestDecoder.quest(json.toString()).value().notifications().isEmpty());
+        var values = new JsonObject(); json.add("behavior", values);
+        values.addProperty("notify_task_complete", "false"); values.addProperty("notify_reward_claimed", "true");
+        var parsed = AuthoringRequestDecoder.quest(json.toString());
+        assertTrue(parsed.success());
+        assertEquals("false", parsed.value().notifications().get("notify_task_complete"));
+        assertEquals("true", parsed.value().notifications().get("notify_reward_claimed"));
+        values.addProperty("notify_quest_complete", "invalid");
+        assertFalse(AuthoringRequestDecoder.quest(json.toString()).success());
+    }
+    @Test void nameOverridesAreValidatedAndMissingFieldsKeepLegacyRequestsCompatible() {
+        var json = request();
+        assertNull(AuthoringRequestDecoder.quest(json.toString()).value().namePosition());
+        var behavior = new JsonObject(); json.add("behavior", behavior);
+        for (String value : List.of("inherit", "off", "above", "below")) {
+            behavior.addProperty("quest_name_position", value);
+            var decoded = AuthoringRequestDecoder.quest(json.toString());
+            assertTrue(decoded.success());
+            assertEquals(value, decoded.value().namePosition());
+        }
+        behavior.addProperty("quest_name_position", "sideways");
+        assertEquals("INVALID_QUEST_APPEARANCE", AuthoringRequestDecoder.quest(json.toString()).failure().code());
+    }
     static JsonObject request() {
         var json = new JsonObject();
         json.addProperty("sessionId", "00000000-0000-0000-0000-000000000001");
@@ -79,5 +104,27 @@ class AuthoringQuestRequestTest {
         assertEquals("INVALID_QUEST_BEHAVIOR", AuthoringRequestDecoder.quest(json.toString()).failure().code());
         behavior.remove("dependency_requirement"); behavior.addProperty("repeat_cooldown_seconds", "99999999999999999");
         assertEquals("INVALID_QUEST_BEHAVIOR", AuthoringRequestDecoder.quest(json.toString()).failure().code());
+    }
+
+    @Test void registeredExtensionOnlyUpdatesDoNotResetAppearanceOrBehavior() {
+        var json = request(); var properties = new JsonObject(); json.add("behavior", properties);
+        properties.addProperty("notify_task_complete", "false");
+        properties.addProperty("quest_name_position", "below");
+        var decoded = AuthoringRequestDecoder.quest(json.toString());
+        assertTrue(decoded.success());
+        assertNull(decoded.value().appearance());
+        assertNull(decoded.value().behavior());
+        assertEquals("below", decoded.value().properties().get("quest_name_position"));
+        assertEquals(java.util.Map.of("notify_task_complete", "false"), decoded.value().notifications());
+    }
+
+    @Test void sparseRegisteredNativePatchesKeepOnlySuppliedKeys() {
+        var json = request(); var properties = new JsonObject(); json.add("behavior", properties);
+        properties.addProperty("repeatable", "true");
+        properties.addProperty("size", "2");
+        var decoded = AuthoringRequestDecoder.quest(json.toString());
+        assertTrue(decoded.success());
+        assertEquals(java.util.Map.of("repeatable", "true"), decoded.value().behavior().values());
+        assertEquals(java.util.Map.of("size", "2.0"), decoded.value().appearance().values());
     }
 }

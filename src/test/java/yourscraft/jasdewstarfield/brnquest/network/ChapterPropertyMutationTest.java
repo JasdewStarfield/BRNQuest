@@ -9,6 +9,22 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Protects old rename requests and chapter-owned content when the sidebar edits an icon. */
 class ChapterPropertyMutationTest {
+    @Test void progressOverrideIsIndependentFromOtherChapterEditsAndCanReturnToClientPreference() {
+        var chapter = new ChapterDefinition(ResourceLocation.parse("test:book"), ResourceLocation.parse("test:chapter"),
+                ResourceLocation.parse("test:group"), "Chapter", "", 0, List.of(), Map.of("addon:opaque", "keep"));
+        var book = new QuestBookDefinition(chapter.bookId(), 1, "Book", List.of(), List.of(chapter), Map.of());
+        var shown = AuthoringMutationHandler.chapterReplacement(book, chapter.id(), chapter.groupId(), "Chapter", 0,
+                Map.of("chapter_progress", "show"));
+        assertTrue(DisplayOverrides.progress(shown.extensions()).resolve(false));
+        assertEquals("keep", shown.extensions().get("addon:opaque"));
+        var updated = new QuestBookDefinition(book.id(), 1, book.title(), List.of(), List.of(shown), Map.of());
+        assertEquals(shown.extensions(), AuthoringMutationHandler.chapterReplacement(updated, chapter.id(),
+                chapter.groupId(), "Renamed", 0, Map.of()).extensions());
+        assertEquals(chapter.extensions(), AuthoringMutationHandler.chapterReplacement(updated, chapter.id(),
+                chapter.groupId(), "Chapter", 0, Map.of("chapter_progress", "inherit")).extensions());
+        assertThrows(IllegalArgumentException.class, () -> AuthoringMutationHandler.chapterReplacement(book, chapter.id(),
+                chapter.groupId(), "Chapter", 0, Map.of("chapter_progress", "invalid")));
+    }
     @Test void replacingOrClearingIconPreservesChapterContentsAndExtensions() {
         var bookId = ResourceLocation.parse("test:book");
         var chapterId = ResourceLocation.parse("test:chapter");

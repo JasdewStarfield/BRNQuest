@@ -1106,5 +1106,8 @@
   "screen.brnquest.editor.text.more": "More",
   "screen.brnquest.editor.text.reset": "Reset formatting",
   "screen.brnquest.editor.text.too_long": "Text is too long; the original text was kept.",
-  "screen.brnquest.editor.text.controls": "Formatting and view controls"
+  "screen.brnquest.editor.text.controls": "Formatting and view controls",
+  "screen.brnquest.editor.text.reset_short": "Reset",
+  "screen.brnquest.editor.text.image_short": "Image",
+  "screen.brnquest.editor.text.item_short": "Item"
 }

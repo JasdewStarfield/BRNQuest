@@ -57,9 +57,6 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                         DocumentFormat descriptionFormat) {}
 
     private enum Target { TITLE, SUBTITLE, BODY }
-    private static final MarkdownSourceEdits.Tool[] PRIMARY_TOOLS = {
-            MarkdownSourceEdits.Tool.BOLD, MarkdownSourceEdits.Tool.ITALIC,
-            MarkdownSourceEdits.Tool.UNDERLINE, MarkdownSourceEdits.Tool.STRIKETHROUGH };
     // Session preferences survive new editor instances; a temporary small window never overwrites them.
     private static TextEditorLayout.View preferredView = TextEditorLayout.View.SPLIT;
     private static boolean viewChosen;
@@ -67,7 +64,6 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private Target target = Target.BODY;
     private boolean draggingDivider;
     private boolean metadataExpanded;
-    private boolean subtitleExpanded;
     private boolean initialized;
     private final Map<String, CursorState> cursors = new HashMap<>();
     private record CursorState(int titleCursor, int titleAnchor, int subtitleCursor, int subtitleAnchor,
@@ -136,7 +132,6 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         if (!initialized) {
             if (!viewChosen) preferredView = width >= 560 ? TextEditorLayout.View.SPLIT : TextEditorLayout.View.SOURCE;
             metadataExpanded = height >= 340;
-            subtitleExpanded = !drafts.get(locales.get(localeIndex)).subtitle().isEmpty();
             initialized = true;
         }
         titleEditor = nativeField(titleBounds(), "screen.brnquest.editor.quest.title");
@@ -238,22 +233,17 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         if (metadataShown()) {
             graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.title"),
                     panelBounds().left()+10, titleBounds().top()+5, GraystonePalette.SECONDARY, false);
-            if (subtitleExpanded) graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.subtitle"),
+            graphics.drawString(font, Component.translatable("screen.brnquest.editor.quest.subtitle"),
                     panelBounds().left()+10, subtitleBounds().top()+5, GraystonePalette.SECONDARY, false);
-            button(graphics, subtitleToggleBounds(), Component.literal(subtitleExpanded ? "−" : "+"),
-                    Component.translatable("screen.brnquest.editor.quest.subtitle"), subtitleExpanded, mouseX, mouseY);
         }
         UiRect area = layoutModel().body;
         EditorTextRenderer.drawFittedString(graphics, font, text("target." + target.name().toLowerCase(java.util.Locale.ROOT)),
                 area.left(), layoutModel().toolbarTop+6, targetWidth()-4, GraystonePalette.SECONDARY, .75F);
-        for (int index=0; index<primaryCount(); index++) {
-            var tool=PRIMARY_TOOLS[index];
-            Component hint=Component.translatable(toolTranslation(tool));
-            if (button(graphics, toolBounds(tool), Component.literal(toolLabel(tool)), hint, false, mouseX, mouseY)) hovered=hint;
+        for (var action:toolbarLayout().actions()) {
+            Component hint=actionHint(action.key());
+            if (button(graphics,action.bounds(),actionLabel(action.key()),hint,false,mouseX,mouseY)) hovered=hint;
         }
-        if (button(graphics, colorBounds(), Component.literal("C"), Component.translatable(toolTranslation(MarkdownSourceEdits.Tool.COLOR)), false, mouseX, mouseY))
-            hovered=Component.translatable(toolTranslation(MarkdownSourceEdits.Tool.COLOR));
-        button(graphics, moreBounds(), text("more"), text("more"), false, mouseX, mouseY);
+        if (button(graphics,moreBounds(),text("more"),text("more"),false,mouseX,mouseY)) hovered=text("more");
         return hovered;
     }
 
@@ -365,12 +355,6 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             init(minecraft, width, height);
             return true;
         }
-        if (button == 0 && metadataShown() && subtitleToggleBounds().containsExclusive(mouseX, mouseY)) {
-            subtitleExpanded = !subtitleExpanded;
-            if (!subtitleExpanded && target == Target.SUBTITLE) target = Target.BODY;
-            init(minecraft, width, height);
-            return true;
-        }
         if (button == 0 && formatBounds().containsExclusive(mouseX, mouseY)) { toggleFormat(); return true; }
         for (var view : TextEditorLayout.View.values()) {
             if (button == 0 && viewBounds(view).containsExclusive(mouseX, mouseY)) {
@@ -383,11 +367,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             }
         }
         if (button == 0) {
-            for (int index=0; index<primaryCount(); index++) {
-                var tool=PRIMARY_TOOLS[index];
-                if (toolBounds(tool).containsExclusive(mouseX, mouseY)) { applyTool(tool); return true; }
+            for (var action:toolbarLayout().actions()) {
+                if (action.bounds().containsExclusive(mouseX,mouseY)) { dispatchAction(action.key()); return true; }
             }
-            if (colorBounds().containsExclusive(mouseX, mouseY)) { openColor(); return true; }
             if (moreBounds().containsExclusive(mouseX, mouseY)) { openMore(); return true; }
         }
         RichDocument.LinkDestination link = button == 0 ? previewLinkAt(mouseX, mouseY) : null;
@@ -557,18 +539,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private void openMore() {
         rememberWidgets();
         List<EditorChoiceScreen.Choice> choices = new ArrayList<>();
-        for (var tool : MarkdownSourceEdits.Tool.values()) {
-            boolean decoration = tool == MarkdownSourceEdits.Tool.BOLD || tool == MarkdownSourceEdits.Tool.ITALIC
-                    || tool == MarkdownSourceEdits.Tool.UNDERLINE || tool == MarkdownSourceEdits.Tool.STRIKETHROUGH
-                    || tool == MarkdownSourceEdits.Tool.OBFUSCATED;
-            if (tool != MarkdownSourceEdits.Tool.COLOR && (!nativeTarget() || decoration))
-                choices.add(new EditorChoiceScreen.Choice(tool.name(), Component.translatable(toolTranslation(tool))));
+        var visible=toolbarLayout();
+        for (String key:toolbarCandidates()) {
+            if (!visible.contains(key)) choices.add(new EditorChoiceScreen.Choice(key,actionHint(key)));
         }
-        if (nativeTarget()) choices.add(new EditorChoiceScreen.Choice("RESET", text("reset")));
-        else {
-            choices.add(new EditorChoiceScreen.Choice("TEXTURE", Component.translatable("screen.brnquest.editor.markdown.tool.texture")));
-            choices.add(new EditorChoiceScreen.Choice("ITEM", Component.translatable("screen.brnquest.editor.markdown.tool.item")));
-        }
+        choices.add(new EditorChoiceScreen.Choice("OBFUSCATED",actionHint("OBFUSCATED")));
         minecraft.setScreen(new EditorChoiceScreen(this, text("more"), choices, "", key -> {
             // Dispatch nested pickers after the menu returns, so it cannot overwrite the new child screen.
             pendingTool = key;
@@ -578,9 +553,13 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private void dispatchPendingTool() {
         if (pendingTool == null) return;
         String key = pendingTool; pendingTool = null;
-        if (key.equals("RESET")) applyNative('r');
-        else if (key.equals("TEXTURE")) minecraft.setScreen(new EditorTextureBrowserScreen(this, this::insertTexture));
-        else if (key.equals("ITEM")) minecraft.setScreen(new EditorItemSelectorScreen(this, this::insertItem));
+        dispatchAction(key);
+    }
+    private void dispatchAction(String key) {
+        if (key.equals("COLOR")) openColor();
+        else if (key.equals("RESET")) applyNative('r');
+        else if (key.equals("TEXTURE")) { rememberWidgets(); minecraft.setScreen(new EditorTextureBrowserScreen(this,this::insertTexture)); }
+        else if (key.equals("ITEM")) { rememberWidgets(); minecraft.setScreen(new EditorItemSelectorScreen(this,this::insertItem)); }
         else if (key.equals("QUEST_LINK")) openQuestLinkPicker();
         else applyTool(MarkdownSourceEdits.Tool.valueOf(key));
     }
@@ -753,7 +732,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         if (descriptionEditor == null) return;
         descriptionEditor.visible = descriptionEditor.active = sourceVisible();
         titleEditor.visible = titleEditor.active = metadataShown();
-        subtitleEditor.visible = subtitleEditor.active = metadataShown() && subtitleExpanded;
+        subtitleEditor.visible = subtitleEditor.active = metadataShown();
     }
     private void restoreCursors() {
         CursorState state = cursors.get(locales.get(localeIndex));
@@ -781,7 +760,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private int viewControlsWidth() { return java.util.Arrays.stream(TextEditorLayout.View.values()).mapToInt(this::viewButtonWidth).sum()+6; }
     private int headerControlsWidth() { return 230 + viewControlsWidth(); }
     private TextEditorLayout layoutModel() {
-        return new TextEditorLayout(width, height, preferredView, preferredRatio, metadataShown() ? subtitleExpanded ? 2 : 1 : 0, headerControlsWidth());
+        return new TextEditorLayout(width, height, preferredView, preferredRatio, metadataShown() ? 2 : 0, headerControlsWidth());
     }
     private UiRect panelBounds() { return layoutModel().panel; }
     private UiRect localeBounds() { var p=panelBounds(); return new UiRect(p.left()+10,p.top()+24,p.left()+80,p.top()+44); }
@@ -795,19 +774,35 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         int top=p.top()+(singleRow?24:48);
         return new UiRect(left,top,left+viewButtonWidth(view),top+20);
     }
-    private UiRect titleBounds() { var p=panelBounds(); int top=layoutModel().metadataTop; return new UiRect(p.left()+72,top,p.right()-36,top+20); }
+    private UiRect titleBounds() { var p=panelBounds(); int top=layoutModel().metadataTop; return new UiRect(p.left()+72,top,p.right()-10,top+20); }
     private UiRect subtitleBounds() { var p=panelBounds(); int top=layoutModel().metadataTop+24; return new UiRect(p.left()+72,top,p.right()-10,top+20); }
-    private UiRect subtitleToggleBounds() { var p=panelBounds(); int top=layoutModel().metadataTop; return new UiRect(p.right()-32,top,p.right()-10,top+20); }
-    private int primaryCount() { return layoutModel().body.width()>=320?4:2; }
     private int targetWidth() { return Math.min(100,layoutModel().body.width()/3); }
-    private UiRect toolBounds(MarkdownSourceEdits.Tool tool) {
-        int index=java.util.Arrays.asList(PRIMARY_TOOLS).indexOf(tool);
-        var area=layoutModel().body; int top=layoutModel().toolbarTop;
-        int left=area.left()+targetWidth()+index*26;
-        return new UiRect(left,top,left+23,top+20);
+    private List<String> toolbarCandidates() {
+        return nativeTarget() ? List.of("BOLD","ITALIC","COLOR","UNDERLINE","STRIKETHROUGH","RESET")
+                : List.of("BOLD","ITALIC","COLOR","UNDERLINE","STRIKETHROUGH","HEADING","LIST","LINK","QUEST_LINK","TEXTURE","ITEM","CODE");
     }
-    private UiRect colorBounds() { var a=layoutModel().body; int left=a.left()+targetWidth()+primaryCount()*26; int top=layoutModel().toolbarTop; return new UiRect(left,top,left+24,top+20); }
-    private UiRect moreBounds() { var a=layoutModel().body; int left=colorBounds().right()+3; int top=layoutModel().toolbarTop; return new UiRect(left,top,a.right(),top+20); }
+    private Component actionLabel(String key) {
+        return switch(key) {
+            case "RESET" -> text("reset_short");
+            case "TEXTURE" -> text("image_short");
+            case "ITEM" -> text("item_short");
+            default -> Component.literal(toolLabel(MarkdownSourceEdits.Tool.valueOf(key)));
+        };
+    }
+    private Component actionHint(String key) {
+        return switch(key) {
+            case "RESET" -> text("reset");
+            case "TEXTURE","ITEM" -> Component.translatable("screen.brnquest.editor.markdown.tool."+key.toLowerCase(java.util.Locale.ROOT));
+            default -> Component.translatable(toolTranslation(MarkdownSourceEdits.Tool.valueOf(key)));
+        };
+    }
+    private TextEditorToolbar.Layout toolbarLayout() {
+        var body=layoutModel().body;
+        var row=new UiRect(body.left(),layoutModel().toolbarTop,body.right(),layoutModel().toolbarTop+20);
+        var actions=toolbarCandidates().stream().map(key -> new TextEditorToolbar.Action(key,Math.max(23,font.width(actionLabel(key))+16))).toList();
+        return TextEditorToolbar.layout(row,targetWidth(),font.width(text("more"))+16,actions);
+    }
+    private UiRect moreBounds() { return toolbarLayout().more(); }
     private UiRect sourceBounds() {
         var pane=layoutModel().source;
         // Vanilla draws its source scrollbar outside the widget; reserve space before the divider's hit area.

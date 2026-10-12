@@ -1106,5 +1106,8 @@
   "screen.brnquest.editor.text.more": "更多",
   "screen.brnquest.editor.text.reset": "重置格式",
   "screen.brnquest.editor.text.too_long": "文本超出长度限制，已保留原文。",
-  "screen.brnquest.editor.text.controls": "格式与视图工具"
+  "screen.brnquest.editor.text.controls": "格式与视图工具",
+  "screen.brnquest.editor.text.reset_short": "重置",
+  "screen.brnquest.editor.text.image_short": "图片",
+  "screen.brnquest.editor.text.item_short": "物品"
 }

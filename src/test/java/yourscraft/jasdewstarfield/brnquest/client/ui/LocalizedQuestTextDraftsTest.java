@@ -12,6 +12,16 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class LocalizedQuestTextDraftsTest {
+    @Test void nativeFormattedTitlesRetainTheirRawCodesAcrossLocaleSwitches() {
+        ResourceLocation book=ResourceLocation.parse("test:book");
+        QuestDefinition quest=new QuestDefinition(book,ResourceLocation.parse("test:quest"),ResourceLocation.parse("test:chapter"),
+                "Native","","Body","",0,0,List.of(),List.of(),List.of(),"");
+        var drafts=new LocalizedQuestTextDrafts(BookLocalization.EMPTY,quest);
+        drafts.remember("zh_cn","§6§l启程§r","§7寻找铁锭","body",DocumentFormat.PLAIN);
+        drafts.remember("en_us","§eStart§r","§oFind iron","**body**",DocumentFormat.MARKDOWN_V1);
+        assertEquals("§6§l启程§r",drafts.get("zh_cn").title());
+        assertEquals("§oFind iron",drafts.get("en_us").subtitle());
+    }
     @Test void localeSwitchingRetainsIndependentUnsavedTextAndFormat() {
         ResourceLocation book = ResourceLocation.parse("test:book");
         QuestDefinition quest = new QuestDefinition(book, ResourceLocation.parse("test:quest"),

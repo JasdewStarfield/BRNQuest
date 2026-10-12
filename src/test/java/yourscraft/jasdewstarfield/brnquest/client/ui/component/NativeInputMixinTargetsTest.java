@@ -9,6 +9,27 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Checks exact injection sites in the installed Minecraft bytecode; visual input remains an in-game gate. */
 class NativeInputMixinTargetsTest {
+    @Test void authoringHooksUseChainableOperationsRatherThanExclusiveRedirects() throws IOException {
+        int count=0;
+        for(String type:new String[]{"NativeEditBoxMixin","NativeMultilineTextMixin"}) {
+            var node=read("yourscraft/jasdewstarfield/brnquest/client/mixin/"+type);
+            for(var method:node.methods) {
+                var annotations=new java.util.ArrayList<org.objectweb.asm.tree.AnnotationNode>();
+                if(method.visibleAnnotations!=null) annotations.addAll(method.visibleAnnotations);
+                if(method.invisibleAnnotations!=null) annotations.addAll(method.invisibleAnnotations);
+                assertTrue(annotations.stream().noneMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/injection/Redirect;")));
+                if(annotations.stream().anyMatch(a->a.desc.equals("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;"))) {
+                    count++;
+                    assertTrue(method.desc.contains("Lcom/llamalad7/mixinextras/injector/wrapoperation/Operation;"));
+                    boolean delegates=false;
+                    for(var instruction:method.instructions)
+                        if(instruction instanceof MethodInsnNode call && call.owner.equals("com/llamalad7/mixinextras/injector/wrapoperation/Operation") && call.name.equals("call")) delegates=true;
+                    assertTrue(delegates,type+"."+method.name+" must keep the original operation chain");
+                }
+            }
+        }
+        assertEquals(6,count);
+    }
     private ClassNode read(String owner) throws IOException {
         try(var bytes=getClass().getClassLoader().getResourceAsStream(owner+".class")) {
             assertNotNull(bytes); var node=new ClassNode(); new ClassReader(bytes).accept(node,0); return node;

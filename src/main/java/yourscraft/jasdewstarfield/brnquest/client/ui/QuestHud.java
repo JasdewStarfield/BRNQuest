@@ -47,17 +47,22 @@ public final class QuestHud {
         int count = Math.min(3, quest.tasks().size());
         int width = Math.min(320, Math.max(1, graphics.guiWidth() - 16));
         int left = graphics.guiWidth() - width - 8;
-        graphics.fill(left, 10, left + width, 34 + count * 18, 0xDC252821);
-        graphics.fill(left, 10, left + 2, 34 + count * 18, GraystonePalette.ACCENT);
-        graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/tracked"), left + 6, 15, 10, 10);
+        // Reserve the entire notification card, including its folded-count footer, before drawing HUD items.
+        UiRect bounds = QuestNotificationLayout.avoid(new UiRect(left, 10, left + width, 34 + count * 18),
+                QuestNotificationOverlay.obstruction(graphics.guiWidth(), graphics.guiHeight()), graphics.guiHeight());
+        if (bounds == null) return;
+        int offsetY = bounds.top() - 10;
+        graphics.fill(left, bounds.top(), left + width, bounds.bottom(), 0xDC252821);
+        graphics.fill(left, bounds.top(), left + 2, bounds.bottom(), GraystonePalette.ACCENT);
+        graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/tracked"), left + 6, 15 + offsetY, 10, 10);
         EditorTextRenderer.drawFittedString(graphics, minecraft.font, Component.literal(title),
-                left + 21, 16, Math.max(1, width - 29), GraystonePalette.ACCENT, 0.75F);
+                left + 21, 16 + offsetY, Math.max(1, width - 29), GraystonePalette.ACCENT, 0.75F);
         for (int index = 0; index < count; index++) {
             TaskDefinition task = quest.tasks().get(index);
             var presentation = ClientTaskPresentationRegistry.get(task.typeId());
             var context = context(minecraft, task);
             boolean done = presentation.confirmed(context.task(), context.storedProgress());
-            int y = 31 + index * 18;
+            int y = 31 + offsetY + index * 18;
             var icon = presentation.icon(context.task());
             if (icon.isPresent()) icon.orElseThrow().render(graphics, minecraft.font, new UiRect(left + 6,y,left + 22,y + 16),0xFFFFFFFF);
             else if (!context.displayedItem().isEmpty()) graphics.renderItem(context.displayedItem(), left + 6,y);

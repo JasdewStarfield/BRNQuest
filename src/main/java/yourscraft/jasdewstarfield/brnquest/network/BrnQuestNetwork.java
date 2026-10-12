@@ -87,6 +87,20 @@ public final class BrnQuestNetwork {
         public static final StreamCodec<ByteBuf, QuestToastPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, QuestToastPayload::message, QuestToastPayload::new);
         public @NotNull Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
+
+    /** A separate event channel keeps legacy generic progress Toasts suppressed. */
+    public record QuestNotificationPayload(String eventId, String bookId, String revision, String questId,
+                                           String targetId, String kind) implements CustomPacketPayload {
+        public static final Type<QuestNotificationPayload> TYPE = payloadType("quest_notification");
+        public static final StreamCodec<ByteBuf, QuestNotificationPayload> CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::eventId,
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::bookId,
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::revision,
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::questId,
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::targetId,
+                ByteBufCodecs.STRING_UTF8, QuestNotificationPayload::kind, QuestNotificationPayload::new);
+        @Override public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
     public record OpenScreenPayload(String questId) implements CustomPacketPayload {
         public static final Type<OpenScreenPayload> TYPE = payloadType("open_screen");
         public static final StreamCodec<ByteBuf, OpenScreenPayload> CODEC = StreamCodec.composite(ByteBufCodecs.STRING_UTF8, OpenScreenPayload::questId, OpenScreenPayload::new);
@@ -207,6 +221,7 @@ public final class BrnQuestNetwork {
         registerClient(registrar, ProgressSnapshotPayload.TYPE, ProgressSnapshotPayload.CODEC, ClientDelegate::progress);
         registerClient(registrar, ProgressDeltaPayload.TYPE, ProgressDeltaPayload.CODEC, ClientDelegate::delta);
         registerClient(registrar, QuestToastPayload.TYPE, QuestToastPayload.CODEC, ClientDelegate::toast);
+        registerClient(registrar.optional(), QuestNotificationPayload.TYPE, QuestNotificationPayload.CODEC, ClientDelegate::notification);
         registerClient(registrar, OpenScreenPayload.TYPE, OpenScreenPayload.CODEC, ClientDelegate::open);
         AuthoringNetwork.register(registrar);
         AdminProgressNetwork.register(registrar);
@@ -378,6 +393,7 @@ public final class BrnQuestNetwork {
         static void progress(ProgressSnapshotPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.progress(p); }
         static void delta(ProgressDeltaPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.delta(p); }
         static void toast(QuestToastPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.toast(p); }
+        static void notification(QuestNotificationPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.notification(p); }
         static void open(OpenScreenPayload p, net.neoforged.neoforge.network.handling.IPayloadContext c) { ClientPayloadHandler.open(p); }
     }
 }

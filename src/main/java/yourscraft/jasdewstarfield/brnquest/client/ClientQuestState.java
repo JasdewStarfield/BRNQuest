@@ -79,7 +79,11 @@ public final class ClientQuestState {
     }
 
     /** A hello is an announcement, not proof that this client has applied that revision. */
-    public void advertised(String revision) { advertisedRevision = revision == null ? "" : revision; }
+    public void advertised(String revision) {
+        String next = revision == null ? "" : revision;
+        if (!next.equals(advertisedRevision)) yourscraft.jasdewstarfield.brnquest.client.ui.QuestNotificationOverlay.clear();
+        advertisedRevision = next;
+    }
 
 
     private ClientQuestState() {}
@@ -248,6 +252,7 @@ public final class ClientQuestState {
 
     /** Connection-scoped caches must not expose the previous server's book or diagnostics after reconnecting. */
     public synchronized void disconnected() {
+        yourscraft.jasdewstarfield.brnquest.client.ui.QuestNotificationOverlay.clear();
         rewardWait.clear();
         completionWait.clear();
         book = null;

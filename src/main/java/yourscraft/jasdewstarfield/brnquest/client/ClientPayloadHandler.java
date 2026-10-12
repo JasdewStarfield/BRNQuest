@@ -50,6 +50,9 @@ public final class ClientPayloadHandler {
     public static void toast(BrnQuestNetwork.QuestToastPayload payload) {
         // Protocol 2 retains the payload type, but generic progress toasts are intentionally suppressed.
     }
+    public static void notification(BrnQuestNetwork.QuestNotificationPayload payload) {
+        Minecraft.getInstance().execute(() -> yourscraft.jasdewstarfield.brnquest.client.ui.QuestNotificationOverlay.receive(payload));
+    }
     public static void open(BrnQuestNetwork.OpenScreenPayload payload) {
         Minecraft.getInstance().execute(() -> {
             ResourceLocation selected = ResourceLocation.tryParse(payload.questId());

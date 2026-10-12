@@ -5,6 +5,12 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class BrnQuestClientConfigTest {
+    @Test void notificationDefaultsRemainCompactAndTimingIsConfigurable() {
+        assertEquals(280, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationWidth));
+        assertEquals(4.0, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationDurationSeconds));
+        assertEquals(java.util.List.of("notifications", "notificationWidth"), BrnQuestClientConfig.VALUES.notificationWidth.getPath());
+        assertEquals(java.util.List.of("notifications", "notificationDurationSeconds"), BrnQuestClientConfig.VALUES.notificationDurationSeconds.getPath());
+    }
     @Test void textDiagnosticsAreOptIn() {
         assertEquals(false, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.textLayoutDebug));
         assertEquals(java.util.List.of("debug", "textLayoutDebug"), BrnQuestClientConfig.VALUES.textLayoutDebug.getPath());

@@ -32,6 +32,9 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.EnumValue<GridVisibility> showGrid;
         public final ModConfigSpec.EnumValue<QuestNamePosition> questNamePosition;
         public final ModConfigSpec.BooleanValue showChapterProgress;
+        public final ModConfigSpec.BooleanValue completionNotifications, notificationSound;
+        public final ModConfigSpec.DoubleValue notificationDurationSeconds;
+        public final ModConfigSpec.IntValue notificationWidth;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
         public final ModConfigSpec.DoubleValue zoomSmoothSpeed;
@@ -54,6 +57,15 @@ public final class BrnQuestClientConfig {
                     .defineEnum("questNamePosition", QuestNamePosition.OFF);
             showChapterProgress = builder.comment("Show completed / visible quests and percentage in chapter navigation.")
                     .define("showChapterProgress", false);
+            builder.pop();
+            builder.comment("Top-center completion notifications").push("notifications");
+            completionNotifications = builder.define("completionNotifications", true);
+            notificationSound = builder.define("notificationSound", false);
+            // GUI pixels follow the current GUI scale; rendering clamps the width to the viewport.
+            notificationWidth = builder.comment("Floating notification width in GUI pixels.")
+                    .defineInRange("notificationWidth", 280, 160, 600);
+            notificationDurationSeconds = builder.comment("Seconds from the latest notification until the entire stack closes together.")
+                    .defineInRange("notificationDurationSeconds", 4.0, 1.0, 30.0);
             builder.pop();
             // Local rendering diagnostics are read each frame and never change book or server state.
             builder.comment("Client development diagnostics").push("debug");

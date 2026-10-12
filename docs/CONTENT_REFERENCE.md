@@ -162,6 +162,8 @@ Add a table to native book JSON:
 
 Keys include `title`, `chapter_group.<ID>.title`, `chapter.<ID>.title`, and the quest keys above. Lookup tries requested locale → `fallback_locale` → native source. Missing/blank text falls back. Locale names normalize to lowercase/underscores. Description text and format always come from the same locale; native descriptions use `description_format`. Copies, saves, undo and publishing preserve both together.
 
+Quest titles and subtitles always support native colors (`§0`–`§9`/`§a`–`§f`), bold (`§l`), italic (`§o`), underline (`§n`), strikethrough (`§m`), obfuscation (`§k`) and reset (`§r`), independently of the body format. Codes are case-insensitive; color codes clear previous decorations, and unknown or incomplete codes remain literal. For example, `§6§lStart§r` renders a gold bold title. Single-line fields allow 256 characters and bodies allow 32768, including formatting codes. Existing fields store the raw strings; quest details, node names, quest selectors, tracking HUD and notifications display the styles.
+
 `plain` shows Markdown punctuation literally but honors vanilla `§` formatting. `markdown_v1` is a controlled subset: paragraphs, explicit breaks, headings 1–3, one-level `-`/`*` lists, bold, emphasis, inline code and absolute HTTP/HTTPS links. Ordered/nested lists, blockquotes, fenced code, HTML, remote images, commands and other URL schemes are unsupported. Unknown formats are preserved and rendered as plain text; author writes cannot create unknown formats.
 
 Additional syntax (shown literally):

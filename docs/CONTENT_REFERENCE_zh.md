@@ -6,7 +6,13 @@
 
 使用完整 `namespace:path` ID。原生任务书 schema 1 的类型配置为字符串 Map，数字和布尔值也以字符串保存。嵌套物品匹配器与奖励树建议通过编辑器配置，其结构序列化在配置字符串中。编辑外部内容时保留未知字段。
 
+任务的 `extensions` 可设置 `"brnquest:quest_name_position": "off|above|below"`；章节的 `extensions` 可设置 `"brnquest:chapter_progress": "show|hide"`，这里的竖线表示可选值。缺省或 `inherit` 跟随客户端设置。显式属性覆盖客户端偏好；编辑器选择继承时移除对应键，其余扩展数据保留。
+
+任务 `extensions` 的提醒字段为 `brnquest:notify_task_complete`、`brnquest:notify_quest_complete`、`brnquest:notify_reward_claimed`，值为字符串 `"true"` 或 `"false"`，缺省依次为 true、true、false。它们只控制服务端真实发生的目标完成、任务完成与成功领奖事件，不改变进度或领取资格；普通进度增长和历史同步不产生提醒。
+
 下文集中说明具有重要行为约束的配置，游戏内字段帮助提供默认值与校验提示。任务依赖、顺序目标、完成可见性及重复规则在任务属性中配置；队伍进度与部署流程见作者指引。
+
+任务书与章节的 `quest_defaults` 除现有外观、行为默认值外，还支持 `notify_task_complete`、`notify_quest_complete`、`notify_reward_claimed`（JSON 布尔值）、`quest_name_position`（JSON 字符串 `inherit|off|above|below`）及 `minimum_required_dependencies`（非负 JSON 整数）。任务书缺省字段使用系统默认值，章节缺省字段跟随任务书创建预设；解析后的值只在创建任务时写入，后续修改预设保留已有任务。提醒与名称位置写入任务保留扩展键，显式任务覆盖值和无关附属数据保留。名称位置的 `inherit` 保存实时跟随客户端的显示模式。
 
 ## 物品与经验
 

@@ -6,7 +6,13 @@
 
 Use full `namespace:path` IDs. Native book schema 1 stores type configuration as a string map, including numbers and booleans. Prefer the editor for nested item matchers and reward trees; their structured values are serialized inside configuration strings. Preserve unknown fields when editing external content.
 
+Quest `extensions` can set `"brnquest:quest_name_position": "off|above|below"`; chapter `extensions` can set `"brnquest:chapter_progress": "show|hide"`. The pipes denote alternative values. An absent key or `inherit` uses client settings. Explicit properties override client preferences. Choosing inheritance in the editor removes the owned key and preserves all other extension data.
+
+Quest notification fields in `extensions` are `brnquest:notify_task_complete`, `brnquest:notify_quest_complete`, and `brnquest:notify_reward_claimed`, with string values `"true"` or `"false"`. Their respective defaults are true, true, and false. They control actual server objective-completion, quest-completion and successful reward-claim events, without changing progress or claim eligibility. Ordinary progress increments and historical synchronization do not generate notices.
+
 The following sections cover configuration with important behavioral constraints. In-game field help supplies defaults and validation feedback. Task dependencies, sequential objectives, completion visibility and repeat rules are configured on the quest. Team progress and deployment are covered in the author guide.
+
+Book and chapter `quest_defaults` support `notify_task_complete`, `notify_quest_complete`, `notify_reward_claimed` (JSON booleans), `quest_name_position` (`inherit|off|above|below`, a JSON string), and `minimum_required_dependencies` (a nonnegative JSON integer), alongside existing appearance and behavior defaults. Missing book fields use system defaults; missing chapter fields follow the book's creation presets. Resolved values are applied once when creating a quest; later preset edits leave existing quests unchanged. Notification and name values are written to the quest's reserved extensions, retaining explicit instance overrides and unrelated addon data. The name-position value `inherit` stores a live client-following display mode.
 
 ## Items and experience
 

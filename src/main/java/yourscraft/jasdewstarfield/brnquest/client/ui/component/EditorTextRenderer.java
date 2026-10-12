@@ -8,7 +8,7 @@ import net.minecraft.network.chat.Component;
 public final class EditorTextRenderer {
     private EditorTextRenderer() {}
     public static int drawWrapped(GuiGraphics graphics, Font font, String text, int x, int y, int width, int color) {
-        Component component = Component.literal(text);
+        Component component = NativeText.component(text);
         var lines = MixedTextLayout.split(font, component, width);
         for (int index = 0; index < lines.size(); index++) {
             graphics.drawString(font, lines.get(index), x, y + index * font.lineHeight, color, false);
@@ -18,11 +18,11 @@ public final class EditorTextRenderer {
 
     public static void drawFittedString(GuiGraphics graphics, Font font, Component text, int x, int y,
                                   int maximumWidth, int color, float minimumScale) {
-        int measuredWidth = font.width(text);
+        int measuredWidth = font.width(NativeText.sequence(text));
         float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
-        TextLayoutDebug.fitted(graphics, font, text, visible,
+        var visible = clip(font, text, unscaledWidth);
+        TextLayoutDebug.fitted(graphics, font, text, text.getString(),
                 new UiRect(x, y, x + Math.max(0, maximumWidth), y + font.lineHeight), x, y, scale, "fitted");
         TextLayoutDebug.mute();
         graphics.pose().pushPose();
@@ -35,12 +35,12 @@ public final class EditorTextRenderer {
 
     public static void drawFittedStringRight(GuiGraphics graphics, Font font, Component text, int right, int y,
                                        int maximumWidth, int color, float minimumScale) {
-        int measuredWidth = font.width(text);
+        int measuredWidth = font.width(NativeText.sequence(text));
         float scale = EditorTextLayout.fittedScale(measuredWidth, maximumWidth, minimumScale);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(text.getString(), unscaledWidth);
+        var visible = clip(font, text, unscaledWidth);
         int left = right - Math.round(font.width(visible) * scale);
-        TextLayoutDebug.fitted(graphics, font, text, visible,
+        TextLayoutDebug.fitted(graphics, font, text, text.getString(),
                 new UiRect(right - Math.max(0, maximumWidth), y, right, y + font.lineHeight),
                 left, y, scale, "fitted_right");
         TextLayoutDebug.mute();
@@ -50,5 +50,19 @@ public final class EditorTextRenderer {
         graphics.drawString(font, visible, 0, 0, color, false);
         graphics.pose().popPose();
         TextLayoutDebug.unmute();
+    }
+
+    /** Clips the styled sequence rather than flattening components into an unstyled String. */
+    private static net.minecraft.util.FormattedCharSequence clip(Font font, Component text, int maximum) {
+        var sequence = NativeText.sequence(text);
+        float[] width = {0};
+        java.util.List<net.minecraft.util.FormattedCharSequence> glyphs = new java.util.ArrayList<>();
+        sequence.accept((index, style, codepoint) -> {
+            var glyph = net.minecraft.util.FormattedCharSequence.codepoint(codepoint, style);
+            float next = width[0] + font.getSplitter().stringWidth(glyph);
+            if (next > maximum) return false;
+            width[0] = next; glyphs.add(glyph); return true;
+        });
+        return net.minecraft.util.FormattedCharSequence.composite(glyphs);
     }
 }

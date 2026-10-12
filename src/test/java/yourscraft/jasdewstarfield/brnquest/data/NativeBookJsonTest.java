@@ -12,6 +12,18 @@ import yourscraft.jasdewstarfield.brnquest.data.text.DocumentFormat;
 import static org.junit.jupiter.api.Assertions.*;
 
 class NativeBookJsonTest {
+    @Test void nativeTitleAndSubtitleCodesRoundTripIndependentlyOfBodyFormat() {
+        ResourceLocation bookId=ResourceLocation.parse("test:book"), chapter=ResourceLocation.parse("test:chapter");
+        for (DocumentFormat format:List.of(DocumentFormat.PLAIN,DocumentFormat.MARKDOWN_V1)) {
+            QuestDefinition quest=new QuestDefinition(bookId,ResourceLocation.parse("test:quest"),chapter,
+                    "§6§l启程§r", "§7寻找 §e铁锭§r §x", "**body**",format,"",0,0,List.of(),List.of(),List.of(),"");
+            QuestBookDefinition book=new QuestBookDefinition(bookId,1,"Book",List.of(),
+                    List.of(new ChapterDefinition(bookId,chapter,ResourceLocation.parse("test:group"),"Chapter","",0,List.of(quest))),Map.of());
+            var decoded=NativeBookJson.decode(JsonParser.parseString(NativeBookJson.encode(book)).getAsJsonObject()).quests().getFirst();
+            assertEquals(quest.title(),decoded.title()); assertEquals(quest.subtitle(),decoded.subtitle());
+            assertEquals(format,decoded.descriptionFormat());
+        }
+    }
     @Test void roundTripIsDeterministicAndImmutable() {
         ResourceLocation bookId = ResourceLocation.parse("test:main");
         ResourceLocation chapterId = ResourceLocation.parse("test:intro");

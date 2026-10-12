@@ -1,4 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 
 import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
@@ -309,10 +311,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
         propertyNativeFields.clear();
         questFields.bind(font, this::registerPropertyField);
+        questFields.field("title").brnquest$rawText(true);
+        questFields.field("subtitle").brnquest$rawText(true);
         structureFields.bind(font, this::addRenderableWidget);
         typedPropertySection.bind(font, this::registerPropertyField);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 256);
+        quickTextField.brnquest$rawText(true);
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
             catalogRequested = true;
@@ -795,9 +800,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         ? item(quest.id(), visual.itemSnbt()) : ItemStack.EMPTY;
                 boolean hiddenText = !editing && quest.behavior().hideTextUntilComplete() && !isCompleted(status);
                 List<Component> tooltip = new ArrayList<>();
-                tooltip.add(Component.literal(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
+                tooltip.add(NativeText.component(hiddenText ? "???" : questTitle(quest)).withStyle(ChatFormatting.WHITE));
                 String subtitle = hiddenText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle());
-                if (!subtitle.isBlank()) tooltip.add(Component.literal(subtitle).withStyle(ChatFormatting.GRAY));
+                if (!NativeText.visible(subtitle).isBlank()) tooltip.add(NativeText.component(subtitle).withStyle(ChatFormatting.GRAY));
                 if (allowGameplay) tooltip.add(Component.translatable("screen.brnquest.status."
                         + status.name().toLowerCase(java.util.Locale.ROOT)).withStyle(ChatFormatting.GRAY));
                 DraftBookEditor.Position preview = canvasController.preview(quest.id());
@@ -1046,7 +1051,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             return (upstream ? relations.upstream() : relations.downstream()).stream().map(target -> {
                 var state = status(target);
                 boolean hideText = !ClientEditorState.get().editing() && target.behavior().hideTextUntilComplete() && !isCompleted(state);
-                return new QuestRelationsScreen.Entry(target.id(), Component.literal(hideText ? "???" : questTitle(target)),
+                return new QuestRelationsScreen.Entry(target.id(), NativeText.component(hideText ? "???" : questTitle(target)),
                         Component.literal(chapterTitle(snapshot.book(), target.chapterId())),
                         gameplayAllowed() ? Component.translatable("screen.brnquest.status." + state.name().toLowerCase(java.util.Locale.ROOT))
                                 : Component.translatable("screen.brnquest.editor.preview"),
@@ -2619,7 +2624,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             Component focusName = displaySnapshot().book().chapters().stream()
                     .filter(c -> c.id().equals(structureFormTarget)).flatMap(c -> c.quests().stream())
                     .filter(q -> q.id().equals(structureAutofocusQuestId)).findFirst()
-                    .<Component>map(q -> Component.literal(questTitle(q)))
+                    .<Component>map(q -> NativeText.component(questTitle(q)))
                     .orElse(Component.translatable("screen.brnquest.chapter.autofocus.none"));
             renderEditorTextButton(g, chapterAutofocusBounds(),
                     Component.translatable("screen.brnquest.chapter.autofocus.value", focusName),
@@ -2742,7 +2747,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         choices.add(new EditorChoiceScreen.Choice("", Component.translatable("screen.brnquest.chapter.autofocus.none")));
         displaySnapshot().book().chapters().stream().filter(c -> c.id().equals(structureFormTarget))
                 .flatMap(c -> c.quests().stream()).forEach(q -> choices.add(new EditorChoiceScreen.Choice(
-                        q.id().toString(), Component.literal(questTitle(q) + " [" + q.id() + "]"))));
+                        q.id().toString(), NativeText.component(questTitle(q)).copy().append(Component.literal(" [" + q.id() + "]")))));
         openChildScreen(new EditorChoiceScreen(this, Component.translatable("screen.brnquest.chapter.autofocus"),
                 choices, java.util.Objects.toString(structureAutofocusQuestId, ""),
                 id -> structureAutofocusQuestId = id.isEmpty() ? null : ResourceLocation.parse(id)));
@@ -4524,10 +4529,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 UiRect remove = new UiRect(rect.right() - 20, rect.top() + 5, rect.right() - 2, rect.top() + 23);
                 graphics.fill(rect.left(), rect.top(), rect.right(), rect.bottom(), GraystonePalette.ROW);
                 String title = dependency == null ? row.key().toString() : questTitle(dependency);
-                String direction = Component.translatable("screen.brnquest.editor.dependency.edge", title, questTitle(quest)).getString();
+                Component direction = Component.translatable("screen.brnquest.editor.dependency.edge", NativeText.component(title), NativeText.component(questTitle(quest)));
                 int textWidth = Math.max(0, rect.width() - 30);
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(direction, textWidth)),
-                        rect.left() + 5, rect.top() + 4, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, false);
+                EditorTextRenderer.drawFittedString(graphics, font, direction, rect.left()+5, rect.top()+4, textWidth, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, .75F);
                 Component secondary = dependency == null ? Component.translatable("screen.brnquest.editor.dependency.missing")
                         : Component.literal(chapterTitle(snapshot.book(), dependency.chapterId()));
                 graphics.drawString(font, Component.literal(font.plainSubstrByWidth(secondary.getString(), textWidth)),
@@ -5314,7 +5318,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         for (var group : book.chapterGroups()) if (group.id().equals(id))
             return new QuestPublishReviewSection.Presentation(Component.literal(group.title()), null);
         for (var quest : book.quests()) {
-            if (quest.id().equals(id)) return new QuestPublishReviewSection.Presentation(Component.literal(questTitle(quest)), reviewIcon(quest.id(), quest.icon()));
+            if (quest.id().equals(id)) return new QuestPublishReviewSection.Presentation(NativeText.component(questTitle(quest)), reviewIcon(quest.id(), quest.icon()));
             for (var task : quest.tasks()) if (task.id().equals(id)) {
                 var view = ApiViews.task(task);
                 return new QuestPublishReviewSection.Presentation(task.config().getOrDefault("title", "").isBlank()
@@ -5620,7 +5624,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             String chapterTitle = chapter == null ? "" : chapterTitle(snapshot.book(), chapter.id());
             if (chapterTitle.isBlank()) chapterTitle = Component.translatable("screen.brnquest.chapter.untitled").getString();
             String dependencyTitle = questTitle(dependency);
-            lines.add(Component.translatable("screen.brnquest.dependency.entry", chapterTitle, dependencyTitle));
+            lines.add(Component.translatable("screen.brnquest.dependency.entry", chapterTitle, NativeText.component(dependencyTitle)));
         }
         if (quest.dependencies().isEmpty()) lines.add(Component.translatable("screen.brnquest.dependencies.none"));
         return lines;
@@ -6063,7 +6067,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         boolean hideText = !ClientEditorState.get().editing() && target.behavior().hideTextUntilComplete()
                 && !isCompleted(status(target));
         String title = hideText ? "???" : questTitle(target);
-        return Component.translatable("screen.brnquest.markdown.quest_link.open", title,
+        return Component.translatable("screen.brnquest.markdown.quest_link.open", NativeText.component(title),
                 chapterTitle(snapshot.book(), target.chapterId()));
     }
 

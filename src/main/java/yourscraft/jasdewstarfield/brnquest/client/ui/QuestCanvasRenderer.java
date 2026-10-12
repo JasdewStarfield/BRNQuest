@@ -191,7 +191,7 @@ final class QuestCanvasRenderer {
                                    DisplayOverrides.NamePosition position) {
         // The first tooltip line already resolves localization, title fallbacks and hidden-text rules.
         if (node.model().tooltip().isEmpty()) return;
-        var lines = font.split(node.model().tooltip().getFirst(), 100);
+        var lines = yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText.split(font, node.model().tooltip().getFirst(), 100);
         // Bound tall labels on dense graphs; the existing node tooltip retains the complete title.
         int count = Math.min(3, lines.size());
         int height = count * font.lineHeight;

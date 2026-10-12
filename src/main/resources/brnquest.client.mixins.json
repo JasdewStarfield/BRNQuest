@@ -9,7 +9,10 @@
     "TextDebugGuiGraphicsMixin",
     "TextDebugFontMixin",
     "TextDebugWidgetMixin",
-    "ClientTextTooltipAccessor"
+    "ClientTextTooltipAccessor",
+    "NativeEditBoxMixin",
+    "NativeMultilineTextMixin",
+    "EditBoxSelectionAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -21,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class QuestPresentationTest {
+    @Test void formattingOnlyTitleFallsBackButUnknownCodesRemainVisible() {
+        assertEquals("Fallback",QuestPresentation.questTitle("§6§l§r",()->"Fallback"));
+        assertEquals("§x",QuestPresentation.questTitle("§x",()->"Fallback"));
+    }
     @Test void authoredQuestTitleIsNotReplacedByItsNamedObjective() {
         assertEquals("brnquest:authored_quest", QuestPresentation.questTitle(
                 "brnquest:authored_quest", () -> "Named objective"));

@@ -83,13 +83,13 @@ final class QuestDetailsPanel {
         if (editing) addTextArea(textAreas, layout.content(), "TITLE", contentLeft, titleTop, contentWidth - 14, y);
         y += 3;
 
-        if (editing || !model.subtitle().isBlank()) {
+        if (editing || !NativeText.visible(model.subtitle()).isBlank()) {
             int subtitleTop = y;
-            String subtitle = model.subtitle().isBlank()
+            String subtitle = NativeText.visible(model.subtitle()).isBlank()
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_subtitle").getString()
                     : model.subtitle();
             y = EditorTextRenderer.drawWrapped(graphics, font, subtitle, contentLeft, y, contentWidth,
-                    model.subtitle().isBlank() ? GraystonePalette.DISABLED : GraystonePalette.SECONDARY);
+                    NativeText.visible(model.subtitle()).isBlank() ? GraystonePalette.DISABLED : GraystonePalette.SECONDARY);
             if (editing) addTextArea(textAreas, layout.content(), "SUBTITLE", contentLeft, subtitleTop, contentWidth, y);
             y += 4;
         }

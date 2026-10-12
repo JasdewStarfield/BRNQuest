@@ -5,7 +5,19 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 
 /** EditBox with the editor's readable colors and explicit show/hide lifecycle. */
-public final class EditorTextField extends EditBox {
+public final class EditorTextField extends EditBox implements RawTextInput {
+    private boolean nativeFormatting;
+    @Override public boolean brnquest$rawText() { return nativeFormatting; }
+    @Override public void brnquest$rawText(boolean enabled) { nativeFormatting = enabled; }
+
+    /** Vanilla rejects section signs before insertText; native title fields explicitly accept them. */
+    @Override public boolean charTyped(char character, int modifiers) {
+        if (nativeFormatting && character == '§' && visible && active && isFocused()) {
+            insertText(String.valueOf(character));
+            return true;
+        }
+        return super.charTyped(character, modifiers);
+    }
     public EditorTextField(Font font, Component narration, int maximumLength) {
         super(font, 0, 0, 10, 18, narration);
         setMaxLength(maximumLength);

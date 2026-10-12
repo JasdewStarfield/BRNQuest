@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -181,7 +182,7 @@ public final class QuestNotificationOverlay {
         var status = state.statuses().getOrDefault(first.questId(), QuestStatus.AVAILABLE);
         boolean hidden = quest.behavior().hideTextUntilComplete() && status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED;
         String title = BookText.quest(snapshot.book(), quest, minecraft.getLanguageManager().getSelected(), "title", quest.title());
-        Component questTitle = hidden ? Component.literal("???") : Component.literal(QuestPresentation.questTitle(title,
+        Component questTitle = hidden ? Component.literal("???") : NativeText.component(QuestPresentation.questTitle(title,
                 () -> quest.tasks().isEmpty() ? Component.translatable("screen.brnquest.quest.untitled").getString()
                         : taskTitle(quest, quest.tasks().getFirst()).getString()));
         boolean hiddenDetail = hidden || quest.behavior().hideDetailsUntilStartable()

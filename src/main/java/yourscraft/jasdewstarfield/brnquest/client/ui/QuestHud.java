@@ -1,4 +1,5 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.DeltaTracker;
@@ -55,7 +56,7 @@ public final class QuestHud {
         graphics.fill(left, bounds.top(), left + width, bounds.bottom(), 0xDC252821);
         graphics.fill(left, bounds.top(), left + 2, bounds.bottom(), GraystonePalette.ACCENT);
         graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/tracked"), left + 6, 15 + offsetY, 10, 10);
-        EditorTextRenderer.drawFittedString(graphics, minecraft.font, Component.literal(title),
+        EditorTextRenderer.drawFittedString(graphics, minecraft.font, NativeText.component(title),
                 left + 21, 16 + offsetY, Math.max(1, width - 29), GraystonePalette.ACCENT, 0.75F);
         for (int index = 0; index < count; index++) {
             TaskDefinition task = quest.tasks().get(index);

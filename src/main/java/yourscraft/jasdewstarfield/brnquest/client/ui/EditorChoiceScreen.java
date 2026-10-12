@@ -7,6 +7,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidge
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
@@ -65,9 +67,9 @@ final class EditorChoiceScreen extends Screen {
             // The selected stable ID remains visible even when labels collide or a filter changes.
             var rect=row.bounds(); graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),
                     members.get(row.key()).id().equals(current) ? 0xFF656148 : row.visible().containsExclusive(x,y) ? GraystonePalette.HOVER : 0xFF252822);
-            graphics.drawString(font,font.plainSubstrByWidth(members.get(row.key()).label().getString(),rect.width()-8),rect.left()+4,rect.top()+7,0xFFFFFFFF,false);
+            EditorTextRenderer.drawFittedString(graphics,font,members.get(row.key()).label(),rect.left()+4,rect.top()+6,rect.width()-8,GraystonePalette.TEXT,1.0F);
         },()->graphics.drawString(font,Component.translatable("screen.brnquest.options.empty"),left+4,68,0xFFAAAAAA,false));
-        if (!navigation.isFocused()) list.rowAt(x,y).ifPresent(row->{ if(row.key()<members.size()) graphics.renderTooltip(font,font.split(Component.literal(members.get(row.key()).label().getString() + "\n" + members.get(row.key()).id()),Math.max(80,width-40)),x,y); });
+        if (!navigation.isFocused()) list.rowAt(x,y).ifPresent(row->{ if(row.key()<members.size()) graphics.renderTooltip(font,NativeText.split(font,members.get(row.key()).label().copy().append(Component.literal("\n" + members.get(row.key()).id())),Math.max(80,width-40)),x,y); });
         graphics.flush();
         } finally { graphics.pose().popPose(); }
     }

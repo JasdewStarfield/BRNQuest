@@ -4,7 +4,7 @@
 
 ## Versions and supported surface
 
-The development Java API baseline is **0.1.0-experimental.30**; mod 1.0.0 used experimental.28. Network protocol is **21**. Book schema 1 and progress schema 2 are separate formats. Update clients and server together.
+The Java API baseline for mod **1.1.0** is **0.1.0-experimental.30**; mod 1.0.2 used experimental.28. Network protocol is **21**. Book schema 1 and progress schema 2 are separate formats. Update clients and server together.
 
 `api.ApiStatus` and the documented surface define compatibility. `STABLE` contracts preserve source/binary compatibility within their API major; incompatible changes require a new major and migration guidance. `EXPERIMENTAL` contracts may change with an updated baseline, documentation and signature checks. `INTERNAL` marks implementation details for internal use.
 
@@ -91,7 +91,7 @@ Java registration freezes before the first server resource-reload listener is es
 
 ## Compatibility notes for add-ons
 
-Mod 1.0.0 changes no Java signatures relative to experimental.28. Recent API transitions:
+Recent API transitions:
 
 | Baseline | Changes to review |
 | --- | --- |

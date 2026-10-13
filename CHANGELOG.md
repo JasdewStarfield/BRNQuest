@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## [Unreleased]
+
+## [1.1.0] - 2026-10-14
 
 Changes since the 1.0.2 release.
 

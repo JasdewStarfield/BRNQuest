@@ -14,7 +14,7 @@ class QuestTypeIconsTest {
     }
     @Test void reviewedBuiltinGlyphsFitTheirPixelSlotsAndKeepDistinctSemantics() throws Exception {
         for (String type : new String[]{"checkmark","item","item_choice","xp","xp_levels","command","location","observe",
-                "kill","advancement","biome","structure","dimension","custom","reward_table","loot_table","unknown"}) {
+                "kill","advancement","biome","structure","dimension","custom","reward_table","loot_table","statistics","unknown"}) {
             var sprite = QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:" + type));
             // Decode shipped assets so missing files and invalid PNGs fail before packaging.
             try (var stream = getClass().getResourceAsStream("/assets/brnquest/textures/gui/sprites/" + sprite.getPath() + ".png")) {

@@ -14,6 +14,9 @@ public final class BuiltinObservationPlugin implements BrnQuestPlugin {
         LocationFieldSources.register(registrar);
         AdvancementFieldSource.register(registrar);
         EncounterTargets.register(registrar);
+        yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsTargets.register(registrar);
+        registrar.task(yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID,
+                new yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsTask());
         for (String kind : java.util.List.of("dimension", "biome", "location", "structure"))
             registrar.task(ResourceLocation.fromNamespaceAndPath("brnquest", kind), new LocationTask(kind));
         registrar.task(AdvancementConfig.ID, new AdvancementTask())

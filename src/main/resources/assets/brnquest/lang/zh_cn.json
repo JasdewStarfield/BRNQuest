@@ -1122,5 +1122,13 @@
   "screen.brnquest.editor.text.controls": "格式与视图工具",
   "screen.brnquest.editor.text.reset_short": "重置",
   "screen.brnquest.editor.text.image_short": "图片",
-  "screen.brnquest.editor.text.item_short": "物品"
+  "screen.brnquest.editor.text.item_short": "物品",
+  "screen.brnquest.type.task.statistics": "统计目标",
+  "screen.brnquest.statistics.category": "统计类别",
+  "screen.brnquest.statistics.target": "统计对象",
+  "screen.brnquest.statistics.count": "所需原始计数",
+  "screen.brnquest.statistics.requirement": "%1$s：%2$s，达到 %3$s",
+  "screen.brnquest.statistics.history_help": "历史累计：目标创建前的统计也计入。仅在个人进度下使用。",
+  "screen.brnquest.statistics.units_help": "填写原版统计的原始单位：次数／物品数量；距离为厘米（100 = 1 米）；时间为 tick（1200 = 1 分钟）；伤害为十分之一点（10 = 1 点伤害）。显示时使用原版单位格式。",
+  "screen.brnquest.statistics.missing": "所选统计对象未注册，请检查类别与 ID。"
 }

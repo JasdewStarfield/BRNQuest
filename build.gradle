@@ -271,6 +271,7 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
     inputs.file encoded
     outputs.file generated
     outputs.file(layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt'))
+    outputs.file(layout.buildDirectory.file('generated/gametestResources/data/brnquest_statistics/structure/empty.nbt'))
     doLast {
         // Keep the tiny binary structure reproducible and reviewable as Base64 in source control.
         def target = generated.get().asFile
@@ -280,6 +281,10 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
         def progressTarget = layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt').get().asFile
         progressTarget.parentFile.mkdirs()
         progressTarget.bytes = target.bytes
+        // A separate statistics namespace lets its focused suite run without unrelated world fixtures.
+        def statisticsTarget = layout.buildDirectory.file('generated/gametestResources/data/brnquest_statistics/structure/empty.nbt').get().asFile
+        statisticsTarget.parentFile.mkdirs()
+        statisticsTarget.bytes = target.bytes
     }
 }
 sourceSets.gameTest.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')

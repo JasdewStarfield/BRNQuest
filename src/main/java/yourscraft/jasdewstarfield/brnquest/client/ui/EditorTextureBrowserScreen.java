@@ -1,7 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -19,7 +19,7 @@ public final class EditorTextureBrowserScreen extends Screen {
     private EditBox filter;
     private String query = "";
     private int page;
-    private Button importButton;
+    private EditorButtonWidget importButton;
     private boolean importing;
     private volatile boolean closed;
     private Component importStatus = text("import_help");
@@ -36,8 +36,8 @@ public final class EditorTextureBrowserScreen extends Screen {
         filter.setMaxLength(512); filter.setValue(query);
         filter.setResponder(value -> { query = value; page = 0; refresh(); });
         addRenderableWidget(filter);
-        importButton = addRenderableWidget(Button.builder(text("import_png"), button -> importLocal(null))
-                .bounds(width - 130, 30, 110, 20).build());
+        importButton = addRenderableWidget(new EditorButtonWidget(width - 130, 30, 110, 20,
+                text("import_png"), button -> importLocal(null)));
         importButton.active = !importing;
         importButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(text("import_help")));
         // Retain the paging hitboxes while giving the arrows localized narration and PNG paint.
@@ -48,7 +48,8 @@ public final class EditorTextureBrowserScreen extends Screen {
         addRenderableWidget(new EditorButtonWidget(55, height - 28, 30, 20,
                 EditorButton.Definition.iconOnly(next, next, QuestActionIcons.named("forward")),
                 b -> { page = Math.min(maxPage(), page + 1); rebuildWidgets(); }));
-        addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> onClose()).bounds(width - 100, height - 28, 80, 20).build());
+        addRenderableWidget(new EditorButtonWidget(width - 100, height - 28, 80, 20,
+                Component.translatable("gui.cancel"), b -> onClose()));
         refresh();
     }
     private int maxPage() { return Math.max(0, (filtered.size() - 1) / rows()); }
@@ -71,10 +72,14 @@ public final class EditorTextureBrowserScreen extends Screen {
             var size = LoadedTextures.size(id);
             double scale = 22.0 / Math.max(size.width(), size.height());
             LoadedTextures.draw(g, id.toString(), 22, top + 2, Math.max(1, (int)(size.width()*scale)), Math.max(1, (int)(size.height()*scale)), 1);
-            g.drawString(font, font.plainSubstrByWidth(id.toString(), width - 80), 50, top + 9, 0xFFFFFF, false);
+            EditorTextRenderer.drawCaption(g, font, Component.literal(id.toString()),
+                    new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(50, top+9, width-30, top+18),
+                    0xFFFFFF, x, y);
         }
         g.drawCenteredString(font, (page + 1) + " / " + (maxPage() + 1) + " · " + filtered.size(), width / 2, height - 23, 0xCCCCCC);
-        g.drawString(font, font.plainSubstrByWidth(importStatus.getString(), width - 40), 20, height - 53, 0xDDDDDD, false);
+        EditorTextRenderer.drawCaption(g, font, importStatus,
+                new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(20, height-53, width-20, height-44),
+                0xDDDDDD, x, y);
         super.render(g, x, y, dt);
         if (x >= 20 && x < width - 20 && y >= height - 56 && y < height - 40)
             g.renderTooltip(font, font.split(importStatus, Math.max(100, width - 40)), x, y);

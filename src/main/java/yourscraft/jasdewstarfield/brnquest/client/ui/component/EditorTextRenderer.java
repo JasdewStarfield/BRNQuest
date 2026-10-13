@@ -52,17 +52,39 @@ public final class EditorTextRenderer {
         TextLayoutDebug.unmute();
     }
 
-    /** Clips the styled sequence rather than flattening components into an unstyled String. */
-    private static net.minecraft.util.FormattedCharSequence clip(Font font, Component text, int maximum) {
+    /** Compact captions show an omission marker and defer full hover text until all screen content is painted. */
+    public static void drawCaption(GuiGraphics graphics, Font font, Component text, UiRect bounds,
+                                   int color, int mouseX, int mouseY) {
+        drawCaption(graphics, font, text, bounds, bounds, color, mouseX, mouseY);
+    }
+
+    /** Centered headings use the same omission and hover policy as compact left-aligned captions. */
+    public static void drawCaptionCentered(GuiGraphics graphics, Font font, Component text, UiRect bounds,
+                                           int color, int mouseX, int mouseY) {
+        int width = Math.min(bounds.width(), font.width(NativeText.sequence(text)));
+        int left = bounds.centerX() - width / 2;
+        drawCaption(graphics, font, text, new UiRect(left, bounds.top(), left+width, bounds.bottom()),
+                color, mouseX, mouseY);
+    }
+
+    /** A scrolling caption keeps its authored baseline while only its visible pixels can request hover help. */
+    public static void drawCaption(GuiGraphics graphics, Font font, Component text, UiRect bounds, UiRect clip,
+                                   int color, int mouseX, int mouseY) {
+        if (bounds.width() == 0 || bounds.height() == 0) return;
         var sequence = NativeText.sequence(text);
-        float[] width = {0};
-        java.util.List<net.minecraft.util.FormattedCharSequence> glyphs = new java.util.ArrayList<>();
-        sequence.accept((index, style, codepoint) -> {
-            var glyph = net.minecraft.util.FormattedCharSequence.codepoint(codepoint, style);
-            float next = width[0] + font.getSplitter().stringWidth(glyph);
-            if (next > maximum) return false;
-            width[0] = next; glyphs.add(glyph); return true;
-        });
-        return net.minecraft.util.FormattedCharSequence.composite(glyphs);
+        boolean omitted = font.width(sequence) > bounds.width();
+        var visible = EditorTextLayout.ellipsizeSequence(sequence, bounds.width(),
+                font.getSplitter()::stringWidth, text.getStyle());
+        graphics.drawString(font, visible, bounds.left(), bounds.top(), color, false);
+        if (omitted && bounds.intersection(clip).containsExclusive(mouseX, mouseY)) {
+            var screen = net.minecraft.client.Minecraft.getInstance().screen;
+            if (screen != null) screen.setTooltipForNextRenderPass(text);
+        }
+    }
+
+    /** Scaling has a lower bound; remaining overflow keeps styling and a visible omission marker. */
+    private static net.minecraft.util.FormattedCharSequence clip(Font font, Component text, int maximum) {
+        return EditorTextLayout.ellipsizeSequence(NativeText.sequence(text), maximum,
+                font.getSplitter()::stringWidth, text.getStyle());
     }
 }

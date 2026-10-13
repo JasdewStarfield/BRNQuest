@@ -29,6 +29,30 @@ public final class EditorTextLayout {
         return head + marker + tail;
     }
 
+    /** Styled captions preserve whole code points and glyph styles while reserving the omission marker's width. */
+    public static net.minecraft.util.FormattedCharSequence ellipsizeSequence(
+            net.minecraft.util.FormattedCharSequence text, int availableWidth,
+            java.util.function.ToDoubleFunction<net.minecraft.util.FormattedCharSequence> width,
+            net.minecraft.network.chat.Style markerStyle) {
+        if (width.applyAsDouble(text) <= availableWidth) return text;
+        var marker = net.minecraft.util.FormattedCharSequence.forward("…", markerStyle);
+        double markerWidth = width.applyAsDouble(marker);
+        if (availableWidth < markerWidth) return net.minecraft.util.FormattedCharSequence.EMPTY;
+        double budget = availableWidth - markerWidth;
+        double[] used = {0};
+        var glyphs = new java.util.ArrayList<net.minecraft.util.FormattedCharSequence>();
+        text.accept((index, style, codepoint) -> {
+            var glyph = net.minecraft.util.FormattedCharSequence.codepoint(codepoint, style);
+            double next = used[0] + width.applyAsDouble(glyph);
+            if (next > budget) return false;
+            used[0] = next;
+            glyphs.add(glyph);
+            return true;
+        });
+        glyphs.add(marker);
+        return net.minecraft.util.FormattedCharSequence.composite(glyphs);
+    }
+
     /** Only explicit namespaced values use middle omission; ordinary action labels retain their beginning. */
     public static boolean identifier(String text) {
         return text.matches("#?[a-z0-9_.-]+:[a-z0-9_./-]+");

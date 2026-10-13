@@ -1,7 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -12,6 +11,8 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidge
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEnumDropdown;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorWidgetFrame;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorScrollbar;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
@@ -63,8 +64,9 @@ final class EditorCanvasScreen extends Screen {
     private int left() { return Math.max(140, width / 3); }
     /** Keep property labels, controls and thumbnails inset from the shared panel border. */
     private int contentLeft() { return left() + 10; }
-    private Button button(String key, int x, int y, int w, Runnable action) {
-        var widget = addRenderableWidget(Button.builder(label(key), b -> action.run()).bounds(x, y, w, 20).build());
+    private EditorButtonWidget button(String key, int x, int y, int w, Runnable action) {
+        var widget = addRenderableWidget(new EditorButtonWidget(x, y, w, 20, label(key), b -> action.run()));
+        if (key.equals("apply")) widget.setTone(EditorButton.Tone.PRIMARY);
         if (buildingForm && x >= left()) formWidgets.put(widget, y);
         return widget;
     }
@@ -246,12 +248,17 @@ final class EditorCanvasScreen extends Screen {
     private int formContentHeight() {
         return Math.max(0,formWidgets.entrySet().stream().mapToInt(entry->entry.getValue()+entry.getKey().getHeight()).max().orElse(54)-54);
     }
+    private EditorWidgetFrame widgetFrame(net.minecraft.client.gui.components.AbstractWidget widget, int authoredY) {
+        return EditorWidgetFrame.scrolled(new UiRect(widget.getX(), authoredY,
+                widget.getX() + widget.getWidth(), authoredY + widget.getHeight()), formViewport(), formScroll);
+    }
     private void positionForm() {
         formMotion.constrain(formContentHeight(),formViewport().height());
         formScroll=(int)Math.round(formMotion.visual());
         formWidgets.forEach((widget,y)-> {
-            widget.setY(y-formScroll);
-            widget.visible=widget.getY()>=formViewport().top() && widget.getY()+widget.getHeight()<=formViewport().bottom();
+            var frame = widgetFrame(widget, y);
+            widget.setY(frame.bounds().top());
+            widget.visible = frame.shown();
             if(!widget.visible && getFocused()==widget) setFocused(null);
         });
     }
@@ -305,8 +312,10 @@ final class EditorCanvasScreen extends Screen {
                 new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(left() - 2, 52, width - 4, height - 32), tab == 0 ? 0xFF414638 : 0x99414638, true);
         EditorScrollbar.render(g,width-8,formViewport().top(),formViewport().bottom(),
                 formContentHeight(),formViewport().height(),formMotion.visual());
-        g.drawCenteredString(font, title, tab == 0 ? width / 2 : left() / 2, 10, 0xFFFFFF);
-        if (tab != 0 || aspect) g.drawCenteredString(font, label(tab != 0 ? "preview_only" : "aspect_linked"), width / 2, 30, 0xFFE4C272);
+        EditorTextRenderer.drawCaptionCentered(g, font, title,
+                new UiRect(12, 10, tab == 0 ? width-12 : left()-12, 19), 0xFFFFFF, x, y);
+        if (tab != 0 || aspect) EditorTextRenderer.drawCaptionCentered(g, font, label(tab != 0 ? "preview_only" : "aspect_linked"),
+                new UiRect(12, 30, width-12, 39), 0xFFE4C272, x, y);
         if (tab == 0 && selected >= 0) {
             var d = decorations.get(selected);
             double w = d.width(), h = d.height();
@@ -327,9 +336,19 @@ final class EditorCanvasScreen extends Screen {
             } finally { g.disableScissor(); }
         }
 
-        fields.forEach((key, box) -> { if (box.visible) g.drawString(font, label(key), contentLeft(), box.getY() + 5, 0xDDDDDD, false); });
-        g.drawString(font, font.plainSubstrByWidth(error, width - 200), 96, height - 21, 0xFF9999, false);
-        super.render(g, x, y, dt);
+        // Partly visible fields and labels move continuously through the viewport instead of disappearing as a unit.
+        UiRect viewport = formViewport();
+        g.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+        try {
+            fields.forEach((key, box) -> {
+                if (box.visible) EditorTextRenderer.drawCaption(g, font, label(key),
+                        new UiRect(contentLeft(), box.getY()+5, box.getX()-4, box.getY()+14), viewport,
+                        0xDDDDDD, x, y);
+            });
+        } finally { g.disableScissor(); }
+        EditorTextRenderer.drawCaption(g, font, Component.literal(error),
+                new UiRect(96, height-21, width-104, height-12), 0xFF9999, x, y);
+        renderWidgets(g, x, y, dt);
         if (tab != 0) {
             int top = 204 - formScroll;
             UiRect previewClip=new UiRect(contentLeft()+2,top+2,width-14,top+110).intersection(formViewport());
@@ -349,6 +368,19 @@ final class EditorCanvasScreen extends Screen {
         }
         enumDropdown.render(g, font, width, 54, height - 34, x, y);
     }
+    private void renderWidgets(GuiGraphics graphics, int x, int y, float partial) {
+        for (var renderable : renderables) {
+            if (renderable instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)) {
+                if (!widget.visible) continue;
+                UiRect viewport = formViewport();
+                graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+                try {
+                    boolean hover = widgetFrame(widget, formWidgets.get(widget)).contains(x, y);
+                    renderable.render(graphics, hover ? x : Integer.MIN_VALUE, hover ? y : Integer.MIN_VALUE, partial);
+                } finally { graphics.disableScissor(); }
+            } else renderable.render(graphics, x, y, partial);
+        }
+    }
     @Override public boolean mouseClicked(double x, double y, int button) {
         if (enumDropdown.open()) {
             enumDropdown.click(x, y, button, width, 54, height - 34);
@@ -359,11 +391,29 @@ final class EditorCanvasScreen extends Screen {
                 formContentHeight(),formViewport().height())) { positionForm(); return true; }
         if(button==0 && tab!=0 && helpMotion.handleTrackClick(x,y,left()-12,helpViewport().top(),helpViewport().bottom(),
                 helpLines().size()*11,helpViewport().height())) return true;
-        return super.mouseClicked(x, y, button);
+        // Reject hidden parts before native widgets test their full rectangles, including overlaps with fixed chrome.
+        for (var child : children()) {
+            if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)
+                    && !widgetFrame(widget, formWidgets.get(widget)).contains(x, y)) continue;
+            if (child.mouseClicked(x, y, button)) {
+                setFocused(child);
+                if (button == 0) setDragging(true);
+                return true;
+            }
+        }
+        return false;
     }
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
         if (key == 256 && enumDropdown.open()) { closeChoice(); return true; }
-        return super.keyPressed(key, scanCode, modifiers);
+        boolean handled = super.keyPressed(key, scanCode, modifiers);
+        if (key == 258 && getFocused() instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)) {
+            int authoredY = formWidgets.get(widget);
+            int revealed = EditorWidgetFrame.reveal(formScroll,
+                    new UiRect(widget.getX(), authoredY, widget.getX()+widget.getWidth(), authoredY+widget.getHeight()), formViewport());
+            formMotion.snap(revealed);
+            positionForm();
+        }
+        return handled;
     }
     /** Contain the authored rectangle in the preview without stretching it to the panel shape. */
     private void drawPreview(GuiGraphics g, String texture, int x, int y, int w, int h, double sourceW, double sourceH) {

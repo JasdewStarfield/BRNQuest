@@ -9,6 +9,7 @@ import net.minecraft.network.chat.Component;
 public final class EditorButtonWidget extends Button {
     private final EditorButton.Definition definition;
     private EditorIcon iconOverride;
+    private EditorButton.Tone tone = EditorButton.Tone.NEUTRAL;
 
     public EditorButtonWidget(int x, int y, int width, int height, Component label, OnPress action) {
         this(x, y, width, height, EditorButton.Definition.text(label, null), action);
@@ -28,6 +29,20 @@ public final class EditorButtonWidget extends Button {
         }
     }
 
+    /** Updated choices keep the full current label available even when the compact button needs ellipsis. */
+    @Override public void setMessage(Component message) {
+        super.setMessage(message);
+        if (definition == null) return;
+        Component tooltip = message.copy();
+        for (Component line : definition.tooltip()) {
+            if (!line.equals(definition.label())) tooltip = tooltip.copy().append("\n").append(line);
+        }
+        setTooltip(net.minecraft.client.gui.components.Tooltip.create(tooltip));
+    }
+
+    /** Native widget hosts can use the same primary/destructive tones as the action-group controls. */
+    public void setTone(EditorButton.Tone tone) { this.tone = tone; }
+
     @Override public void onPress() {
         // The native Button input path already plays the click sound; do not play a second one here.
         EditorButtonFeedback.pulse(new UiRect(getX(), getY(), getX()+getWidth(), getY()+getHeight()));
@@ -44,6 +59,6 @@ public final class EditorButtonWidget extends Button {
                 // setMessage still updates busy/retry labels without discarding the icon.
                 new EditorButton.Definition(getMessage(), definition.tooltip(),
                         iconOverride == null ? definition.icon() : iconOverride, definition.contentMode()),
-                new EditorButton.State(active, isHovered(), isFocused()), EditorButton.Tone.NEUTRAL.palette());
+                new EditorButton.State(active, isHovered(), isFocused()), tone.palette());
     }
 }

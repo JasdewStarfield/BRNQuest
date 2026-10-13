@@ -111,8 +111,11 @@ $metadata = [ordered]@{
         gameVersionNames          = $gameVersionNames
         releaseType               = $ReleaseType
         isMarkedForManualRelease  = [bool]$template.curseforge.is_marked_for_manual_release
-        relations                 = [ordered]@{ projects = $curseForgeRelations }
     }
+}
+# Relations are optional; CurseForge rejects a present projects array with zero entries.
+if ($curseForgeRelations.Count -gt 0) {
+    $metadata.curseforge.relations = [ordered]@{ projects = $curseForgeRelations }
 }
 
 $outputDirectory = Split-Path -Parent $OutputPath

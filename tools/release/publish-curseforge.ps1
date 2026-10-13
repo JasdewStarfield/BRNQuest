@@ -23,6 +23,11 @@ $rendered = Get-Content -LiteralPath $MetadataPath -Raw -Encoding utf8 | Convert
 if ($jar.Name -ne $rendered.jar_name) {
     throw "Jar '$($jar.Name)' does not match rendered metadata jar '$($rendered.jar_name)'."
 }
+# Older release bundles contain an empty relations array. Omit it at the upload
+# boundary as well, so an already published artifact can be retried unchanged.
+if ($rendered.curseforge.relations -and @($rendered.curseforge.relations.projects).Count -eq 0) {
+    $rendered.curseforge.PSObject.Properties.Remove('relations')
+}
 $metadata = $rendered.curseforge | ConvertTo-Json -Depth 10 -Compress
 
 if (-not $PSCmdlet.ShouldProcess("CurseForge project $ProjectId", "Upload $($jar.Name) as $($rendered.curseforge.displayName)")) {

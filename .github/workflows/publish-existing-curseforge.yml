@@ -1,0 +1,80 @@
+name: Publish existing release to CurseForge
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing GitHub release version without a leading v
+        required: true
+        type: string
+      release_run_id:
+        description: Original Release BRNQuest run containing the release-bundle artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize recovery with normal publication for the same version.
+concurrency:
+  group: brnquest-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+  CURSEFORGE_PROJECT_ID: ${{ vars.CURSEFORGE_PROJECT_ID || '1714617' }}
+
+jobs:
+  curseforge:
+    name: Upload the verified existing release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify the source release run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF -ne 'refs/heads/mc/1.21.1-neoforge') { throw 'Run uploads from mc/1.21.1-neoforge.' }
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'Invalid version.' }
+          if ($env:RELEASE_RUN_ID -notmatch '^\d+$') { throw 'Invalid run ID.' }
+          $sourceRun = gh api "repos/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:RELEASE_RUN_ID)" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the original release run.' }
+          if ($sourceRun.path -ne '.github/workflows/release.yml' -or $sourceRun.event -ne 'workflow_dispatch' -or $sourceRun.status -ne 'completed') { throw 'Select a completed Release BRNQuest run.' }
+          $release = gh release view $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --json isDraft,targetCommitish | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the published release.' }
+          if ($release.isDraft -or $release.targetCommitish -ne $sourceRun.head_sha) { throw 'Release does not match the original build commit.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify published bytes and upload to CurseForge
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:CURSEFORGE_TOKEN) { throw 'Set CURSEFORGE_TOKEN.' }
+          $jarName = "brnquest-mc1.21.1-$($env:RELEASE_VERSION).jar"
+          $jarPath = "./dist/libs/$jarName"
+          # Use original metadata and bytes; tooling fixes must not rebuild or move a release tag.
+          $metadataPath = './dist/release-metadata/neoforge_1_21_1.json'
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+          if ($metadata.jar_name -ne $jarName) { throw 'Bundle version does not match the requested release.' }
+          $release = gh release view $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --json assets,isPrerelease | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read release assets.' }
+          $assets = @($release.assets | Where-Object name -eq $jarName)
+          if ($assets.Count -ne 1) { throw 'Expected exactly one matching published JAR.' }
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($assets[0].digest -ne $digest) { throw 'Bundle differs from the published GitHub JAR.' }
+          if (($metadata.curseforge.releaseType -ne 'release') -ne $release.isPrerelease) { throw 'Release channel mismatch.' }
+          ./tools/release/publish-curseforge.ps1 -ProjectId $env:CURSEFORGE_PROJECT_ID -Token $env:CURSEFORGE_TOKEN -JarPath $jarPath -MetadataPath $metadataPath -Confirm:$false

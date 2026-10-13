@@ -132,10 +132,9 @@ public final class EditorPopupMenu {
                     new UiRect(bounds.left() + 5, top + 4, bounds.left() + 15, top + 14), color);
             // Reserve the native sprite and its gap independently of the active font.
             int reserved = showSubmenuArrow && entry.submenu() ? 20 : 8;
-            String label = font.plainSubstrByWidth(entry.label().getString(),
-                    Math.max(1, row.width() - reserved - iconSpace));
-            graphics.drawString(font, label, bounds.left() + 6 + iconSpace, top + 5,
-                    !entry.enabled() ? GraystonePalette.DISABLED : entry.dangerous() ? 0xFFFF9B9B : 0xFFFFFFFF, false);
+            EditorTextRenderer.drawCaption(graphics, font, entry.label(),
+                    new UiRect(bounds.left()+6+iconSpace, top+5, bounds.left()+6+iconSpace+Math.max(1,row.width()-reserved-iconSpace), top+14),
+                    color, mouseX, mouseY);
             if (showSubmenuArrow && entry.submenu()) {
                 QuestActionIcons.named(expandedIndex == index ? "fold" : "unfold").render(graphics, font,
                         new UiRect(bounds.right() - 15, top + 4, bounds.right() - 5, top + 14), GraystonePalette.SECONDARY);

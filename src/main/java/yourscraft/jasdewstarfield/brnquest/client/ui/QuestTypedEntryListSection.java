@@ -12,6 +12,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -59,9 +60,9 @@ final class QuestTypedEntryListSection {
             graphics.drawString(font, model.heading(), layout.list().left(), layout.panel().top() + 8,
                     0xFFFFFFFF, false);
             if (model.message() != null) {
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                                model.message().getString(), layout.messageWidth())),
-                        layout.list().left(), layout.add().top() - 12, 0xFFFFA070, false);
+                EditorTextRenderer.drawCaption(graphics, font, model.message(),
+                        new UiRect(layout.list().left(),layout.add().top()-12,layout.list().left()+layout.messageWidth(),layout.add().top()-3),
+                        0xFFFFA070, mouseX+layout.drawerOffset(), mouseY);
             }
 
             List<EditorActionGroup.Placed<ActionKey>> footer = new ArrayList<>();

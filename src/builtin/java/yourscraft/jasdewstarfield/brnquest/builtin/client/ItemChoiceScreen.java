@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -245,9 +246,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         } else {
             Component requirement = Component.translatable("screen.brnquest.item_choice.count_label");
             int requirementWidth = Math.max(1, listCountBounds().left() - panel.left() - 11);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                    requirement.getString(), requirementWidth)), panel.left() + 7, panel.top() + 49,
-                    GraystonePalette.SECONDARY, false);
+            EditorTextRenderer.drawCaption(graphics, font, requirement,
+                    new UiRect(panel.left()+7, panel.top()+49, panel.left()+7+requirementWidth, panel.top()+58),
+                    GraystonePalette.SECONDARY, mouseX, mouseY);
             renderSmallButton(graphics, componentsBounds(), "{}", selectedIndex >= 0, mouseX, mouseY);
             renderSmallButton(graphics, moveLeftBounds(), "←", selectedIndex > 0, mouseX, mouseY);
             renderSmallButton(graphics, moveRightBounds(), "→",
@@ -294,8 +295,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 ? Component.translatable("screen.brnquest.item_choice.empty")
                 : Component.translatable("screen.brnquest.item_choice.accepted_count", candidates.size());
         int summaryColor = message != null || candidates.isEmpty() ? 0xFFFFA070 : GraystonePalette.SECONDARY;
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), viewport.width())),
-                viewport.left(), viewport.bottom() + 3, summaryColor, false);
+        EditorTextRenderer.drawCaption(graphics, font, summary,
+                new UiRect(viewport.left(), viewport.bottom()+3, viewport.right(), viewport.bottom()+12),
+                summaryColor, mouseX, mouseY);
     }
 
     private void renderInventory(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
@@ -303,9 +305,10 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 ? "screen.brnquest.item_choice.inventory_tag_hint"
                 : "screen.brnquest.item_choice.inventory_add_hint");
         int inventoryLeft = panel.centerX() - COLUMNS * SLOT_SIZE / 2;
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                        hint.getString(), COLUMNS * SLOT_SIZE)),
-                inventoryLeft, inventoryTop() - 11, GraystonePalette.SECONDARY, false);
+        // Instructions use the panel's spare side margins instead of being limited to the inventory grid width.
+        EditorTextRenderer.drawCaption(graphics, font, hint,
+                new UiRect(panel.left()+7, inventoryTop()-11, panel.right()-7, inventoryTop()-2),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
         if (minecraft == null || minecraft.player == null) return;
         for (int index = 0; index < 36; index++) {
             UiRect slot = inventorySlot(index);

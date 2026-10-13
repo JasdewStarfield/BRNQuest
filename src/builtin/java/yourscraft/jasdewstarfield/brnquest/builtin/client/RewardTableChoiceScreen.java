@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import com.google.gson.*;
 import net.minecraft.client.Minecraft;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -133,7 +134,7 @@ public final class RewardTableChoiceScreen extends Screen implements RecipeLooku
             var details=details(row.key());
             // Shared details own decoration precedence and stack counts in every reward entry surface.
             details.icon().render(g,font,new UiRect(rect.left()+5,rect.top()+7,rect.left()+21,rect.top()+23),0xFFFFFFFF);
-            g.drawString(font,font.plainSubstrByWidth(details.summary().getString(),rect.width()-32),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
+            g.drawString(font,EditorTextLayout.ellipsize(details.summary().getString(), rect.width()-32, font::width, false),rect.left()+28,rect.top()+11,0xFFFFFFFF,false);
         },()->{});
         list.rowAt(x,y).ifPresent(row -> {
             var details = details(row.key());

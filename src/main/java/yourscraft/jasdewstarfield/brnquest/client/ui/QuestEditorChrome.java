@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -109,8 +110,7 @@ final class QuestEditorChrome {
         graphics.fill(bottom.left(), bottom.top()+1, bottom.right(), bottom.top()+2, GraystonePalette.LIP);
         String title = model.title().isBlank() ? model.bookId().toString() : model.title();
         int disclosureWidth = model.allowed() ? 14 : 0;
-        String visibleTitle = font.plainSubstrByWidth(title,
-                Math.max(1, layout.title().width() - 16 - disclosureWidth));
+        String visibleTitle = EditorTextLayout.ellipsize(title, Math.max(1, layout.title().width() - 16 - disclosureWidth), font::width, false);
         // Dark lettering on light stone stays crisp without the default dark text shadow.
         int titleLeft = layout.title().centerX() - (font.width(visibleTitle) + disclosureWidth) / 2;
         graphics.drawString(font, visibleTitle, titleLeft,
@@ -183,7 +183,7 @@ final class QuestEditorChrome {
             // Reserve icon space before fitting text, keeping the footer's existing outer bounds.
             String statusIcon = model.error() ? "error" : model.busy() ? "clock" : null;
             int iconSpace = statusIcon == null ? 0 : 14;
-            String statusText = font.plainSubstrByWidth(model.status().getString(), Math.max(0, layout.status().width() - 10 - iconSpace));
+            String statusText = EditorTextLayout.ellipsize(model.status().getString(), Math.max(0, layout.status().width() - 10 - iconSpace), font::width, false);
             int statusWidth = Math.min(layout.status().width(), font.width(statusText) + 10 + iconSpace);
             UiRect visibleStatus = new UiRect(layout.status().left(), layout.status().top(),
                     layout.status().left() + statusWidth, layout.status().bottom());

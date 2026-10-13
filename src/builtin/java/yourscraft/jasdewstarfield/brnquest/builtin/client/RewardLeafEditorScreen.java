@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.builtin.client;
 import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -69,7 +70,7 @@ public final class RewardLeafEditorScreen extends RewardEditorScreen {
         var bounds = body();
         // A leaf stays visibly attached to its owning table while its edits are still local.
         if (parent instanceof RewardTableEditorScreen table)
-            graphics.drawString(font, font.plainSubstrByWidth(table.breadcrumb() + " / " + title.getString(), bounds.width()),
+            graphics.drawString(font, EditorTextLayout.ellipsize(table.breadcrumb() + " / " + title.getString(), bounds.width(), font::width, false),
                     bounds.left(), bounds.top() - 13, GraystonePalette.SECONDARY, false);
         var fields = form.schema().fields();
         var buttons = new ArrayList<>(footer(true, this::apply));

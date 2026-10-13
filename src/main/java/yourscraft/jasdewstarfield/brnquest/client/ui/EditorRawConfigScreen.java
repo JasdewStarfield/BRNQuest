@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSourceField;
 import net.minecraft.client.gui.screens.Screen;
@@ -69,12 +70,12 @@ public final class EditorRawConfigScreen extends Screen {
         UiRect panel = panelBounds();
         yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.raw_config.help"),
-                panel.left() + 12, panel.top() + 25, GraystonePalette.SECONDARY, false);
-        if (issue != null) {
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(issue.getString(), panel.width() - 24)),
-                    panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);
-        }
+        EditorTextRenderer.drawCaption(graphics, font, Component.translatable("screen.brnquest.editor.raw_config.help"),
+                new UiRect(panel.left()+12, panel.top()+25, panel.right()-12, panel.top()+34),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
+        if (issue != null) EditorTextRenderer.drawCaption(graphics, font, issue,
+                new UiRect(panel.left()+12, panel.bottom()-45, panel.right()-12, panel.bottom()-36),
+                0xFFFF7070, mouseX, mouseY);
         buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);

@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.builtin.client;
 import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -95,9 +96,9 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
         submit.active = canSubmit;
         Component instruction = Component.translatable("screen.brnquest.item_submission.instruction",
                 spec.requiredEntries(), spec.entries().size());
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                        instruction.getString(), layout.targetSlot().left() - panel.left() - 12)),
-                panel.left() + 7, panel.top() + 31, GraystonePalette.SECONDARY, false);
+        EditorTextRenderer.drawCaption(graphics, font, instruction,
+                new UiRect(panel.left()+7, panel.top()+31, layout.targetSlot().left()-5, panel.top()+40),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
         renderTarget(graphics, layout.targetSlot(), plan.representative());
 
         Component summary = selectedSlots.isEmpty()
@@ -105,9 +106,9 @@ public final class ItemSubmissionScreen extends Screen implements RecipeLookupSo
                 : Component.translatable(canSubmit
                         ? "screen.brnquest.item_submission.selected_ready"
                         : "screen.brnquest.item_submission.selected_invalid", selectedSlots.size());
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), panel.width() - 14)),
-                panel.left() + 7, panel.top() + 50,
-                canSubmit ? 0xFF80D49B : selectedSlots.isEmpty() ? GraystonePalette.SECONDARY : 0xFFFFC16A, false);
+        EditorTextRenderer.drawCaption(graphics, font, summary,
+                new UiRect(panel.left()+7, panel.top()+50, panel.right()-7, panel.top()+59),
+                canSubmit ? 0xFF80D49B : selectedSlots.isEmpty() ? GraystonePalette.SECONDARY : 0xFFFFC16A, mouseX, mouseY);
 
         if (minecraft != null && minecraft.player != null) {
             for (int slotIndex = 0; slotIndex < 36; slotIndex++) {

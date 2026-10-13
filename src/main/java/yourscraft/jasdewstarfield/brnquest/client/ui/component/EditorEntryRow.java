@@ -39,7 +39,7 @@ public final class EditorEntryRow {
             float scale = EditorTextLayout.fittedScale(font.width(content.title()), title.width(), 0.75F);
             int available = Math.max(1, (int) Math.floor(title.width() / scale));
             Component visible = font.width(content.title()) <= available ? content.title()
-                    : Component.literal(font.plainSubstrByWidth(content.title().getString(), available));
+                    : Component.literal(EditorTextLayout.ellipsize(content.title().getString(), available, font::width, false));
             graphics.pose().pushPose();
             graphics.pose().translate(title.left(), title.top(), 0);
             graphics.pose().scale(scale, scale, 1);
@@ -48,7 +48,7 @@ public final class EditorEntryRow {
         }
         UiRect summary = layout.summary();
         if (summary.width() > 0) graphics.drawString(font,
-                Component.literal(font.plainSubstrByWidth(content.summary().getString(), summary.width())),
+                Component.literal(EditorTextLayout.ellipsize(content.summary().getString(), summary.width(), font::width, false)),
                 summary.left(), summary.top(), content.summaryColor(), false);
     }
 }

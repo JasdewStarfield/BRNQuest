@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.Font;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -232,9 +233,9 @@ final class QuestPublishReviewSection {
             if (more.contains(mouseX, mouseY)) tooltip = List.of(Component.translatable("screen.brnquest.editor.publish.review.details"));
         }
         int textWidth = Math.max(20, row.width() - inset - 28);
-        graphics.drawString(font, font.plainSubstrByWidth(heading, textWidth), row.left() + inset,
+        graphics.drawString(font, EditorTextLayout.ellipsize(heading, textWidth, font::width, false), row.left() + inset,
                 row.top() + 3, headingColor, false);
-        graphics.drawString(font, font.plainSubstrByWidth(detail, textWidth), row.left() + inset,
+        graphics.drawString(font, EditorTextLayout.ellipsize(detail, textWidth, font::width, false), row.left() + inset,
                 row.top() + 15, GraystonePalette.SECONDARY, false);
         return hovered ? tooltip : List.of();
     }

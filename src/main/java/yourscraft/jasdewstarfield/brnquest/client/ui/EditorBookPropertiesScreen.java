@@ -74,20 +74,20 @@ final class EditorBookPropertiesScreen extends Screen {
     @Override public void renderBackground(GuiGraphics graphics, int x, int y, float partial) {}
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         ChildScreenBackground.render(parent, graphics, width, height, partial);
-        graphics.pose().pushPose(); graphics.pose().translate(0, 0, 1000);
-        try {
-            int panelWidth = Math.min(340, width - 24);
+        // ChildScreenBackground already clears the parent's depth; native deferred tooltips stay above this panel.
+        int panelWidth = Math.min(340, width - 24);
         int left = (width - panelWidth) / 2, top = height / 2 - 107;
-            graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
-            GraystoneSurface.raised(graphics, new UiRect(left - 10, top, left + panelWidth + 10, top + 214), GraystonePalette.PANEL, true);
-            graphics.drawCenteredString(font, title, width / 2, top + 10, 0xFFFFFFFF);
-            graphics.drawString(font, Component.translatable("screen.brnquest.editor.structure.title"), left, top + 36, GraystonePalette.SECONDARY, false);
-            graphics.drawString(font, font.plainSubstrByWidth(Component.translatable("screen.brnquest.book.fallback").getString(), 80), left, top + 66, GraystonePalette.SECONDARY, false);
-            titleInput.setSuggestion(titleInput.getValue().isEmpty() ? font.plainSubstrByWidth(text.placeholder(), titleInput.getWidth() - 8) : null);
-            if (!done.active) graphics.drawCenteredString(font, Component.translatable("screen.brnquest.book.invalid_locale"),
-                    width / 2, top + 170, 0xFFFF8080);
-            super.render(graphics, x, y, partial); graphics.flush();
-        } finally { graphics.pose().popPose(); }
+        graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
+        GraystoneSurface.raised(graphics, new UiRect(left - 10, top, left + panelWidth + 10, top + 214), GraystonePalette.PANEL, true);
+        graphics.drawCenteredString(font, title, width / 2, top + 10, 0xFFFFFFFF);
+        graphics.drawString(font, Component.translatable("screen.brnquest.editor.structure.title"), left, top + 36, GraystonePalette.SECONDARY, false);
+        yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer.drawCaption(graphics, font,
+                Component.translatable("screen.brnquest.book.fallback"), new UiRect(left,top+66,left+80,top+75),
+                GraystonePalette.SECONDARY, x, y);
+        titleInput.setSuggestion(titleInput.getValue().isEmpty() ? font.plainSubstrByWidth(text.placeholder(), titleInput.getWidth() - 8) : null);
+        if (!done.active) graphics.drawCenteredString(font, Component.translatable("screen.brnquest.book.invalid_locale"),
+                width / 2, top + 170, 0xFFFF8080);
+        super.render(graphics, x, y, partial); graphics.flush();
     }
     @Override public void tick() { parent.tick(); super.tick(); }
     @Override public void onClose() { minecraft.setScreen(parent); }

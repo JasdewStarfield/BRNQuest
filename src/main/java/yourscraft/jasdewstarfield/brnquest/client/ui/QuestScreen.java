@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 
 import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
@@ -2517,9 +2518,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         renderEditorTextButton(graphics, conflictRecoveryAbandonBounds(), abandon, abandon,
                 true, EditorButton.Tone.DANGER, mouseX, mouseY);
         if (recoveryCopyBookId != null) {
-            graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(
-                            recoveryCopyBookId.toString(), panel.width() - 24)),
-                    panel.centerX(), panel.bottom() - 16, GraystonePalette.MUTED);
+            EditorTextRenderer.drawCaptionCentered(graphics, font, Component.literal(recoveryCopyBookId.toString()),
+                    new UiRect(panel.left()+12,panel.bottom()-16,panel.right()-12,panel.bottom()-7),
+                    GraystonePalette.MUTED, mouseX, mouseY);
         }
     }
 
@@ -4537,8 +4538,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 EditorTextRenderer.drawFittedString(graphics, font, direction, rect.left()+5, rect.top()+4, textWidth, dependency == null ? 0xFFFFA070 : 0xFFFFFFFF, .75F);
                 Component secondary = dependency == null ? Component.translatable("screen.brnquest.editor.dependency.missing")
                         : Component.literal(chapterTitle(snapshot.book(), dependency.chapterId()));
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(secondary.getString(), textWidth)),
-                        rect.left() + 5, rect.top() + 16, dependency == null ? 0xFFFFA070 : GraystonePalette.SECONDARY, false);
+                EditorTextRenderer.drawCaption(graphics, font, secondary,
+                        new UiRect(rect.left()+5,rect.top()+16,rect.left()+5+textWidth,rect.top()+25), row.visible(),
+                        dependency == null ? 0xFFFFA070 : GraystonePalette.SECONDARY, mouseX+offset, mouseY);
                 Component label = Component.translatable("screen.brnquest.editor.dependency.remove");
                 actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(row.key(),
                         EditorButton.Definition.iconOnly(label, label, QuestActionIcons.named("close")),
@@ -4558,9 +4560,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             List<Component> tooltip = dependencyActions.render(graphics, font, mouseX, mouseY);
             if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
             if (dependencyEditorMessage != null) {
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                                dependencyEditorMessage.getString(), detailsWidth() - 24)),
-                        left, dependencyAddBounds().top() - 12, 0xFFFFA070, false);
+                EditorTextRenderer.drawCaption(graphics, font, dependencyEditorMessage,
+                        new UiRect(left,dependencyAddBounds().top()-12,left+detailsWidth()-24,dependencyAddBounds().top()-3),
+                        0xFFFFA070, mouseX+offset, mouseY);
             }
             Component add = Component.translatable("screen.brnquest.editor.dependency.add");
             renderEditorActionButton(graphics, dependencyAddBounds().translated(offset, 0),
@@ -4914,9 +4916,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void renderQuestPositionEditorField(GuiGraphics graphics, int left, int top, int width) {
         int labelWidth = 48;
         EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, labelWidth);
-        String label = font.plainSubstrByWidth(
-                Component.translatable("screen.brnquest.editor.quest.position").getString(),
-                row.label().width() - 4);
+        String label = EditorTextLayout.ellipsize(Component.translatable("screen.brnquest.editor.quest.position").getString(), row.label().width() - 4, font::width, false);
         graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
                 GraystonePalette.SECONDARY, false);
 

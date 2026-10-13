@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- Editor captions mark shortened text and reveal the full hint or error on hover. Background and decoration controls clip smoothly at viewport edges; background and texture-browser buttons use the shared editor style.
 - Fixed wheel scrolling in objective/reward property forms, inventory overlap with accepted-item editor buttons, background-editor scrollbars and clipped reward-type choices.
 - Quests without configured objectives stay incomplete, preventing premature completion notices and leaving progress ready when objectives are added.
 - Fixed switching editing mode redirecting chapter browsing to a task from a closed detail panel.

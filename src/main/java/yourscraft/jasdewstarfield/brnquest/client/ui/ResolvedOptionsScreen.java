@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListNavigationWidget;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidget;
 import net.minecraft.client.gui.components.EditBox;
@@ -58,7 +59,7 @@ final class ResolvedOptionsScreen extends Screen {
             // Read-only rows use an inset surface rather than the bevel of a selectable button.
             var rect=row.bounds(); graphics.fill(rect.left(),rect.top(),rect.right(),rect.bottom(),
                     row.visible().containsExclusive(x,y) ? GraystonePalette.HOVER : 0xFF252822);
-            graphics.drawString(font,font.plainSubstrByWidth(members.get(row.key()).getString(),rect.width()-8),rect.left()+4,rect.top()+7,0xFFFFFFFF,false);
+            graphics.drawString(font,EditorTextLayout.ellipsize(members.get(row.key()).getString(), rect.width()-8, font::width, false),rect.left()+4,rect.top()+7,0xFFFFFFFF,false);
         },()->graphics.drawString(font,Component.translatable("screen.brnquest.options.empty"),left+4,68,0xFFAAAAAA,false));
         list.rowAt(x,y).ifPresent(row->{ if(row.key()<members.size()) graphics.renderTooltip(font,font.split(ResolvedOptions.hoverText(members.get(row.key())),Math.max(80,width-40)),x,y); });
     }

@@ -32,14 +32,12 @@ public final class EditorQuickTextDialog {
         Layout layout = layout(screenLayout);
         graphics.fill(0, 0, screenLayout.width(), screenLayout.height(), 0x99000000);
         GraystoneSurface.raised(graphics, layout.dialog(), GraystonePalette.PANEL, true);
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                        title.getString(), layout.dialog().width() - 24)),
-                layout.dialog().left() + 12, layout.dialog().top() + 11, 0xFFFFFFFF, false);
-        if (issue != null) {
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                            issue.getString(), layout.dialog().width() - 24)),
-                    layout.dialog().left() + 12, layout.dialog().top() + 54, 0xFFFF8B8B, false);
-        }
+        EditorTextRenderer.drawCaption(graphics, font, title,
+                new UiRect(layout.dialog().left()+12, layout.dialog().top()+11, layout.dialog().right()-12, layout.dialog().top()+20),
+                0xFFFFFFFF, mouseX, mouseY);
+        if (issue != null) EditorTextRenderer.drawCaption(graphics, font, issue,
+                new UiRect(layout.dialog().left()+12, layout.dialog().top()+54, layout.dialog().right()-12, layout.dialog().top()+63),
+                0xFFFF8B8B, mouseX, mouseY);
         buttons.render(graphics, font, layout.cancel(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);

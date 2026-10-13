@@ -1,6 +1,8 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -80,8 +82,9 @@ public final class TagChoiceScreen extends Screen {
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         graphics.renderItem(source, panel.left() + 8, panel.top() + 24);
         Component hint = Component.translatable("screen.brnquest.tag_choice.hint", tags.size());
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(hint.getString(), panel.width() - 38)),
-                panel.left() + 31, panel.top() + 28, GraystonePalette.SECONDARY, false);
+        EditorTextRenderer.drawCaption(graphics, font, hint,
+                new UiRect(panel.left()+31, panel.top()+28, panel.right()-7, panel.top()+37),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
 
         UiRect viewport = viewport();
         long now = System.nanoTime();
@@ -94,7 +97,7 @@ public final class TagChoiceScreen extends Screen {
             UiRect rect = row.bounds();
             int background = row.visible().containsExclusive(mouseX, mouseY) ? 0xFF5C6056 : GraystonePalette.HOVER;
             GraystoneSurface.raised(graphics, rect, background, true);
-            String text = font.plainSubstrByWidth(row.key().toString(), Math.max(0, rect.width() - 10));
+            String text = EditorTextLayout.ellipsize(row.key().toString(), Math.max(0, rect.width() - 10), font::width, false);
             graphics.drawString(font, text, rect.left() + 5, rect.top() + 5, 0xFFFFFFFF, false);
         }, () -> {});
 

@@ -165,14 +165,13 @@ public final class EditorPickerList<K> {
                 int inset = rect.width() >= 36 ? 28 : 4;
                 if (inset == 28) icons.apply(row.key()).render(graphics, font,
                         new UiRect(rect.left()+6, rect.top()+7, rect.left()+22, rect.top()+23), primaryColor);
-                graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(),
-                        Math.max(0, rect.width()-inset-4))), rect.left()+inset, rect.top()+11, primaryColor, false);
+                graphics.drawString(font, Component.literal(EditorTextLayout.ellipsize(entry.primary().getString(), Math.max(0, rect.width()-inset-4), font::width, false)), rect.left()+inset, rect.top()+11, primaryColor, false);
                 return;
             }
             int textWidth = Math.max(0, rect.width() - 8);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.primary().getString(), textWidth)),
+            graphics.drawString(font, Component.literal(EditorTextLayout.ellipsize(entry.primary().getString(), textWidth, font::width, false)),
                     rect.left() + 4, rect.top() + 4, primaryColor, false);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(entry.secondary().getString(), textWidth)),
+            graphics.drawString(font, Component.literal(EditorTextLayout.ellipsize(entry.secondary().getString(), textWidth, font::width, false)),
                     rect.left() + 4, rect.top() + 16, GraystonePalette.SECONDARY, false);
         }, () -> {
             if (emptyText != null) graphics.drawCenteredString(font, emptyText,

@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.Util;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.TextEditBuffer;
 import net.minecraft.client.gui.GuiGraphics;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSourceField;
@@ -9,9 +10,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.data.text.MinecraftTextColor;
 import java.util.HashMap;
 import java.util.Map;
-import net.minecraft.client.gui.components.MultiLineEditBox;
-import net.minecraft.client.gui.components.MultilineTextField;
-import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -20,8 +18,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
-import yourscraft.jasdewstarfield.brnquest.client.mixin.MultiLineEditBoxAccessor;
-import yourscraft.jasdewstarfield.brnquest.client.mixin.MultilineTextFieldAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
@@ -64,8 +60,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private boolean metadataExpanded;
     private boolean initialized;
     private final Map<String, CursorState> cursors = new HashMap<>();
-    private record CursorState(int titleCursor, int titleAnchor, int subtitleCursor, int subtitleAnchor,
-                               int bodyCursor, int bodyAnchor, double sourceScroll, double previewScroll) {}
+    // Each locale retains independent text history as well as caret and scroll positions across child screens.
+    private record CursorState(TextEditBuffer.State title, TextEditBuffer.State subtitle,
+                               TextEditBuffer.State body, double sourceScroll, double previewScroll) {}
     private final EditorButtonInput buttons = new EditorButtonInput();
     private final Screen parent;
     private final Predicate<Value> consumer;
@@ -80,7 +77,7 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private String loadedLocale;
     private EditorTextField titleEditor;
     private EditorTextField subtitleEditor;
-    private MultiLineEditBox descriptionEditor;
+    private EditorSourceField descriptionEditor;
     private DocumentFormat descriptionFormat = DocumentFormat.PLAIN;
     private boolean loadingWidgets;
     private boolean submitted;
@@ -479,10 +476,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         if (titleEditor == null || subtitleEditor == null || descriptionEditor == null || locales.isEmpty()) return;
         drafts.remember(locales.get(localeIndex), titleEditor.getValue(), subtitleEditor.getValue(),
                 descriptionEditor.getValue(), descriptionFormat);
-        var body = (MultilineTextFieldAccessor) ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-        cursors.put(locales.get(localeIndex), new CursorState(titleEditor.getCursorPosition(), titleEditor.getAnchorPosition(),
-                subtitleEditor.getCursorPosition(), subtitleEditor.getAnchorPosition(),
-                body.brnquest$cursor(), body.brnquest$selectCursor(), ((EditorSourceField)descriptionEditor).savedScroll(), previewScroll.visual()));
+        cursors.put(locales.get(localeIndex), new CursorState(titleEditor.buffer().snapshot(), subtitleEditor.buffer().snapshot(),
+                descriptionEditor.buffer().snapshot(), descriptionEditor.savedScroll(), previewScroll.visual()));
     }
 
     private void descriptionChanged(String text) {
@@ -513,10 +508,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             applyNative(code);
             return;
         }
-        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        var field = descriptionEditor;
+        var selection = field.buffer();
         String placeholder = Component.translatable(toolPlaceholder(tool)).getString();
-        applySourceEdit(field, MarkdownSourceEdits.apply(descriptionEditor.getValue(), selection.brnquest$cursor(), selection.brnquest$selectCursor(), tool, placeholder));
+        applySourceEdit(field, MarkdownSourceEdits.apply(descriptionEditor.getValue(), selection.cursor(), selection.anchor(), tool, placeholder));
     }
 
     private boolean nativeTarget() { return target != Target.BODY || !descriptionFormat.equals(DocumentFormat.MARKDOWN_V1); }
@@ -563,9 +558,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     }
     private void applyNative(char code) {
         if (target == Target.BODY) {
-            var field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-            var selected = (MultilineTextFieldAccessor) field;
-            applySourceEdit(field, NativeSourceEdits.apply(descriptionEditor.getValue(), selected.brnquest$cursor(), selected.brnquest$selectCursor(), code));
+            var field = descriptionEditor;
+            var selected = field.buffer();
+            applySourceEdit(field, NativeSourceEdits.apply(descriptionEditor.getValue(), selected.cursor(), selected.anchor(), code));
         } else {
             EditorTextField field = target == Target.TITLE ? titleEditor : subtitleEditor;
             var result = NativeSourceEdits.apply(field.getValue(), field.getCursorPosition(), field.getAnchorPosition(), code);
@@ -580,9 +575,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             var entry = MinecraftTextColor.byName(color);
             if (entry != null) applyNative(entry.legacyCode());
         } else {
-            var field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-            var selection = (MultilineTextFieldAccessor) field;
-            applySourceEdit(field, MarkdownSourceEdits.applyColor(descriptionEditor.getValue(), selection.brnquest$cursor(), selection.brnquest$selectCursor(), color,
+            var field = descriptionEditor;
+            var selection = field.buffer();
+            applySourceEdit(field, MarkdownSourceEdits.applyColor(descriptionEditor.getValue(), selection.cursor(), selection.anchor(), color,
                     Component.translatable(toolPlaceholder(MarkdownSourceEdits.Tool.COLOR)).getString()));
         }
         rememberWidgets();
@@ -629,31 +624,25 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     }
 
     private void insertQuestLink(String questId) {
-        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        var field = descriptionEditor;
+        var selection = field.buffer();
         MarkdownSourceEdits.Result result = MarkdownSourceEdits.insertQuestLink(descriptionEditor.getValue(),
-                selection.brnquest$cursor(), selection.brnquest$selectCursor(), questId,
+                selection.cursor(), selection.anchor(), questId,
                 Component.translatable(toolPlaceholder(MarkdownSourceEdits.Tool.QUEST_LINK)).getString());
         applySourceEdit(field, result);
     }
 
     private boolean insertContent(RichDocument.ContentKind kind, String id, String placeholder) {
-        MultilineTextField field = ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-        MultilineTextFieldAccessor selection = (MultilineTextFieldAccessor) field;
+        var field = descriptionEditor;
+        var selection = field.buffer();
         MarkdownSourceEdits.Result result = MarkdownSourceEdits.insertContent(descriptionEditor.getValue(),
-                selection.brnquest$cursor(), selection.brnquest$selectCursor(), kind, id, placeholder);
+                selection.cursor(), selection.anchor(), kind, id, placeholder);
         return applySourceEdit(field, result);
     }
 
-    private boolean applySourceEdit(MultilineTextField field, MarkdownSourceEdits.Result result) {
+    private boolean applySourceEdit(EditorSourceField field, MarkdownSourceEdits.Result result) {
         if (result.text().length()>32_768) { formatNotice=text("too_long"); return false; }
-        descriptionEditor.setValue(result.text());
-        // Recreate the selection through vanilla cursor methods so scrolling and selection painting stay synchronized.
-        field.setSelecting(false);
-        field.seekCursor(Whence.ABSOLUTE, result.selectionStart());
-        field.setSelecting(true);
-        field.seekCursor(Whence.ABSOLUTE, result.selectionEnd());
-        field.setSelecting(false);
+        field.applyEdit(result.text(),result.selectionEnd(),result.selectionStart());
         setFocused(descriptionEditor);
         rememberWidgets();
         return true;
@@ -734,12 +723,11 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private void restoreCursors() {
         CursorState state = cursors.get(locales.get(localeIndex));
         if (state == null) return;
-        titleEditor.setCursorPosition(state.titleCursor()); titleEditor.setHighlightPos(state.titleAnchor());
-        subtitleEditor.setCursorPosition(state.subtitleCursor()); subtitleEditor.setHighlightPos(state.subtitleAnchor());
-        var field = ((MultiLineEditBoxAccessor)descriptionEditor).brnquest$textField();
-        field.setSelecting(false); field.seekCursor(Whence.ABSOLUTE, state.bodyAnchor());
-        field.setSelecting(true); field.seekCursor(Whence.ABSOLUTE, state.bodyCursor()); field.setSelecting(false);
-        ((EditorSourceField) descriptionEditor).restoreScroll(state.sourceScroll());
+        loadingWidgets=true;
+        titleEditor.buffer().restore(state.title()); subtitleEditor.buffer().restore(state.subtitle());
+        descriptionEditor.restoreState(state.body());
+        loadingWidgets=false;
+        descriptionEditor.restoreScroll(state.sourceScroll());
         previewScroll.snap(state.previewScroll());
     }
     private boolean sourceVisible() { return preferredView != TextEditorLayout.View.PREVIEW; }

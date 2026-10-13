@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** Owns native inputs, not protocol state. Rebinding a screen never recreates a user's text/cursor. */
+/** Owns input widgets separately from protocol state. Rebinding a screen never recreates a user's text/cursor. */
 public final class EditorFormFields<K> {
     private record Spec(Component label, int limit) {}
     private final Map<K, Spec> specs = new LinkedHashMap<>();

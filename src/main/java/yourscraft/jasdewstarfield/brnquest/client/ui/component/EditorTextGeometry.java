@@ -33,12 +33,13 @@ public final class EditorTextGeometry {
     public double distance(int start,int end) { return advances[TextEditBuffer.boundary(text,end)]-advances[TextEditBuffer.boundary(text,start)]; }
     public int row(int caret) {
         int safe=TextEditBuffer.boundary(text,caret);
-        // At a soft-wrap boundary the caret belongs to the next visual row; explicit newline positions stay on the first.
-        for(int index=0;index<lines.size()-1;index++) {
-            var row=lines.get(index);
-            if(safe<row.end() || safe==row.end() && lines.get(index+1).start()>row.end()) return index;
+        // Find the last row starting at/before the caret. A newline remains on the preceding row until passed.
+        int low=0,high=lines.size()-1;
+        while(low<high) {
+            int middle=(low+high+1)>>>1;
+            if(lines.get(middle).start()<=safe) low=middle; else high=middle-1;
         }
-        return lines.size()-1;
+        return low;
     }
     public int hit(int row,double x) {
         var line=lines.get(Math.clamp(row,0,lines.size()-1));

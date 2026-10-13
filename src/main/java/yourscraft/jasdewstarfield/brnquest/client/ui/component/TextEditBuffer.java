@@ -90,6 +90,7 @@ public final class TextEditBuffer {
         return apply(value,caret,mark,kind,now,new Selection(text,cursor,anchor));
     }
     private boolean apply(String value,int caret,int mark,Kind kind,long now,Selection before) {
+        clearPendingCharacter();
         if(value.length()>limit || !validator.test(value)) return false;
         if(value.equals(text)) { selection(caret,mark); return false; }
         boolean grouped=(kind==Kind.TYPE || kind==Kind.DELETE) && kind==lastKind && before.cursor()==before.anchor()

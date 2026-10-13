@@ -13,9 +13,9 @@ final class EditorTextInputKeys {
         if(control && key==90) { if(shift) buffer.redo(); else buffer.undo(); return true; }
         if(control && key==89) { buffer.redo(); return true; }
         if(Screen.isSelectAll(key)) { buffer.selection(buffer.value().length(),0); return true; }
-        if(Screen.isCopy(key)) { Minecraft.getInstance().keyboardHandler.setClipboard(buffer.selectedText()); return true; }
+        if(Screen.isCopy(key)) { if(buffer.selected()) Minecraft.getInstance().keyboardHandler.setClipboard(buffer.selectedText()); return true; }
         if(Screen.isCut(key)) {
-            Minecraft.getInstance().keyboardHandler.setClipboard(buffer.selectedText());
+            if(buffer.selected()) Minecraft.getInstance().keyboardHandler.setClipboard(buffer.selectedText());
             if(buffer.selected()) buffer.insert("",TextEditBuffer.Kind.PASTE,now); return true;
         }
         if(Screen.isPaste(key)) {

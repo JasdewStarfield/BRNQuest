@@ -24,4 +24,9 @@ class EditorTextGeometryTest {
         assertTrue(geometry.lines().stream().allMatch(row->TextEditBuffer.boundary(text,row.start())==row.start()
                 && TextEditBuffer.boundary(text,row.end())==row.end()));
     }
+    @Test void explicitWrapAffinityOnlyChangesTheCurrentBoundaryAndFallsBackWhenInvalid() {
+        var geometry=new EditorTextGeometry("abcdef",3,cp->1);
+        assertEquals(1,geometry.row(3)); assertEquals(0,geometry.row(3,0)); assertEquals(1,geometry.row(3,1));
+        assertEquals(1,geometry.row(4,0)); assertEquals(1,geometry.row(4,99));
+    }
 }

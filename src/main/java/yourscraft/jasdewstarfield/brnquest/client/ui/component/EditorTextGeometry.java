@@ -41,6 +41,15 @@ public final class EditorTextGeometry {
         }
         return low;
     }
+    /** A soft-wrap offset can be either row's caret; retain only the explicit current visual row. */
+    public int row(int caret,int preferredRow) {
+        int safe=TextEditBuffer.boundary(text,caret);
+        if(preferredRow>=0 && preferredRow<lines.size()) {
+            var preferred=lines.get(preferredRow);
+            if(safe>=preferred.start() && safe<=preferred.end()) return preferredRow;
+        }
+        return row(safe);
+    }
     public int hit(int row,double x) {
         var line=lines.get(Math.clamp(row,0,lines.size()-1));
         for(int index=line.start();index<line.end();) {

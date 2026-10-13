@@ -125,7 +125,8 @@ public final class QuestNotificationOverlay {
         // In-place merges keep the card ID, so caption updates do not repeat the sound.
         if (SOUNDED.add(active.id())) {
             if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationSound))
-                minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_TOAST_IN, 1.0F));
+                // Match Toast.Visibility's explicit volume; the two-argument helper defaults to quiet UI clicks.
+                minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_TOAST_IN, 1.0F, 1.0F));
         }
         double scale = QuestNotificationLayout.fittingScale(graphics.guiHeight(),contents.getFirst().height(),stack.visible().size(),requestedScale);
         if(scale<=0) return;

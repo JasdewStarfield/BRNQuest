@@ -19,6 +19,7 @@
 
 ### Changed
 
+- Optional floating-notification sounds use the same volume as vanilla Toasts.
 - Tracked quests stay tracked after completion and reward claims. The HUD shows “Quest completed”; completed quests can still be tracked or untracked manually.
 - Improved button and property-label layouts to display long text more clearly, especially in English.
 - Received notices enter immediately while older cards fold independently. Only the latest three groups retain content, with older groups represented by the folded count; all layers withdraw together after the latest notice's display time.

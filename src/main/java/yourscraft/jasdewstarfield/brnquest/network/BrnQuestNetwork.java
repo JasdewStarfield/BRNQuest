@@ -294,7 +294,7 @@ public final class BrnQuestNetwork {
             json = GSON.toJson(new ProgressWire(ProgressEngine.get().visibleStatuses(player), ProgressEngine.get().visibleTaskProgress(player),
                     ProgressEngine.get().visibleClaims(player), ProgressEngine.get().visibleQuestIds(player),
                     progress.completionCyclesView(), progress.nextAvailableTimesView(), progress.revision(),
-                    ProgressEngine.get().waitingForTeam(player)));
+                    ProgressEngine.get().waitingForTeam(player), ProgressEngine.get().trackedQuest(player)));
         } catch (RuntimeException exception) {
             rejectProgressSync(player, progress.revision(), "ENCODE_FAILED", 0, exception);
             return;
@@ -376,7 +376,14 @@ public final class BrnQuestNetwork {
     public record ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
                                java.util.Map<String, Long> tasks, java.util.Set<String> claimed,
                                java.util.Set<String> visible, java.util.Map<String, Integer> cycles,
-                               java.util.Map<String, Long> nextAvailable, String revision, java.util.Set<String> waitingForTeam) {
+                               java.util.Map<String, Long> nextAvailable, String revision, java.util.Set<String> waitingForTeam, String tracked) {
+        /** Legacy callers keep ACTIVE-based tracking until they supply the optional independent selection. */
+        public ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
+                            java.util.Map<String, Long> tasks, java.util.Set<String> claimed, java.util.Set<String> visible,
+                            java.util.Map<String, Integer> cycles, java.util.Map<String, Long> nextAvailable, String revision,
+                            java.util.Set<String> waitingForTeam) {
+            this(quests, tasks, claimed, visible, cycles, nextAvailable, revision, waitingForTeam, null);
+        }
         /** Older callers omit the optional waiting indicator. */
         public ProgressWire(java.util.Map<String, yourscraft.jasdewstarfield.brnquest.progress.QuestStatus> quests,
                             java.util.Map<String, Long> tasks, java.util.Set<String> claimed, java.util.Set<String> visible,

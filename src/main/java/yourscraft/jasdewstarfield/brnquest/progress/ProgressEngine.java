@@ -704,24 +704,35 @@ public final class ProgressEngine {
         return OperationResult.success("Objective force-completed without consuming resources");
     }
 
+    /** The durable personal tracking record survives terminal lifecycle states and remains independent of team progress. */
+    public String trackedQuest(ServerPlayer player) {
+        QuestProgressData data = QuestProgressData.get(player.getServer());
+        String tracked = data.tracked(player.getUUID());
+        if (!tracked.isEmpty()) return tracked;
+        if (!shared(player)) {
+            // Migrate the older personal ACTIVE representation once, before completion replaces that lifecycle state.
+            tracked = progress(player).questsView().entrySet().stream()
+                    .filter(entry -> entry.getValue() == QuestStatus.ACTIVE).map(Map.Entry::getKey).findFirst().orElse("");
+            if (!tracked.isEmpty()) data.tracked(player.getUUID(), tracked);
+        }
+        return tracked;
+    }
+
     public OperationResult toggleTracked(ServerPlayer player, ResourceLocation questId) {
         PlayerProgress progress = progress(player);
         QuestStatus status = progress.status(questId.toString());
-        if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return OperationResult.failure("NOT_TRACKABLE", "Quest is not available");
-        if (shared(player)) {
-            QuestProgressData data = QuestProgressData.get(player.getServer());
-            data.tracked(player.getUUID(), questId.toString().equals(data.tracked(player.getUUID())) ? "" : questId.toString());
-            BrnQuestNetwork.syncProgress(player, false);
-            return OperationResult.success("Tracking updated");
-        }
-        if (status == QuestStatus.AVAILABLE) {
-            // The HUD represents one focused objective, so activating a new quest replaces the old focus.
+        if (!status.trackable() || !visibleQuestIds(player).contains(questId.toString()))
+            return OperationResult.failure("NOT_TRACKABLE", "Quest is not visible or trackable");
+        String next = questId.toString().equals(trackedQuest(player)) ? "" : questId.toString();
+        boolean shared = shared(player);
+        if (!shared) {
+            // Preserve legacy ACTIVE display semantics without ever overwriting completed or reward-claimed states.
             progress.questsView().entrySet().stream().filter(entry -> entry.getValue() == QuestStatus.ACTIVE)
-                    .map(Map.Entry::getKey).forEach(id -> progress.status(id, QuestStatus.AVAILABLE));
+                    .map(Map.Entry::getKey).toList().forEach(id -> progress.status(id, QuestStatus.AVAILABLE));
+            if (!next.isEmpty() && progress.status(next) == QuestStatus.AVAILABLE) progress.status(next, QuestStatus.ACTIVE);
         }
-        progress.status(questId.toString(), status == QuestStatus.ACTIVE ? QuestStatus.AVAILABLE : QuestStatus.ACTIVE);
-        QuestProgressData.get(player.getServer()).setDirty();
-        BrnQuestNetwork.syncProgress(player, true);
+        QuestProgressData.get(player.getServer()).tracked(player.getUUID(), next);
+        BrnQuestNetwork.syncProgress(player, !shared);
         return OperationResult.success("Tracking updated");
     }
 
@@ -764,6 +775,8 @@ public final class ProgressEngine {
     }
 
     private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
+        // Capture a legacy personal ACTIVE focus before committing the terminal lifecycle state.
+        trackedQuest(player);
         progress.status(quest.id().toString(), QuestStatus.COMPLETED);
         if (shared(player)) progress.completionMembers(quest.id().toString(),
                 ProgressOwnerService.resolve(player).orElseThrow().members());

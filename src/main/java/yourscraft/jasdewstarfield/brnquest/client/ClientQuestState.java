@@ -42,6 +42,8 @@ public final class ClientQuestState {
     public boolean rewardClaimTimedOut(String id) { return rewardWait.expired(id, System.nanoTime()); }
     public void finishRewardChoice(String id) { rewardWait.finish(id); }
     private ResourceLocation selected;
+    private ResourceLocation trackedSelection;
+    private boolean trackingAuthoritative;
     private String bookSyncFailure = "";
     private BrnQuestNetwork.ProgressSyncFailurePayload progressSyncFailure;
 
@@ -223,6 +225,12 @@ public final class ClientQuestState {
             var newCycles = wire.cycles() == null ? Map.<String, Integer>of() : Map.copyOf(wire.cycles());
             var newNextAvailable = wire.nextAvailable() == null ? Map.<String, Long>of() : Map.copyOf(wire.nextAvailable());
             var newWaiting = wire.waitingForTeam() == null ? Set.<String>of() : Set.copyOf(wire.waitingForTeam());
+            ResourceLocation newTracked = wire.tracked() == null || wire.tracked().isEmpty()
+                    ? null : ResourceLocation.tryParse(wire.tracked());
+            if (wire.tracked() != null && !wire.tracked().isEmpty() && newTracked == null)
+                throw new IllegalArgumentException("Invalid tracked quest ID");
+            trackedSelection = newTracked;
+            trackingAuthoritative = wire.tracked() != null;
             waitingForTeam = newWaiting;
             newWaiting.forEach(completionWait::finish);
             statuses = newStatuses;
@@ -247,6 +255,8 @@ public final class ClientQuestState {
     }
 
     public Optional<ResourceLocation> trackedQuest() {
+        // Empty authoritative selection is an explicit untrack, including while a quest is still ACTIVE in older data.
+        if (trackingAuthoritative) return Optional.ofNullable(trackedSelection);
         return statuses.entrySet().stream().filter(e -> e.getValue() == QuestStatus.ACTIVE).map(e -> ResourceLocation.tryParse(e.getKey())).filter(Objects::nonNull).findFirst();
     }
 
@@ -257,6 +267,8 @@ public final class ClientQuestState {
         completionWait.clear();
         book = null;
         statuses = Map.of();
+        trackedSelection = null;
+        trackingAuthoritative = false;
         taskProgress = Map.of();
         waitingForTeam = Set.of();
         claimed = Set.of();

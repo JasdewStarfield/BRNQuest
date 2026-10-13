@@ -811,7 +811,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         preview == null ? new DraftBookEditor.Position(quest.x(), quest.y()) : preview,
                         canvasController.snapPreview(quest.id()), canvasNodeColor(status, allowGameplay),
                         editing ? canvasController.selected(quest.id()) : quest.id().equals(selectedQuestId()),
-                        allowGameplay && status == QuestStatus.ACTIVE,
+                        allowGameplay && ClientQuestState.get().trackedQuest().filter(quest.id()::equals).isPresent(),
                         canvasController.pickedUp() && quest.id().equals(canvasController.dragAnchor()),
                         allowGameplay && questHasAttentionTask(quest, status),
                         allowGameplay && QuestPresentation.hasPendingReward(
@@ -911,7 +911,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                         hideText ? "" : localizedQuestText(quest, "quest_subtitle", quest.subtitle()),
                         description, locale,
                         status, statusText, statusColor(status),
-                        editing, gameplayAllowed(), canSubmit(quest, status),
+                        editing, gameplayAllowed(), ClientQuestState.get().trackedQuest().filter(quest.id()::equals).isPresent(), canSubmit(quest, status),
                         displaySnapshot().book().settings().suppressAutoClaim(), this::documentLinkHint),
                 new QuestDetailsPanel.Rows() {
                     public int relations(int x, int y, int rowWidth) {
@@ -1143,7 +1143,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case TOGGLE_TRACKED -> {
                 QuestStatus status = status(quest);
-                if (gameplayAllowed() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+                if (gameplayAllowed() && status.trackable()) {
                     BrnQuestNetwork.toggleTracked(ClientQuestState.get().revision(), quest.id().toString());
                 }
             }

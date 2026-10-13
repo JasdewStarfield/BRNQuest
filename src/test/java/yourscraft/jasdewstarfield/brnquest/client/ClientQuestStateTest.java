@@ -57,6 +57,30 @@ class ClientQuestStateTest {
         state.disconnected();
         assertFalse(state.waitingForTeam("test:quest"));
     }
+    /** Tracking follows the explicit server selection across completion, reward receipts and reconnect snapshots. */
+    @Test void completedTrackingRemainsSelectedUntilAnExplicitUntrack() {
+        var state = ClientQuestState.get();
+        for (String status : List.of("ACTIVE","COMPLETED","REWARD_CLAIMED")) {
+            state.progress("{\"quests\":{\"test:quest\":\""+status+"\"},\"tracked\":\"test:quest\"}");
+            assertEquals(ResourceLocation.parse("test:quest"),state.trackedQuest().orElseThrow());
+        }
+        state.disconnected();
+        assertTrue(state.trackedQuest().isEmpty());
+        state.progress("{\"quests\":{\"test:quest\":\"COMPLETED\"},\"tracked\":\"test:quest\"}");
+        assertTrue(state.trackedQuest().isPresent());
+        state.progress("{\"quests\":{\"test:quest\":\"ACTIVE\"},\"tracked\":\"\"}");
+        assertTrue(state.trackedQuest().isEmpty());
+    }
+    @Test void missingTrackingUsesLegacyActiveFallbackButMalformedTrackingIsAtomic() {
+        var state = ClientQuestState.get();
+        state.progress("{\"quests\":{\"test:quest\":\"ACTIVE\"}}");
+        assertEquals(ResourceLocation.parse("test:quest"),state.trackedQuest().orElseThrow());
+        state.progress("{\"quests\":{\"test:quest\":\"COMPLETED\"},\"tracked\":\"Invalid ID\"}");
+        assertEquals(yourscraft.jasdewstarfield.brnquest.progress.QuestStatus.ACTIVE,state.statuses().get("test:quest"));
+        assertEquals(ResourceLocation.parse("test:quest"),state.trackedQuest().orElseThrow());
+        assertTrue(state.progressSyncFailure().isPresent());
+    }
+
     @AfterEach void resetSingleton() {
         ClientQuestState.get().resetForTest();
     }

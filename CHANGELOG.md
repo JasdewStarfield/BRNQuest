@@ -5,7 +5,7 @@
 ### Added
 
 - Statistic objectives support progress after unlock, persistent personal/member baselines, shared contributions and all-member rules. FTB `stat` imports retain historical custom statistics and raw integer display; historical teams use the highest member value.
-- Added a statistic objective for personal historical totals, covering all nine vanilla categories with dependent server-backed selection and native statistic units in details, HUD and notices.
+- Statistic objectives cover all nine vanilla categories with dependent server-backed selection, native units, standalone category names and a distinct chart icon in the editor.
 - Added separate background-opacity settings for the tracking HUD and floating notices, plus independent notice scaling. Text and icons stay opaque; scaled notices keep their folded spacing and HUD avoidance.
 - The tracking HUD has an independent display scale (default 75%) and a configurable maximum width. Its panel follows content, keeps short requirements and progress on one line, wraps long requirements, and shows a count for objectives outside its display.
 - Editor text fields provide local undo/redo, literal formatting-code editing and clearer selections. Localized source drafts keep their history across view changes and picker returns; the raw configuration editor keeps unsaved text when resized.
@@ -21,6 +21,7 @@
 
 ### Changed
 
+- Objective and reward lists place Add/Paste above a full-width Done button, with room for wrapped labels.
 - Optional floating-notification sounds use the same volume as vanilla Toasts.
 - Tracked quests stay tracked after completion and reward claims. The HUD shows “Quest completed”; completed quests can still be tracked or untracked manually.
 - Improved button and property-label layouts to display long text more clearly, especially in English.

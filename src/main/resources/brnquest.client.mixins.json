@@ -4,15 +4,10 @@
   "package": "yourscraft.jasdewstarfield.brnquest.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MultiLineEditBoxAccessor",
-    "MultilineTextFieldAccessor",
     "TextDebugGuiGraphicsMixin",
     "TextDebugFontMixin",
     "TextDebugWidgetMixin",
-    "ClientTextTooltipAccessor",
-    "NativeEditBoxMixin",
-    "NativeMultilineTextMixin",
-    "EditBoxSelectionAccessor"
+    "ClientTextTooltipAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

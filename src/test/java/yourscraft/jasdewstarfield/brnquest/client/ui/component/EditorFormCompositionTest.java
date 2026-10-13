@@ -6,10 +6,13 @@ import java.util.ArrayList;
 import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
-/** Native EditBox lifecycle without a GPU; only glyph measurement is replaced for deterministic text input. */
+/** Owned input lifecycle without a GPU; only glyph measurement is replaced for deterministic text input. */
 class EditorFormCompositionTest {
     private Font measuringFont() {
         return new Font(id -> null, false) {
+            @Override public net.minecraft.client.StringSplitter getSplitter() {
+                return new net.minecraft.client.StringSplitter((cp, style) -> 1);
+            }
             @Override public String plainSubstrByWidth(String text, int width) {
                 return text.substring(0, Math.min(text.length(), Math.max(0, width)));
             }

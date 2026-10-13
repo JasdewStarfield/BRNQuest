@@ -39,6 +39,41 @@ class TaskPollingPlanTest {
         assertEquals(1, calls.get());
     }
 
+    @Test void samplingIdentityIsMemoizedByTypeInstanceAndEmptyKeyStillHasDurableIdentity() {
+        var plan = plan("stateful");
+        var task = plan.quests.getFirst().tasks().getFirst();
+        var calls = new AtomicInteger();
+        var type = samplingType("", calls);
+        var info = plan.samplingInfo(task, type);
+        assertSame(info, plan.samplingInfo(task, type));
+        assertEquals(1, calls.get());
+        assertEquals("test:stateful|owner|", info.ownerIdentity());
+        assertEquals("test:stateful|members|", info.memberIdentity());
+        var member = java.util.UUID.randomUUID();
+        var progress = new PlayerProgress();
+        progress.prepareSamplingIdentity("q", info.taskId(), info.ownerIdentity());
+        progress.samplePrepared(info.taskId(), member, true);
+        assertTrue(PlayerProgress.load(progress.save()).samplePrepared(info.taskId(), member));
+        var replacement = plan.samplingInfo(task, samplingType("replacement", calls));
+        assertEquals("test:stateful|owner|replacement", replacement.ownerIdentity());
+        assertEquals(2, calls.get());
+    }
+
+    /** A minimal stateful extension can rely on the default empty semantic suffix without losing initialization. */
+    private static yourscraft.jasdewstarfield.brnquest.task.TaskType<Map<String, String>> samplingType(String key, AtomicInteger calls) {
+        return new yourscraft.jasdewstarfield.brnquest.task.TaskType<>() {
+            public com.mojang.serialization.Codec<Map<String, String>> configCodec() {
+                return com.mojang.serialization.Codec.unboundedMap(com.mojang.serialization.Codec.STRING, com.mojang.serialization.Codec.STRING);
+            }
+            public boolean usesSamplingState() { return true; }
+            public String samplingIdentity(Map<String, String> config) { calls.incrementAndGet(); return key; }
+            public boolean satisfied(yourscraft.jasdewstarfield.brnquest.task.TaskContext context, Map<String, String> config) { return false; }
+            public net.minecraft.network.chat.Component describe(yourscraft.jasdewstarfield.brnquest.api.TaskView task, Map<String, String> config) {
+                return net.minecraft.network.chat.Component.empty();
+            }
+        };
+    }
+
     private static TaskPollingPlan plan(String... types) {
         var bookId = id("book");
         var chapterId = id("chapter");

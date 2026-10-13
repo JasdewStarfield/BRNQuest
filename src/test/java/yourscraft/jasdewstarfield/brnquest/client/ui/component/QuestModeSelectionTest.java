@@ -22,6 +22,7 @@ class QuestModeSelectionTest {
 
         assertEquals(QUEST, result.selectedId());
         assertTrue(result.detailsOpen());
+        assertTrue(result.followSelection());
     }
 
     @Test void keepsACompatibleSelectionWithoutOpeningAClosedDrawer() {
@@ -29,6 +30,22 @@ class QuestModeSelectionTest {
 
         assertEquals(QUEST, result.selectedId());
         assertFalse(result.detailsOpen());
+        assertFalse(result.followSelection(), "An old task from chapter three must not override a newly selected chapter one");
+    }
+
+    @Test void browsingChapterOneSurvivesBothModeChangesWithAnOldSelectionFromChapterThree() {
+        var first = ResourceLocation.parse("test:first");
+        var second = ResourceLocation.parse("test:second");
+        var third = ResourceLocation.parse("test:third");
+        var closedSelection = QuestModeSelection.resolve(QUEST, false, Set.of(QUEST), ignored -> true);
+        assertFalse(closedSelection.followSelection());
+        var runtime = java.util.List.of(first, second, third);
+        var draft = java.util.List.of(third, second, first);
+        int entering = QuestModeSelection.chapterIndex(first, draft, 0);
+        assertEquals(first, draft.get(entering));
+        int leaving = QuestModeSelection.chapterIndex(first, runtime, entering);
+        assertEquals(first, runtime.get(leaving));
+        assertEquals(0, QuestModeSelection.chapterIndex(null, java.util.List.of(), 2));
     }
 
     @Test void closesDetailsInsteadOfUsingAnotherModesHistoricalSelection() {

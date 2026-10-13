@@ -94,8 +94,8 @@ public final class ClientEditPreview {
     private static QuestBookDefinition updateChapter(QuestBookDefinition book, ResourceLocation target, ResourceLocation group, String title, int order, Map<String, String> c) {
         var original = book.chapters().stream().filter(ch -> ch.id().equals(target)).findFirst().orElseThrow();
         var value = new ChapterDefinition(book.id(), target, group, c.containsKey(LocalizedSingleLineEdits.FIELD) ? original.title() : title,
-                c.getOrDefault("icon", original.icon()), order, original.quests(), c.containsKey("backgrounds")
-                ? original.canvasScene().withBackgrounds(CanvasScene.decode(c.get("backgrounds"))).write(original.extensions()) : original.extensions(),
+                c.getOrDefault("icon", original.icon()), order, original.quests(), yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides.updateProgress(c.containsKey("backgrounds")
+                ? original.canvasScene().withBackgrounds(CanvasScene.decode(c.get("backgrounds"))).write(original.extensions()) : original.extensions(), c),
                 defaults(c, original.questDefaults()), c.containsKey("default_consume_items") ? (c.get("default_consume_items").equals("default") ? null : Boolean.valueOf(c.get("default_consume_items"))) : original.consumeItems(),
                 c.containsKey("autofocus_id") ? id(c.get("autofocus_id")) : original.autofocusQuestId(),
                 c.containsKey("default_hide_dependency_lines") ? Boolean.parseBoolean(c.get("default_hide_dependency_lines")) : original.defaultHideDependencyLines());

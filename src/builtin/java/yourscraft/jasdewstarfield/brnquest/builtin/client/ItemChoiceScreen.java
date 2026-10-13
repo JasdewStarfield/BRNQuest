@@ -4,6 +4,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -19,6 +20,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEnumDropdow
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupSource;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.RecipeLookupTarget;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.ItemChoiceLayout;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.builtin.item.ItemChoiceMatcher;
 
@@ -65,7 +67,10 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         }
         if (inventoryKeyboard >= 0 && (key == 257 || key == 335 || key == 32)) {
             UiRect area = inventorySlot(inventoryKeyboard < 27 ? inventoryKeyboard+9 : inventoryKeyboard-27);
-            mouseClicked(area.centerX(),area.centerY(),0); mouseReleased(area.centerX(),area.centerY(),0); return true;
+            if(area.intersection(new ItemChoiceLayout(panelBounds(),editing).inventoryClip()).equals(area)) {
+                mouseClicked(area.centerX(),area.centerY(),0); mouseReleased(area.centerX(),area.centerY(),0);
+            }
+            return true;
         }
         if (key == 258 && tagMode && editing && tagField != null && !tagField.isFocused()
                 && buttonInput.atBoundary((modifiers & 1) != 0)) {
@@ -241,9 +246,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
         } else {
             Component requirement = Component.translatable("screen.brnquest.item_choice.count_label");
             int requirementWidth = Math.max(1, listCountBounds().left() - panel.left() - 11);
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                    requirement.getString(), requirementWidth)), panel.left() + 7, panel.top() + 49,
-                    GraystonePalette.SECONDARY, false);
+            EditorTextRenderer.drawCaption(graphics, font, requirement,
+                    new UiRect(panel.left()+7, panel.top()+49, panel.left()+7+requirementWidth, panel.top()+58),
+                    GraystonePalette.SECONDARY, mouseX, mouseY);
             renderSmallButton(graphics, componentsBounds(), "{}", selectedIndex >= 0, mouseX, mouseY);
             renderSmallButton(graphics, moveLeftBounds(), "←", selectedIndex > 0, mouseX, mouseY);
             renderSmallButton(graphics, moveRightBounds(), "→",
@@ -290,8 +295,9 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 ? Component.translatable("screen.brnquest.item_choice.empty")
                 : Component.translatable("screen.brnquest.item_choice.accepted_count", candidates.size());
         int summaryColor = message != null || candidates.isEmpty() ? 0xFFFFA070 : GraystonePalette.SECONDARY;
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(summary.getString(), viewport.width())),
-                viewport.left(), viewport.bottom() + 3, summaryColor, false);
+        EditorTextRenderer.drawCaption(graphics, font, summary,
+                new UiRect(viewport.left(), viewport.bottom()+3, viewport.right(), viewport.bottom()+12),
+                summaryColor, mouseX, mouseY);
     }
 
     private void renderInventory(GuiGraphics graphics, UiRect panel, int mouseX, int mouseY) {
@@ -299,12 +305,14 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
                 ? "screen.brnquest.item_choice.inventory_tag_hint"
                 : "screen.brnquest.item_choice.inventory_add_hint");
         int inventoryLeft = panel.centerX() - COLUMNS * SLOT_SIZE / 2;
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                        hint.getString(), COLUMNS * SLOT_SIZE)),
-                inventoryLeft, inventoryTop() - 11, GraystonePalette.SECONDARY, false);
+        // Instructions use the panel's spare side margins instead of being limited to the inventory grid width.
+        EditorTextRenderer.drawCaption(graphics, font, hint,
+                new UiRect(panel.left()+7, inventoryTop()-11, panel.right()-7, inventoryTop()-2),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
         if (minecraft == null || minecraft.player == null) return;
         for (int index = 0; index < 36; index++) {
             UiRect slot = inventorySlot(index);
+            if(!slot.intersection(new ItemChoiceLayout(panelBounds(),editing).inventoryClip()).equals(slot)) continue;
             ItemStack stack = minecraft.player.getInventory().getItem(index);
             EditorItemSlot.render(graphics, slot, slot.containsExclusive(mouseX, mouseY), false);
             if (!stack.isEmpty()) graphics.renderItem(stack, slot.left() + 1, slot.top() + 1);
@@ -614,15 +622,7 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     }
 
     private UiRect candidateViewport() {
-        UiRect panel = panelBounds();
-        int top = editing ? panel.top() + 89 : panel.top() + 27;
-        // Reserve the status line, inventory hint/grid and bottom buttons first. At low GUI
-        // heights only the candidate viewport shrinks, so scrolling and hit testing never leak
-        // beneath fixed controls.
-        int availableHeight = editing ? panel.height() - 193 : panel.height() - 61;
-        int viewportHeight = Math.max(1, Math.min(editing ? 54 : 81, availableHeight));
-        int left = panel.centerX() - COLUMNS * SLOT_SIZE / 2;
-        return new UiRect(left, top, left + COLUMNS * SLOT_SIZE, top + viewportHeight);
+        return new ItemChoiceLayout(panelBounds(),editing).candidates();
     }
 
     private void updateTagFieldGeometry() {
@@ -678,15 +678,14 @@ public final class ItemChoiceScreen extends Screen implements RecipeLookupSource
     }
 
     private UiRect inventorySlot(int inventoryIndex) {
-        UiRect panel = panelBounds();
-        int left = panel.centerX() - COLUMNS * SLOT_SIZE / 2;
-        if (inventoryIndex < 9) return slot(left + inventoryIndex * SLOT_SIZE, inventoryTop() + 54);
-        int main = inventoryIndex - 9;
-        return slot(left + main % 9 * SLOT_SIZE, inventoryTop() + main / 9 * SLOT_SIZE);
+        return new ItemChoiceLayout(panelBounds(),editing).inventorySlot(inventoryIndex);
     }
 
     private int inventoryIndexAt(double mouseX, double mouseY) {
-        for (int index = 0; index < 36; index++) if (inventorySlot(index).containsExclusive(mouseX, mouseY)) return index;
+        UiRect clip=new ItemChoiceLayout(panelBounds(),editing).inventoryClip();
+        if(!clip.containsExclusive(mouseX,mouseY)) return -1;
+        for (int index = 0; index < 36; index++) if (inventorySlot(index).intersection(clip).equals(inventorySlot(index))
+                && inventorySlot(index).containsExclusive(mouseX, mouseY)) return index;
         return -1;
     }
 

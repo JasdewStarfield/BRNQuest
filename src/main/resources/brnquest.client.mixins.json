@@ -4,8 +4,6 @@
   "package": "yourscraft.jasdewstarfield.brnquest.client.mixin",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "MultiLineEditBoxAccessor",
-    "MultilineTextFieldAccessor",
     "TextDebugGuiGraphicsMixin",
     "TextDebugFontMixin",
     "TextDebugWidgetMixin",

@@ -33,6 +33,54 @@ public final class PlayerProgress {
     }
     private final Map<String, QuestStatus> quests = new HashMap<>();
     private final Map<String, Long> taskProgress = new HashMap<>();
+    // Sampling lives at the owner level, including separate durable read positions for offline members.
+    private final Map<String, String> samplingIdentities = new HashMap<>();
+    private final Map<String, Set<UUID>> suspendedSamples = new HashMap<>();
+    private final Map<String, Set<UUID>> preparedSamples = new HashMap<>();
+    private final Map<String, Map<UUID, yourscraft.jasdewstarfield.brnquest.task.TaskSamplingState>> samples = new HashMap<>();
+    public yourscraft.jasdewstarfield.brnquest.task.TaskSamplingState sampleState(String task, UUID member) {
+        return samples.getOrDefault(task, Map.of()).getOrDefault(member,
+                yourscraft.jasdewstarfield.brnquest.task.TaskSamplingState.EMPTY);
+    }
+    public boolean sampleState(String task, UUID member, yourscraft.jasdewstarfield.brnquest.task.TaskSamplingState state) {
+        if (sampleState(task, member).equals(state)) return false;
+        samples.computeIfAbsent(task, ignored -> new HashMap<>()).put(member, state);
+        return true;
+    }
+    public void suspendSamples(UUID member) {
+        samples.forEach((task, members) -> { if (members.containsKey(member)) suspendSample(task, member); });
+        preparedSamples.forEach((task, members) -> { if (members.contains(member)) suspendSample(task, member); });
+    }
+    public boolean suspendSample(String task, UUID member) { return suspendedSamples.computeIfAbsent(task, ignored -> new HashSet<>()).add(member); }
+    public boolean sampleSuspended(String task, UUID member) { return suspendedSamples.getOrDefault(task, Set.of()).contains(member); }
+    public boolean samplePrepared(String task, UUID member) { return preparedSamples.getOrDefault(task, Set.of()).contains(member); }
+    public boolean samplePrepared(String task, UUID member, boolean prepared) {
+        return prepared && preparedSamples.computeIfAbsent(task, ignored -> new HashSet<>()).add(member);
+    }
+    public void resumeSample(String task, UUID member) {
+        var suspended = suspendedSamples.get(task);
+        if (suspended != null) { suspended.remove(member); if (suspended.isEmpty()) suspendedSamples.remove(task); }
+    }
+    /** Reset only unfinished semantic changes; count/title edits retain both counters and baselines. */
+    public boolean prepareSamplingIdentity(String quest, String task, String identity) {
+        String old = samplingIdentities.put(task, identity);
+        if (old == null || old.equals(identity)) return old == null;
+        samples.remove(task);
+        suspendedSamples.remove(task);
+        preparedSamples.remove(task);
+        taskProgress.remove(task);
+        memberObjectives.values().forEach(ledger -> {
+            ledger.taskProgress.remove(task);
+            if (ledger.status(quest) == QuestStatus.COMPLETED) ledger.status(quest, QuestStatus.AVAILABLE);
+        });
+        return true;
+    }
+    private void clearSamples(Collection<String> tasks) {
+        tasks.forEach(samples::remove);
+        tasks.forEach(samplingIdentities::remove);
+        tasks.forEach(suspendedSamples::remove);
+        tasks.forEach(preparedSamples::remove);
+    }
     private final Set<String> claimedRewards = new HashSet<>();
     private final Map<String, Long> completionTimes = new HashMap<>();
     private final Map<String, Integer> completionCycles = new HashMap<>();
@@ -138,9 +186,16 @@ public final class PlayerProgress {
         boolean memberChanged = false;
         for (var ledger : memberObjectives.values()) memberChanged |= ledger.migrateTaskId(oldId, newId);
         Long oldProgress = taskProgress.remove(oldId);
-        if (oldProgress == null) return memberChanged;
-        taskProgress.merge(newId, oldProgress, Math::max);
-        return true;
+        String identity = samplingIdentities.remove(oldId);
+        var state = samples.remove(oldId);
+        var suspended = suspendedSamples.remove(oldId);
+        var prepared = preparedSamples.remove(oldId);
+        if (identity != null) samplingIdentities.putIfAbsent(newId, identity);
+        if (state != null) samples.putIfAbsent(newId, state);
+        if (suspended != null) suspendedSamples.putIfAbsent(newId, suspended);
+        if (prepared != null) preparedSamples.putIfAbsent(newId, prepared);
+        if (oldProgress != null) taskProgress.merge(newId, oldProgress, Math::max);
+        return memberChanged || oldProgress != null || identity != null || state != null;
     }
     /** Preserves idempotent reward claims across an explicit stable reward-ID rename. */
     public boolean migrateRewardId(String oldId, String newId) {
@@ -166,6 +221,7 @@ public final class PlayerProgress {
         completionTimes.remove(questId);
         memberObjectives.values().forEach(ledger -> ledger.resetQuest(questId, taskIds, rewardIds));
         taskIds.forEach(taskProgress::remove);
+        clearSamples(taskIds);
         claimedRewards.removeAll(rewardIds);
         memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
         completionMembers.remove(questId);
@@ -178,6 +234,7 @@ public final class PlayerProgress {
                                QuestStatus availableStatus) {
         memberObjectives.values().forEach(ledger -> ledger.resetQuest(questId, taskIds, rewardIds));
         taskIds.forEach(taskProgress::remove);
+        clearSamples(taskIds);
         claimedRewards.removeAll(rewardIds);
         memberClaims.values().forEach(claims -> claims.removeAll(rewardIds));
         completionMembers.remove(questId);
@@ -190,6 +247,7 @@ public final class PlayerProgress {
     void resetTask(String questId, String taskId, QuestStatus reopenedStatus) {
         memberObjectives.values().forEach(ledger -> ledger.resetTask(questId, taskId, reopenedStatus));
         taskProgress.remove(taskId);
+        clearSamples(List.of(taskId));
         completionTimes.remove(questId);
         // An administrator reopening an objective invalidates dependency completion for this quest.
         completionCycles.remove(questId);
@@ -224,6 +282,22 @@ public final class PlayerProgress {
         CompoundTag tasks = new CompoundTag();
         taskProgress.forEach(tasks::putLong);
         tag.put("task_progress", tasks);
+        CompoundTag sampling = new CompoundTag();
+        samplingIdentities.forEach((task, identity) -> {
+            CompoundTag entry = new CompoundTag();
+            entry.putString("identity", identity);
+            CompoundTag members = new CompoundTag();
+            samples.getOrDefault(task, Map.of()).forEach((member, state) -> {
+                CompoundTag values = new CompoundTag();
+                state.values().forEach(values::putLong);
+                members.put(member.toString(), values);
+            });
+            entry.put("members", members);
+            entry.put("suspended", stringList(suspendedSamples.getOrDefault(task, Set.of()).stream().map(UUID::toString).toList()));
+            entry.put("prepared", stringList(preparedSamples.getOrDefault(task, Set.of()).stream().map(UUID::toString).toList()));
+            sampling.put(task, entry);
+        });
+        tag.put("task_sampling", sampling);
         CompoundTag times = new CompoundTag();
         completionTimes.forEach(times::putLong);
         tag.put("completion_times", times);
@@ -263,6 +337,26 @@ public final class PlayerProgress {
         }
         CompoundTag tasks = tag.getCompound("task_progress");
         tasks.getAllKeys().forEach(key -> result.taskProgress.put(key, tasks.getLong(key)));
+        CompoundTag sampling = tag.getCompound("task_sampling");
+        for (String task : sampling.getAllKeys()) {
+            CompoundTag entry = sampling.getCompound(task);
+            result.samplingIdentities.put(task, entry.getString("identity"));
+            var suspended = entry.getList("suspended", Tag.TAG_STRING);
+            for (int i = 0; i < suspended.size(); i++) try {
+                result.suspendedSamples.computeIfAbsent(task, ignored -> new HashSet<>()).add(UUID.fromString(suspended.getString(i)));
+            } catch (IllegalArgumentException ignored) { /* Preserve valid suspended members. */ }
+            var prepared = entry.getList("prepared", Tag.TAG_STRING);
+            for (int i = 0; i < prepared.size(); i++) try {
+                result.samplePrepared(task, UUID.fromString(prepared.getString(i)), true);
+            } catch (IllegalArgumentException ignored) { /* Preserve valid initialized members. */ }
+            CompoundTag members = entry.getCompound("members");
+            for (String member : members.getAllKeys()) try {
+                var values = new HashMap<String, Long>();
+                CompoundTag stored = members.getCompound(member);
+                for (String key : stored.getAllKeys()) if (stored.contains(key, Tag.TAG_ANY_NUMERIC)) values.put(key, stored.getLong(key));
+                result.sampleState(task, UUID.fromString(member), new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingState(values));
+            } catch (IllegalArgumentException ignored) { /* One invalid UUID must not discard other member baselines. */ }
+        }
         CompoundTag times = tag.getCompound("completion_times");
         times.getAllKeys().forEach(key -> result.completionTimes.put(key, times.getLong(key)));
         CompoundTag cycles = tag.getCompound("completion_cycles");

@@ -20,8 +20,7 @@ public final class EditorTextureSelector {
             EditorPropertyPanel.ButtonRenderer buttons, ActionRenderer actions) {
         int labelWidth = 48;
         var row = QuestIconEditorRow.layout(left, top, width, labelWidth);
-        String label = font.plainSubstrByWidth(Component.translatable("screen.brnquest.editor.quest.icon").getString(),
-                row.label().width() - 4);
+        String label = EditorTextLayout.ellipsize(Component.translatable("screen.brnquest.editor.quest.icon").getString(), row.label().width() - 4, font::width, false);
         graphics.drawString(font, Component.literal(label), row.label().left(), row.label().top() + 5,
                 GraystonePalette.SECONDARY, false);
         buttons.render(graphics, row.mode(), Component.translatable(textureMode ? "screen.brnquest.editor.quest.icon_mode.texture" : "screen.brnquest.editor.quest.icon_mode.item"),

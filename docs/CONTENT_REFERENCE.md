@@ -6,7 +6,13 @@
 
 Use full `namespace:path` IDs. Native book schema 1 stores type configuration as a string map, including numbers and booleans. Prefer the editor for nested item matchers and reward trees; their structured values are serialized inside configuration strings. Preserve unknown fields when editing external content.
 
+Quest `extensions` can set `"brnquest:quest_name_position": "off|above|below"`; chapter `extensions` can set `"brnquest:chapter_progress": "show|hide"`. The pipes denote alternative values. An absent key or `inherit` uses client settings. Explicit properties override client preferences. Choosing inheritance in the editor removes the owned key and preserves all other extension data.
+
+Quest notification fields in `extensions` are `brnquest:notify_task_complete`, `brnquest:notify_quest_complete`, and `brnquest:notify_reward_claimed`, with string values `"true"` or `"false"`. Their respective defaults are true, true, and false. They control actual server objective-completion, quest-completion and successful reward-claim events, without changing progress or claim eligibility. Ordinary progress increments and historical synchronization do not generate notices.
+
 The following sections cover configuration with important behavioral constraints. In-game field help supplies defaults and validation feedback. Task dependencies, sequential objectives, completion visibility and repeat rules are configured on the quest. Team progress and deployment are covered in the author guide.
+
+Book and chapter `quest_defaults` support `notify_task_complete`, `notify_quest_complete`, `notify_reward_claimed` (JSON booleans), `quest_name_position` (`inherit|off|above|below`, a JSON string), and `minimum_required_dependencies` (a nonnegative JSON integer), alongside existing appearance and behavior defaults. Missing book fields use system defaults; missing chapter fields follow the book's creation presets. Resolved values are applied once when creating a quest; later preset edits leave existing quests unchanged. Notification and name values are written to the quest's reserved extensions, retaining explicit instance overrides and unrelated addon data. The name-position value `inherit` stores a live client-following display mode.
 
 ## Items and experience
 
@@ -44,6 +50,40 @@ Location configuration example:
 Observation uses `kind=block|entity`, an ID or `#tag` target, distance >0 and ≤64 (default 8), and duration 0–1200 ticks (default 0). Blocks/entities obstruct sight; changing target, looking away, exceeding distance or encountering unloaded chunks interrupts observation. Fluids are not targets. Continuous time belongs to the individual player; disconnect, dimension/config changes, reload and reset clear transient timing. Only completed observation enters progress storage.
 
 Kills default to `minecraft:zombie`, count 1 (positive long). Direct lethal player damage and player-owned projectile kills count once; pets, environment, cancelled deaths and historical kills do not. Shared quests add once to their ledger. Dependencies and sequential objectives still apply.
+
+## Vanilla statistics
+
+`brnquest:statistics` supports nine statistic categories with personal or team progress. Configure `stat_type`, `stat`, and `count` (1–2147483647). Optional `title` supports native formatting; `format=native` (default) uses the native units, while `format=raw` shows the integer count.
+
+| Category | Object registry |
+| --- | --- |
+| `minecraft:custom` | Registered custom statistics, such as `minecraft:jump` |
+| `minecraft:mined` | Blocks |
+| `minecraft:crafted`, `minecraft:used`, `minecraft:broken`, `minecraft:picked_up`, `minecraft:dropped` | Items |
+| `minecraft:killed`, `minecraft:killed_by` | Entity types |
+
+Choose the category first, then use its server-backed object selector. Missing objects and category mismatches fail author validation. Registered mod objects in these categories are supported. Counts use vanilla raw units: distance is centimeters (100 = 1 meter), time is ticks (1200 = 1 minute), and damage is tenths (10 = 1 damage point).
+
+| `mode` | Behavior |
+| --- | --- |
+| `total` (default) | Historical totals; shared teams retain the highest member value |
+| `since_available` | New progress after the objective becomes executable; shared teams add individual member increments |
+
+Dependencies and sequential objectives apply. Incremental baselines are established at unlock or at the objective's turn, independently of opening the book or tracking it. Sampling runs every 3 ticks, normally within 0.15 seconds at 20 TPS. Progress and baselines survive reconnection, reload and save/restart. A vanilla counter decrease preserves accrued incremental progress and starts future increases from the lower value. Switching teams or leaving and returning preserves existing contributions and excludes actions while away. All-member quests keep each member's counter separate and use the current roster, including offline members.
+
+Reset starts a new incremental baseline; historical mode rereads the existing history and can satisfy again immediately. Repeat cycles also get fresh baselines. Changing the statistic category, target or mode resets an unfinished objective; changing title, format or threshold retains its counter. Completed quest history retains its receipt until reset. Missing runtime objects pause sampling while retaining state. BRNQuest never resets Minecraft statistics.
+
+```json
+{
+  "stat_type": "minecraft:custom",
+  "stat": "minecraft:jump",
+  "count": "20",
+  "mode": "since_available",
+  "format": "native"
+}
+```
+
+FTB Quests v13 `stat` and `ftbquests:stat` definitions map to `minecraft:custom`, `mode=total` and `format=raw`. Their SNBT `stat` and `value` become native `stat` and `count`. Original fields are retained under `ftb.*`; conflicting native field names remain separate from the imported meaning. A legacy custom-stat namespace fallback is enabled only on imported goals. Invalid IDs or thresholds produce `BQF-111`; authors can correct the native fields while retaining the original SNBT for review. Import reads quest definitions and does not migrate FTB player/team progress.
 
 ## Advancements and target groups
 
@@ -155,6 +195,8 @@ Add a table to native book JSON:
 ```
 
 Keys include `title`, `chapter_group.<ID>.title`, `chapter.<ID>.title`, and the quest keys above. Lookup tries requested locale → `fallback_locale` → native source. Missing/blank text falls back. Locale names normalize to lowercase/underscores. Description text and format always come from the same locale; native descriptions use `description_format`. Copies, saves, undo and publishing preserve both together.
+
+Quest titles and subtitles always support native colors (`§0`–`§9`/`§a`–`§f`), bold (`§l`), italic (`§o`), underline (`§n`), strikethrough (`§m`), obfuscation (`§k`) and reset (`§r`), independently of the body format. Codes are case-insensitive; color codes clear previous decorations, and unknown or incomplete codes remain literal. For example, `§6§lStart§r` renders a gold bold title. Single-line fields allow 256 characters and bodies allow 32768, including formatting codes. Existing fields store the raw strings; quest details, node names, quest selectors, tracking HUD and notifications display the styles.
 
 `plain` shows Markdown punctuation literally but honors vanilla `§` formatting. `markdown_v1` is a controlled subset: paragraphs, explicit breaks, headings 1–3, one-level `-`/`*` lists, bold, emphasis, inline code and absolute HTTP/HTTPS links. Ordered/nested lists, blockquotes, fenced code, HTML, remote images, commands and other URL schemes are unsupported. Unknown formats are preserved and rendered as plain text; author writes cannot create unknown formats.
 

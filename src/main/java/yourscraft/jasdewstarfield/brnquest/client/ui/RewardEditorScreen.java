@@ -34,6 +34,13 @@ public abstract class RewardEditorScreen extends Screen {
         return new UiRect(p.left() + 12, p.top() + 32, p.right() - 18, p.bottom() - 60);
     }
 
+    /** A type picker needs only a small gap above Cancel; property editors retain their validation-message space. */
+    protected UiRect pickerBody() { return pickerBody(panel()); }
+    static UiRect pickerBody(UiRect panel) {
+        int top=Math.min(panel.bottom(),panel.top()+32);
+        return new UiRect(panel.left()+12,top,panel.right()-18,Math.max(top,panel.bottom()-38));
+    }
+
     protected double frameSeconds() {
         long now = System.nanoTime();
         double seconds = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1_000_000_000.0);
@@ -68,10 +75,11 @@ public abstract class RewardEditorScreen extends Screen {
         graphics.fill(0, 0, width, height, GraystonePalette.BACKDROP);
         var p = panel();
         GraystoneSurface.raised(graphics, p, GraystonePalette.PANEL, true);
-        graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(title.getString(), p.width() - 24)),
-                p.centerX(), p.top() + 10, -1);
-        graphics.drawString(font, font.plainSubstrByWidth(issue.isBlank() ? Component.translatable("screen.brnquest.editor.scope.child").getString() : issue, p.width() - 24),
-                p.left() + 12, p.bottom() - 44, issue.isBlank() ? GraystonePalette.SECONDARY : 0xFFFF7070, false);
+        EditorTextRenderer.drawCaptionCentered(graphics, font, title,
+                new UiRect(p.left()+12, p.top()+10, p.right()-12, p.top()+19), -1, x, y);
+        // Keep the footer quiet during normal editing and reserve it for validation errors.
+        if (!issue.isBlank()) EditorTextRenderer.drawCaption(graphics, font, Component.literal(issue),
+                new UiRect(p.left()+12, p.bottom()-44, p.right()-12, p.bottom()-35), 0xFFFF7070, x, y);
     }
 
     @Override protected void init() { controls.clear(); lastFrame = 0; }

@@ -42,6 +42,8 @@ public final class ClientQuestState {
     public boolean rewardClaimTimedOut(String id) { return rewardWait.expired(id, System.nanoTime()); }
     public void finishRewardChoice(String id) { rewardWait.finish(id); }
     private ResourceLocation selected;
+    private ResourceLocation trackedSelection;
+    private boolean trackingAuthoritative;
     private String bookSyncFailure = "";
     private BrnQuestNetwork.ProgressSyncFailurePayload progressSyncFailure;
 
@@ -79,7 +81,11 @@ public final class ClientQuestState {
     }
 
     /** A hello is an announcement, not proof that this client has applied that revision. */
-    public void advertised(String revision) { advertisedRevision = revision == null ? "" : revision; }
+    public void advertised(String revision) {
+        String next = revision == null ? "" : revision;
+        if (!next.equals(advertisedRevision)) yourscraft.jasdewstarfield.brnquest.client.ui.QuestNotificationOverlay.clear();
+        advertisedRevision = next;
+    }
 
 
     private ClientQuestState() {}
@@ -89,6 +95,8 @@ public final class ClientQuestState {
     public Map<String, Long> taskProgress() { return taskProgress; }
     public Set<String> claimed() { return claimed; }
     public boolean visible(ResourceLocation questId) { return !visibilityAuthoritative || visible.contains(questId.toString()); }
+    /** Aggregate counts wait for the server visibility snapshot to avoid revealing hidden totals during sync. */
+    public boolean hasAuthoritativeVisibility() { return visibilityAuthoritative; }
     public int completionCycles(ResourceLocation questId) { return completionCycles.getOrDefault(questId.toString(), 0); }
     public long nextAvailableAt(ResourceLocation questId) { return nextAvailable.getOrDefault(questId.toString(), 0L); }
     public ResourceLocation selected() { return selected; }
@@ -217,6 +225,12 @@ public final class ClientQuestState {
             var newCycles = wire.cycles() == null ? Map.<String, Integer>of() : Map.copyOf(wire.cycles());
             var newNextAvailable = wire.nextAvailable() == null ? Map.<String, Long>of() : Map.copyOf(wire.nextAvailable());
             var newWaiting = wire.waitingForTeam() == null ? Set.<String>of() : Set.copyOf(wire.waitingForTeam());
+            ResourceLocation newTracked = wire.tracked() == null || wire.tracked().isEmpty()
+                    ? null : ResourceLocation.tryParse(wire.tracked());
+            if (wire.tracked() != null && !wire.tracked().isEmpty() && newTracked == null)
+                throw new IllegalArgumentException("Invalid tracked quest ID");
+            trackedSelection = newTracked;
+            trackingAuthoritative = wire.tracked() != null;
             waitingForTeam = newWaiting;
             newWaiting.forEach(completionWait::finish);
             statuses = newStatuses;
@@ -241,15 +255,20 @@ public final class ClientQuestState {
     }
 
     public Optional<ResourceLocation> trackedQuest() {
+        // Empty authoritative selection is an explicit untrack, including while a quest is still ACTIVE in older data.
+        if (trackingAuthoritative) return Optional.ofNullable(trackedSelection);
         return statuses.entrySet().stream().filter(e -> e.getValue() == QuestStatus.ACTIVE).map(e -> ResourceLocation.tryParse(e.getKey())).filter(Objects::nonNull).findFirst();
     }
 
     /** Connection-scoped caches must not expose the previous server's book or diagnostics after reconnecting. */
     public synchronized void disconnected() {
+        yourscraft.jasdewstarfield.brnquest.client.ui.QuestNotificationOverlay.clear();
         rewardWait.clear();
         completionWait.clear();
         book = null;
         statuses = Map.of();
+        trackedSelection = null;
+        trackingAuthoritative = false;
         taskProgress = Map.of();
         waitingForTeam = Set.of();
         claimed = Set.of();

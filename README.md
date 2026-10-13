@@ -6,7 +6,7 @@ BRNQuest is a server-authoritative quest system with an in-game visual editor fo
 
 ## Installation
 
-- Mod version: **1.0.0**
+- Mod version: **1.1.0**
 - Minecraft **1.21.1**, NeoForge **21.1**, Java **21**
 - Install the same BRNQuest version on the server and every client. Single-player uses the same JAR.
 - FTB Quests is an import source; it is not required at runtime.

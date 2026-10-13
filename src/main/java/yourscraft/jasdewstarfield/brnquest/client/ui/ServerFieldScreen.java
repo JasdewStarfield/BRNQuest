@@ -130,8 +130,8 @@ public final class ServerFieldScreen extends Screen {
             else GraystoneSurface.raised(graphics,rect,hovered ? 0xFF5C6056 : GraystonePalette.HOVER,true);
             var entry = pages.entry(row.key());
             String label = entry == null ? Component.translatable("screen.brnquest.field.loading").getString() : entry.value()+(readOnly ? "" : " ("+entry.count()+")");
-            graphics.drawString(font,font.plainSubstrByWidth(label,rect.width()-6),
-                    rect.left()+3,rect.top()+5,0xFFFFFFFF,false);
+            yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer.drawCaption(graphics, font, Component.literal(label),
+                    new UiRect(rect.left()+3,rect.top()+5,rect.right()-3,rect.top()+14), row.visible(), 0xFFFFFFFF, x, y);
         }, () -> {});
         if (result != null && !result.error().isEmpty()) {
             graphics.drawString(font,Component.translatable("screen.brnquest.field.error."+result.error()),width/2-150,112,0xFFFF7777,false);

@@ -1,7 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -12,6 +11,11 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonWidge
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEnumDropdown;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorWidgetFrame;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorScrollbar;
+import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import java.util.*;
 import java.util.function.Predicate;
 
@@ -37,7 +41,8 @@ final class EditorCanvasScreen extends Screen {
     private int backgroundMode; // 0 inherits, 1 explicitly disables, 2 uses this resource.
     private String error = "";
     private int formScroll;
-    private int helpScroll;
+    private final EditorSmoothScroll formMotion=new EditorSmoothScroll(),helpMotion=new EditorSmoothScroll();
+    private long lastFrame;
     private boolean buildingForm;
     private final Map<net.minecraft.client.gui.components.AbstractWidget, Integer> formWidgets = new LinkedHashMap<>();
 
@@ -59,8 +64,9 @@ final class EditorCanvasScreen extends Screen {
     private int left() { return Math.max(140, width / 3); }
     /** Keep property labels, controls and thumbnails inset from the shared panel border. */
     private int contentLeft() { return left() + 10; }
-    private Button button(String key, int x, int y, int w, Runnable action) {
-        var widget = addRenderableWidget(Button.builder(label(key), b -> action.run()).bounds(x, y, w, 20).build());
+    private EditorButtonWidget button(String key, int x, int y, int w, Runnable action) {
+        var widget = addRenderableWidget(new EditorButtonWidget(x, y, w, 20, label(key), b -> action.run()));
+        if (key.equals("apply")) widget.setTone(EditorButton.Tone.PRIMARY);
         if (buildingForm && x >= left()) formWidgets.put(widget, y);
         return widget;
     }
@@ -89,7 +95,7 @@ final class EditorCanvasScreen extends Screen {
                 var background = tab == 1 ? canvas : screen;
                 backgroundMode = background == null ? 0 : background.texture().isEmpty() ? 1 : 2;
                 fit = background == null ? CanvasScene.Fit.TILE : background.fit();
-                fields.clear(); formScroll = 0; helpScroll = 0; rebuildWidgets();
+                fields.clear(); formMotion.snap(0); helpMotion.snap(0); rebuildWidgets();
             });
             button(screenAbove == null ? "order_inherit" : screenAbove ? "order_screen" : "order_canvas",
                     12, height - 58, left() - 28, () -> {
@@ -236,14 +242,24 @@ final class EditorCanvasScreen extends Screen {
         } catch (RuntimeException invalid) { error = label("invalid").getString(); return false; }
     }
     private double number(String key) { return Double.parseDouble(fields.get(key).getValue()); }
-    /** Only the property column scrolls; list navigation and apply/cancel remain reachable in small windows. */
+    /** Both columns share rendered scroll coordinates, pointer capture and client motion preferences. */
+    private UiRect formViewport() { return new UiRect(left(),54,width-9,Math.max(54,height-34)); }
+    private UiRect helpViewport() { return new UiRect(12,60,left()-16,Math.max(60,height-68)); }
+    private int formContentHeight() {
+        return Math.max(0,formWidgets.entrySet().stream().mapToInt(entry->entry.getValue()+entry.getKey().getHeight()).max().orElse(54)-54);
+    }
+    private EditorWidgetFrame widgetFrame(net.minecraft.client.gui.components.AbstractWidget widget, int authoredY) {
+        return EditorWidgetFrame.scrolled(new UiRect(widget.getX(), authoredY,
+                widget.getX() + widget.getWidth(), authoredY + widget.getHeight()), formViewport(), formScroll);
+    }
     private void positionForm() {
-        int bottom = formWidgets.entrySet().stream().mapToInt(entry -> entry.getValue() + entry.getKey().getHeight()).max().orElse(54);
-        formScroll = Math.clamp(formScroll, 0, Math.max(0, bottom - (height - 36)));
-        formWidgets.forEach((widget, y) -> {
-            widget.setY(y - formScroll);
-            widget.visible = widget.getY() >= 54 && widget.getY() + widget.getHeight() <= height - 34;
-            if (!widget.visible && getFocused() == widget) setFocused(null);
+        formMotion.constrain(formContentHeight(),formViewport().height());
+        formScroll=(int)Math.round(formMotion.visual());
+        formWidgets.forEach((widget,y)-> {
+            var frame = widgetFrame(widget, y);
+            widget.setY(frame.bounds().top());
+            widget.visible = frame.shown();
+            if(!widget.visible && getFocused()==widget) setFocused(null);
         });
     }
     private List<net.minecraft.util.FormattedCharSequence> helpLines() {
@@ -252,21 +268,31 @@ final class EditorCanvasScreen extends Screen {
         lines.addAll(font.split(label(bookScope ? "book_help" : "chapter_help"), left() - 32));
         return lines;
     }
-    @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
-        if (enumDropdown.open()) closeChoice();
-        if (tab != 0 && x >= 8 && x < left() && y >= 54 && y < height - 34) {
-            helpScroll = Math.clamp(helpScroll - (int)(vertical * 3), 0,
-                    Math.max(0, helpLines().size() - Math.max(1, (height - 128) / 11)));
+    @Override public boolean mouseScrolled(double x,double y,double horizontal,double vertical) {
+        if(enumDropdown.open()) closeChoice();
+        if(tab!=0 && x>=8 && x<left() && y>=helpViewport().top() && y<helpViewport().bottom()) {
+            helpMotion.scrollWheel(vertical,BrnQuestClientConfig.VALUES.scrollStep.get(),helpLines().size()*11,helpViewport().height());
             return true;
         }
-        if (x >= left() && y >= 54 && y < height - 34) {
-            formScroll -= (int)(vertical * 22); positionForm(); return true;
+        if(x>=left() && x<width-4 && y>=formViewport().top() && y<formViewport().bottom()) {
+            formMotion.scrollWheel(vertical,BrnQuestClientConfig.VALUES.scrollStep.get(),formContentHeight(),formViewport().height());
+            return true;
         }
-        return super.mouseScrolled(x, y, horizontal, vertical);
+        return super.mouseScrolled(x,y,horizontal,vertical);
+    }
+    @Override public boolean mouseDragged(double x,double y,int button,double dx,double dy) {
+        if(formMotion.handleDrag(y,button)) { positionForm(); return true; }
+        return helpMotion.handleDrag(y,button) || super.mouseDragged(x,y,button,dx,dy);
+    }
+    @Override public boolean mouseReleased(double x,double y,int button) {
+        return formMotion.handleRelease(button) || helpMotion.handleRelease(button) || super.mouseReleased(x,y,button);
     }
     @Override public void tick() { parent.tick(); }
     @Override public void renderBackground(GuiGraphics g, int x, int y, float dt) {}
     @Override public void render(GuiGraphics g, int x, int y, float dt) {
+        long now=System.nanoTime(); double seconds=lastFrame==0?0:Math.min(.1,(now-lastFrame)/1_000_000_000.0); lastFrame=now;
+        formMotion.advanceFrame(formContentHeight(),formViewport().height(),seconds,BrnQuestClientConfig.VALUES.smoothSpeed.get());
+        positionForm();
         if (tab != 0) {
             try {
                 var candidate = backgroundCandidate();
@@ -284,50 +310,76 @@ final class EditorCanvasScreen extends Screen {
                 new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(3, 52, left() - 4, height - 32), tab == 0 ? 0xFF353A31 : 0x99353A31, true);
         yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(g,
                 new yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect(left() - 2, 52, width - 4, height - 32), tab == 0 ? 0xFF414638 : 0x99414638, true);
-        int contentBottom = formWidgets.entrySet().stream().mapToInt(entry -> entry.getValue() + entry.getKey().getHeight()).max().orElse(54);
-        if (contentBottom > height - 36) {
-            int trackHeight = Math.max(1, height - 92);
-            int thumbY = 56 + (int)((double)formScroll / Math.max(1, contentBottom - (height - 36)) * (trackHeight - 12));
-            g.fill(width - 8, 56, width - 6, 56 + trackHeight, 0xFF252820);
-            g.fill(width - 8, thumbY, width - 6, thumbY + 12, 0xFFD5BF7A);
-        }
-        g.drawCenteredString(font, title, tab == 0 ? width / 2 : left() / 2, 10, 0xFFFFFF);
-        if (tab != 0 || aspect) g.drawCenteredString(font, label(tab != 0 ? "preview_only" : "aspect_linked"), width / 2, 30, 0xFFE4C272);
+        EditorScrollbar.render(g,width-8,formViewport().top(),formViewport().bottom(),
+                formContentHeight(),formViewport().height(),formMotion.visual());
+        EditorTextRenderer.drawCaptionCentered(g, font, title,
+                new UiRect(12, 10, tab == 0 ? width-12 : left()-12, 19), 0xFFFFFF, x, y);
+        if (tab != 0 || aspect) EditorTextRenderer.drawCaptionCentered(g, font, label(tab != 0 ? "preview_only" : "aspect_linked"),
+                new UiRect(12, 30, width-12, 39), 0xFFE4C272, x, y);
         if (tab == 0 && selected >= 0) {
             var d = decorations.get(selected);
             double w = d.width(), h = d.height();
             try { w = number("width"); h = number("height"); } catch (RuntimeException ignored) {}
             drawPreview(g, fields.get("texture").getValue(), 12, 60, left() - 28, Math.max(20, height - 125), w, h);
         } else if (tab != 0) {
-            // The explanation has its own scroll area so translated text never covers apply/cancel.
-            var lines = helpLines();
-            int rows = Math.max(1, (height - 128) / 11);
-            helpScroll = Math.clamp(helpScroll, 0, Math.max(0, lines.size() - rows));
-            for (int row = 0; row < rows && row + helpScroll < lines.size(); row++)
-                g.drawString(font, lines.get(row + helpScroll), 12, 60 + row * 11, 0xDDDDDD, false);
-            if (lines.size() > rows) {
-                int track = rows * 11;
-                g.fill(left() - 12, 60, left() - 10, 60 + track, 0xFF252820);
-                int thumb = 60 + helpScroll * (track - 12) / (lines.size() - rows);
-                g.fill(left() - 12, thumb, left() - 10, thumb + 12, 0xFFD5BF7A);
-            }
+            var lines=helpLines(); UiRect viewport=helpViewport();
+            helpMotion.advanceFrame(lines.size()*11,viewport.height(),seconds,BrnQuestClientConfig.VALUES.smoothSpeed.get());
+            EditorScrollbar.render(g,left()-12,viewport.top(),viewport.bottom(),lines.size()*11,viewport.height(),helpMotion.visual());
+            g.enableScissor(viewport.left(),viewport.top(),viewport.right(),viewport.bottom());
+            try {
+                int first=helpMotion.firstIndex(11),offset=(int)Math.round(helpMotion.visual());
+                for(int row=first;row<lines.size();row++) {
+                    int textY=viewport.top()+row*11-offset;
+                    if(textY>=viewport.bottom()) break;
+                    g.drawString(font,lines.get(row),viewport.left(),textY,0xDDDDDD,false);
+                }
+            } finally { g.disableScissor(); }
         }
-        fields.forEach((key, box) -> { if (box.visible) g.drawString(font, label(key), contentLeft(), box.getY() + 5, 0xDDDDDD, false); });
-        g.drawString(font, font.plainSubstrByWidth(error, width - 200), 96, height - 21, 0xFF9999, false);
-        super.render(g, x, y, dt);
+
+        // Partly visible fields and labels move continuously through the viewport instead of disappearing as a unit.
+        UiRect viewport = formViewport();
+        g.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+        try {
+            fields.forEach((key, box) -> {
+                if (box.visible) EditorTextRenderer.drawCaption(g, font, label(key),
+                        new UiRect(contentLeft(), box.getY()+5, box.getX()-4, box.getY()+14), viewport,
+                        0xDDDDDD, x, y);
+            });
+        } finally { g.disableScissor(); }
+        EditorTextRenderer.drawCaption(g, font, Component.literal(error),
+                new UiRect(96, height-21, width-104, height-12), 0xFF9999, x, y);
+        renderWidgets(g, x, y, dt);
         if (tab != 0) {
             int top = 204 - formScroll;
-            if (top >= 54 && top + 112 <= height - 34) {
-                String texture = fields.get("texture").getValue();
-                var id = ResourceLocation.tryParse(texture);
-                var size = id == null ? null : LoadedTextures.size(id);
-                g.fill(contentLeft() + 2, top + 2, width - 14, top + 110, 0xFF22251F);
-                g.drawCenteredString(font, label("texture_preview"), (contentLeft() + width - 12) / 2, top + 6, 0xDDDDDD);
-                drawPreview(g, texture, contentLeft() + 6, top + 20, width - contentLeft() - 24, 86,
-                        size == null ? 1 : size.width(), size == null ? 1 : size.height());
+            UiRect previewClip=new UiRect(contentLeft()+2,top+2,width-14,top+110).intersection(formViewport());
+            if (previewClip.height()>0 && previewClip.width()>0) {
+                // The image shares the form viewport even when it is taller than a short window's body.
+                g.enableScissor(previewClip.left(),previewClip.top(),previewClip.right(),previewClip.bottom());
+                try {
+                    String texture = fields.get("texture").getValue();
+                    var id = ResourceLocation.tryParse(texture);
+                    var size = id == null ? null : LoadedTextures.size(id);
+                    g.fill(contentLeft() + 2, top + 2, width - 14, top + 110, 0xFF22251F);
+                    g.drawCenteredString(font, label("texture_preview"), (contentLeft() + width - 12) / 2, top + 6, 0xDDDDDD);
+                    drawPreview(g, texture, contentLeft() + 6, top + 20, width - contentLeft() - 24, 86,
+                            size == null ? 1 : size.width(), size == null ? 1 : size.height());
+                } finally { g.disableScissor(); }
             }
         }
         enumDropdown.render(g, font, width, 54, height - 34, x, y);
+    }
+    private void renderWidgets(GuiGraphics graphics, int x, int y, float partial) {
+        for (var renderable : renderables) {
+            if (renderable instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)) {
+                if (!widget.visible) continue;
+                UiRect viewport = formViewport();
+                graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
+                try {
+                    boolean hover = widgetFrame(widget, formWidgets.get(widget)).contains(x, y);
+                    renderable.render(graphics, hover ? x : Integer.MIN_VALUE, hover ? y : Integer.MIN_VALUE, partial);
+                } finally { graphics.disableScissor(); }
+            } else renderable.render(graphics, x, y, partial);
+        }
     }
     @Override public boolean mouseClicked(double x, double y, int button) {
         if (enumDropdown.open()) {
@@ -335,11 +387,33 @@ final class EditorCanvasScreen extends Screen {
             closeChoice();
             return true;
         }
-        return super.mouseClicked(x, y, button);
+        if(button==0 && formMotion.handleTrackClick(x,y,width-8,formViewport().top(),formViewport().bottom(),
+                formContentHeight(),formViewport().height())) { positionForm(); return true; }
+        if(button==0 && tab!=0 && helpMotion.handleTrackClick(x,y,left()-12,helpViewport().top(),helpViewport().bottom(),
+                helpLines().size()*11,helpViewport().height())) return true;
+        // Reject hidden parts before native widgets test their full rectangles, including overlaps with fixed chrome.
+        for (var child : children()) {
+            if (child instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)
+                    && !widgetFrame(widget, formWidgets.get(widget)).contains(x, y)) continue;
+            if (child.mouseClicked(x, y, button)) {
+                setFocused(child);
+                if (button == 0) setDragging(true);
+                return true;
+            }
+        }
+        return false;
     }
     @Override public boolean keyPressed(int key, int scanCode, int modifiers) {
         if (key == 256 && enumDropdown.open()) { closeChoice(); return true; }
-        return super.keyPressed(key, scanCode, modifiers);
+        boolean handled = super.keyPressed(key, scanCode, modifiers);
+        if (key == 258 && getFocused() instanceof net.minecraft.client.gui.components.AbstractWidget widget && formWidgets.containsKey(widget)) {
+            int authoredY = formWidgets.get(widget);
+            int revealed = EditorWidgetFrame.reveal(formScroll,
+                    new UiRect(widget.getX(), authoredY, widget.getX()+widget.getWidth(), authoredY+widget.getHeight()), formViewport());
+            formMotion.snap(revealed);
+            positionForm();
+        }
+        return handled;
     }
     /** Contain the authored rectangle in the preview without stretching it to the panel shape. */
     private void drawPreview(GuiGraphics g, String texture, int x, int y, int w, int h, double sourceW, double sourceH) {

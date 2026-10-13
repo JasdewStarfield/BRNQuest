@@ -189,7 +189,7 @@ final class QuestDetailRows {
             Component customTitle = Component.literal(configuredTitle);
             float scale = EditorTextLayout.fittedScale(font.width(customTitle), maximumWidth, 0.75F);
             int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-            String visible = font.plainSubstrByWidth(configuredTitle, unscaledWidth);
+            String visible = EditorTextLayout.ellipsize(configuredTitle, unscaledWidth, font::width, false);
             int left = right - Math.round(font.width(visible) * scale);
             graphics.pose().pushPose();
             graphics.pose().translate(left, y, 0);
@@ -205,7 +205,7 @@ final class QuestDetailRows {
         String fullText = qualifierText + " " + subject;
         float scale = EditorTextLayout.fittedScale(font.width(fullText), maximumWidth, 0.75F);
         int unscaledWidth = Math.max(1, (int) Math.floor(maximumWidth / scale));
-        String visible = font.plainSubstrByWidth(fullText, unscaledWidth);
+        String visible = EditorTextLayout.ellipsize(fullText, unscaledWidth, font::width, false);
         int left = right - Math.round(font.width(visible) * scale);
         int visibleQualifierLength = Math.min(qualifierText.length(), visible.length());
 

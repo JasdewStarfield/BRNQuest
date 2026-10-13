@@ -59,7 +59,7 @@ final class QuestRelationsScreen extends Screen {
         }, () -> graphics.drawCenteredString(font, Component.translatable("screen.brnquest.relations.empty"), width/2, panel.top()+45, GraystonePalette.MUTED));
         super.render(graphics,x,y,partial);
         list.rowAt(x,y).ifPresent(row -> entries.stream().filter(e -> e.id().equals(row.key())).findFirst().ifPresent(e ->
-                graphics.renderTooltip(font,List.of(e.title().getVisualOrderText(),e.chapter().getVisualOrderText(),e.status().getVisualOrderText()),x,y)));
+                graphics.renderTooltip(font,List.of(NativeText.sequence(e.title()),e.chapter().getVisualOrderText(),e.status().getVisualOrderText()),x,y)));
     }
     private void activate(ResourceLocation id) {
         // Re-resolve after a live reload so a stale row cannot navigate to an unrelated object.

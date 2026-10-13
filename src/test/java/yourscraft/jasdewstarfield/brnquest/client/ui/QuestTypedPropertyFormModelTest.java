@@ -90,6 +90,8 @@ class QuestTypedPropertyFormModelTest {
         model.openExisting(schema(List.of(ConfigFieldDescriptor.field("position",ConfigValueType.INTEGER_VECTOR3)),
                 Map.of("position","1,2,3","opaque","keep"),false),"test:vector","manual");
         var font = new net.minecraft.client.gui.Font(id -> null,false) {
+            // Owned fields measure through StringSplitter; the fixture needs no real glyph atlas.
+            @Override public net.minecraft.client.StringSplitter getSplitter() { return new net.minecraft.client.StringSplitter((cp, style) -> 1); }
             public String plainSubstrByWidth(String text,int width) { return text.substring(0,Math.min(text.length(),Math.max(0,width))); }
             public String plainSubstrByWidth(String text,int width,boolean tail) {
                 int count=Math.min(text.length(),Math.max(0,width));

@@ -161,8 +161,9 @@ neoForge {
         }
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
-                    ? "${project.mod_id},brnquest_example" : project.mod_id
+            // Select a small regression group explicitly; normal runs retain all project test namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('gameTestNamespaces').getOrElse(
+                    (includeExampleAddon || legacyAddon) ? "${project.mod_id},brnquest_progress,brnquest_example" : "${project.mod_id},brnquest_progress")
         }
 
         server {
@@ -177,8 +178,9 @@ neoForge {
             systemProperty 'java.io.tmpdir', isolatedTestRoot
             // IDE and Gradle launches receive the same deterministic fixture and isolated workspace.
             taskBefore prepareGameTestFixture
-            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
-                    ? "${project.mod_id},brnquest_example" : project.mod_id
+            // Select a small regression group explicitly; normal runs retain all project test namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('gameTestNamespaces').getOrElse(
+                    (includeExampleAddon || legacyAddon) ? "${project.mod_id},brnquest_progress,brnquest_example" : "${project.mod_id},brnquest_progress")
         }
 
         kubeJsSmokeServer {
@@ -268,11 +270,21 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
     def generated = layout.buildDirectory.file('generated/gametestResources/data/brnquest/structure/empty.nbt')
     inputs.file encoded
     outputs.file generated
+    outputs.file(layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt'))
+    outputs.file(layout.buildDirectory.file('generated/gametestResources/data/brnquest_statistics/structure/empty.nbt'))
     doLast {
         // Keep the tiny binary structure reproducible and reviewable as Base64 in source control.
         def target = generated.get().asFile
         target.parentFile.mkdirs()
         target.bytes = Base64.decoder.decode(encoded.getText('UTF-8').trim())
+        // The focused progress namespace reuses the same tiny fixture without shipping it in the main mod.
+        def progressTarget = layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt').get().asFile
+        progressTarget.parentFile.mkdirs()
+        progressTarget.bytes = target.bytes
+        // A separate statistics namespace lets its focused suite run without unrelated world fixtures.
+        def statisticsTarget = layout.buildDirectory.file('generated/gametestResources/data/brnquest_statistics/structure/empty.nbt').get().asFile
+        statisticsTarget.parentFile.mkdirs()
+        statisticsTarget.bytes = target.bytes
     }
 }
 sourceSets.gameTest.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')
@@ -403,6 +415,12 @@ test {
     // provide an explicit project root for the public-signature contract test.
     systemProperty 'brnquest.projectDir', projectDir.absolutePath
     systemProperty 'brnquest.buildDir', layout.buildDirectory.get().asFile.absolutePath
+    // Optional public-API smoke check against an installed IMBlocker JAR, without adding it as a runtime dependency.
+    if (providers.gradleProperty('imBlockerApiJar').isPresent()) {
+        def imBlockerApiJar = file(providers.gradleProperty('imBlockerApiJar').get())
+        systemProperty 'brnquest.imBlockerApiJar', imBlockerApiJar.absolutePath
+        inputs.file(imBlockerApiJar).withPathSensitivity(PathSensitivity.NONE)
+    }
 }
 
 // A normal build must prove the public-only companion source still compiles.

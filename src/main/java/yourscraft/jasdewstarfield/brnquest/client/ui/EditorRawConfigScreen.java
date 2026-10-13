@@ -1,8 +1,9 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.MultiLineEditBox;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSourceField;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
@@ -21,7 +22,7 @@ public final class EditorRawConfigScreen extends Screen {
     private final Screen parent;
     private final Map<String, String> initialConfig;
     private final Consumer<Map<String, String>> configConsumer;
-    private MultiLineEditBox editor;
+    private EditorSourceField editor;
     private Component issue;
 
     public EditorRawConfigScreen(Screen parent, Map<String, String> initialConfig,
@@ -37,11 +38,13 @@ public final class EditorRawConfigScreen extends Screen {
         buttons.begin(); buttons.clearFocus();
         super.init();
         UiRect bounds = editorBounds();
-        editor = new MultiLineEditBox(font, bounds.left(), bounds.top(), bounds.width(), bounds.height(),
-                Component.translatable("screen.brnquest.editor.raw_config.placeholder"), title);
+        var previous=editor==null?null:editor.buffer().snapshot();
+        double scroll=editor==null?0:editor.savedScroll();
+        editor = new EditorSourceField(font,bounds,title);
         // The draft protocol is the true upper bound; the parser and server impose tighter per-field limits.
         editor.setCharacterLimit(BrnQuestConstants.MAX_BOOK_BYTES);
-        editor.setValue(RawConfigText.format(initialConfig));
+        if(previous==null) editor.setValue(RawConfigText.format(initialConfig));
+        else { editor.restoreState(previous); editor.restoreScroll(scroll); }
         addRenderableWidget(editor);
         setFocused(editor);
     }
@@ -67,12 +70,12 @@ public final class EditorRawConfigScreen extends Screen {
         UiRect panel = panelBounds();
         yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, 0xFFFFFFFF);
-        graphics.drawString(font, Component.translatable("screen.brnquest.editor.raw_config.help"),
-                panel.left() + 12, panel.top() + 25, GraystonePalette.SECONDARY, false);
-        if (issue != null) {
-            graphics.drawString(font, Component.literal(font.plainSubstrByWidth(issue.getString(), panel.width() - 24)),
-                    panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);
-        }
+        EditorTextRenderer.drawCaption(graphics, font, Component.translatable("screen.brnquest.editor.raw_config.help"),
+                new UiRect(panel.left()+12, panel.top()+25, panel.right()-12, panel.top()+34),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
+        if (issue != null) EditorTextRenderer.drawCaption(graphics, font, issue,
+                new UiRect(panel.left()+12, panel.bottom()-45, panel.right()-12, panel.bottom()-36),
+                0xFFFF7070, mouseX, mouseY);
         buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);

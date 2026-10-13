@@ -42,6 +42,7 @@ public record ChapterDefinition(ResourceLocation bookId, ResourceLocation id, Re
     public ChapterDefinition {
         quests = List.copyOf(quests);
         extensions = Map.copyOf(extensions);
+        DisplayOverrides.progress(extensions); // Validate shared display overrides on load, copy and edit.
         CanvasScene.read(extensions); // Validate reserved artwork data at every construction boundary.
         questDefaults = questDefaults == null ? QuestCreationDefaults.EMPTY : questDefaults;
     }

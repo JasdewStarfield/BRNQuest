@@ -6,7 +6,13 @@
 
 使用完整 `namespace:path` ID。原生任务书 schema 1 的类型配置为字符串 Map，数字和布尔值也以字符串保存。嵌套物品匹配器与奖励树建议通过编辑器配置，其结构序列化在配置字符串中。编辑外部内容时保留未知字段。
 
+任务的 `extensions` 可设置 `"brnquest:quest_name_position": "off|above|below"`；章节的 `extensions` 可设置 `"brnquest:chapter_progress": "show|hide"`，这里的竖线表示可选值。缺省或 `inherit` 跟随客户端设置。显式属性覆盖客户端偏好；编辑器选择继承时移除对应键，其余扩展数据保留。
+
+任务 `extensions` 的提醒字段为 `brnquest:notify_task_complete`、`brnquest:notify_quest_complete`、`brnquest:notify_reward_claimed`，值为字符串 `"true"` 或 `"false"`，缺省依次为 true、true、false。它们只控制服务端真实发生的目标完成、任务完成与成功领奖事件，不改变进度或领取资格；普通进度增长和历史同步不产生提醒。
+
 下文集中说明具有重要行为约束的配置，游戏内字段帮助提供默认值与校验提示。任务依赖、顺序目标、完成可见性及重复规则在任务属性中配置；队伍进度与部署流程见作者指引。
+
+任务书与章节的 `quest_defaults` 除现有外观、行为默认值外，还支持 `notify_task_complete`、`notify_quest_complete`、`notify_reward_claimed`（JSON 布尔值）、`quest_name_position`（JSON 字符串 `inherit|off|above|below`）及 `minimum_required_dependencies`（非负 JSON 整数）。任务书缺省字段使用系统默认值，章节缺省字段跟随任务书创建预设；解析后的值只在创建任务时写入，后续修改预设保留已有任务。提醒与名称位置写入任务保留扩展键，显式任务覆盖值和无关附属数据保留。名称位置的 `inherit` 保存实时跟随客户端的显示模式。
 
 ## 物品与经验
 
@@ -44,6 +50,40 @@
 观察使用 `kind=block|entity`、ID 或 `#tag` 目标、>0 且 ≤64 的距离（默认 8），及 0–1200 tick 的持续时间（默认 0）。方块和实体会遮挡视线；换目标、移开视线、超距或遇到未加载区块会中断。流体不作为目标。连续计时属于个人，断线、维度或配置变化、重载及重置清理临时计时；完整观察后才写入进度。
 
 击杀默认 `minecraft:zombie`、数量 1（正 long）。玩家直接致命伤害及其投射物击杀计数一次；宠物、环境、取消死亡与历史击杀不计入。共享任务只增加一次账本，仍遵守依赖与顺序目标规则。
+
+## 原版统计
+
+`brnquest:statistics` 支持九类统计及个人／团队进度，配置 `stat_type`、`stat` 和 `count`（1～2147483647）。可选 `title` 支持原生格式；`format=native`（默认）显示原生单位，`format=raw` 显示原始整数。
+
+| 类别 | 对象注册表 |
+| --- | --- |
+| `minecraft:custom` | 已注册自定义统计，如 `minecraft:jump` |
+| `minecraft:mined` | 方块 |
+| `minecraft:crafted`、`minecraft:used`、`minecraft:broken`、`minecraft:picked_up`、`minecraft:dropped` | 物品 |
+| `minecraft:killed`、`minecraft:killed_by` | 实体类型 |
+
+先选择类别，再打开相应的服务端对象选择器。对象缺失或类别不匹配会产生作者校验错误，支持这些类别内已注册的模组对象。数量使用原版底层单位：距离为厘米（100 = 1 米），时间为 tick（1200 = 1 分钟），伤害为十分之一点（10 = 1 点伤害）。
+
+| `mode` | 行为 |
+| --- | --- |
+| `total`（默认） | 历史累计，团队共享保留成员最高值 |
+| `since_available` | 目标可执行后的新增量，团队共享累加各成员新增贡献 |
+
+遵守依赖与顺序目标规则，新增量在解锁或轮到目标时建立基线，与打开任务书及追踪无关。每 3 tick 采样，在 20 TPS 下通常不超过 0.15 秒。进度与基线在重连、重载和保存重启后保留；原版计数下降时保留已累计新增量，后续从较低值继续计数。切换团队或离队再加入时保留已有贡献，排除离开期间的行为。全成员任务保持成员计数独立，并使用包含离线成员的当前名单。
+
+重置重新建立新增量基线；历史模式重新读取已有统计，可能立即再次满足。重复周期也建立新基线。未完成目标更换类别、对象或模式时清除旧计数，修改标题、显示格式或数量阈值保留计数。已完成任务保留历史凭据，直到重置。运行中对象缺失会暂停采样并保留状态，BRNQuest 保留 Minecraft 原版统计。
+
+```json
+{
+  "stat_type": "minecraft:custom",
+  "stat": "minecraft:jump",
+  "count": "20",
+  "mode": "since_available",
+  "format": "native"
+}
+```
+
+FTB Quests v13 的 `stat` 和 `ftbquests:stat` 定义映射为 `minecraft:custom`、`mode=total` 与 `format=raw`，SNBT 的 `stat`、`value` 分别转为原生 `stat`、`count`。原始字段保留在 `ftb.*`，与原生字段同名的额外源字段也单独保留；仅导入目标启用旧自定义统计命名空间回退。无效 ID 或数量产生 `BQF-111`，作者可修正原生字段，并保留原始 SNBT 供核查。导入读取任务定义，保留 FTB 个人／团队进度原状。
 
 ## 原版进度与目标分组
 
@@ -155,6 +195,8 @@ data/<namespace>/brnquest/target_groups/advancement/<path>.json
 ```
 
 支持 `title`、`chapter_group.<ID>.title`、`chapter.<ID>.title` 及上面的任务键。按请求语言 → `fallback_locale` → 原文回退，缺失或空译文继续回退。语言名统一为小写及下划线。正文与格式始终来自同一语言，原生正文字段使用 `description_format`；复制、保存、撤销及发布成对保留。
+
+任务标题与副标题始终支持原生 `§0`–`§9`／`§a`–`§f` 颜色、`§l` 粗体、`§o` 斜体、`§n` 下划线、`§m` 删除线、`§k` 混淆及 `§r` 重置，与正文格式独立。代码大小写均可；颜色代码清除已有装饰，未知或残缺代码作为普通文字保留。例如 `§6§l启程§r` 显示金色粗体标题。单行字段上限 256，正文上限 32768，格式码计入长度。原始字符串按现有字段保存，任务详情、节点名称、任务选择列表、追踪 HUD 与通知显示对应样式。
 
 `plain` 按字面显示 Markdown 标点，但支持原版 `§` 格式。`markdown_v1` 支持段落、显式换行、1–3 级标题、单层 `-`/`*` 列表、粗体、强调、行内代码及绝对 HTTP/HTTPS 链接。不支持有序或嵌套列表、引用块、代码围栏、HTML、远程图片、命令及其他 URL 协议。未知格式保留并按纯文本显示，作者写入不能创建未知格式。
 

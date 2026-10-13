@@ -11,6 +11,9 @@ public final class QuestTypeIcons {
     private static final Set<String> BUILTINS = Set.of("checkmark", "item", "item_choice", "xp", "xp_levels", "command", "location", "observe", "kill", "advancement", "biome", "structure", "dimension", "custom", "reward_table", "loot_table");
 
     public static ResourceLocation sprite(ResourceLocation type) {
+        // The chart silhouette distinguishes statistics from the reward-table glyph, with its own resource path.
+        if (type.equals(yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID))
+            return ResourceLocation.fromNamespaceAndPath("brnquest", "editor/type/statistics");
         // The registered encounter type is kill_entity; keep the existing editable kill.png asset.
         if (type.equals(yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", "editor/type/kill");

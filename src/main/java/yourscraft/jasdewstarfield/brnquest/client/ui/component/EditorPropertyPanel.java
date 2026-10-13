@@ -94,7 +94,7 @@ public final class EditorPropertyPanel {
         UiRect panel = layout.panel();
         if (graystone) GraystoneSurface.raised(graphics, panel, backgroundColor, true);
         else graphics.fill(panel.left(), panel.top(), panel.right(), panel.bottom(), backgroundColor);
-        Component title = Component.literal(font.plainSubstrByWidth(heading.getString(), layout.width()));
+        Component title = Component.literal(EditorTextLayout.ellipsize(heading.getString(), layout.width(), font::width, false));
         if (centered) graphics.drawCenteredString(font, title, panel.centerX(), layout.headingY(), headingColor);
         else graphics.drawString(font, title, layout.left(), layout.headingY(), headingColor, false);
         for (int index = 0; index < rows.size(); index++) {

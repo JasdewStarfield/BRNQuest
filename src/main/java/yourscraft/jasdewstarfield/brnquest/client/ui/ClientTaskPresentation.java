@@ -83,6 +83,11 @@ public interface ClientTaskPresentation {
         return title(context);
     }
 
+    /** Concrete completion requirement for floating notifications; native types may expand a short authored title. */
+    default Component completionDescription(TaskPresentationContext context) {
+        return objectiveTitle(context);
+    }
+
     /** Representative stack rendered in the compact task row. */
     default ItemStack displayedItem(TaskPresentationContext context) {
         return context.displayedItem();

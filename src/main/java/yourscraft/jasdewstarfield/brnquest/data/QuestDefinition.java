@@ -87,5 +87,7 @@ public record QuestDefinition(ResourceLocation bookId, ResourceLocation id, Reso
         appearance = appearance == null ? QuestAppearance.DEFAULT : appearance;
         behavior = behavior == null ? QuestBehavior.DEFAULT : behavior;
         extensions = Map.copyOf(extensions);
+        DisplayOverrides.name(extensions); // Reject invalid author display values at the data boundary.
+        QuestNotificationPolicy.read(extensions); // Notification flags follow the same shared validation boundary.
     }
 }

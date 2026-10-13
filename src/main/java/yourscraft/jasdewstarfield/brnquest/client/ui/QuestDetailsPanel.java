@@ -28,7 +28,7 @@ final class QuestDetailsPanel {
     record Layout(UiRect content, UiRect clip, int trackX) {}
     record Model(QuestDefinition quest, String title, String subtitle, ResolvedDocument description, String locale,
                  QuestStatus status, Component statusText,
-                 int statusColor, boolean editing, boolean gameplay, boolean ready, boolean suppressAutoClaim,
+                 int statusColor, boolean editing, boolean gameplay, boolean tracked, boolean ready, boolean suppressAutoClaim,
                  Function<RichDocument.LinkDestination, Component> linkHint) {}
     interface Rows {
         int task(TaskDefinition task, int x, int y, int width);
@@ -83,13 +83,13 @@ final class QuestDetailsPanel {
         if (editing) addTextArea(textAreas, layout.content(), "TITLE", contentLeft, titleTop, contentWidth - 14, y);
         y += 3;
 
-        if (editing || !model.subtitle().isBlank()) {
+        if (editing || !NativeText.visible(model.subtitle()).isBlank()) {
             int subtitleTop = y;
-            String subtitle = model.subtitle().isBlank()
+            String subtitle = NativeText.visible(model.subtitle()).isBlank()
                     ? Component.translatable("screen.brnquest.editor.quick_edit.empty_subtitle").getString()
                     : model.subtitle();
             y = EditorTextRenderer.drawWrapped(graphics, font, subtitle, contentLeft, y, contentWidth,
-                    model.subtitle().isBlank() ? GraystonePalette.DISABLED : GraystonePalette.SECONDARY);
+                    NativeText.visible(model.subtitle()).isBlank() ? GraystonePalette.DISABLED : GraystonePalette.SECONDARY);
             if (editing) addTextArea(textAreas, layout.content(), "SUBTITLE", contentLeft, subtitleTop, contentWidth, y);
             y += 4;
         }
@@ -109,17 +109,17 @@ final class QuestDetailsPanel {
                     new UiRect(contentLeft + statusWidth + 4, y, contentLeft + statusWidth + 14, y + 10), 0xFF68BDE8);
             statusWidth += 14;
         }
-        if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+        if (model.gameplay() && status.trackable()) {
             int pinX = contentLeft + contentWidth - 10 - 42;
             QuestActionIcons.named("pin").render(graphics, font, new UiRect(pinX, y, pinX + 10, y + 10),
-                    status == QuestStatus.ACTIVE ? 0xFF57C7F2 : GraystonePalette.SECONDARY);
+                    model.tracked() ? 0xFF57C7F2 : GraystonePalette.SECONDARY);
             if (mouseX >= pinX - 2 && mouseX <= pinX + 10 + 2 && mouseY >= y && mouseY <= y + font.lineHeight) {
-                hint = Component.translatable(status == QuestStatus.ACTIVE
+                hint = Component.translatable(model.tracked()
                         ? "screen.brnquest.untrack" : "screen.brnquest.track");
             }
         }
         UiRect trackAction = null;
-        if (model.gameplay() && (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)) {
+        if (model.gameplay() && status.trackable()) {
             int pinX = contentLeft + contentWidth - 10 - 42;
             trackAction = visiblePart(new UiRect(pinX - 2, y, pinX + 10 + 2,
                     y + font.lineHeight), layout.content());

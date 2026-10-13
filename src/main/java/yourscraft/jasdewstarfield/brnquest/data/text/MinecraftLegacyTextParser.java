@@ -4,10 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** Converts vanilla section-sign formatting into owned style spans before layout and measurement. */
-final class MinecraftLegacyTextParser {
+public final class MinecraftLegacyTextParser {
     private MinecraftLegacyTextParser() {}
 
-    static RichDocument parse(String source) {
+    public static RichDocument parse(String source) {
         String text = source == null ? "" : source;
         List<RichDocument.Inline> runs = new ArrayList<>();
         RichDocument.InlineStyle style = RichDocument.InlineStyle.EMPTY;
@@ -45,7 +45,9 @@ final class MinecraftLegacyTextParser {
         pending.setLength(0);
     }
 
-    private static RichDocument.InlineStyle apply(char code, RichDocument.InlineStyle current) {
+    /** Shared state transition for title display and selection edits; unknown codes remain literal. */
+    public static RichDocument.InlineStyle apply(char code, RichDocument.InlineStyle current) {
+        code = Character.toLowerCase(code);
         MinecraftTextColor color = MinecraftTextColor.byLegacyCode(code);
         if (color != null) {
             // Vanilla legacy colors clear all decorations before applying the new palette color.

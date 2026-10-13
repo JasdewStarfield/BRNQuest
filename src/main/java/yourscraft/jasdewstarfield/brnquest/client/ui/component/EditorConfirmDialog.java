@@ -36,9 +36,9 @@ public final class EditorConfirmDialog {
         graphics.drawCenteredString(font, title, dialog.centerX(), dialog.top() + (detail == null ? 12 : 9),
                 0xFFFFFFFF);
         if (detail != null) {
-            String visible = font.plainSubstrByWidth(detail.getString(), dialog.width() - 20);
-            graphics.drawCenteredString(font, Component.literal(visible), dialog.centerX(), dialog.top() + 23,
-                    detailColor);
+            EditorTextRenderer.drawCaptionCentered(graphics, font, detail,
+                    new UiRect(dialog.left()+10, dialog.top()+23, dialog.right()-10, dialog.top()+32),
+                    detailColor, mouseX, mouseY);
         }
         buttons.render(graphics, font, layout.cancel(),
                 EditorButton.Definition.text(cancelLabel, null), true, false,

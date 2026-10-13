@@ -31,6 +31,7 @@ public final class PlatformModHooks {
     public static void register(IEventBus modEventBus, ModContainer container) {
         // Built-ins share the public plugin lifecycle and freeze boundary with external types.
         RuntimeModule.registerInstalled();
+        yourscraft.jasdewstarfield.brnquest.network.QuestNotificationService.register();
         yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.register();
         NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.event.tick.ServerTickEvent.Pre event) ->
                 yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.tick(event.getServer()));
@@ -80,6 +81,7 @@ public final class PlatformModHooks {
         }
     }
     private static void onServerStopped(ServerStoppedEvent event) {
+        yourscraft.jasdewstarfield.brnquest.network.QuestNotificationService.stopped(event.getServer());
         ItemTaskMonitor.clear();
         yourscraft.jasdewstarfield.brnquest.owner.OwnerRuntime.stopped(event.getServer());
         EditSessionService.get().clearServer(event.getServer());

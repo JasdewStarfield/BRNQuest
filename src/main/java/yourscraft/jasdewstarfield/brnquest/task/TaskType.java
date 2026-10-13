@@ -34,6 +34,18 @@ public interface TaskType<TConfig> {
     /** Optional server polling. Zero disables polling; samples may only increase persistent progress. */
     default int pollingIntervalTicks() { return 0; }
     default long sampledProgress(TaskContext context, TConfig config) { return context.progress(); }
+    /** Opt into durable sampling preparation; defaults preserve the existing stateless SPI. */
+    default boolean usesSamplingState() { return false; }
+    /** Semantic identity excludes labels and thresholds; changing it starts a new unfinished objective. */
+    default String samplingIdentity(TConfig config) { return ""; }
+    /** Prepare at the eligibility boundary, before subsequent gameplay can affect a new baseline. */
+    default TaskSamplingResult prepareSample(TaskSamplingContext context, TConfig config) {
+        return new TaskSamplingResult(context.task().progress(), context.state());
+    }
+    /** Legacy implementations keep their original sampler through this default binary-compatible adapter. */
+    default TaskSamplingResult sample(TaskSamplingContext context, TConfig config) {
+        return new TaskSamplingResult(Math.max(context.task().progress(), sampledProgress(context.task(), config)), context.state());
+    }
     /**
      * Pure response to actual server crafting output. Return a cumulative progress sample; the core
      * applies only increases inside the owner transaction. The stack is a defensive copy, not inventory.

@@ -22,12 +22,19 @@ public final class BrnQuestClientConfig {
     }
 
     public enum GridVisibility { ALWAYS, EDITING_ONLY, NEVER }
+    /** A local label preference leaves authored titles and quest visibility unchanged. */
+    public enum QuestNamePosition { OFF, ABOVE, BELOW }
 
     public static final class Values {
         public final ModConfigSpec.BooleanValue autoCollapseNavigation, reduceMotion, rememberEditingMode, rememberViewport;
         public final ModConfigSpec.DoubleValue zoomStep;
         public final ModConfigSpec.IntValue nodeDragHoldMillis, navigationWidth, detailsWidth;
         public final ModConfigSpec.EnumValue<GridVisibility> showGrid;
+        public final ModConfigSpec.EnumValue<QuestNamePosition> questNamePosition;
+        public final ModConfigSpec.BooleanValue showChapterProgress;
+        public final ModConfigSpec.BooleanValue completionNotifications, notificationSound;
+        public final ModConfigSpec.DoubleValue notificationDurationSeconds, hudScale, hudBackgroundOpacity, notificationScale, notificationBackgroundOpacity;
+        public final ModConfigSpec.IntValue notificationWidth, hudMaxWidth;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
         public final ModConfigSpec.DoubleValue zoomSmoothSpeed;
@@ -46,6 +53,32 @@ public final class BrnQuestClientConfig {
             navigationWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("navigationWidth", 0, 0, 400);
             detailsWidth = builder.comment("GUI pixels; 0 selects automatic width.").defineInRange("detailsWidth", 0, 0, 600);
             showGrid = builder.defineEnum("showGrid", GridVisibility.ALWAYS);
+            questNamePosition = builder.comment("Always show visible quest names above or below their nodes; OFF hides labels.")
+                    .defineEnum("questNamePosition", QuestNamePosition.OFF);
+            showChapterProgress = builder.comment("Show completed / visible quests and percentage in chapter navigation.")
+                    .define("showChapterProgress", false);
+            builder.pop();
+            // This scale is independent of Minecraft's GUI scale and applies only to the tracking panel.
+            builder.comment("Tracked quest HUD").push("trackingHud");
+            hudScale = builder.comment("Tracking HUD scale relative to GUI pixels; default 0.75.")
+                    .defineInRange("hudScale", 0.75, 0.5, 1.5);
+            hudBackgroundOpacity = builder.comment("Tracking HUD background opacity from 0 to 1; text and icons remain opaque.")
+                    .defineInRange("hudBackgroundOpacity", 0.85, 0.0, 1.0);
+            hudMaxWidth = builder.comment("Maximum tracking HUD width before its independent scale; actual width follows content.")
+                    .defineInRange("hudMaxWidth", 240, 120, 400);
+            builder.pop();
+            builder.comment("Top-center completion notifications").push("notifications");
+            completionNotifications = builder.define("completionNotifications", true);
+            notificationSound = builder.define("notificationSound", false);
+            notificationScale = builder.comment("Floating notification scale relative to GUI pixels.")
+                    .defineInRange("notificationScale", 1.0, 0.5, 1.5);
+            notificationBackgroundOpacity = builder.comment("Notification background opacity from 0 to 1; text and icons remain opaque.")
+                    .defineInRange("notificationBackgroundOpacity", 1.0, 0.0, 1.0);
+            // The configured width is measured before the independent notification scale.
+            notificationWidth = builder.comment("Floating notification width in GUI pixels before notification scaling.")
+                    .defineInRange("notificationWidth", 280, 160, 600);
+            notificationDurationSeconds = builder.comment("Seconds from the latest notification until the entire stack closes together.")
+                    .defineInRange("notificationDurationSeconds", 4.0, 1.0, 30.0);
             builder.pop();
             // Local rendering diagnostics are read each frame and never change book or server state.
             builder.comment("Client development diagnostics").push("debug");

@@ -40,13 +40,12 @@ public final class EditorDraftChoiceDialog {
         Component detail = Component.translatable(existingDraft
                 ? "screen.brnquest.editor.draft_choice.existing_detail"
                 : "screen.brnquest.editor.draft_choice.new_detail");
-        graphics.drawCenteredString(font, Component.literal(font.plainSubstrByWidth(detail.getString(),
-                dialog.width() - 20)), dialog.centerX(), dialog.top() + 27, GraystonePalette.SECONDARY);
-        if (existingDraft && draftTitle != null) {
-            String visible = font.plainSubstrByWidth(draftTitle.getString(), dialog.width() - 36);
-            graphics.drawCenteredString(font, Component.literal(visible), dialog.centerX(), dialog.top() + 43,
-                    0xFFFFC06A);
-        }
+        EditorTextRenderer.drawCaptionCentered(graphics, font, detail,
+                new UiRect(dialog.left()+10, dialog.top()+27, dialog.right()-10, dialog.top()+36),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
+        if (existingDraft && draftTitle != null) EditorTextRenderer.drawCaptionCentered(graphics, font, draftTitle,
+                new UiRect(dialog.left()+18, dialog.top()+43, dialog.right()-18, dialog.top()+52),
+                0xFFFFC06A, mouseX, mouseY);
         renderButton(graphics, font, layout.cancel(), "gui.cancel", EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         if (existingDraft) {
             renderButton(graphics, font, layout.continueDraft(),

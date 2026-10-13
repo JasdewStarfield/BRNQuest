@@ -77,7 +77,7 @@ public final class EditorPropertyRow {
     public static void readOnly(GuiGraphics graphics, Font font, EditorPropertyFormLayout.Row row,
                                 Component label, Component value) {
         label(graphics, font, label, row.label(), null);
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(value.getString(), row.field().width())),
+        graphics.drawString(font, Component.literal(EditorTextLayout.ellipsize(value.getString(), row.field().width(), font::width, false)),
                 row.field().left(), row.field().top() + 5, 0xFFFFFFFF, false);
     }
 }

@@ -83,7 +83,8 @@ final class QuestPresentation {
 
     /** An authored quest title stays authoritative even when it resembles an ID; only a blank title may fall back. */
     static String questTitle(String authoredTitle, Supplier<String> blankFallback) {
-        return authoredTitle == null || authoredTitle.isBlank() ? blankFallback.get() : authoredTitle;
+        return authoredTitle == null || yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText.visible(authoredTitle).isBlank()
+                ? blankFallback.get() : authoredTitle;
     }
 
     /** A completion badge is meaningful only while at least one real reward remains unclaimed. */

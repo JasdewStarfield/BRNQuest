@@ -21,6 +21,7 @@ public final class MixedTextLayout {
 
     /** Returns render-ready lines while retaining the root style of the supplied component. */
     public static List<FormattedCharSequence> split(Font font, Component text, int maximumWidth) {
+        if (text != null && !text.getSiblings().isEmpty()) return NativeText.split(font, text, maximumWidth);
         List<String> wrapped = wrap(text == null ? "" : text.getString(), maximumWidth, font::width);
         var lines = wrapped.stream()
                 .map(line -> Component.literal(line).withStyle(text == null ? net.minecraft.network.chat.Style.EMPTY : text.getStyle())

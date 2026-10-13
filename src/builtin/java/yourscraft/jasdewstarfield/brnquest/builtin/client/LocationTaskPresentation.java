@@ -14,6 +14,17 @@ public record LocationTaskPresentation(String kind) implements ClientTaskPresent
         String title = config.getOrDefault("title", "");
         return title.isBlank() ? typeName(context.task()).copy().append(": " + config.getOrDefault(kind.equals("location") ? "position" : kind, "")) : Component.literal(title);
     }
+    /** Reuse the native destination preview; coordinate goals also identify their dimension. */
+    public Component completionDescription(TaskPresentationContext context) {
+        var text = interactionHint(context, false).copy();
+        if (kind.equals("location")) {
+            boolean anyDimension = Boolean.parseBoolean(context.task().config().getOrDefault("ignore_dimension", "false"));
+            text.append("\n").append(Component.translatable(anyDimension
+                    ? "screen.brnquest.location.ignore_dimension" : "screen.brnquest.location.dimension"))
+                    .append(anyDimension ? "" : ": " + context.task().config().getOrDefault("dimension", ""));
+        }
+        return text;
+    }
     public java.util.Optional<java.util.List<Component>> resolvedOptions(TaskView task) {
         String registry=kind.equals("location") ? "dimension" : kind;
         if(kind.equals("location") && Boolean.parseBoolean(task.config().getOrDefault("ignore_dimension","false"))) return java.util.Optional.empty();

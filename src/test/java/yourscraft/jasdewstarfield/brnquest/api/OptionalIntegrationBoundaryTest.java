@@ -156,4 +156,15 @@ class OptionalIntegrationBoundaryTest {
         assertTrue(editorMethod >= 0 && editorGuard > editorMethod && editorProperties > editorGuard,
                 "Localized text editor dimensions must be validated before JEI receives GUI properties");
     }
+    @Test void imBlockerAdapterNeverLinksForeignClasses() throws IOException {
+        Path project=Path.of(System.getProperty("brnquest.projectDir"));
+        Path root=project.resolve("src/main/java");
+        try(var paths=Files.walk(root)) {
+            for(Path path:paths.filter(file->file.toString().endsWith(".java")).toList()) {
+                String source=Files.readString(path,StandardCharsets.UTF_8);
+                assertFalse(source.contains("import io.github.reserveword.imblocker"),path.toString());
+                if(!path.toString().contains("compat")) assertFalse(source.contains("io.github.reserveword.imblocker"),path.toString());
+            }
+        }
+    }
 }

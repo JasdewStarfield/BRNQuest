@@ -10,6 +10,29 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Exercises the display projector using the actual client wire shape, without server/world/texture access. */
 class ClientEditPreviewTest {
+    @Test void notificationDefaultsUseTheSameCreationPathInTheClientPreview() {
+        var original = book();
+        var defaults = Map.of("quest_defaults", "{\"notify_task_complete\":false,\"notify_quest_complete\":false,\"notify_reward_claimed\":true,\"quest_name_position\":\"below\",\"minimum_required_dependencies\":2}");
+        var configured = ClientEditPreview.mutation(original,
+                wire("UPDATE_BOOK_PROPERTIES", "book", "", "", "", 0, defaults, List.of()));
+        var created = ClientEditPreview.mutation(configured,
+                wire("ADD_QUEST", "new", "c", "", "New", 0, Map.of(), List.of()));
+        var quest = created.quests().stream().filter(q -> q.id().equals(id("new"))).findFirst().orElseThrow();
+        assertEquals(new QuestNotificationPolicy(false, false, true), QuestNotificationPolicy.read(quest.extensions()));
+        assertEquals(DisplayOverrides.NamePosition.BELOW, DisplayOverrides.name(quest.extensions()));
+        assertEquals(2, quest.behavior().minimumRequiredDependencies());
+        assertEquals(original.quests().getFirst(), created.quests().getFirst());
+    }
+    @Test void chapterProgressPreviewStagesSharedOverrideWithoutChangingTheOriginal() {
+        var original = book();
+        var shown = ClientEditPreview.mutation(original,
+                wire("UPDATE_CHAPTER", "c", "g", "", "Chapter", 0, Map.of("chapter_progress", "hide"), List.of()));
+        assertEquals(DisplayOverrides.ProgressVisibility.HIDE, DisplayOverrides.progress(shown.chapters().getFirst().extensions()));
+        assertEquals(DisplayOverrides.ProgressVisibility.INHERIT, DisplayOverrides.progress(original.chapters().getFirst().extensions()));
+        var reverted = ClientEditPreview.mutation(shown,
+                wire("UPDATE_CHAPTER", "c", "g", "", "Chapter", 0, Map.of("chapter_progress", "inherit"), List.of()));
+        assertEquals(original.chapters().getFirst().extensions(), reverted.chapters().getFirst().extensions());
+    }
     private static ResourceLocation id(String path) { return ResourceLocation.parse("test:"+path); }
     private static QuestBookDefinition book() {
         var task = new TaskDefinition(id("book"), id("task"), id("opaque"), Map.of("value","old"), false);

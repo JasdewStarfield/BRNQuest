@@ -1,5 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.builtin.client;
 
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -51,11 +52,12 @@ final class ItemComponentsScreen extends Screen {
         GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.renderItem(original, panel.left() + 12, panel.top() + 8);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 9, GraystonePalette.TEXT);
-        graphics.drawString(font, Component.translatable("screen.brnquest.item_choice.components.help"),
-                panel.left() + 12, panel.top() + 25, GraystonePalette.SECONDARY, false);
-        if (issue != null) graphics.drawString(font,
-                font.plainSubstrByWidth(issue.getString(), panel.width() - 24),
-                panel.left() + 12, panel.bottom() - 45, 0xFFFF7070, false);
+        EditorTextRenderer.drawCaption(graphics, font, Component.translatable("screen.brnquest.item_choice.components.help"),
+                new UiRect(panel.left()+12, panel.top()+25, panel.right()-12, panel.top()+34),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
+        if (issue != null) EditorTextRenderer.drawCaption(graphics, font, issue,
+                new UiRect(panel.left()+12, panel.bottom()-45, panel.right()-12, panel.bottom()-36),
+                0xFFFF7070, mouseX, mouseY);
         buttons.render(graphics, font, cancelBounds(),
                 EditorButton.Definition.text(Component.translatable("gui.cancel"), null),
                 true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);

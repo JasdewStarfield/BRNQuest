@@ -245,7 +245,7 @@ public final class DraftBookEditor {
         var defaults = book.questDefaults().overlay(chapter.questDefaults()).overlay(explicit);
         var quest = new QuestDefinition(source.bookId(), source.id(), source.chapterId(), source.title(), source.subtitle(),
                 source.description(), source.descriptionFormat(), source.icon(), source.x(), source.y(), source.dependencies(), source.tasks(), source.rewards(),
-                source.legacyId(), defaults.appearance(), defaults.behavior(), source.extensions());
+                source.legacyId(), defaults.appearance(), defaults.behavior(), defaults.extensions(source.extensions()));
         return addQuest(book, chapterId, quest, context);
     }
 

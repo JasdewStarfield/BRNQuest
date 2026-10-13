@@ -10,6 +10,7 @@ import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
 public final class BuiltinClientTypes {
     private BuiltinClientTypes() {}
     public static void register() {
+        registerTask(yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID, new StatisticsPresentation());
 
         registerTask(yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.OBSERVE,new EncounterPresentation(true));
         registerTask(yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL,new EncounterPresentation(false));

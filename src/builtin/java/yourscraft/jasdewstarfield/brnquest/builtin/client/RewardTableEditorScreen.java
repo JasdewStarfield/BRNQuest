@@ -3,6 +3,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.*;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import com.google.gson.*;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -54,7 +55,7 @@ public final class RewardTableEditorScreen extends RewardEditorScreen {
 
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         renderPanel(graphics, x, y, partial);
-        graphics.drawString(font,font.plainSubstrByWidth(breadcrumb(),body().width()),body().left(),body().top()-13,GraystonePalette.SECONDARY,false);
+        graphics.drawString(font,EditorTextLayout.ellipsize(breadcrumb(), body().width(), font::width, false),body().left(),body().top()-13,GraystonePalette.SECONDARY,false);
         var bounds = entriesBounds();
         var hover = list.render(graphics, font, bounds, bounds, bounds.right() + 3,
                 32, entries.size(), i -> id(entries.get(i)), frameSeconds(), scrollSpeed(),

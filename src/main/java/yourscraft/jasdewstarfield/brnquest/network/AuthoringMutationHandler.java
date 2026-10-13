@@ -196,8 +196,8 @@ final class AuthoringMutationHandler {
         ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(chapterId))
                 .findFirst().orElseThrow(() -> new IllegalArgumentException("Chapter no longer exists"));
         return new ChapterDefinition(book.id(), chapter.id(), requireId(groupId), config.containsKey(LocalizedSingleLineEdits.FIELD) ? chapter.title() : title,
-                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), config.containsKey("backgrounds")
-                        ? chapter.canvasScene().withBackgrounds(CanvasScene.decode(config.get("backgrounds"))).write(chapter.extensions()) : chapter.extensions(), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
+                config.getOrDefault("icon", chapter.icon()), order, chapter.quests(), yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides.updateProgress(config.containsKey("backgrounds")
+                        ? chapter.canvasScene().withBackgrounds(CanvasScene.decode(config.get("backgrounds"))).write(chapter.extensions()) : chapter.extensions(), config), readDefaults(config, chapter.questDefaults()), readConsumeItems(config, chapter.consumeItems()),
                 config.containsKey("autofocus_id") ? (config.get("autofocus_id").isBlank() ? null
                         : ResourceLocation.parse(config.get("autofocus_id"))) : chapter.autofocusQuestId(),
                 config.containsKey("default_hide_dependency_lines") ? strictBoolean(config.get("default_hide_dependency_lines")) : chapter.defaultHideDependencyLines());

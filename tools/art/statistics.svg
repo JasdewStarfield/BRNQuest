@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Integer-grid chart glyph, matching the project's white, tintable 16px type icons. -->
+  <g fill="#ffffff">
+    <rect x="1" y="2" width="1" height="13"/>
+    <rect x="2" y="14" width="13" height="1"/>
+    <rect x="4" y="9" width="2" height="4"/>
+    <rect x="8" y="6" width="2" height="7"/>
+    <rect x="12" y="3" width="2" height="10"/>
+  </g>
+</svg>

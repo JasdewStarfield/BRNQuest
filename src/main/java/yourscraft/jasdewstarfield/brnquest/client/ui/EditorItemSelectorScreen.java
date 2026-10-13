@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -107,14 +108,14 @@ public final class EditorItemSelectorScreen extends Screen implements RecipeLook
         GraystoneSurface.raised(graphics, panel, GraystonePalette.PANEL, true);
         graphics.drawCenteredString(font, title, panel.centerX(), panel.top() + 8, 0xFFFFFFFF);
         Component targetLabel = Component.translatable("screen.brnquest.editor.item_selector.target");
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(targetLabel.getString(),
-                        layout.targetSlot().left() - panel.left() - 12)),
-                panel.left() + 7, panel.top() + 32, GraystonePalette.SECONDARY, false);
+        EditorTextRenderer.drawCaption(graphics, font, targetLabel,
+                new UiRect(panel.left()+7, panel.top()+32, layout.targetSlot().left()-5, panel.top()+41),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
         renderSlot(graphics, layout.targetSlot(), selected, mouseX, mouseY, true);
         Component inventoryLabel = Component.translatable("screen.brnquest.editor.item_selector.inventory");
-        graphics.drawString(font, Component.literal(font.plainSubstrByWidth(
-                        inventoryLabel.getString(), panel.width() - 14)),
-                panel.left() + 7, panel.top() + 52, GraystonePalette.SECONDARY, false);
+        EditorTextRenderer.drawCaption(graphics, font, inventoryLabel,
+                new UiRect(panel.left()+7, panel.top()+52, panel.right()-7, panel.top()+61),
+                GraystonePalette.SECONDARY, mouseX, mouseY);
 
         if (minecraft != null && minecraft.player != null) {
             for (int index = 0; index < 36; index++) {

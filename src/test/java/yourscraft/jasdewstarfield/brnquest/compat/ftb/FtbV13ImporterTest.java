@@ -60,7 +60,7 @@ class FtbV13ImporterTest {
     }
 
     @Test void importsChineseNewlinesAndPreservesUnknownTasksAlongsideSupportedQuests() throws Exception {
-        // Reproduce the reported language failure together with a stat placeholder and a normal quest.
+        // Reproduce the reported language failure together with a unknown extension placeholder and a normal quest.
         Files.createDirectories(temporary.resolve("chapters"));
         Files.createDirectories(temporary.resolve("lang"));
         Files.writeString(temporary.resolve("data.snbt"), "{version:13}", StandardCharsets.UTF_8);
@@ -68,7 +68,7 @@ class FtbV13ImporterTest {
         Files.writeString(temporary.resolve("chapters/a.snbt"), """
                 {id:'1000000000000001',quests:[
                     {id:'2000000000000001',tasks:[
-                        {id:'3000000000000001',type:'stat',stat:'minecraft:jump',value:100L,
+                        {id:'3000000000000001',type:'legacy_unmapped_stat',stat:'minecraft:jump',value:100L,
                             extra:{keep:[I;1,2,3]}}]},
                     {id:'2000000000000002',tasks:[{id:'3000000000000002',type:'checkmark'}]}
                 ]}
@@ -89,7 +89,7 @@ class FtbV13ImporterTest {
         assertEquals("统计任务", unknownQuest.title());
         assertEquals("移动速度 +10%；\n下一行", unknownQuest.description());
         var unknown = unknownQuest.tasks().getFirst();
-        assertEquals(ResourceLocation.parse("ftbquests:stat"), unknown.typeId());
+        assertEquals(ResourceLocation.parse("ftbquests:legacy_unmapped_stat"), unknown.typeId());
         assertEquals("minecraft:jump", net.minecraft.nbt.TagParser.parseTag("{stat:" + unknown.config().get("stat") + "}").getString("stat"));
         assertEquals("100L", unknown.config().get("value"));
         assertArrayEquals(new int[]{1, 2, 3}, net.minecraft.nbt.TagParser.parseTag(unknown.config().get("extra")).getIntArray("keep"));

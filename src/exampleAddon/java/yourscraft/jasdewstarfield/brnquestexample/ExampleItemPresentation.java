@@ -26,6 +26,8 @@ final class ExampleItemPresentation implements ClientTaskPresentation {
         return Component.translatable("screen.brnquest_example.task.item.title",
                 ExampleItemTask.count(context.task().config()), displayedItem(context).getHoverName());
     }
+    /** Completion notices describe the configured requirement independently of post-submission inventory. */
+    public Component completionDescription(TaskPresentationContext context) { return title(context); }
     private int available(TaskPresentationContext context) {
         if (context.minecraft().player == null) return 0;
         return context.minecraft().player.getInventory().items.stream()

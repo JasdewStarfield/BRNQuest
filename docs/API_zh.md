@@ -4,7 +4,7 @@
 
 ## 版本与公共边界
 
-模组发布版本为 **1.0.0**，Java API 基线保持 **0.1.0-experimental.28**，网络协议为 **21**。任务书 schema 1 与进度 schema 2 是独立格式，客户端和服务端需一起更新。
+模组 **1.1.0** 的 Java API 基线为 **0.1.0-experimental.30**；模组 1.0.2 使用 experimental.28。网络协议为 **21**。任务书 schema 1 与进度 schema 2 是独立格式，客户端和服务端需一起更新。
 
 `api.ApiStatus` 与本文公共清单共同定义兼容边界。`STABLE` 在对应 API major 内保持源码和二进制兼容，破坏性修改需要新 major 与迁移说明。`EXPERIMENTAL` 可随基线、文档和签名检查一起调整。`INTERNAL` 标记供内部使用的实现细节。
 
@@ -91,7 +91,7 @@ Java 注册在首次服务端资源重载监听器建立前冻结，客户端 pr
 
 ## 附属兼容提示
 
-模组 1.0.0 相对 experimental.28 没有修改 Java 签名。近期 API 变化：
+近期 API 变化：
 
 | 基线 | 需核对的变化 |
 | --- | --- |
@@ -101,5 +101,7 @@ Java 注册在首次服务端资源重载监听器建立前冻结，客户端 pr
 | experimental.26 | 类型标题与领取 UI 钩子、配置补丁与创建页、只读领取状态查询 |
 | experimental.27 | 全员完成投影与队伍共享设置 |
 | experimental.28 | 目标与奖励默认 `hiddenFromCreation()` |
+| experimental.29 | 可选 `ClientTaskPresentation.completionDescription` 提供通知中的具体要求，默认委托 `objectiveTitle` |
+| experimental.30 | `TaskType` 新增可选持久采样钩子、不可变成员采样状态与每轮读取复用；旧数值采样实现保留默认适配 |
 
 默认方法及保留构造器兼容所记录的旧调用路径。依赖 record 组件反射、生成相等判断或解构的消费者需核对新增组件。升级时以当前契约及示例附属编译结果为准。

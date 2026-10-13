@@ -16,6 +16,17 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class QuestCanvasRendererTest {
+    @Test void authoredNameKeepsEdgeLabelsVisibleWithoutExpandingNodeHits() {
+        // The client default is OFF; an authored position must still retain labels at canvas edges.
+        var base = node(id("label"), 140.0 / QuestViewportMath.GRID_SCALE, 0, List.of());
+        var shown = new QuestCanvasRenderer.NodeModel(base.id(), base.appearance(), base.position(), null,
+                0, false, false, false, false, false, base.visual(), base.item(), base.tooltip(), List.of(), null,
+                yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides.NamePosition.BELOW);
+        assertTrue(QuestCanvasRenderer.composeFrame(model(List.of(base))).nodes().isEmpty());
+        var frame = QuestCanvasRenderer.composeFrame(model(List.of(shown)));
+        assertEquals(1, frame.nodes().size());
+        assertNull(QuestCanvasRenderer.nodeAt(frame, IDENTITY, 180, 100));
+    }
     @Test
     void statusBadgeSitsOutsideLowerLeftCornerAtDifferentNodeSizes() {
         // Only two pixels overlap the node on each axis; larger nodes retain the same corner attachment.

@@ -117,6 +117,7 @@ public final class EditorSourceField extends AbstractScrollWidget implements Edi
     }
     @Override public boolean charTyped(char character,int modifiers) {
         if(!acceptsText()) return false;
+        if(yourscraft.jasdewstarfield.brnquest.compat.imblocker.ImBlockerInputBridge.characterProbe(this,character)) return true;
         buffer.type(character,Util.getMillis()); verticalGoal=Double.NaN;
         revealCaret(); focusedAt=Util.getMillis(); return true;
     }

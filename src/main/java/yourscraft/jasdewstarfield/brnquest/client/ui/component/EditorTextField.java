@@ -111,6 +111,7 @@ public final class EditorTextField extends AbstractWidget implements EditorTextI
     }
     @Override public boolean charTyped(char character,int modifiers) {
         if(!acceptsText()) return false;
+        if(yourscraft.jasdewstarfield.brnquest.compat.imblocker.ImBlockerInputBridge.characterProbe(this,character)) return true;
         buffer.type(character,Util.getMillis()); focusedAt=Util.getMillis(); ensureCaret(); return true;
     }
     @Override protected void renderWidget(GuiGraphics graphics,int x,int y,float partial) {

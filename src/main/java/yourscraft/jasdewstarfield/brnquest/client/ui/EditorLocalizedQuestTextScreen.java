@@ -2,8 +2,6 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import net.minecraft.Util;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.EditBox;
-import yourscraft.jasdewstarfield.brnquest.client.mixin.EditBoxSelectionAccessor;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSourceField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorControlNavigation;
@@ -80,8 +78,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
     private final EditorSmoothScroll previewScroll = new EditorSmoothScroll();
     private int localeIndex;
     private String loadedLocale;
-    private EditBox titleEditor;
-    private EditBox subtitleEditor;
+    private EditorTextField titleEditor;
+    private EditorTextField subtitleEditor;
     private MultiLineEditBox descriptionEditor;
     private DocumentFormat descriptionFormat = DocumentFormat.PLAIN;
     private boolean loadingWidgets;
@@ -160,9 +158,9 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
                 : sourceVisible() ? descriptionEditor : null);
     }
 
-    private EditBox nativeField(UiRect bounds, String translation) {
+    private EditorTextField nativeField(UiRect bounds, String translation) {
         EditorTextField field = new EditorTextField(font, Component.translatable(translation), 256);
-        field.brnquest$rawText(true);
+        field.setNativeFormatting(true);
         field.show(bounds, true);
         return field;
     }
@@ -482,8 +480,8 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
         drafts.remember(locales.get(localeIndex), titleEditor.getValue(), subtitleEditor.getValue(),
                 descriptionEditor.getValue(), descriptionFormat);
         var body = (MultilineTextFieldAccessor) ((MultiLineEditBoxAccessor) descriptionEditor).brnquest$textField();
-        cursors.put(locales.get(localeIndex), new CursorState(titleEditor.getCursorPosition(), ((EditBoxSelectionAccessor)titleEditor).brnquest$anchor(),
-                subtitleEditor.getCursorPosition(), ((EditBoxSelectionAccessor)subtitleEditor).brnquest$anchor(),
+        cursors.put(locales.get(localeIndex), new CursorState(titleEditor.getCursorPosition(), titleEditor.getAnchorPosition(),
+                subtitleEditor.getCursorPosition(), subtitleEditor.getAnchorPosition(),
                 body.brnquest$cursor(), body.brnquest$selectCursor(), ((EditorSourceField)descriptionEditor).savedScroll(), previewScroll.visual()));
     }
 
@@ -569,11 +567,10 @@ public final class EditorLocalizedQuestTextScreen extends Screen implements Reci
             var selected = (MultilineTextFieldAccessor) field;
             applySourceEdit(field, NativeSourceEdits.apply(descriptionEditor.getValue(), selected.brnquest$cursor(), selected.brnquest$selectCursor(), code));
         } else {
-            EditBox field = target == Target.TITLE ? titleEditor : subtitleEditor;
-            var result = NativeSourceEdits.apply(field.getValue(), field.getCursorPosition(), ((EditBoxSelectionAccessor)field).brnquest$anchor(), code);
+            EditorTextField field = target == Target.TITLE ? titleEditor : subtitleEditor;
+            var result = NativeSourceEdits.apply(field.getValue(), field.getCursorPosition(), field.getAnchorPosition(), code);
             if (result.text().length()>256) { formatNotice=text("too_long"); return; }
-            field.setValue(result.text());
-            field.setCursorPosition(result.selectionEnd()); field.setHighlightPos(result.selectionStart());
+            field.applyEdit(result.text(),result.selectionEnd(),result.selectionStart());
             setFocused(field);
         }
         rememberWidgets();

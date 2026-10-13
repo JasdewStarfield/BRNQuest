@@ -311,13 +311,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
         propertyNativeFields.clear();
         questFields.bind(font, this::registerPropertyField);
-        questFields.field("title").brnquest$rawText(true);
-        questFields.field("subtitle").brnquest$rawText(true);
+        questFields.field("title").setNativeFormatting(true);
+        questFields.field("subtitle").setNativeFormatting(true);
         structureFields.bind(font, this::addRenderableWidget);
         typedPropertySection.bind(font, this::registerPropertyField);
         quickTextField = reinitializeOverlayEditorField(quickTextField,
                 "screen.brnquest.editor.quick_edit.input", 256);
-        quickTextField.brnquest$rawText(true);
+        quickTextField.setNativeFormatting(true);
         serverContextId = currentServerContext();
         if (!catalogRequested && !ClientEditorState.get().editing()) {
             catalogRequested = true;
@@ -1597,7 +1597,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return !ClientEditorState.get().busy()
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && !questEditorOpen && !dependencyEditorOpen && !typedEditorOpen && !typedPropertySection.open()
-                && !(getFocused() instanceof net.minecraft.client.gui.components.EditBox);
+                && !(getFocused() instanceof net.minecraft.client.gui.components.EditBox)
+                && !(getFocused() instanceof yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextInput);
     }
 
     /** Executes semantic chrome intents while keeping state transitions and packets in the parent screen. */

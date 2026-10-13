@@ -32,7 +32,7 @@ final class EditorTextInformationScreen extends Screen {
     }
     private EditorTextField field(String key,int top,String value) {
         var field=new EditorTextField(font,Component.translatable(key),256);
-        field.brnquest$rawText(true); field.show(new UiRect(panel.left()+10,top,panel.right()-10,top+20),true);
+        field.setNativeFormatting(true); field.show(new UiRect(panel.left()+10,top,panel.right()-10,top+20),true);
         field.setValue(value); return addRenderableWidget(field);
     }
     @Override public void renderBackground(GuiGraphics graphics,int x,int y,float partial) {}

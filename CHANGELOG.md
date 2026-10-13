@@ -4,6 +4,7 @@
 
 ### Added
 
+- The tracking HUD has an independent display scale (default 75%) and a configurable maximum width. Its panel follows content, keeps short requirements and progress on one line, wraps long requirements, and shows a count for objectives outside its display.
 - Editor text fields provide local undo/redo, literal formatting-code editing and clearer selections. Localized source drafts keep their history across view changes and picker returns; the raw configuration editor keeps unsaved text when resized.
 - Added optional IMBlocker integration for owned editor inputs, including focus detection and composition-window positioning.
 - Quest titles and subtitles support native colors and text styles through typed/pasted codes or formatting tools.
@@ -17,6 +18,7 @@
 
 ### Changed
 
+- Tracked quests stay tracked after completion and reward claims. The HUD shows “Quest completed”; completed quests can still be tracked or untracked manually.
 - Improved button and property-label layouts to display long text more clearly, especially in English.
 - Received notices enter immediately while older cards fold independently. Only the latest three groups retain content, with older groups represented by the folded count; all layers withdraw together after the latest notice's display time.
 - Quest appearance, behavior and notification forms share their fields and validation with book/chapter creation presets. Appearance fields are grouped under Configure appearance.

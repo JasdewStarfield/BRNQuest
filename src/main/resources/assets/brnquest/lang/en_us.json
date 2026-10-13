@@ -1,4 +1,11 @@
 {
+  "screen.brnquest.hud.quest_completed": "Quest completed",
+  "brnquest.configuration.trackingHud": "Tracked quest HUD",
+  "brnquest.configuration.hudScale": "HUD display scale",
+  "brnquest.configuration.hudScale.tooltip": "Tracking panel scale: 0.5–1.5; default 0.75. Independent of Minecraft GUI scale.",
+  "brnquest.configuration.hudMaxWidth": "HUD maximum width (before scaling)",
+  "brnquest.configuration.hudMaxWidth.tooltip": "120–400 GUI pixels before HUD scaling; default 240. The panel shrinks to fit its content.",
+  "screen.brnquest.hud.more_objectives": "+%s more objectives",
   "brnquest.configuration.interface": "Interface and memory",
   "brnquest.configuration.notifications": "Completion notifications",
   "brnquest.configuration.completionNotifications": "Show floating notifications",

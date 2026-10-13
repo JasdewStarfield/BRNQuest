@@ -33,8 +33,8 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.EnumValue<QuestNamePosition> questNamePosition;
         public final ModConfigSpec.BooleanValue showChapterProgress;
         public final ModConfigSpec.BooleanValue completionNotifications, notificationSound;
-        public final ModConfigSpec.DoubleValue notificationDurationSeconds;
-        public final ModConfigSpec.IntValue notificationWidth;
+        public final ModConfigSpec.DoubleValue notificationDurationSeconds, hudScale;
+        public final ModConfigSpec.IntValue notificationWidth, hudMaxWidth;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
         public final ModConfigSpec.DoubleValue zoomSmoothSpeed;
@@ -57,6 +57,13 @@ public final class BrnQuestClientConfig {
                     .defineEnum("questNamePosition", QuestNamePosition.OFF);
             showChapterProgress = builder.comment("Show completed / visible quests and percentage in chapter navigation.")
                     .define("showChapterProgress", false);
+            builder.pop();
+            // This scale is independent of Minecraft's GUI scale and applies only to the tracking panel.
+            builder.comment("Tracked quest HUD").push("trackingHud");
+            hudScale = builder.comment("Tracking HUD scale relative to GUI pixels; default 0.75.")
+                    .defineInRange("hudScale", 0.75, 0.5, 1.5);
+            hudMaxWidth = builder.comment("Maximum tracking HUD width before its independent scale; actual width follows content.")
+                    .defineInRange("hudMaxWidth", 240, 120, 400);
             builder.pop();
             builder.comment("Top-center completion notifications").push("notifications");
             completionNotifications = builder.define("completionNotifications", true);

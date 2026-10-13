@@ -1,4 +1,11 @@
 {
+  "screen.brnquest.hud.quest_completed": "任务已完成",
+  "brnquest.configuration.trackingHud": "任务追踪 HUD",
+  "brnquest.configuration.hudScale": "HUD 显示比例",
+  "brnquest.configuration.hudScale.tooltip": "追踪面板比例：0.5–1.5，默认 0.75。独立于 Minecraft GUI 缩放。",
+  "brnquest.configuration.hudMaxWidth": "HUD 最大宽度（缩放前）",
+  "brnquest.configuration.hudMaxWidth.tooltip": "缩放前为 120–400 GUI 像素，默认 240。面板按实际内容收拢。",
+  "screen.brnquest.hud.more_objectives": "另有 %s 项目标",
   "brnquest.configuration.interface": "界面与记忆",
   "brnquest.configuration.notifications": "完成提醒",
   "brnquest.configuration.completionNotifications": "显示悬浮通知",

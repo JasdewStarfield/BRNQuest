@@ -5,6 +5,13 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class BrnQuestClientConfigTest {
+    @Test void trackingHudHasIndependentCompactDefaults() {
+        assertEquals(.75,BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.hudScale));
+        assertEquals(240,BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.hudMaxWidth));
+        assertEquals(java.util.List.of("trackingHud","hudScale"),BrnQuestClientConfig.VALUES.hudScale.getPath());
+        assertEquals(java.util.List.of("trackingHud","hudMaxWidth"),BrnQuestClientConfig.VALUES.hudMaxWidth.getPath());
+    }
+
     @Test void notificationDefaultsRemainCompactAndTimingIsConfigurable() {
         assertEquals(280, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationWidth));
         assertEquals(4.0, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationDurationSeconds));

@@ -7,7 +7,10 @@ import yourscraft.jasdewstarfield.brnquest.editor.*;
 import java.util.*;
 
 /** Exact registry identities and raw vanilla units; opaque extension keys survive authoring. */
-public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat, int count) {
+public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat, int count, String mode, boolean rawFormat, boolean legacyNamespace) {
+    public StatisticsConfig(ResourceLocation statType, ResourceLocation stat, int count) {
+        this(statType, stat, count, "total", false, false);
+    }
     public static final ResourceLocation ID = ResourceLocation.parse("brnquest:statistics");
     public static final List<String> TYPES = List.of("minecraft:custom", "minecraft:mined", "minecraft:crafted",
             "minecraft:used", "minecraft:broken", "minecraft:picked_up", "minecraft:dropped", "minecraft:killed", "minecraft:killed_by");
@@ -25,15 +28,17 @@ public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat,
         try { count = Integer.parseInt(values.getOrDefault("count", "1").strip()); }
         catch (NumberFormatException error) { throw new IllegalArgumentException("count: expected 1..2147483647 raw units"); }
         if (count < 1) throw new IllegalArgumentException("count: expected 1..2147483647 raw units");
-        // Reserve the mode field now so a future delta configuration cannot silently count history.
-        if (!values.getOrDefault("mode", "total").strip().equals("total"))
-            throw new IllegalArgumentException("mode: currently supported value is total");
-        return new StatisticsConfig(ResourceLocation.parse(category), stat, count);
+        String mode = values.getOrDefault("mode", "total").strip();
+        if (!List.of("total", "since_available").contains(mode)) throw new IllegalArgumentException("mode: expected total/since_available");
+        String format = values.getOrDefault("format", "native").strip();
+        if (!List.of("native", "raw").contains(format)) throw new IllegalArgumentException("format: expected native/raw");
+        return new StatisticsConfig(ResourceLocation.parse(category), stat, count, mode, format.equals("raw"),
+                values.getOrDefault("ftb.stat_namespace_fallback", "false").equals("true"));
     }
 
     public static Map<String, String> normalize(Map<String, String> values) {
         var result = new TreeMap<>(values);
-        for (String key : List.of("stat_type", "stat", "count", "mode")) result.computeIfPresent(key, (k, v) -> v.strip());
+        for (String key : List.of("stat_type", "stat", "count", "mode", "format")) result.computeIfPresent(key, (k, v) -> v.strip());
         parse(result);
         return result;
     }
@@ -51,12 +56,25 @@ public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat,
                             // Validate the pair again after a category edit; matching IDs in another registry do not count.
                             var id = ResourceLocation.tryParse(value);
                             var category = config.getOrDefault("stat_type", "minecraft:custom");
-                            return id != null && TYPES.contains(category) && StatisticsTargets.resolve(new StatisticsConfig(
-                                    ResourceLocation.parse(category), id, 1)).isPresent() ? List.of()
+                            boolean valid = false;
+                            if (id != null && TYPES.contains(category)) {
+                                var selection = new TreeMap<>(config);
+                                selection.put("stat", value);
+                                selection.put("count", "1");
+                                try { valid = StatisticsTargets.resolve(parse(selection)).isPresent(); }
+                                catch (IllegalArgumentException ignored) { /* Other fields retain their own diagnostics. */ }
+                            }
+                            return valid ? List.of()
                                     : List.of(new ConfigFieldIssue("stat", ConfigFieldIssue.Severity.ERROR,
                                     "STATISTIC_MISSING", "Statistic target is not registered in the selected category"));
                         }),
                 ConfigFieldDescriptor.field("count", ConfigValueType.INTEGER).withDefault("1").withRange(1, Integer.MAX_VALUE)
-                        .withLabel("screen.brnquest.statistics.count").withHelp("screen.brnquest.statistics.units_help"));
+                        .withLabel("screen.brnquest.statistics.count").withHelp("screen.brnquest.statistics.units_help"),
+                ConfigFieldDescriptor.enumeration("mode", List.of("total", "since_available")).withDefault("total")
+                        .withLabel("screen.brnquest.statistics.mode").withValueLabels(Map.of("total", "screen.brnquest.statistics.total",
+                                "since_available", "screen.brnquest.statistics.since_available")).withHelp("screen.brnquest.statistics.mode_help"),
+                ConfigFieldDescriptor.enumeration("format", List.of("native", "raw")).withDefault("native")
+                        .withLabel("screen.brnquest.statistics.format").withValueLabels(Map.of("native", "screen.brnquest.statistics.native",
+                                "raw", "screen.brnquest.statistics.raw")));
     }
 }

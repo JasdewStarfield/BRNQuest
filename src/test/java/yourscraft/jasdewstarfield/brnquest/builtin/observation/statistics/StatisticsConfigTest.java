@@ -11,7 +11,7 @@ class StatisticsConfigTest {
         assertEquals(Integer.MAX_VALUE, StatisticsConfig.parse(Map.of("count", "2147483647")).count());
         for (var values : java.util.List.of(Map.of("count", "0"), Map.of("count", "2147483648"),
                 Map.of("count", "1.5"), Map.of("count", "-1"), Map.of("stat", "#minecraft:logs"),
-                Map.of("stat_type", "example:category"), Map.of("mode", "since_available")))
+                Map.of("stat_type", "example:category"), Map.of("mode", "unknown")))
             assertThrows(IllegalArgumentException.class, () -> StatisticsConfig.parse(values));
     }
     @Test void normalizationRetainsOpaqueConfigurationAndDependentPicker() {

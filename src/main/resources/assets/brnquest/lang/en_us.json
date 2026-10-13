@@ -1128,7 +1128,15 @@
   "screen.brnquest.statistics.target": "Statistic target",
   "screen.brnquest.statistics.count": "Required raw count",
   "screen.brnquest.statistics.requirement": "%1$s: %2$s, reach %3$s",
-  "screen.brnquest.statistics.history_help": "Historical total: statistics from before objective creation also count. Uses personal progress only.",
-  "screen.brnquest.statistics.units_help": "Enter vanilla raw units: counts/items; distance in centimeters (100 = 1 meter); time in ticks (1200 = 1 minute); damage in tenths (10 = 1 damage point). Display uses the native statistic format.",
-  "screen.brnquest.statistics.missing": "The selected statistic is unregistered. Check its category and ID."
+  "screen.brnquest.statistics.history_help": "Choose the category and target; counting mode determines which actions count.",
+  "screen.brnquest.statistics.units_help": "Enter vanilla raw units: counts/items; distance in centimeters (100 = 1 meter); time in ticks (1200 = 1 minute); damage in tenths (10 = 1 damage point). Native display formats these units; raw display keeps the integer.",
+  "screen.brnquest.statistics.missing": "The selected statistic is unregistered. Check its category and ID.",
+  "screen.brnquest.statistics.mode": "Counting mode",
+  "screen.brnquest.statistics.total": "Historical total",
+  "screen.brnquest.statistics.since_available": "New progress after unlock",
+  "screen.brnquest.statistics.format": "Value display",
+  "screen.brnquest.statistics.native": "Native statistic units",
+  "screen.brnquest.statistics.raw": "Raw integer",
+  "screen.brnquest.statistics.mode_help": "Historical totals include past actions; shared teams use the highest member value. Incremental mode starts when the objective becomes executable, with members contributing separately. Sequential objectives start at their turn. Reconnect preserves progress; resets start again.",
+  "screen.brnquest.statistics.requirement_delta": "After unlock: %1$s, %2$s, gain %3$s"
 }

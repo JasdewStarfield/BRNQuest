@@ -86,7 +86,7 @@ public final class StatisticsGameTests {
         helper.succeedWhen(() -> {
             engine.pollTasks(player);
             if (phase.get() == 0) {
-                helper.assertTrue(player.server.getTickCount() % 20 == 0, "wait for a sampling tick");
+                helper.assertTrue(player.server.getTickCount() % 3 == 0, "wait for a sampling tick");
                 helper.assertTrue(engine.taskProgress(player, quest, goal) == 0, "sequential future objective is not sampled");
                 engine.complete(player, quest.id(), true);
                 engine.complete(other, quest.id(), true);
@@ -105,7 +105,7 @@ public final class StatisticsGameTests {
                 helper.assertTrue(false, "wait for a lower native counter");
             }
             if (phase.get() == 2) {
-                helper.assertTrue(player.server.getTickCount() % 20 == 0, "sample lower native counter");
+                helper.assertTrue(player.server.getTickCount() % 3 == 0, "sample lower native counter");
                 helper.assertTrue(engine.taskProgress(player, quest, goal) == 12, "counter decrease does not subtract latched progress");
                 engine.reset(player, quest.id());
                 engine.complete(player, quest.id(), true);

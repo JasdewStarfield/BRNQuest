@@ -26,7 +26,7 @@ public final class FtbV13Importer implements FtbImportBackend {
     // Reset per import; source policies are materialized for entries and retained as native book settings.
     private BookSettings importedSettings = BookSettings.DEFAULT;
     private static final Set<String> BUILT_IN_TYPES = Set.of("checkmark", "item", "custom", "xp",
-            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill", "all_table", "random", "loot", "choice");
+            "xp_levels", "command", "dimension", "biome", "location", "structure", "advancement", "observation", "kill", "stat", "all_table", "random", "loot", "choice");
 
     private static String builtInPath(String type) {
         String normalized = type == null ? "" : type.toLowerCase(Locale.ROOT);
@@ -478,6 +478,19 @@ public final class FtbV13Importer implements FtbImportBackend {
                 }
             }
             advancementFields(mappedType, raw, config);
+            String statisticError = FtbStatisticFields.apply(mappedType, raw, config);
+            if (!statisticError.isEmpty()) report.add(problem(Diagnostic.Severity.ERROR, "BQF-111", file,
+                    "tasks[" + legacy + "]", legacy, statisticError));
+            if (mappedType.equals(yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID)) {
+                conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", "stat/value", "config.stat/count",
+                        statisticError.isEmpty() ? FtbFieldConversion.Status.MAPPED : FtbFieldConversion.Status.UNSUPPORTED,
+                        "Custom historical statistics; raw units and original SNBT retained"));
+                conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", "", "config.stat_type/mode/format",
+                        FtbFieldConversion.Status.DEFAULTED, "minecraft:custom / total / raw"));
+                for (String field : List.of("stat_type", "count", "mode", "format")) if (raw.contains(field))
+                    conversions.add(new FtbFieldConversion(file, "tasks[" + legacy + "]", field, "config.ftb." + field,
+                            FtbFieldConversion.Status.PRESERVED_EXTENSION, "Original source field retained separately from native settings"));
+            }
             String encounterError=FtbEncounterFields.apply(mappedType,raw,config);
             if(!encounterError.isEmpty()) report.add(problem(Diagnostic.Severity.ERROR,"BQF-109",file,"tasks["+legacy+"]",legacy,encounterError));
             if(config.containsKey("ftb.observation_mode_conflict")) report.add(problem(Diagnostic.Severity.WARN,"BQF-110",file,"tasks["+legacy+"].observe_type",legacy,"Legacy observe_type takes precedence: "+config.get("ftb.observation_mode_conflict")));
@@ -505,7 +518,8 @@ public final class FtbV13Importer implements FtbImportBackend {
                     }
                 }
             }
-            recordConfigFields(raw, mappedType.equals(ResourceLocation.parse("brnquest:location"))
+            recordConfigFields(raw, mappedType.equals(yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID)
+                    ? Set.of("id", "type", "optional_task", "stat", "value", "stat_type", "count", "mode", "format") : mappedType.equals(ResourceLocation.parse("brnquest:location"))
                     ? Set.of("id", "type", "optional_task", "position", "size") : Set.of("id", "type", "optional_task"), file,
                     "quests[" + quest + "].tasks[" + legacy + "]", conversions);
             config.put("title", translations.getOrDefault("task." + legacy + ".title", ""));
@@ -796,6 +810,7 @@ public final class FtbV13Importer implements FtbImportBackend {
         if (Set.of("all_table", "random", "loot", "choice").contains(builtInPath)) return yourscraft.jasdewstarfield.brnquest.builtin.reward.table.RewardTableReward.ID;
         if (builtInPath.equals("observation")) return yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.OBSERVE;
         if (builtInPath.equals("kill")) return yourscraft.jasdewstarfield.brnquest.builtin.observation.encounter.EncounterConfig.KILL;
+        if (builtInPath.equals("stat")) return yourscraft.jasdewstarfield.brnquest.builtin.observation.statistics.StatisticsConfig.ID;
         if (BUILT_IN_TYPES.contains(builtInPath)) {
             return ResourceLocation.fromNamespaceAndPath("brnquest", builtInPath);
         }

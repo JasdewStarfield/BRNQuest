@@ -18,7 +18,11 @@ public final class StatisticsTargets {
     private StatisticsTargets() {}
 
     public static Optional<Stat<?>> resolve(StatisticsConfig config) {
-        return type(config.statType().toString()).flatMap(type -> resolve(type, config.stat()));
+        var exact = type(config.statType().toString()).flatMap(type -> resolve(type, config.stat()));
+        // Only imported legacy custom-stat references opt into the observed vanilla-namespace workaround.
+        if (exact.isEmpty() && config.legacyNamespace() && config.statType().toString().equals("minecraft:custom"))
+            return type("minecraft:custom").flatMap(type -> resolve(type, ResourceLocation.withDefaultNamespace(config.stat().getPath())));
+        return exact;
     }
 
     private static Optional<StatType<?>> type(String category) {
@@ -37,7 +41,8 @@ public final class StatisticsTargets {
             if (value instanceof Block block) return block.getName();
             if (value instanceof Item item) return item.getDescription();
             if (value instanceof EntityType<?> entity) return entity.getDescription();
-            return Component.translatableWithFallback("stat." + config.stat().toString().replace(':', '.'), config.stat().toString());
+            String id = value instanceof ResourceLocation location ? location.toString() : config.stat().toString();
+            return Component.translatableWithFallback("stat." + id.replace(':', '.'), id);
         }).orElse(Component.literal(config.stat().toString()));
     }
 
@@ -48,7 +53,13 @@ public final class StatisticsTargets {
 
     public static String format(StatisticsConfig config, long value) {
         int bounded = (int) Math.clamp(value, 0, Integer.MAX_VALUE);
+        if (config.rawFormat()) return Integer.toString(bounded);
         return resolve(config).map(stat -> stat.format(bounded)).orElse(Integer.toString(bounded));
+    }
+    /** A delta objective names its activation boundary in every detailed requirement and notification. */
+    public static Component requirement(StatisticsConfig config) {
+        return Component.translatable(config.mode().equals("since_available") ? "screen.brnquest.statistics.requirement_delta"
+                : "screen.brnquest.statistics.requirement", categoryName(config), targetName(config), format(config, config.count()));
     }
 
     public static void register(BrnQuestExtensionRegistrar registrar) {
@@ -58,13 +69,17 @@ public final class StatisticsTargets {
             }
             public ServerFieldSources.Result queryPage(ServerPlayer player, String filter, String selected,
                                                        int offset, Map<String, String> context) {
-                return page(context.getOrDefault("stat_type", "minecraft:custom"), filter, selected, offset);
+                return page(context.getOrDefault("stat_type", "minecraft:custom"), filter, selected, offset,
+                        context.getOrDefault("ftb.stat_namespace_fallback", "false").equals("true"));
             }
         });
     }
 
     /** Browsing enumerates registry IDs only; it never creates a Stat for every candidate or scans player counters. */
     public static ServerFieldSources.Result page(String category, String filter, String selected, int offset) {
+        return page(category, filter, selected, offset, false);
+    }
+    private static ServerFieldSources.Result page(String category, String filter, String selected, int offset, boolean legacy) {
         var type = type(category).orElse(null);
         if (type == null) return new ServerFieldSources.Result(List.of(), 0, 0, "missing", "", category);
         String search = filter.toLowerCase(Locale.ROOT);
@@ -72,6 +87,8 @@ public final class StatisticsTargets {
                 .filter(id -> id.contains(search)).toList();
         var id = ResourceLocation.tryParse(selected);
         int count = id != null && type.getRegistry().containsKey(id) ? 1 : 0;
+        if (count == 0 && id != null && legacy && category.equals("minecraft:custom")
+                && type.getRegistry().containsKey(ResourceLocation.withDefaultNamespace(id.getPath()))) count = 1;
         return new ServerFieldSources.Result(choices.stream().skip(Math.max(0, offset)).limit(ServerFieldSources.PAGE_SIZE)
                 .map(value -> new ServerFieldSources.Entry(value, 1)).toList(), choices.size(), count,
                 selected.isBlank() || count == 1 ? "" : "missing", "", selected);

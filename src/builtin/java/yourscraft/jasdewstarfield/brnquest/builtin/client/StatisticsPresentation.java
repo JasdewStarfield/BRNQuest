@@ -50,13 +50,12 @@ public final class StatisticsPresentation implements ClientTaskPresentation {
     public Component completionDescription(TaskPresentationContext context) {
         var config = StatisticsConfig.parse(context.task().config());
         // An authored short title never hides the concrete requirement in a completion notification.
-        return Component.translatable("screen.brnquest.statistics.requirement", StatisticsTargets.categoryName(config),
-                StatisticsTargets.targetName(config), StatisticsTargets.format(config, config.count()));
+        return StatisticsTargets.requirement(config);
     }
     public Component interactionHint(TaskPresentationContext context, boolean interactive) {
         var config = StatisticsConfig.parse(context.task().config());
         var result = completionDescription(context).copy().append("\n" + config.statType() + " / " + config.stat());
         if (StatisticsTargets.resolve(config).isEmpty()) result.append("\n").append(Component.translatable("screen.brnquest.statistics.missing"));
-        return result.append("\n").append(Component.translatable("screen.brnquest.statistics.history_help"));
+        return result.append("\n").append(Component.translatable("screen.brnquest.statistics." + config.mode()));
     }
 }

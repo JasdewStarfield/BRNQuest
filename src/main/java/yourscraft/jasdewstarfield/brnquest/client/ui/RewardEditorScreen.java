@@ -34,6 +34,13 @@ public abstract class RewardEditorScreen extends Screen {
         return new UiRect(p.left() + 12, p.top() + 32, p.right() - 18, p.bottom() - 60);
     }
 
+    /** A type picker needs only a small gap above Cancel; property editors retain their validation-message space. */
+    protected UiRect pickerBody() { return pickerBody(panel()); }
+    static UiRect pickerBody(UiRect panel) {
+        int top=Math.min(panel.bottom(),panel.top()+32);
+        return new UiRect(panel.left()+12,top,panel.right()-18,Math.max(top,panel.bottom()-38));
+    }
+
     protected double frameSeconds() {
         long now = System.nanoTime();
         double seconds = lastFrame == 0 ? 0 : Math.min(0.1, (now - lastFrame) / 1_000_000_000.0);

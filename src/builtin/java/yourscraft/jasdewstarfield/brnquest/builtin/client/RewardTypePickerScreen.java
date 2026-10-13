@@ -51,7 +51,7 @@ public final class RewardTypePickerScreen extends RewardEditorScreen {
 
     @Override public void render(GuiGraphics graphics, int x, int y, float partial) {
         renderPanel(graphics, x, y, partial);
-        picker.advanceIconChoices(body(), panel(), types.size(), types::get, frameSeconds(), scrollSpeed());
+        picker.advanceIconChoices(pickerBody(), panel(), types.size(), types::get, frameSeconds(), scrollSpeed());
         var tooltip = picker.renderIconChoices(graphics, font, title, type -> new EditorPickerList.Entry(
                 ClientRewardPresentationRegistry.get(type).typeName(new RewardView(type, type, type, Map.of(), "manual", false)),
                 Component.translatable("screen.brnquest.editor.typed.click_to_configure"),

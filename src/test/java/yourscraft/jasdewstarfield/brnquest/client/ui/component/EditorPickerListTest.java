@@ -82,12 +82,12 @@ class EditorPickerListTest {
         EditorPickerList<Integer> picker = new EditorPickerList<>();
         UiRect screen = new UiRect(0, 0, 220, 90);
         var frame = picker.advance(BOUNDS, screen, 20, i -> i, 0, 12);
-        assertEquals(30, frame.viewport().height());
+        assertEquals(58, frame.viewport().height());
         // A large wheel gesture approaches the final row in the reduced viewport.
         picker.mouseScrolled(30, 40, -100, 30);
         frame = picker.advance(BOUNDS, screen, 20, i -> i, 0.1, 1000);
-        assertEquals(570, frame.pixelScroll());
-        assertEquals(19, picker.entryAt(30, 40).orElseThrow());
+        assertEquals(542, frame.pixelScroll());
+        assertEquals(19, picker.entryAt(30, frame.viewport().bottom()-2).orElseThrow());
     }
 
     @Test void emptyPickerClearsOldHitsAndStyleRemainsSemanticData() {

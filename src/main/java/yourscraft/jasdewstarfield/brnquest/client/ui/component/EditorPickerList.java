@@ -49,12 +49,12 @@ public final class EditorPickerList<K> {
     private final EditorListPanel<K> list = new EditorListPanel<>();
     private UiRect bounds;
 
-    /** Use whole rows where possible, but never force one row through a tiny window's footer. */
+    /** Use every available pixel below the header; the list owns clipping and scroll range for partial rows. */
     public static UiRect rowsBounds(UiRect bounds) {
         int bottom = Math.max(bounds.top(), bounds.bottom() - 2);
         int top = Math.min(bottom, bounds.top() + SEARCH_HEIGHT + 2);
         int available = bottom - top;
-        int height = available >= ROW_HEIGHT ? available / ROW_HEIGHT * ROW_HEIGHT : available;
+        int height = available;
         int left = Math.min(bounds.right(), bounds.left() + 2);
         return new UiRect(left, top, Math.max(left, bounds.right() - 6), top + height);
     }

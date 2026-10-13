@@ -1418,6 +1418,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
         if (editorOverlays.mouseScrolled(x, y, vertical)) return true;
         if (canvasArtwork.dragging()) return true;
+        // The property form is painted over the entry list; it owns wheel input throughout this panel.
+        if ((questEditorOpen || typedPropertySection.open()) && detailsPanelAcceptsPointer(x)) {
+            if (propertyViewport().contains(x, y))
+                propertyScroll.scrollWheel(vertical, scrollStep(), propertyContentHeight, propertyViewport().height());
+            return true;
+        }
         if (dependencyEditorOpen && detailsPanelAcceptsPointer(x)) {
             if (dependencyListInputReady()) dependencyList.mouseScrolled(x, y, vertical, scrollStep());
             return true;
@@ -1426,10 +1432,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             typedEntryList.mouseScrolled(currentFrameIdentity(), typedEditorQuestId, typedEditorKind,
                     typedListInputReady(),
                     x, y, vertical, scrollStep());
-            return true;
-        }
-        if ((questEditorOpen || typedPropertySection.open()) && detailsPanelAcceptsPointer(x) && propertyViewport().contains(x, y)) {
-            propertyScroll.scrollWheel(vertical, scrollStep(), propertyContentHeight, propertyViewport().height());
             return true;
         }
         if (navigationPanelVisibleAt(x) && isContentY(y)) {

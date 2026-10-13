@@ -27,7 +27,10 @@ public final class ImBlockerInputBridge {
         if(!attempted) {
             attempted=true;
             if(!ModList.get().isLoaded("imblocker")) return;
-            try { binding=ImBlockerBinding.load(ImBlockerInputBridge.class.getClassLoader()); }
+            try {
+                binding=ImBlockerBinding.load(ImBlockerInputBridge.class.getClassLoader());
+                LogUtils.getLogger().info("BRNQuest bound the optional IMBlocker input API");
+            }
             catch(ReflectiveOperationException | LinkageError exception) { disable(exception); }
         }
         if(binding==null) return;
@@ -42,6 +45,8 @@ public final class ImBlockerInputBridge {
                         var box=acquired.imeGeometry();
                         return new ImBlockerBinding.Geometry(box.x(),box.y(),box.width(),box.height(),box.caretX(),box.caretY(),box.fontHeight());
                     },()->focusedInput()==acquired);
+                    // Separate API binding from actual widget registration in pack-side diagnostics.
+                    LogUtils.getLogger().debug("BRNQuest registered IMBlocker input: {}",acquired.getClass().getSimpleName());
                 }
             }
             if(owner!=null) {

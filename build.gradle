@@ -403,6 +403,12 @@ test {
     // provide an explicit project root for the public-signature contract test.
     systemProperty 'brnquest.projectDir', projectDir.absolutePath
     systemProperty 'brnquest.buildDir', layout.buildDirectory.get().asFile.absolutePath
+    // Optional public-API smoke check against an installed IMBlocker JAR, without adding it as a runtime dependency.
+    if (providers.gradleProperty('imBlockerApiJar').isPresent()) {
+        def imBlockerApiJar = file(providers.gradleProperty('imBlockerApiJar').get())
+        systemProperty 'brnquest.imBlockerApiJar', imBlockerApiJar.absolutePath
+        inputs.file(imBlockerApiJar).withPathSensitivity(PathSensitivity.NONE)
+    }
 }
 
 // A normal build must prove the public-only companion source still compiles.

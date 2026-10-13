@@ -19,15 +19,16 @@ final class ImBlockerBinding {
 
     static ImBlockerBinding load(ClassLoader loader) throws ReflectiveOperationException {
         String api="io.github.reserveword.imblocker.common.gui.";
-        return new ImBlockerBinding(Class.forName(api+"MinecraftFocusableWidget",true,loader),
-                Class.forName(api+"Rectangle",true,loader),Class.forName(api+"Point",true,loader),
-                Class.forName(api+"FocusManager",true,loader));
+        return new ImBlockerBinding(Class.forName(api+"MinecraftFocusableWidget",false,loader),
+                Class.forName(api+"Rectangle",false,loader),Class.forName(api+"Point",false,loader),
+                Class.forName(api+"FocusManager",false,loader));
     }
     /** Explicit types make protocol fixtures independent of the optional mod and its native library. */
     ImBlockerBinding(Class<?> widget,Class<?> rectangle,Class<?> point,Class<?> focus) throws ReflectiveOperationException {
         this.widget=widget;
-        this.rectangle=rectangle.getConstructor(double.class,int.class,int.class,int.class,int.class);
-        this.point=point.getConstructor(double.class,int.class,int.class);
+        // The unscaled integer constructors are stable across the 5.4 and 5.6 APIs; their scaled overloads changed.
+        this.rectangle=rectangle.getConstructor(int.class,int.class,int.class,int.class);
+        this.point=point.getConstructor(int.class,int.class);
         gain=widget.getMethod("imblocker$onFocusGained"); lose=widget.getMethod("imblocker$onFocusLost");
         boundsChanged=widget.getMethod("imblocker$onBoundsChanged"); scale=widget.getMethod("getGuiScale");
         container=widget.getMethod("getFocusContainer");
@@ -51,11 +52,11 @@ final class ImBlockerBinding {
                 case "getFontHeight" -> geometry.get().fontHeight();
                 case "getBoundsAbs" -> {
                     var box=geometry.get(); double factor=((Number)scale.invoke(self)).doubleValue();
-                    yield rectangle.newInstance(factor,box.x(),box.y(),box.width(),box.height());
+                    yield rectangle.newInstance(pixel(factor,box.x()),pixel(factor,box.y()),pixel(factor,box.width()),pixel(factor,box.height()));
                 }
                 case "getCaretPos" -> {
                     var box=geometry.get(); double factor=((Number)scale.invoke(self)).doubleValue();
-                    yield point.newInstance(factor,box.caretX(),box.caretY());
+                    yield point.newInstance(pixel(factor,box.caretX()),pixel(factor,box.caretY()));
                 }
                 default -> {
                     if(!method.isDefault()) throw new UnsupportedOperationException(method.toString());
@@ -65,6 +66,8 @@ final class ImBlockerBinding {
         });
         gain.invoke(proxy);
     }
+    /** Convert GUI units to physical pixels once, using the scale supplied by IMBlocker's default DPI policy. */
+    private static int pixel(double scale,int coordinate) { return (int)(scale*coordinate); }
     void release() throws ReflectiveOperationException {
         if(proxy!=null) {
             Object previous=proxy; proxy=null; lose.invoke(previous);

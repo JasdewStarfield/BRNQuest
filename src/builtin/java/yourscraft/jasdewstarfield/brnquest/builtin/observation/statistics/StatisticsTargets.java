@@ -47,8 +47,7 @@ public final class StatisticsTargets {
     }
 
     public static Component categoryName(StatisticsConfig config) {
-        return type(config.statType().toString()).map(StatType::getDisplayName)
-                .orElse(Component.literal(config.statType().toString()));
+        return Component.translatable(StatisticsConfig.categoryLabel(config.statType()));
     }
 
     public static String format(StatisticsConfig config, long value) {

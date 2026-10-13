@@ -1138,5 +1138,14 @@
   "screen.brnquest.statistics.native": "原生统计单位",
   "screen.brnquest.statistics.raw": "原始整数",
   "screen.brnquest.statistics.mode_help": "历史累计包含之前的行为，团队取成员最高值。新增量从目标可执行时开始，团队累加成员贡献；顺序目标轮到时开始。重连保留进度，重置重新开始。",
-  "screen.brnquest.statistics.requirement_delta": "解锁后：%1$s，%2$s，新增 %3$s"
+  "screen.brnquest.statistics.requirement_delta": "解锁后：%1$s，%2$s，新增 %3$s",
+  "screen.brnquest.statistics.category.custom": "常规",
+  "screen.brnquest.statistics.category.mined": "开采次数",
+  "screen.brnquest.statistics.category.crafted": "合成次数",
+  "screen.brnquest.statistics.category.used": "使用次数",
+  "screen.brnquest.statistics.category.broken": "损坏次数",
+  "screen.brnquest.statistics.category.picked_up": "拾取数量",
+  "screen.brnquest.statistics.category.dropped": "丢弃数量",
+  "screen.brnquest.statistics.category.killed": "击杀实体数量",
+  "screen.brnquest.statistics.category.killed_by": "被实体击杀次数"
 }

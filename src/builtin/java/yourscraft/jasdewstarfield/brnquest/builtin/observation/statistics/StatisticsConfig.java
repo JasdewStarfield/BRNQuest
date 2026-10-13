@@ -45,7 +45,8 @@ public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat,
 
     public static List<ConfigFieldDescriptor> fields() {
         var labels = new TreeMap<String, String>();
-        TYPES.forEach(id -> labels.put(id, "stat_type." + id.replace(':', '.')));
+        // Vanilla custom/kill titles may be missing or require entity arguments; categories need standalone labels.
+        TYPES.forEach(id -> labels.put(id, categoryLabel(ResourceLocation.parse(id))));
         return List.of(
                 ConfigFieldDescriptor.field("title", ConfigValueType.TEXT).withLabel("screen.brnquest.editor.config.title"),
                 ConfigFieldDescriptor.enumeration("stat_type", TYPES).withDefault("minecraft:custom")
@@ -76,5 +77,10 @@ public record StatisticsConfig(ResourceLocation statType, ResourceLocation stat,
                 ConfigFieldDescriptor.enumeration("format", List.of("native", "raw")).withDefault("native")
                         .withLabel("screen.brnquest.statistics.format").withValueLabels(Map.of("native", "screen.brnquest.statistics.native",
                                 "raw", "screen.brnquest.statistics.raw")));
+    }
+
+    /** The picker, requirements and HUD share the same argument-free category names. */
+    public static String categoryLabel(ResourceLocation type) {
+        return "screen.brnquest.statistics.category." + type.getPath();
     }
 }

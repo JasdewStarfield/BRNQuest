@@ -1138,5 +1138,14 @@
   "screen.brnquest.statistics.native": "Native statistic units",
   "screen.brnquest.statistics.raw": "Raw integer",
   "screen.brnquest.statistics.mode_help": "Historical totals include past actions; shared teams use the highest member value. Incremental mode starts when the objective becomes executable, with members contributing separately. Sequential objectives start at their turn. Reconnect preserves progress; resets start again.",
-  "screen.brnquest.statistics.requirement_delta": "After unlock: %1$s, %2$s, gain %3$s"
+  "screen.brnquest.statistics.requirement_delta": "After unlock: %1$s, %2$s, gain %3$s",
+  "screen.brnquest.statistics.category.custom": "General",
+  "screen.brnquest.statistics.category.mined": "Times Mined",
+  "screen.brnquest.statistics.category.crafted": "Times Crafted",
+  "screen.brnquest.statistics.category.used": "Times Used",
+  "screen.brnquest.statistics.category.broken": "Times Broken",
+  "screen.brnquest.statistics.category.picked_up": "Picked Up",
+  "screen.brnquest.statistics.category.dropped": "Dropped",
+  "screen.brnquest.statistics.category.killed": "Entities Killed",
+  "screen.brnquest.statistics.category.killed_by": "Killed by Entities"
 }

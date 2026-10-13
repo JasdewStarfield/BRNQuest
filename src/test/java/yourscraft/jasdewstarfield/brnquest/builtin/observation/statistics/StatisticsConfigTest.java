@@ -21,4 +21,23 @@ class StatisticsConfigTest {
         assertTrue(StatisticsConfig.fields().stream().filter(field -> field.key().equals("stat")).findFirst().orElseThrow().serverSource().isPresent());
         assertEquals(9, StatisticsConfig.TYPES.size());
     }
+    @Test void everyCategoryHasStandaloneBilingualNamesWithoutFormattingArguments() throws Exception {
+        var field = StatisticsConfig.fields().stream().filter(value -> value.key().equals("stat_type")).findFirst().orElseThrow();
+        for (String locale : java.util.List.of("en_us", "zh_cn")) {
+            try (var stream = getClass().getResourceAsStream("/assets/brnquest/lang/" + locale + ".json")) {
+                assertNotNull(stream);
+                var language = com.google.gson.JsonParser.parseReader(new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8)).getAsJsonObject();
+                for (String type : StatisticsConfig.TYPES) {
+                    String key = field.valueLabelKeys().get(type);
+                    assertTrue(language.has(key), type + " must have an actual category translation");
+                    assertFalse(language.get(key).getAsString().contains("%"), type + " must not require entity/count arguments");
+                    var name = StatisticsTargets.categoryName(new StatisticsConfig(net.minecraft.resources.ResourceLocation.parse(type),
+                            net.minecraft.resources.ResourceLocation.parse("minecraft:jump"), 1));
+                    var contents = (net.minecraft.network.chat.contents.TranslatableContents) name.getContents();
+                    assertEquals(key, contents.getKey(), "requirements must use the same standalone label as the picker");
+                    assertEquals(0, contents.getArgs().length);
+                }
+            }
+        }
+    }
 }

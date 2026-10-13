@@ -37,4 +37,19 @@ class QuestTypeIconsTest {
         assertNotEquals(QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:xp")),
                 QuestTypeIcons.sprite(ResourceLocation.parse("example:xp")));
     }
+
+    @Test void statisticsAndRewardTableHaveDifferentPixelSilhouettes() throws Exception {
+        var masks = new java.util.ArrayList<java.util.List<Integer>>();
+        for (String type : new String[]{"statistics", "reward_table"}) {
+            var sprite = QuestTypeIcons.sprite(ResourceLocation.parse("brnquest:" + type));
+            try (var stream = getClass().getResourceAsStream("/assets/brnquest/textures/gui/sprites/" + sprite.getPath() + ".png")) {
+                assertNotNull(stream);
+                var image = javax.imageio.ImageIO.read(stream);
+                var alpha = new java.util.ArrayList<Integer>();
+                for (int y = 0; y < 16; y++) for (int x = 0; x < 16; x++) alpha.add(image.getRGB(x, y) >>> 24);
+                masks.add(alpha);
+            }
+        }
+        assertNotEquals(masks.get(0), masks.get(1), "separate resource paths must also carry distinguishable artwork");
+    }
 }

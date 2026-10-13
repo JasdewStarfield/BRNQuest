@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added separate background-opacity settings for the tracking HUD and floating notices, plus independent notice scaling. Text and icons stay opaque; scaled notices keep their folded spacing and HUD avoidance.
 - The tracking HUD has an independent display scale (default 75%) and a configurable maximum width. Its panel follows content, keeps short requirements and progress on one line, wraps long requirements, and shows a count for objectives outside its display.
 - Editor text fields provide local undo/redo, literal formatting-code editing and clearer selections. Localized source drafts keep their history across view changes and picker returns; the raw configuration editor keeps unsaved text when resized.
 - Added optional IMBlocker integration for owned editor inputs, including focus detection and composition-window positioning.

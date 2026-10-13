@@ -2,6 +2,7 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -50,6 +51,7 @@ public final class QuestHud {
                 : presentationTitle(minecraft, quest.tasks().getFirst()).getString());
         if (quest.behavior().hideTextUntilComplete() && !isComplete(state.statuses().get(tracked.toString()))) title = "???";
         double scale = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.hudScale);
+        double opacity = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.hudBackgroundOpacity);
         Component heading = NativeText.component(title);
         QuestStatus questStatus = state.statuses().getOrDefault(tracked.toString(),QuestStatus.AVAILABLE);
         boolean completed = questStatus == QuestStatus.COMPLETED || questStatus == QuestStatus.REWARD_CLAIMED;
@@ -85,8 +87,10 @@ public final class QuestHud {
         try {
             graphics.pose().translate(bounds.left(),bounds.top(),0);
             graphics.pose().scale((float)scale,(float)scale,1);
-            graphics.fill(0,0,width,plan.height(),0xDC252821);
-            graphics.fill(0,0,2,plan.height(),GraystonePalette.ACCENT);
+            if(opacity>0) {
+                graphics.fill(0,0,width,plan.height(),GraystoneSurface.withOpacity(0xFF252821,opacity));
+                graphics.fill(0,0,2,plan.height(),GraystoneSurface.withOpacity(GraystonePalette.ACCENT,opacity));
+            }
             graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/tracked"),7,6,10,10);
             for(int line=0;line<headingLines.size();line++)
                 graphics.drawString(minecraft.font,headingLines.get(line),22,6+line* minecraft.font.lineHeight,GraystonePalette.ACCENT,false);
@@ -109,7 +113,7 @@ public final class QuestHud {
                     // Completion remains recognizable without relying on green text alone.
                     graphics.pose().pushPose();
                     graphics.pose().translate(0,0,200);
-                    graphics.fill(17,iconY+10,25,iconY+18,0xE0252821);
+                    if(opacity>0) graphics.fill(17,iconY+10,25,iconY+18,GraystoneSurface.withOpacity(0xE0252821,opacity));
                     graphics.blitSprite(ResourceLocation.parse("brnquest:quest/status/completed"),17,iconY+10,8,8);
                     graphics.pose().popPose();
                 }

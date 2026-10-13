@@ -91,9 +91,13 @@ public final class QuestNotificationOverlay {
         var stack = stack(System.nanoTime());
         if (stack.isEmpty()) return null;
         int configuredWidth = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationWidth);
-        var tentative = QuestNotificationLayout.front(screenWidth, configuredWidth, 1, stack.visible().size());
-        var content = content(stack.visible().getFirst(), stack.foldedCount(), tentative.width(), screenHeight);
-        return content == null ? null : QuestNotificationLayout.front(screenWidth, configuredWidth, content.height(), stack.visible().size());
+        double scale = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationScale);
+        int width = QuestNotificationLayout.logicalWidth(screenWidth,configuredWidth,scale);
+        var content = content(stack.visible().getFirst(),stack.foldedCount(),width,
+                QuestNotificationLayout.logicalHeightBudget(screenHeight,stack.visible().size(),scale));
+        if(content==null) return null;
+        scale = QuestNotificationLayout.fittingScale(screenHeight,content.height(),stack.visible().size(),scale);
+        return scale>0 ? QuestNotificationLayout.scaledFront(screenWidth,width,content.height(),stack.visible().size(),scale) : null;
     }
 
     private static void render(GuiGraphics graphics) {
@@ -107,11 +111,14 @@ public final class QuestNotificationOverlay {
         if (minecraft.options.hideGui) return;
         var active = stack.visible().getFirst();
         int configuredWidth = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationWidth);
-        var tentative = QuestNotificationLayout.front(graphics.guiWidth(), configuredWidth, 1, stack.visible().size());
+        double requestedScale = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationScale);
+        double opacity = BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationBackgroundOpacity);
+        int logicalWidth = QuestNotificationLayout.logicalWidth(graphics.guiWidth(),configuredWidth,requestedScale);
+        int heightBudget = QuestNotificationLayout.logicalHeightBudget(graphics.guiHeight(),stack.visible().size(),requestedScale);
         var contents = new java.util.ArrayList<Content>();
         for (int index = 0; index < stack.visible().size(); index++) {
             var card = content(stack.visible().get(index), index == 0 ? stack.foldedCount() : 0,
-                    tentative.width(), graphics.guiHeight());
+                    logicalWidth,heightBudget);
             if (card == null) return;
             contents.add(card);
         }
@@ -120,11 +127,13 @@ public final class QuestNotificationOverlay {
             if (BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationSound))
                 minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_TOAST_IN, 1.0F));
         }
-        UiRect front = QuestNotificationLayout.front(graphics.guiWidth(), configuredWidth, contents.getFirst().height(), stack.visible().size());
+        double scale = QuestNotificationLayout.fittingScale(graphics.guiHeight(),contents.getFirst().height(),stack.visible().size(),requestedScale);
+        if(scale<=0) return;
+        UiRect front = QuestNotificationLayout.scaledFront(graphics.guiWidth(),logicalWidth,contents.getFirst().height(),stack.visible().size(),scale);
         var targets = new java.util.ArrayList<QuestNotificationMotion.Target>();
         for (int index = 0; index < stack.visible().size(); index++)
             targets.add(new QuestNotificationMotion.Target(stack.visible().get(index).id(),
-                    index == 0 ? front : QuestNotificationLayout.folded(front, index)));
+                    index == 0 ? front : QuestNotificationLayout.folded(front,index,scale)));
         // All cards share this clock and offset, then the queue removes them together at the deadline.
         double close = stack.exitAllowed() ? QuestNotificationMotion.ease(
                 (active.elapsedNanos() - durationNanos() + 200_000_000L) / 200_000_000.0) : 0;
@@ -138,17 +147,19 @@ public final class QuestNotificationOverlay {
             try {
                 // Separate card depths also put the front background above native items rendered on rear cards.
                 graphics.pose().translate(pose.left(), pose.top(), 4000 + (poses.size() - index) * 400);
-                graphics.pose().scale((float) (pose.width() / tentative.width()), (float) (pose.height() / card.height()), 1);
-                drawCard(graphics, card, tentative.width(), index == 0 ? stack.foldedCount() : 0, index == 0);
+                graphics.pose().scale((float) (pose.width() / logicalWidth), (float) (pose.height() / card.height()), 1);
+                drawCard(graphics,card,logicalWidth,index==0 ? stack.foldedCount() : 0,index==0,opacity);
                 graphics.flush();
             } finally { graphics.pose().popPose(); }
         }
     }
 
-    private static void drawCard(GuiGraphics graphics, Content content, int width, int foldedCount, boolean front) {
+    private static void drawCard(GuiGraphics graphics, Content content, int width, int foldedCount, boolean front, double opacity) {
         GraystoneSurface.raised(graphics, new UiRect(0, 0, width, content.height()),
-                front ? GraystonePalette.PANEL : GraystonePalette.INSET, true);
-        graphics.fill(0, 0, 2, content.height(), GraystonePalette.ACCENT);
+                front ? GraystonePalette.PANEL : GraystonePalette.INSET,true,opacity);
+        if(opacity>0) graphics.fill(0,0,2,content.height(),GraystoneSurface.withOpacity(GraystonePalette.ACCENT,opacity));
+        // A translucent front card must not reveal duplicate rear text or item icons through its backdrop.
+        if(!front && opacity<1) return;
         var font = Minecraft.getInstance().font;
         int textWidth = Math.max(1, width - 44);
         content.icon().render(graphics, font, new UiRect(8, 12, 28, 32), 0xFFFFFFFF);
@@ -169,7 +180,7 @@ public final class QuestNotificationOverlay {
         }
     }
 
-    private static Content content(QuestNotificationQueue.Active active, int foldedCount, int width, int screenHeight) {
+    private static Content content(QuestNotificationQueue.Active active, int foldedCount, int width, int heightBudget) {
         var minecraft = Minecraft.getInstance();
         var state = ClientQuestState.get();
         var first = active.notices().getFirst();
@@ -192,7 +203,7 @@ public final class QuestNotificationOverlay {
                 .append(Component.translatable("message.brnquest.notification.others", count - 1));
         int lineHeight = minecraft.font.lineHeight + 1;
         int footer = foldedCount > 0 ? 14 : 0;
-        int maxLines = Math.max(1, Math.min(4, (screenHeight - 68 - footer) / lineHeight));
+        int maxLines = Math.max(1, Math.min(4, (heightBudget - 39 - footer) / lineHeight));
         var wrapped = detail.getString().isBlank() ? java.util.List.<net.minecraft.util.FormattedCharSequence>of()
                 : minecraft.font.split(detail, Math.max(1, width - 44));
         var lines = new java.util.ArrayList<>(wrapped.subList(0, Math.min(maxLines, wrapped.size())));

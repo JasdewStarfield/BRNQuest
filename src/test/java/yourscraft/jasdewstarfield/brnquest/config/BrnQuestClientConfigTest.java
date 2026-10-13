@@ -18,6 +18,14 @@ class BrnQuestClientConfigTest {
         assertEquals(java.util.List.of("notifications", "notificationWidth"), BrnQuestClientConfig.VALUES.notificationWidth.getPath());
         assertEquals(java.util.List.of("notifications", "notificationDurationSeconds"), BrnQuestClientConfig.VALUES.notificationDurationSeconds.getPath());
     }
+    @Test void backgroundOpacityAndNotificationScaleAreSeparateClientEntries() {
+        assertEquals(.85,BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.hudBackgroundOpacity));
+        assertEquals(1.0,BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationScale));
+        assertEquals(1.0,BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.notificationBackgroundOpacity));
+        assertEquals(java.util.List.of("trackingHud","hudBackgroundOpacity"),BrnQuestClientConfig.VALUES.hudBackgroundOpacity.getPath());
+        assertEquals(java.util.List.of("notifications","notificationScale"),BrnQuestClientConfig.VALUES.notificationScale.getPath());
+        assertEquals(java.util.List.of("notifications","notificationBackgroundOpacity"),BrnQuestClientConfig.VALUES.notificationBackgroundOpacity.getPath());
+    }
     @Test void textDiagnosticsAreOptIn() {
         assertEquals(false, BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.textLayoutDebug));
         assertEquals(java.util.List.of("debug", "textLayoutDebug"), BrnQuestClientConfig.VALUES.textLayoutDebug.getPath());

@@ -33,7 +33,7 @@ public final class BrnQuestClientConfig {
         public final ModConfigSpec.EnumValue<QuestNamePosition> questNamePosition;
         public final ModConfigSpec.BooleanValue showChapterProgress;
         public final ModConfigSpec.BooleanValue completionNotifications, notificationSound;
-        public final ModConfigSpec.DoubleValue notificationDurationSeconds, hudScale;
+        public final ModConfigSpec.DoubleValue notificationDurationSeconds, hudScale, hudBackgroundOpacity, notificationScale, notificationBackgroundOpacity;
         public final ModConfigSpec.IntValue notificationWidth, hudMaxWidth;
         public final ModConfigSpec.DoubleValue scrollStep;
         public final ModConfigSpec.DoubleValue smoothSpeed;
@@ -62,14 +62,20 @@ public final class BrnQuestClientConfig {
             builder.comment("Tracked quest HUD").push("trackingHud");
             hudScale = builder.comment("Tracking HUD scale relative to GUI pixels; default 0.75.")
                     .defineInRange("hudScale", 0.75, 0.5, 1.5);
+            hudBackgroundOpacity = builder.comment("Tracking HUD background opacity from 0 to 1; text and icons remain opaque.")
+                    .defineInRange("hudBackgroundOpacity", 0.85, 0.0, 1.0);
             hudMaxWidth = builder.comment("Maximum tracking HUD width before its independent scale; actual width follows content.")
                     .defineInRange("hudMaxWidth", 240, 120, 400);
             builder.pop();
             builder.comment("Top-center completion notifications").push("notifications");
             completionNotifications = builder.define("completionNotifications", true);
             notificationSound = builder.define("notificationSound", false);
-            // GUI pixels follow the current GUI scale; rendering clamps the width to the viewport.
-            notificationWidth = builder.comment("Floating notification width in GUI pixels.")
+            notificationScale = builder.comment("Floating notification scale relative to GUI pixels.")
+                    .defineInRange("notificationScale", 1.0, 0.5, 1.5);
+            notificationBackgroundOpacity = builder.comment("Notification background opacity from 0 to 1; text and icons remain opaque.")
+                    .defineInRange("notificationBackgroundOpacity", 1.0, 0.0, 1.0);
+            // The configured width is measured before the independent notification scale.
+            notificationWidth = builder.comment("Floating notification width in GUI pixels before notification scaling.")
                     .defineInRange("notificationWidth", 280, 160, 600);
             notificationDurationSeconds = builder.comment("Seconds from the latest notification until the entire stack closes together.")
                     .defineInRange("notificationDurationSeconds", 4.0, 1.0, 30.0);

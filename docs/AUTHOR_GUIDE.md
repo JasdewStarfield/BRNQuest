@@ -43,6 +43,8 @@ The editor may show pending changes while waiting for the server. Check the stat
 
 Book settings also control automatic-claim suppression and single-player UI pause. Suppression retains reward policies and exposes hidden automatic rewards for manual claiming. Multiplayer never pauses. Dependency-line visibility and chapter autofocus affect navigation/display only.
 
+A quest without configured objectives stays incomplete. Add an objective to define its completion condition; use a checkmark objective for player confirmation. Explicit administrator/script force completion can still finish objective-free story quests.
+
 ## Artwork and translated text
 
 Use **Browse loaded textures** for icons, decorations and backgrounds. Books store `namespace:textures/path.png` resource IDs. Other clients need the same resource pack. Canvas backgrounds follow pan/zoom; screen backgrounds follow the window. Both support tile/contain/cover, opacity and scale. Confirm the child background page and then the outer properties form.

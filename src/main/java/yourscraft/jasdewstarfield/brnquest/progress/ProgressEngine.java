@@ -207,7 +207,7 @@ public final class ProgressEngine {
             var ledger = progress(player);
             var members = ProgressOwnerService.resolve(player).orElseThrow().members();
             for (var quest : snapshot.book().quests()) {
-                if (!quest.behavior().requireAllTeamMembers()) continue;
+                if (!quest.behavior().requireAllTeamMembers() || quest.tasks().isEmpty()) continue;
                 var status = ledger.status(quest.id().toString());
                 if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
                         && ledger.allMembersCompleted(quest.id().toString(), members)
@@ -329,6 +329,8 @@ public final class ProgressEngine {
             QuestStatus status = progress.status(questId.toString());
             if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
             if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
+            // An empty authoring placeholder has no completion condition; keep its progress untouched until configured.
+            if (quest.tasks().isEmpty()) return OperationResult.failure("NO_OBJECTIVES", "Quest has no objectives configured");
             if (allMembers(player, quest)
                     && progress.objectives(player.getUUID()).status(questId.toString()) == QuestStatus.COMPLETED) {
                 return finishMemberCompletion(player, quest, progress, data);

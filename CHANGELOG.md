@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- Quests without configured objectives stay incomplete, preventing premature completion notices and leaving progress ready when objectives are added.
 - Fixed switching editing mode redirecting chapter browsing to a task from a closed detail panel.
 
 - Fixed misaligned buttons in the dependency editor and text extending beyond multiline buttons.

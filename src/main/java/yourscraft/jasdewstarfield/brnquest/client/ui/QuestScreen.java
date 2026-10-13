@@ -5522,6 +5522,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
+        // Match the server's empty-definition gate while the author is still configuring objectives.
+        if (quest.tasks().isEmpty()) return false;
         if (ClientQuestState.get().waitingForTeam(quest.id().toString())) return false;
         if (ClientQuestState.get().questCompletionPending(quest.id().toString())) return false;
         if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) return false;

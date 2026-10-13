@@ -161,8 +161,9 @@ neoForge {
         }
         client {
             client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
-                    ? "${project.mod_id},brnquest_example" : project.mod_id
+            // Select a small regression group explicitly; normal runs retain all project test namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('gameTestNamespaces').getOrElse(
+                    (includeExampleAddon || legacyAddon) ? "${project.mod_id},brnquest_progress,brnquest_example" : "${project.mod_id},brnquest_progress")
         }
 
         server {
@@ -177,8 +178,9 @@ neoForge {
             systemProperty 'java.io.tmpdir', isolatedTestRoot
             // IDE and Gradle launches receive the same deterministic fixture and isolated workspace.
             taskBefore prepareGameTestFixture
-            systemProperty 'neoforge.enabledGameTestNamespaces', (includeExampleAddon || legacyAddon)
-                    ? "${project.mod_id},brnquest_example" : project.mod_id
+            // Select a small regression group explicitly; normal runs retain all project test namespaces.
+            systemProperty 'neoforge.enabledGameTestNamespaces', providers.gradleProperty('gameTestNamespaces').getOrElse(
+                    (includeExampleAddon || legacyAddon) ? "${project.mod_id},brnquest_progress,brnquest_example" : "${project.mod_id},brnquest_progress")
         }
 
         kubeJsSmokeServer {
@@ -268,11 +270,16 @@ def generateGameTestStructure = tasks.register('generateGameTestStructure') {
     def generated = layout.buildDirectory.file('generated/gametestResources/data/brnquest/structure/empty.nbt')
     inputs.file encoded
     outputs.file generated
+    outputs.file(layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt'))
     doLast {
         // Keep the tiny binary structure reproducible and reviewable as Base64 in source control.
         def target = generated.get().asFile
         target.parentFile.mkdirs()
         target.bytes = Base64.decoder.decode(encoded.getText('UTF-8').trim())
+        // The focused progress namespace reuses the same tiny fixture without shipping it in the main mod.
+        def progressTarget = layout.buildDirectory.file('generated/gametestResources/data/brnquest_progress/structure/empty.nbt').get().asFile
+        progressTarget.parentFile.mkdirs()
+        progressTarget.bytes = target.bytes
     }
 }
 sourceSets.gameTest.resources.srcDir layout.buildDirectory.dir('generated/gametestResources')

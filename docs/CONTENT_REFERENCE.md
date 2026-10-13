@@ -53,7 +53,7 @@ Kills default to `minecraft:zombie`, count 1 (positive long). Direct lethal play
 
 ## Vanilla statistics
 
-`brnquest:statistics` currently supports personal historical totals. Configure `stat_type`, `stat`, and `count` (1–2147483647); optional `title` supports native formatting. `mode` defaults to `total`. Historical actions can complete a newly eligible objective. Dependencies and sequential objectives apply, and counters are sampled every 20 ticks. Reset clears BRNQuest progress and rereads the vanilla history; it does not reset Minecraft statistics.
+`brnquest:statistics` supports nine statistic categories with personal or team progress. Configure `stat_type`, `stat`, and `count` (1–2147483647). Optional `title` supports native formatting; `format=native` (default) uses the native units, while `format=raw` shows the integer count.
 
 | Category | Object registry |
 | --- | --- |
@@ -62,18 +62,28 @@ Kills default to `minecraft:zombie`, count 1 (positive long). Direct lethal play
 | `minecraft:crafted`, `minecraft:used`, `minecraft:broken`, `minecraft:picked_up`, `minecraft:dropped` | Items |
 | `minecraft:killed`, `minecraft:killed_by` | Entity types |
 
-Choose the category first, then use its server-backed object selector. IDs from another category and missing objects fail author validation. Registered mod objects in these categories are supported. Counts use vanilla raw units: distance is centimeters (100 = 1 meter), time is ticks (1200 = 1 minute), and damage is tenths (10 = 1 damage point). Details, HUD and notices display the native statistic format.
+Choose the category first, then use its server-backed object selector. Missing objects and category mismatches fail author validation. Registered mod objects in these categories are supported. Counts use vanilla raw units: distance is centimeters (100 = 1 meter), time is ticks (1200 = 1 minute), and damage is tenths (10 = 1 damage point).
+
+| `mode` | Behavior |
+| --- | --- |
+| `total` (default) | Historical totals; shared teams retain the highest member value |
+| `since_available` | New progress after the objective becomes executable; shared teams add individual member increments |
+
+Dependencies and sequential objectives apply. Incremental baselines are established at unlock or at the objective's turn, independently of opening the book or tracking it. Sampling runs every 3 ticks, normally within 0.15 seconds at 20 TPS. Progress and baselines survive reconnection, reload and save/restart. A vanilla counter decrease preserves accrued incremental progress and starts future increases from the lower value. Switching teams or leaving and returning preserves existing contributions and excludes actions while away. All-member quests keep each member's counter separate and use the current roster, including offline members.
+
+Reset starts a new incremental baseline; historical mode rereads the existing history and can satisfy again immediately. Repeat cycles also get fresh baselines. Changing the statistic category, target or mode resets an unfinished objective; changing title, format or threshold retains its counter. Completed quest history retains its receipt until reset. Missing runtime objects pause sampling while retaining state. BRNQuest never resets Minecraft statistics.
 
 ```json
 {
   "stat_type": "minecraft:custom",
   "stat": "minecraft:jump",
-  "count": "100",
-  "mode": "total"
+  "count": "20",
+  "mode": "since_available",
+  "format": "native"
 }
 ```
 
-Shared team ledgers are not sampled in this implementation. For personal use in an OpenPAC team, disable shared team progress on the book. Incremental counting and team contributions are planned separately.
+FTB Quests v13 `stat` and `ftbquests:stat` definitions map to `minecraft:custom`, `mode=total` and `format=raw`. Their SNBT `stat` and `value` become native `stat` and `count`. Original fields are retained under `ftb.*`; conflicting native field names remain separate from the imported meaning. A legacy custom-stat namespace fallback is enabled only on imported goals. Invalid IDs or thresholds produce `BQF-111`; authors can correct the native fields while retaining the original SNBT for review. Import reads quest definitions and does not migrate FTB player/team progress.
 
 ## Advancements and target groups
 

@@ -2,7 +2,7 @@
 
 [简体中文](EXTENSION_API_zh.md) | [Home](../README.md) | [Java API](API.md)
 
-The contracts below remain experimental at `0.1.0-experimental.29`. Types own server behavior, configuration and optional client presentation. Native schema 1 passes configuration leaves as JSON strings to the type's Codec: parse numeric/boolean values from `Codec.STRING` with validation. Simple externally advanced objectives and event rewards can use [KubeJS](KUBEJS_API.md).
+The contracts below remain experimental at `0.1.0-experimental.30`. Types own server behavior, configuration and optional client presentation. Native schema 1 passes configuration leaves as JSON strings to the type's Codec: parse numeric/boolean values from `Codec.STRING` with validation. Simple externally advanced objectives and event rewards can use [KubeJS](KUBEJS_API.md).
 
 ## Registration and ownership
 
@@ -32,6 +32,18 @@ Use `BrnQuestApi.submitTaskResult` for objective submission results. The older `
 - `craftedProgress(context, config, crafted)` receives a copy of real server crafting output. Return cumulative progress without side effects; the default returns existing progress.
 - The core filters locked/out-of-sequence objectives, stores only increases, determines completion and synchronizes. Inventory reevaluation uses dirty events and a 20-tick schedule; arbitrary direct inventory mutations by another mod are not automatically detected.
 - `resetTransientState(context)` clears temporary state after explicit resets for online owner members. It must not write the ledger. Types manage logout/reload caches themselves. New repeat cycles follow normal core reset rules.
+
+### Durable sampling
+
+`usesSamplingState()` opts a type into preparation at eligibility, sequential/unlock transitions, reset and owner recovery. `samplingIdentity(config)` names the target semantics; exclude title, display format and thresholds so these edits retain progress. Changing a nonempty identity resets the unfinished objective and member samples. Completed quest history retains its receipt until reset.
+
+`prepareSample(TaskSamplingContext, config)` and `sample(...)` return `TaskSamplingResult(progress, state, ready)`. State is an immutable string-to-long map belonging to the current player in the current owner. Preparation may establish a new counter before gameplay; ordinary samples commit only increases. Set `ready=false` when external data is missing, retaining a pending membership rebase. `context.resuming()` signals a return after membership/owner absence; preserve existing contributions and establish a current read position so actions while away are excluded. Core storage owns UUID routing, save/load, task renames, resets and repeat clearing. Do not mutate a ledger or retain player references in a type.
+
+An empty type-owned identity keeps state under the type and member policy; supply a semantic key when configuration changes should reset it.
+
+`ready=true` records successful initialization even when the state map is empty. Preparation runs again after reset, semantic changes or a return from suspended eligibility. `samplingIdentity` is a pure function of immutable configuration and may be cached for the active definition/type instance. Suspension also covers relocked dependencies and reset sequential predecessors.
+
+`context.values().get("namespace:read_key", supplier)` shares one read within a preparation/sampling pass. Keys must describe the underlying value, not the objective ID. Keep suppliers cheap and read-only. Old implementations leave state disabled; the default `sample` delegates their existing `sampledProgress` and ignores decreases.
 
 ## Editor configuration
 

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Statistic objectives support progress after unlock, persistent personal/member baselines, shared contributions and all-member rules. FTB `stat` imports retain historical custom statistics and raw integer display; historical teams use the highest member value.
 - Added a statistic objective for personal historical totals, covering all nine vanilla categories with dependent server-backed selection and native statistic units in details, HUD and notices.
 - Added separate background-opacity settings for the tracking HUD and floating notices, plus independent notice scaling. Text and icons stay opaque; scaled notices keep their folded spacing and HUD avoidance.
 - The tracking HUD has an independent display scale (default 75%) and a configurable maximum width. Its panel follows content, keeps short requirements and progress on one line, wraps long requirements, and shows a count for objectives outside its display.

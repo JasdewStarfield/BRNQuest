@@ -2,7 +2,7 @@
 
 [English](EXTENSION_API.md) | [首页](../README_zh.md) | [Java API](API_zh.md)
 
-以下契约在 `0.1.0-experimental.29` 仍为实验性。类型负责服务端行为、配置及可选客户端展示。原生 schema 1 把配置叶值作为 JSON 字符串传给 Codec，数字和布尔值应从 `Codec.STRING` 校验解析。简单外部进度目标与事件奖励可使用 [KubeJS](KUBEJS_API_zh.md)。
+以下契约在 `0.1.0-experimental.30` 仍为实验性。类型负责服务端行为、配置及可选客户端展示。原生 schema 1 把配置叶值作为 JSON 字符串传给 Codec，数字和布尔值应从 `Codec.STRING` 校验解析。简单外部进度目标与事件奖励可使用 [KubeJS](KUBEJS_API_zh.md)。
 
 ## 注册与所有权
 
@@ -32,6 +32,18 @@
 - `craftedProgress(context, config, crafted)` 接收真实服务端合成产出副本，无副作用地返回累计进度，默认返回原值。
 - 核心过滤未解锁和未轮到的顺序目标，只保存进度增加，判断完成并同步。背包重评估采用事件脏标记及 20 tick 调度，不能自动识别其他模组的任意直接背包写入。
 - `resetTransientState(context)` 在显式重置后清理在线 owner 成员的临时状态，不得写账本。类型自行管理登出与 reload 缓存。新重复周期沿用核心重置规则。
+
+### 持久采样
+
+`usesSamplingState()` 让类型参与可执行资格、顺序／解锁切换、重置及归属恢复时的准备。`samplingIdentity(config)` 描述目标语义；标题、显示格式和数量阈值应排除在外，使这些编辑保留进度。非空身份变化会清除未完成目标的计数和成员采样；已完成任务保留历史凭据，直到重置。
+
+`prepareSample(TaskSamplingContext, config)` 与 `sample(...)` 返回 `TaskSamplingResult(progress, state, ready)`。状态为当前 owner 下当前玩家的不可变字符串到 long Map。准备阶段可在游戏行为前建立新计数，普通采样只提交增加；外部数据缺失时返回 `ready=false`，保留待处理的成员恢复标记。`context.resuming()` 表示成员离开归属后返回；保留已有贡献，并定位到当前读取位置，以排除离开期间的行为。UUID 路由、保存恢复、目标改名、重置与周期清理由核心负责，类型不直接写账本，也不长期保留玩家引用。
+
+类型身份为空时，状态仍按类型及成员策略保存；需要在配置变化时重置状态的类型应提供语义键。
+
+`ready=true` 记录初始化成功，即使状态 Map 为空。重置、语义变化或从暂停资格返回时会再次准备。`samplingIdentity` 是不可变配置的纯函数，可按当前定义／类型实例缓存。暂停也覆盖依赖重新锁定及顺序前项重置。
+
+`context.values().get("namespace:read_key", supplier)` 在一次准备／采样中复用相同读取，键应描述底层值而非目标 ID。supplier 应只读且低开销。旧实现保持状态关闭，默认 `sample` 委托原 `sampledProgress` 并忽略倒退。
 
 ## 编辑配置
 

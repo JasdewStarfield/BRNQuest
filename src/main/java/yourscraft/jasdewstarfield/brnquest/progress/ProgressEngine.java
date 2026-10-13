@@ -42,6 +42,9 @@ public final class ProgressEngine {
     private static final ThreadLocal<Integer> COMPLETION_DEPTH = ThreadLocal.withInitial(() -> 0);
     private final Map<ProgressOwnerId, Object> locks = new WeakHashMap<>();
     private volatile TaskPollingPlan pollingPlan;
+    // Batch preparation after ordinary samples; sequential transitions still prepare their next objective immediately.
+    private int pollingDepth;
+    private final Set<ServerPlayer> pendingSamplePreparation = new LinkedHashSet<>();
     private volatile QuestVisibilityPlan visibilityPlan;
     private volatile InventoryTaskPlan inventoryTaskPlan;
 
@@ -192,6 +195,7 @@ public final class ProgressEngine {
         }
         progress.questsView().keySet().stream().filter(id -> !current.contains(id)).forEach(progress::orphan);
         progress.revision(snapshot.revision());
+        prepareOwnerSamples(player);
         data.setDirty();
     }
 
@@ -225,6 +229,7 @@ public final class ProgressEngine {
         }
         if (changed) {
             QuestProgressData.get(player.getServer()).setDirty();
+            prepareOwnerSamples(player);
             BrnQuestNetwork.syncProgress(player, true);
         }
     }
@@ -232,37 +237,143 @@ public final class ProgressEngine {
     /** Sample only eligible/current objectives, then retain hits through the existing progress ledger. */
     public void pollTasks(ServerPlayer player) {
         synchronizedOwner(player, () -> {
-            var snapshot = QuestBookManager.get().active().orElse(null);
-            if (snapshot == null) return null;
-            var due = pollingPlan(snapshot).dueQuests(player.server.getTickCount(), id -> {
-                var type = TaskTypeRegistry.get(id);
-                return type == null ? 0 : type.pollingIntervalTicks();
-            });
-            if (due.isEmpty()) return null;
-            var progress = progress(player);
-            for (var quest : due) {
-                var status = progress.status(quest.id().toString());
-                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) || !dependenciesComplete(quest, progress)) continue;
-                boolean changed = false;
-                for (var task : quest.tasks()) {
-                    var type = TaskTypeRegistry.get(task.typeId());
-                    if (type == null || type.pollingIntervalTicks() <= 0
-                            || player.server.getTickCount() % Math.max(1, type.pollingIntervalTicks()) != 0
-                            || !taskIsCurrent(player, quest, task, progress)) continue;
-                    var context = taskContext(player, quest, task, progress);
-                    long next = TaskTypeExecutor.sampledProgress(type, context);
-                    if (next > context.progress()) {
-                        changeTaskProgress(player, quest, task, progress, next - context.progress()); changed = true;
+            pollingDepth++;
+            try {
+                var snapshot = QuestBookManager.get().active().orElse(null);
+                if (snapshot == null) return null;
+                prepareSamples(player, snapshot, progress(player), new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues());
+                var due = pollingPlan(snapshot).dueQuests(player.server.getTickCount(), id -> {
+                    var type = TaskTypeRegistry.get(id);
+                    return type == null ? 0 : type.pollingIntervalTicks();
+                });
+                if (due.isEmpty()) return null;
+                var progress = progress(player);
+                boolean team = shared(player);
+                var values = new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues();
+                for (var quest : due) {
+                    var status = progress.status(quest.id().toString());
+                    if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) || !dependenciesComplete(quest, progress)) continue;
+                    boolean changed = false;
+                    for (var task : quest.tasks()) {
+                        var type = TaskTypeRegistry.get(task.typeId());
+                        if (type == null || type.pollingIntervalTicks() <= 0
+                                || player.server.getTickCount() % Math.max(1, type.pollingIntervalTicks()) != 0
+                                || !taskIsCurrent(player, quest, task, progress)) continue;
+                        var context = taskContext(player, quest, task, progress);
+                        if (type.usesSamplingState() && !progress.samplePrepared(task.id().toString(), player.getUUID())) {
+                            var prepared = TaskTypeExecutor.prepareSample(type, new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(
+                                    context, progress.sampleState(task.id().toString(), player.getUUID()), team, values));
+                            if (progress.sampleState(task.id().toString(), player.getUUID(), prepared.state())) QuestProgressData.get(player.server).setDirty();
+                            if (progress.samplePrepared(task.id().toString(), player.getUUID(), prepared.ready())) QuestProgressData.get(player.server).setDirty();
+                        }
+                        var sampleContext = new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(context,
+                                progress.sampleState(task.id().toString(), player.getUUID()), team, values);
+                        var result = TaskTypeExecutor.sample(type, sampleContext);
+                        if (type.usesSamplingState() && progress.sampleState(task.id().toString(), player.getUUID(), result.state()))
+                            QuestProgressData.get(player.server).setDirty();
+                        long next = result.progress();
+                        if (next > context.progress()) {
+                            changeTaskProgress(player, quest, task, progress, next - context.progress()); changed = true;
+                        }
+                    }
+                    if (changed) {
+                        QuestProgressData.get(player.server).setDirty();
+                        complete(player, quest.id(), false);
+                        BrnQuestNetwork.syncProgress(player, true);
                     }
                 }
-                if (changed) {
-                    QuestProgressData.get(player.server).setDirty();
-                    complete(player, quest.id(), false);
-                    BrnQuestNetwork.syncProgress(player, true);
+                return null;
+            } finally {
+                if (--pollingDepth == 0) {
+                    var pending = List.copyOf(pendingSamplePreparation);
+                    pendingSamplePreparation.clear();
+                    pending.forEach(this::prepareOwnerSamples);
                 }
             }
-            return null;
         });
+    }
+
+    /** Establish baselines for every online member at an unlock/reset boundary, including the acting mock player. */
+    private void prepareOwnerSamples(ServerPlayer actor) {
+        if (pollingDepth > 0) { pendingSamplePreparation.add(actor); return; }
+        prepareOwnerSamplesNow(actor);
+    }
+    private void prepareOwnerSamplesNow(ServerPlayer actor) {
+        var snapshot = QuestBookManager.get().active().orElse(null);
+        if (snapshot == null) return;
+        var owner = ProgressOwnerService.require(actor);
+        var members = new LinkedHashSet<ServerPlayer>();
+        members.add(actor);
+        for (var online : actor.server.getPlayerList().getPlayers())
+            if (online != actor && ProgressOwnerService.resolve(online).map(view -> view.id().equals(owner)).orElse(false)) members.add(online);
+        for (var member : members) prepareSamples(member, snapshot, progress(member), new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues());
+    }
+
+    /** State preparation has no completion/notification side effects; only the engine commits the immutable proposal. */
+    private void prepareSamples(ServerPlayer player, yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot,
+                                PlayerProgress progress, yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues values) {
+        var quests = pollingPlan(snapshot).statefulQuests(id -> {
+            var type = TaskTypeRegistry.get(id);
+            return type != null && type.usesSamplingState();
+        });
+        prepareSamples(player, snapshot, progress, values, quests);
+    }
+    private void prepareSamples(ServerPlayer player, yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot,
+                                PlayerProgress progress, yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues values,
+                                List<QuestDefinition> quests) {
+        boolean team = shared(player);
+        QuestProgressData.get(player.server).activateSamplingOwner(player.getUUID(), ProgressOwnerService.require(player));
+        for (var quest : quests) {
+            var status = progress.status(quest.id().toString());
+            // Completed history keeps its receipt; identity changes are reconciled while unfinished, even if locked.
+            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) continue;
+            if (allMembers(player, quest) && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED
+                    && quest.tasks().stream().filter(task -> !task.optional()).anyMatch(task -> {
+                        var type = TaskTypeRegistry.get(task.typeId());
+                        return type == null || !TaskTypeExecutor.satisfied(type, taskContext(player, quest, task, progress));
+                    })) {
+                // A higher threshold or an added required objective reopens this member's unfinished quest.
+                progress.objectives(player.getUUID()).status(quest.id().toString(), QuestStatus.AVAILABLE);
+                QuestProgressData.get(player.server).setDirty();
+            }
+            if (status == QuestStatus.LOCKED && dependenciesComplete(quest, progress)) {
+                status = QuestStatus.AVAILABLE;
+                progress.status(quest.id().toString(), status);
+                QuestProgressData.get(player.server).setDirty();
+            }
+            boolean eligible = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && dependenciesComplete(quest, progress);
+            boolean memberLedger = team && quest.behavior().requireAllTeamMembers();
+            for (var task : quest.tasks()) {
+                var type = TaskTypeRegistry.get(task.typeId());
+                if (type == null || !type.usesSamplingState()) continue;
+                var info = pollingPlan(snapshot).samplingInfo(task, type);
+                String identity = team && quest.behavior().requireAllTeamMembers() ? info.memberIdentity() : info.ownerIdentity();
+                if (identity.isEmpty()) continue;
+                if (progress.prepareSamplingIdentity(quest.id().toString(), info.taskId(), identity))
+                    QuestProgressData.get(player.server).setDirty();
+                boolean resuming = progress.sampleSuspended(info.taskId(), player.getUUID());
+                boolean memberComplete = memberLedger && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED;
+                boolean current = eligible && !memberComplete
+                        && (!quest.behavior().sequentialTasks() || task.optional() || taskIsCurrent(player, quest, task, progress));
+                if (!current) {
+                    // Relocked dependencies or a reset predecessor pause the read position until eligibility returns.
+                    if (!memberComplete && progress.samplePrepared(info.taskId(), player.getUUID())
+                            && progress.suspendSample(info.taskId(), player.getUUID())) QuestProgressData.get(player.server).setDirty();
+                    continue;
+                }
+                if (progress.samplePrepared(info.taskId(), player.getUUID()) && !resuming) continue;
+                var context = new TaskContext(player, quest.bookId(), quest.id(), info.view(), taskLedger(player, quest, progress).taskProgress(info.taskId()));
+                var before = progress.sampleState(info.taskId(), player.getUUID());
+                var prepared = TaskTypeExecutor.prepareSample(type,
+                        new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(context, before, team, values, resuming));
+                if (progress.sampleState(task.id().toString(), player.getUUID(), prepared.state())) QuestProgressData.get(player.server).setDirty();
+                if (progress.samplePrepared(info.taskId(), player.getUUID(), prepared.ready())) QuestProgressData.get(player.server).setDirty();
+                if (resuming && prepared.ready()) { progress.resumeSample(task.id().toString(), player.getUUID()); QuestProgressData.get(player.server).setDirty(); }
+                // An initial state may discard legacy count when selecting a new baseline-based mode.
+                if (before.values().isEmpty() && prepared.ready() && prepared.progress() != context.progress())
+                    changeTaskProgress(player, quest, task, progress, prepared.progress() - context.progress());
+            }
+        }
     }
 
     /** Server-authored visibility set; clients render it but never infer hidden quest access. */
@@ -626,7 +737,7 @@ public final class ProgressEngine {
             BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
                     snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
                     BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
-            advanceRepeatIfReady(owner, progress, System.currentTimeMillis());
+            if (advanceRepeatIfReady(owner, progress, System.currentTimeMillis())) prepareOwnerSamples(player);
             BrnQuestNetwork.syncProgress(player, true);
             if (notifyAutomatic) {
                 player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
@@ -784,6 +895,7 @@ public final class ProgressEngine {
         progress.completedCycle(quest.id().toString(), completedAt,
                 completedAt + quest.behavior().repeatCooldownSeconds() * 1000L);
         data.setDirty();
+        prepareOwnerSamplesNow(player);
         BrnQuestEvents.post(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
                 quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
@@ -858,6 +970,12 @@ public final class ProgressEngine {
         if (previous != current) {
             // Mark the authoritative world data dirty before observers see the committed value.
             QuestProgressData.get(player.getServer()).setDirty();
+            // Observers may immediately cause gameplay; initialize sequential successors before notifying them.
+            if (pollingDepth > 0 && quest.behavior().sequentialTasks()) {
+                var snapshot = QuestBookManager.get().active().orElseThrow();
+                prepareSamples(player, snapshot, progress, new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues(), List.of(quest));
+            }
+            prepareOwnerSamples(player);
             BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
                     quest.bookId(), quest.id(), task.id(), ApiViews.task(task), previous, current));
         }

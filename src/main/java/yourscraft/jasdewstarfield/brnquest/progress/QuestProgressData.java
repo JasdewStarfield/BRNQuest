@@ -17,6 +17,13 @@ public final class QuestProgressData extends SavedData {
     private final Map<ProgressOwnerId, Set<UUID>> members = new HashMap<>();
     private final Map<ProgressOwnerId, ProgressOwnerArchive> archives = new HashMap<>();
     private final Map<UUID, String> tracked = new HashMap<>();
+    private final Map<UUID, ProgressOwnerId> samplingOwners = new HashMap<>();
+    /** Switching away pauses the old member read positions, so time spent in another owner is not attributed twice. */
+    public void activateSamplingOwner(UUID player, ProgressOwnerId owner) {
+        ProgressOwnerId old = samplingOwners.put(player, owner);
+        if (old != null && !old.equals(owner)) get(old).suspendSamples(player);
+        if (!Objects.equals(old, owner)) setDirty();
+    }
 
     public PlayerProgress get(ProgressOwnerId owner) { return owners.computeIfAbsent(owner, ignored -> new PlayerProgress()); }
     public Set<ProgressOwnerId> ownerIds() { return Set.copyOf(owners.keySet()); }
@@ -26,7 +33,9 @@ public final class QuestProgressData extends SavedData {
     /** A successful authoritative query can restore the same UUID; errors never manufacture deletion. */
     public void observe(ProgressOwnerId owner, Set<UUID> current, ProgressOwnerLifecycle lifecycle) {
         if (lifecycle == ProgressOwnerLifecycle.ACTIVE) {
-            boolean changed = !current.equals(members.put(owner, Set.copyOf(current)));
+            var previous = members.put(owner, Set.copyOf(current));
+            if (previous != null) previous.stream().filter(member -> !current.contains(member)).forEach(get(owner)::suspendSamples);
+            boolean changed = !current.equals(previous);
             changed |= archives.remove(owner) != null;
             if (changed) setDirty();
         } else if (lifecycle == ProgressOwnerLifecycle.ARCHIVED && !archives.containsKey(owner)) {
@@ -63,6 +72,11 @@ public final class QuestProgressData extends SavedData {
             }
         }
         CompoundTag tracking = tag.getCompound("tracking");
+        CompoundTag samplingOwners = tag.getCompound("sampling_owners");
+        for (String player : samplingOwners.getAllKeys()) try {
+            var entry = samplingOwners.getCompound(player);
+            data.samplingOwners.put(UUID.fromString(player), new ProgressOwnerId(ResourceLocation.parse(entry.getString("provider")), entry.getUUID("owner")));
+        } catch (IllegalArgumentException ignored) { /* Optional metadata does not affect ordinary ledger recovery. */ }
         for (String player : tracking.getAllKeys()) {
             try { data.tracked.put(UUID.fromString(player), tracking.getString(player)); }
             catch (IllegalArgumentException ignored) { }
@@ -98,6 +112,14 @@ public final class QuestProgressData extends SavedData {
             namespaces.put(provider, entries);
         });
         tag.put("owners", namespaces);
+        CompoundTag sampling = new CompoundTag();
+        samplingOwners.forEach((player, owner) -> {
+            var entry = new CompoundTag();
+            entry.putString("provider", owner.providerId().toString());
+            entry.putUUID("owner", owner.ownerId());
+            sampling.put(player.toString(), entry);
+        });
+        tag.put("sampling_owners", sampling);
         CompoundTag tracking = new CompoundTag();
         tracked.forEach((uuid, quest) -> tracking.putString(uuid.toString(), quest));
         tag.put("tracking", tracking);

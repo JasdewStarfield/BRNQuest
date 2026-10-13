@@ -14,6 +14,18 @@ final class TaskPollingPlan {
     final QuestBookSnapshot snapshot;
     final List<QuestDefinition> quests;
     private final Map<ResourceLocation, BitSet> questsByType = new LinkedHashMap<>();
+    private final Map<ResourceLocation, java.util.IdentityHashMap<yourscraft.jasdewstarfield.brnquest.task.TaskType<?>, SamplingInfo>> sampling = new java.util.HashMap<>();
+    /** Definition/type-instance memoization cannot retain a player or skip a replaced script implementation. */
+    record SamplingInfo(yourscraft.jasdewstarfield.brnquest.api.TaskView view, String taskId, String ownerIdentity, String memberIdentity) {}
+    SamplingInfo samplingInfo(yourscraft.jasdewstarfield.brnquest.data.TaskDefinition task, yourscraft.jasdewstarfield.brnquest.task.TaskType<?> type) {
+        return sampling.computeIfAbsent(task.id(), ignored -> new java.util.IdentityHashMap<>()).computeIfAbsent(type, current -> {
+            var view = yourscraft.jasdewstarfield.brnquest.api.ApiViews.task(task);
+            String key = yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor.samplingIdentity(current, view);
+            // An empty type-owned key still needs a persistent identity for preparation and member state.
+            return new SamplingInfo(view, task.id().toString(), task.typeId() + "|owner|" + key,
+                    task.typeId() + "|members|" + key);
+        });
+    }
 
     TaskPollingPlan(QuestBookSnapshot snapshot) {
         this.snapshot = snapshot;
@@ -36,5 +48,11 @@ final class TaskPollingPlan {
         if (due.cardinality() == quests.size()) return quests;
         // Keep authored order: an earlier completion can unlock a later quest during the same tick.
         return due.stream().mapToObj(quests::get).toList();
+    }
+    /** Query current registrations so replacing a type does not leave a stale preparation index. */
+    List<QuestDefinition> statefulQuests(java.util.function.Predicate<ResourceLocation> stateful) {
+        BitSet selected = new BitSet();
+        questsByType.forEach((type, indices) -> { if (stateful.test(type)) selected.or(indices); });
+        return selected.stream().mapToObj(quests::get).toList();
     }
 }

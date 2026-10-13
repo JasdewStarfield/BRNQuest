@@ -19,6 +19,17 @@ public final class TaskTypeExecutor {
         return decode(type, context.task()).result()
                 .map(config -> type.sampledProgress(context, config)).orElse(context.progress());
     }
+    public static <T> String samplingIdentity(TaskType<T> type, TaskView task) {
+        return decode(type, task).result().map(type::samplingIdentity).orElse("");
+    }
+    public static <T> TaskSamplingResult prepareSample(TaskType<T> type, TaskSamplingContext context) {
+        return decode(type, context.task().task()).result().map(config -> type.prepareSample(context, config))
+                .orElse(new TaskSamplingResult(context.task().progress(), context.state()));
+    }
+    public static <T> TaskSamplingResult sample(TaskType<T> type, TaskSamplingContext context) {
+        return decode(type, context.task().task()).result().map(config -> type.sample(context, config))
+                .orElse(new TaskSamplingResult(context.task().progress(), context.state()));
+    }
 
     /** Each extension sees its own copy of the event output and cannot alter another type's sample. */
     public static <T> long craftedProgress(TaskType<T> type, TaskContext context, net.minecraft.world.item.ItemStack crafted) {

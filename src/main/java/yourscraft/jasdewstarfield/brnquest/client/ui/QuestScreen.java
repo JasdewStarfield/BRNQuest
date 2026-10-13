@@ -3691,7 +3691,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         int offset = detailsDrawerOffsetX();
         int left = detailLeft() + 10 + offset;
         int right = width - 10 + offset;
-        EditorListViewport vertical = typedEditorViewport();
+        var footer = typedEditorFooter();
+        EditorListViewport vertical = typedEditorViewport(footer.add().top());
         UiRect screenClip = new UiRect(canvasRight(), topToolbarHeight(), width, height - bottomToolbarHeight());
         QuestTypedEntryListSection.Model model = new QuestTypedEntryListSection.Model(
                 currentFrameIdentity(), quest.id(), typedEditorKind,
@@ -3702,7 +3703,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 new UiRect(detailLeft() + 4 + offset, topToolbarHeight() + 4,
                         width - 4 + offset, height - bottomToolbarHeight() - 4),
                 new UiRect(left, vertical.top(), right, vertical.bottom()), screenClip, width - 8 + offset,
-                typedEditorAddBounds().translated(offset, 0), typedEditorDoneBounds().translated(offset, 0),
+                footer.translated(offset, 0),
                 detailsWidth() - 24);
         var result = typedEntryList.render(graphics, font, model, sectionLayout, TYPED_ROW_HEIGHT,
                 currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
@@ -4476,24 +4477,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private int typedEditorListTop() { return topToolbarHeight() + 34; }
 
-    private EditorListViewport typedEditorViewport() {
+    private EditorListViewport typedEditorViewport(int footerTop) {
         // Keep a small footer gap while deliberately exposing half of the next row. Validation
         // messages temporarily reclaim their original line so they never overlap list content.
         int footerGap = typedEditorMessage == null ? 6 : 16;
         return EditorListViewport.withHalfRowPreview(
-                typedEditorListTop(), typedEditorAddBounds().top() - footerGap, TYPED_ROW_HEIGHT);
+                typedEditorListTop(), footerTop - footerGap, TYPED_ROW_HEIGHT);
     }
 
-    private UiRect typedEditorAddBounds() {
+    private QuestTypedEntryListSection.Footer typedEditorFooter() {
         int bottom = height - bottomToolbarHeight() - 6;
-        int center = detailLeft() + detailsWidth() / 2;
-        return new UiRect(detailLeft() + 10, bottom - 20, center - 4, bottom);
-    }
-
-    private UiRect typedEditorDoneBounds() {
-        int bottom = height - bottomToolbarHeight() - 6;
-        int center = detailLeft() + detailsWidth() / 2;
-        return new UiRect(center + 4, bottom - 20, width - 10, bottom);
+        return QuestTypedEntryListSection.footer(new UiRect(detailLeft() + 10, typedEditorListTop(), width - 10, bottom), font);
     }
 
     private UiRect typedTypePickerBounds() {

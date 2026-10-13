@@ -13,6 +13,7 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPa
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
+import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,7 +38,36 @@ final class QuestTypedEntryListSection {
     }
 
     record Layout(int drawerOffset, UiRect panel, UiRect list, UiRect clip, int trackX,
-                  UiRect add, UiRect done, int messageWidth) {}
+                  Footer footer, int messageWidth) {}
+
+    record Footer(UiRect add, UiRect paste, UiRect done) {
+        Footer translated(int x, int y) {
+            return new Footer(add.translated(x, y), paste.translated(x, y), done.translated(x, y));
+        }
+    }
+
+    /** Reserve two measured rows before sizing the list, so large GUI scales never split Add into a quarter-width slot. */
+    static Footer footer(UiRect area, Font font) {
+        int half = Math.max(1, (area.width() - 4) / 2);
+        int padding = EditorButton.CONTENT_PADDING * 2;
+        int addWidth = Math.max(1, half - padding - QuestActionIcons.named("plus").width(font) - EditorButton.CONTENT_GAP);
+        int pasteWidth = Math.max(1, area.width() - half - 4 - padding);
+        int upperHeight = Math.max(
+                EditorTextLayout.buttonHeight(font.split(Component.translatable("screen.brnquest.editor.typed.add"), addWidth).size(), font.lineHeight),
+                EditorTextLayout.buttonHeight(font.split(Component.translatable("screen.brnquest.clipboard.paste"), pasteWidth).size(), font.lineHeight));
+        int doneHeight = EditorTextLayout.buttonHeight(font.split(Component.translatable("gui.done"),
+                Math.max(1, area.width() - padding)).size(), font.lineHeight);
+        return footer(area, upperHeight, doneHeight);
+    }
+
+    /** Rendering, pointer hit testing and keyboard focus all receive these same non-overlapping rectangles. */
+    static Footer footer(UiRect area, int upperHeight, int doneHeight) {
+        int split = area.left() + Math.max(0, (area.width() - 4) / 2);
+        UiRect done = new UiRect(area.left(), area.bottom() - doneHeight, area.right(), area.bottom());
+        int upperBottom = done.top() - 4;
+        return new Footer(new UiRect(area.left(), upperBottom - upperHeight, split, upperBottom),
+                new UiRect(split + 4, upperBottom - upperHeight, area.right(), upperBottom), done);
+    }
 
     record RenderResult(EditorEntryListPanel.Hover hover) {}
 
@@ -61,7 +91,7 @@ final class QuestTypedEntryListSection {
                     0xFFFFFFFF, false);
             if (model.message() != null) {
                 EditorTextRenderer.drawCaption(graphics, font, model.message(),
-                        new UiRect(layout.list().left(),layout.add().top()-12,layout.list().left()+layout.messageWidth(),layout.add().top()-3),
+                        new UiRect(layout.list().left(),layout.footer().add().top()-12,layout.list().left()+layout.messageWidth(),layout.footer().add().top()-3),
                         0xFFFFA070, mouseX+layout.drawerOffset(), mouseY);
             }
 
@@ -71,19 +101,19 @@ final class QuestTypedEntryListSection {
                     new ActionKey(null, Action.ADD), EditorButton.Definition.iconAndText(add, add,
                     QuestActionIcons.named("plus")), model.enabled(), EditorButton.Tone.PRIMARY,
                     (x, y) -> pendingIntent = new Intent(Action.ADD, null, x.intValue(), y.intValue())),
-                    new UiRect(layout.add().left(), layout.add().top(), layout.add().centerX() - 2, layout.add().bottom()), layout.clip()));
+                    layout.footer().add(), layout.clip()));
             // Text-only paste action reuses the footer's keyboard focus and click geometry.
             footer.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
                     new ActionKey(null, Action.PASTE), EditorButton.Definition.text(
                     Component.translatable("screen.brnquest.clipboard.paste"), Component.translatable("screen.brnquest.clipboard.paste_help")),
                     model.enabled() && model.canPaste(), EditorButton.Tone.PRIMARY,
                     (x, y) -> pendingIntent = new Intent(Action.PASTE, null, x.intValue(), y.intValue())),
-                    new UiRect(layout.add().centerX() + 2, layout.add().top(), layout.add().right(), layout.add().bottom()), layout.clip()));
+                    layout.footer().paste(), layout.clip()));
             footer.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(
                     new ActionKey(null, Action.DONE), EditorButton.Definition.text(
                     Component.translatable("gui.done"), null), true, EditorButton.Tone.NEUTRAL,
                     (x, y) -> pendingIntent = new Intent(Action.DONE, null, x.intValue(), y.intValue())),
-                    layout.done(), layout.clip()));
+                    layout.footer().done(), layout.clip()));
 
             EditorEntryListPanel.Hover hover = entries.render(graphics, font, layout.list(), layout.clip(),
                     layout.trackX(), rowHeight, model.count(), model.idAt(), seconds, speed, model.contentAt(),

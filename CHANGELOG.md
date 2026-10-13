@@ -4,6 +4,8 @@
 
 ### Added
 
+- Editor text fields provide local undo/redo, literal formatting-code editing and clearer selections. Localized source drafts keep their history across view changes and picker returns; the raw configuration editor keeps unsaved text when resized.
+- Added optional IMBlocker integration for owned editor inputs, including focus detection and composition-window positioning.
 - Quest titles and subtitles support native colors and text styles through typed/pasted codes or formatting tools.
 - The text editor offers manual Source/Preview/Split views and a draggable divider. Its compact toolbar targets the title, subtitle or body, and view changes and picker returns preserve editing positions.
 - Added top-center floating notices above gameplay and menus, with quest/objective icons and objective requirements. New notices fold older ones behind them, showing up to three layers and a folded count. The tracking HUD moves aside when needed.

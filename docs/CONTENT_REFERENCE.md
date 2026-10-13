@@ -51,6 +51,30 @@ Observation uses `kind=block|entity`, an ID or `#tag` target, distance >0 and â‰
 
 Kills default to `minecraft:zombie`, count 1 (positive long). Direct lethal player damage and player-owned projectile kills count once; pets, environment, cancelled deaths and historical kills do not. Shared quests add once to their ledger. Dependencies and sequential objectives still apply.
 
+## Vanilla statistics
+
+`brnquest:statistics` currently supports personal historical totals. Configure `stat_type`, `stat`, and `count` (1â€“2147483647); optional `title` supports native formatting. `mode` defaults to `total`. Historical actions can complete a newly eligible objective. Dependencies and sequential objectives apply, and counters are sampled every 20 ticks. Reset clears BRNQuest progress and rereads the vanilla history; it does not reset Minecraft statistics.
+
+| Category | Object registry |
+| --- | --- |
+| `minecraft:custom` | Registered custom statistics, such as `minecraft:jump` |
+| `minecraft:mined` | Blocks |
+| `minecraft:crafted`, `minecraft:used`, `minecraft:broken`, `minecraft:picked_up`, `minecraft:dropped` | Items |
+| `minecraft:killed`, `minecraft:killed_by` | Entity types |
+
+Choose the category first, then use its server-backed object selector. IDs from another category and missing objects fail author validation. Registered mod objects in these categories are supported. Counts use vanilla raw units: distance is centimeters (100 = 1 meter), time is ticks (1200 = 1 minute), and damage is tenths (10 = 1 damage point). Details, HUD and notices display the native statistic format.
+
+```json
+{
+  "stat_type": "minecraft:custom",
+  "stat": "minecraft:jump",
+  "count": "100",
+  "mode": "total"
+}
+```
+
+Shared team ledgers are not sampled in this implementation. For personal use in an OpenPAC team, disable shared team progress on the book. Incremental counting and team contributions are planned separately.
+
 ## Advancements and target groups
 
 `brnquest:advancement` is both an objective and a reward:

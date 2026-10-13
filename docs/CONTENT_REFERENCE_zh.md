@@ -51,6 +51,30 @@
 
 击杀默认 `minecraft:zombie`、数量 1（正 long）。玩家直接致命伤害及其投射物击杀计数一次；宠物、环境、取消死亡与历史击杀不计入。共享任务只增加一次账本，仍遵守依赖与顺序目标规则。
 
+## 原版统计
+
+`brnquest:statistics` 当前支持个人历史累计。配置 `stat_type`、`stat` 和 `count`（1～2147483647），可选 `title` 支持原生格式；`mode` 缺省为 `total`。较早发生的行为可满足新解锁目标，仍遵守依赖与顺序目标规则，每 20 tick 采样。重置会清除 BRNQuest 进度并重新读取原版历史，保留 Minecraft 统计。
+
+| 类别 | 对象注册表 |
+| --- | --- |
+| `minecraft:custom` | 已注册自定义统计，如 `minecraft:jump` |
+| `minecraft:mined` | 方块 |
+| `minecraft:crafted`、`minecraft:used`、`minecraft:broken`、`minecraft:picked_up`、`minecraft:dropped` | 物品 |
+| `minecraft:killed`、`minecraft:killed_by` | 实体类型 |
+
+先选择类别，再打开相应的服务端对象选择器。类别不匹配或对象缺失会产生作者校验错误，支持这些类别内已注册的模组对象。数量使用原版底层单位：距离为厘米（100 = 1 米），时间为 tick（1200 = 1 分钟），伤害为十分之一点（10 = 1 点伤害）。详情、HUD 和弹窗使用原生统计格式显示。
+
+```json
+{
+  "stat_type": "minecraft:custom",
+  "stat": "minecraft:jump",
+  "count": "100",
+  "mode": "total"
+}
+```
+
+当前实现跳过团队共享账本的采样。在 OpenPAC 团队中使用个人统计目标时，关闭任务书的共享团队进度。新增量计数与团队贡献另行实现。
+
 ## 原版进度与目标分组
 
 `brnquest:advancement` 同时可作为目标和奖励：

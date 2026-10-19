@@ -21,7 +21,11 @@
     "featured": false,
     "status": "listed",
     "environment": "client_and_server",
-    "dependencies": []
+    "dependencies": [
+      { "project_id": "gF3BGWvG", "dependency_type": "optional" },
+      { "project_id": "u6dRKJwZ", "dependency_type": "optional" },
+      { "project_id": "umyGl7zF", "dependency_type": "optional" }
+    ]
   },
   "curseforge": {
     "display_name": "BRNQuest {version} - {minecraft_version} {loader}",

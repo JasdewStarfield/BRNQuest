@@ -54,13 +54,29 @@ jobs:
               $normalized = @($items | Select-Object project_id, version_id, file_name, dependency_type | Sort-Object project_id, version_id, file_name, dependency_type)
               ConvertTo-Json -InputObject $normalized -Depth 8 -Compress
           }
+          function Convert-FileList($items) {
+              # JSON object property order may differ between the list and detail endpoints.
+              # Compare named file fields and hashes in a fixed order instead of serialized API objects.
+              $normalized = @($items | Sort-Object filename | ForEach-Object {
+                  [ordered]@{
+                      filename = $_.filename
+                      url = $_.url
+                      size = $_.size
+                      primary = $_.primary
+                      file_type = $_.file_type
+                      sha1 = $_.hashes.sha1
+                      sha512 = $_.hashes.sha512
+                  }
+              })
+              ConvertTo-Json -InputObject $normalized -Depth 8 -Compress
+          }
           $dependencies = @($source.dependencies | Select-Object project_id, version_id, file_name, dependency_type)
           if ($dependencies.Count -eq 0) { throw 'The source version has no dependencies to copy.' }
           $expected = Convert-DependencyList $dependencies
           # Keep future releases aligned with the same reviewed dependency settings.
           $template = Get-Content tools/release/platform-metadata.json -Raw -Encoding utf8 | ConvertFrom-Json
           if ((Convert-DependencyList $template.modrinth.dependencies) -cne $expected) { throw 'Update the publishing template to match the source dependencies first.' }
-          $originalFiles = ConvertTo-Json -InputObject @($target.files) -Depth 12 -Compress
+          $originalFiles = Convert-FileList $target.files
           if ((Convert-DependencyList $target.dependencies) -cne $expected) {
               # PATCH only the dependency field; the existing file and changelog remain in place.
               $body = @{ dependencies = $dependencies } | ConvertTo-Json -Depth 8 -Compress
@@ -68,6 +84,7 @@ jobs:
           }
           $updated = Invoke-RestMethod -Uri "$apiBase/version/$($target.id)" -Headers $headers
           if ((Convert-DependencyList $updated.dependencies) -cne $expected) { throw 'Dependency readback differs from the source version.' }
-          if ($updated.changelog -cne $target.changelog -or (ConvertTo-Json -InputObject @($updated.files) -Depth 12 -Compress) -cne $originalFiles) { throw 'Release files or changelog changed during the metadata update.' }
+          if ($updated.changelog -cne $target.changelog) { throw 'Release changelog changed during the metadata update.' }
+          if ((Convert-FileList $updated.files) -cne $originalFiles) { throw 'Release file fields or hashes changed during the metadata update.' }
           Write-Host "[BRNQuest Release] Verified $($updated.version_number) ($($updated.id)): $($dependencies.Count) dependencies copied from $($source.version_number); files and changelog unchanged."
           $updated.dependencies | Select-Object project_id, version_id, file_name, dependency_type | ConvertTo-Json -Depth 8

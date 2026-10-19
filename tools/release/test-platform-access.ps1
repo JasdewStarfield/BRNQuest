@@ -62,7 +62,13 @@ if (-not $env:MODRINTH_TOKEN -or $ModrinthProjectId -notmatch '^[a-zA-Z0-9_-]+$'
         $report.modrinth.versions_http_status = $versions.status
         if ($versions.status -eq 200) {
             $report.modrinth.versions = @($versions.data | ForEach-Object {
-                [ordered]@{ version = $_.version_number; status = $_.status; files = @($_.files.filename) }
+                [ordered]@{
+                    version = $_.version_number
+                    status = $_.status
+                    files = @($_.files.filename)
+                    # Include public dependency fields so release metadata can be compared before publishing.
+                    dependencies = @($_.dependencies | Select-Object project_id, version_id, file_name, dependency_type)
+                }
             })
         } else {
             $failures.Add("Modrinth version-list read failed (HTTP $($versions.status)).")

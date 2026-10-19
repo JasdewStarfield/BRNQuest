@@ -1,0 +1,95 @@
+name: Publish existing release to Modrinth
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing GitHub release version without a leading v
+        required: true
+        type: string
+      release_run_id:
+        description: Original Release BRNQuest run containing the release-bundle artifact
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+# Keep a recovery upload and a normal release of this version from running together.
+concurrency:
+  group: brnquest-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+  MODRINTH_PROJECT_ID: ${{ vars.MODRINTH_PROJECT_ID || 'k2cwPRGW' }}
+
+jobs:
+  modrinth:
+    name: Upload the verified existing release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Verify the source release run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF -ne 'refs/heads/mc/1.21.1-neoforge') { throw 'Run uploads from mc/1.21.1-neoforge.' }
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'Invalid version.' }
+          if ($env:RELEASE_RUN_ID -notmatch '^\d+$') { throw 'Invalid run ID.' }
+          $sourceRun = gh api "repos/$($env:GITHUB_REPOSITORY)/actions/runs/$($env:RELEASE_RUN_ID)" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the original release run.' }
+          if ($sourceRun.path -ne '.github/workflows/release.yml' -or $sourceRun.event -ne 'workflow_dispatch' -or $sourceRun.status -ne 'completed') { throw 'Select a completed Release BRNQuest run.' }
+          $release = gh release view $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --json isDraft,targetCommitish | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read the published release.' }
+          if ($release.isDraft -or $release.targetCommitish -ne $sourceRun.head_sha) { throw 'Release does not match the original build commit.' }
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: dist
+          run-id: ${{ inputs.release_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify published bytes and upload to Modrinth
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:MODRINTH_TOKEN) { throw 'Set MODRINTH_TOKEN.' }
+          $jarName = "brnquest-mc1.21.1-$($env:RELEASE_VERSION).jar"
+          $jarPath = "./dist/libs/$jarName"
+          $metadataPath = './dist/release-metadata/neoforge_1_21_1.json'
+          $metadata = Get-Content -LiteralPath $metadataPath -Raw -Encoding utf8 | ConvertFrom-Json
+          if ($metadata.jar_name -ne $jarName) { throw 'Bundle version does not match the requested release.' }
+          $release = gh release view $env:RELEASE_VERSION --repo $env:GITHUB_REPOSITORY --json assets,isPrerelease,body | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read release assets and notes.' }
+          $assets = @($release.assets | Where-Object name -eq $jarName)
+          if ($assets.Count -ne 1) { throw 'Expected exactly one matching published JAR.' }
+          $digest = 'sha256:' + (Get-FileHash -LiteralPath $jarPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($assets[0].digest -ne $digest) { throw 'Bundle differs from the published GitHub JAR.' }
+          if (($metadata.modrinth.version_type -ne 'release') -ne $release.isPrerelease) { throw 'Release channel mismatch.' }
+          if ([string]::IsNullOrWhiteSpace($release.body)) { throw 'Published release notes are empty.' }
+          # Preserve the original platform metadata and JAR; take notes directly from the published release.
+          $metadata.modrinth.changelog = $release.body
+          $metadata | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $metadataPath -Encoding utf8
+          ./tools/release/publish-modrinth.ps1 -ProjectId $env:MODRINTH_PROJECT_ID -Token $env:MODRINTH_TOKEN -JarPath $jarPath -MetadataPath $metadataPath -Confirm:$false
+          # Authenticated reads also verify uploads while the project is still awaiting review.
+          $headers = @{ Authorization = $env:MODRINTH_TOKEN; 'User-Agent' = 'JasdewStarfield/BRNQuest-release-automation (github.com/JasdewStarfield/BRNQuest)' }
+          $versions = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/project/$($env:MODRINTH_PROJECT_ID)/version" -Headers $headers
+          $matchingVersions = @($versions | Where-Object version_number -eq $metadata.modrinth.version_number)
+          if ($matchingVersions.Count -ne 1) { throw 'Uploaded version was not found uniquely.' }
+          $version = $matchingVersions[0]
+          $sha512 = (Get-FileHash -LiteralPath $jarPath -Algorithm SHA512).Hash.ToLowerInvariant()
+          $files = @($version.files | Where-Object { $_.filename -eq $jarName -and $_.hashes.sha512 -eq $sha512 })
+          if ($files.Count -ne 1 -or $version.changelog -cne $release.body) { throw 'Uploaded file or release notes differ from GitHub.' }
+          $project = Invoke-RestMethod -Uri "https://api.modrinth.com/v2/project/$($env:MODRINTH_PROJECT_ID)" -Headers $headers
+          Write-Host "[BRNQuest Release] Verified Modrinth version $($version.id); project status $($project.status); version status $($version.status)."
+          Write-Host "https://modrinth.com/mod/$($project.slug)/version/$($version.id)"

@@ -14,6 +14,8 @@ final class TaskPollingPlan {
     final QuestBookSnapshot snapshot;
     final List<QuestDefinition> quests;
     private final Map<ResourceLocation, BitSet> questsByType = new LinkedHashMap<>();
+    private BitSet lastStatefulSelection = new BitSet();
+    private List<QuestDefinition> lastStatefulQuests = List.of();
     private final Map<ResourceLocation, java.util.IdentityHashMap<yourscraft.jasdewstarfield.brnquest.task.TaskType<?>, SamplingInfo>> sampling = new java.util.HashMap<>();
     /** Definition/type-instance memoization cannot retain a player or skip a replaced script implementation. */
     record SamplingInfo(yourscraft.jasdewstarfield.brnquest.api.TaskView view, String taskId, String ownerIdentity, String memberIdentity) {}
@@ -53,6 +55,13 @@ final class TaskPollingPlan {
     List<QuestDefinition> statefulQuests(java.util.function.Predicate<ResourceLocation> stateful) {
         BitSet selected = new BitSet();
         questsByType.forEach((type, indices) -> { if (stateful.test(type)) selected.or(indices); });
-        return selected.stream().mapToObj(quests::get).toList();
+        // Still check live type registrations each call. Reuse only the definition list,
+        // never player state, so script reloads and team changes remain visible immediately.
+        if (!selected.equals(lastStatefulSelection)) {
+            lastStatefulSelection = selected;
+            lastStatefulQuests = selected.cardinality() == quests.size() ? quests
+                    : selected.stream().mapToObj(quests::get).toList();
+        }
+        return lastStatefulQuests;
     }
 }

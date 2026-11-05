@@ -10,6 +10,15 @@ import yourscraft.jasdewstarfield.brnquest.data.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class TaskPollingPlanTest {
+    @Test void statefulResultsAreReusedWithoutHidingTypeChanges() {
+        var plan = plan("stateful", "plain", "stateful");
+        var first = plan.statefulQuests(id -> id.getPath().equals("stateful"));
+        assertEquals(List.of(plan.quests.get(0), plan.quests.get(2)), first);
+        assertSame(first, plan.statefulQuests(id -> id.getPath().equals("stateful")));
+        assertEquals(plan.quests, plan.statefulQuests(id -> true));
+        assertTrue(plan.statefulQuests(id -> false).isEmpty());
+        assertEquals(first, plan.statefulQuests(id -> id.getPath().equals("stateful")));
+    }
     @Test void keepsAuthoredOrderAndOriginalModuloCadenceForMixedTypes() {
         var plan = plan("ten", "five", "ten");
         assertTrue(plan.dueQuests(1, id -> id.getPath().equals("ten") ? 10 : 5).isEmpty());

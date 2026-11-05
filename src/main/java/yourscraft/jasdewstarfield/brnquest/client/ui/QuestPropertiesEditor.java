@@ -11,7 +11,6 @@ import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
@@ -44,13 +43,14 @@ import net.minecraft.client.gui.Font;
 /** Owns the complete quest property buffer, its controls and immutable submission intent. */
 final class QuestPropertiesEditor {
     interface Host {
+        EditorSessionView session();
         QuestBookSnapshot snapshot();
         QuestScreenLayout layout();
         EditorButtonInput buttons();
         void focus(EditorTextField field);
         void openItems(Consumer<ItemStack> result);
         void openTexture(Consumer<String> result);
-        void openLocalized(QuestDefinition quest);
+        void openLocalized(QuestDefinition quest, java.util.function.BooleanSupplier current);
         void openRegistered(Component title, Map<String, String> values, List<QuestPropertySchema.Property> schema,
                             Consumer<Map<String, String>> result);
         void dropdown(UiRect anchor, List<String> values, Consumer<String> result, java.util.function.Function<String, Component> labels);
@@ -103,8 +103,8 @@ final class QuestPropertiesEditor {
     private <T> Consumer<T> returning(Consumer<T> result) {
         var token = identity.token();
         return value -> {
-            var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), questEditorQuestId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
+            var editor = host.session();
+            if (identity.matches(token, editor.sessionId(), questEditorQuestId) && editor.editable() && !editor.busy()) result.accept(value);
         };
     }
     private String questEditorOriginalIconItemId = "";
@@ -140,7 +140,7 @@ final class QuestPropertiesEditor {
     private ResourceLocation questEditorQuestId;
     private Component questEditorMessage;
     void render(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
-        boolean enabled = !ClientEditorState.get().busy();
+        boolean enabled = !host.session().busy();
         List<EditorPropertyPanel.RowContent> rows = new ArrayList<>();
         questFields.hide();
         rows.add(EditorPropertyPanel.section(font, "screen.brnquest.editor.section.identity"));
@@ -251,9 +251,9 @@ final class QuestPropertiesEditor {
         graphics.drawString(font, "X", xLabelLeft + 1, row.field().top() + 5, GraystonePalette.SECONDARY, false);
         graphics.drawString(font, "Y", yLabelLeft + 1, row.field().top() + 5, GraystonePalette.SECONDARY, false);
         questFields.field("x").show(new UiRect(xInputLeft, row.field().top(), xInputLeft + inputWidth, row.field().bottom()),
-                !ClientEditorState.get().busy());
+                !host.session().busy());
         questFields.field("y").show(new UiRect(yInputLeft, row.field().top(), row.field().right(), row.field().bottom()),
-                !ClientEditorState.get().busy());
+                !host.session().busy());
     }
     private void openQuestIconItemSelector() {
         host.openItems(returning(stack -> {
@@ -266,8 +266,8 @@ final class QuestPropertiesEditor {
         }));
     }
     void open(QuestDefinition quest) {
-        if (ClientEditorState.get().busy() || !EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
-        identity.open(ClientEditorState.get().sessionId(), quest.id());
+        if (host.session().busy() || !host.session().editable()) return;
+        identity.open(host.session().sessionId(), quest.id());
         host.resetScroll();
         questEditorOpen = true;
         questEditorQuestId = quest.id();
@@ -454,8 +454,8 @@ final class QuestPropertiesEditor {
         return true;
     }
     boolean click(double mouseX, double mouseY, int button, UiRect viewport, UiRect save, UiRect cancel) {
-        if (!open() || !EditorSessionLifecycle.canEdit(ClientEditorState.get())) return true;
-        if (ClientEditorState.get().busy()) return true;
+        if (!open() || !host.session().editable()) return true;
+        if (host.session().busy()) return true;
             // Partially visible controls may only receive clicks in the clipped part; footer stays independent.
             if (!viewport.containsExclusive(mouseX, mouseY)
                     && !save.contains(mouseX, mouseY)
@@ -463,7 +463,10 @@ final class QuestPropertiesEditor {
             if (button == 0 && questLocalizedTextEditorBounds != null
                     && questLocalizedTextEditorBounds.contains(mouseX, mouseY)) {
                 QuestDefinition quest = draftQuest(questEditorQuestId);
-                if (quest != null) host.openLocalized(quest);
+                if (quest != null) {
+                    var token = identity.token();
+                    host.openLocalized(quest, () -> identity.matches(token, host.session().sessionId(), questEditorQuestId));
+                }
                 return true;
             }
             if (button == 0 && questShapeDropdownBounds != null
@@ -507,13 +510,13 @@ final class QuestPropertiesEditor {
             }
             if (button == 0 && questEditorIconMode == IconEditorMode.TEXTURE
                     && questIconRowLayout != null && questIconRowLayout.picker().contains(mouseX, mouseY)
-                    && !ClientEditorState.get().busy()) {
+                    && !host.session().busy()) {
                 host.openTexture(returning(questFields.field("icon")::setValue));
                 return true;
             }
             if (button == 0 && questEditorIconMode == IconEditorMode.ITEM
                     && questIconRowLayout != null && questIconRowLayout.picker().contains(mouseX, mouseY)
-                    && !ClientEditorState.get().busy()) {
+                    && !host.session().busy()) {
                 openQuestIconItemSelector();
                 return true;
             }
@@ -532,8 +535,8 @@ final class QuestPropertiesEditor {
         return net.minecraft.client.resources.language.I18n.exists(key) ? Component.translatable(key) : Component.literal(value);
     }
     private void submitQuestPropertyEdit(ResourceLocation replacementId) {
-        var editor = ClientEditorState.get();
-        if (!open() || editor.busy() || !EditorSessionLifecycle.canEdit(editor)) return;
+        var editor = host.session();
+        if (!open() || editor.busy() || !editor.editable()) return;
         QuestDefinition currentQuest = draftQuest(questEditorQuestId);
         if (currentQuest == null) return;
         String iconValue = questFields.field("icon").getValue().strip();

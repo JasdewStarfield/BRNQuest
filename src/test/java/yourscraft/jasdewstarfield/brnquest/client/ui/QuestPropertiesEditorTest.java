@@ -40,6 +40,7 @@ class QuestPropertiesEditorTest {
         var host = (QuestPropertiesEditor.Host) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{QuestPropertiesEditor.Host.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "snapshot" -> snapshot;
+                    case "session" -> EditorSessionView.capture(editor);
                     case "submit" -> { submissions.add((QuestPropertiesEditor.Submission) args[0]); yield true; }
                     default -> null;
                 });

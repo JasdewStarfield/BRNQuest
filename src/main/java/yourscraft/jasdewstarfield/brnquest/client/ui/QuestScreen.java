@@ -4,7 +4,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRendere
 
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
 
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorLocalizedText;
 import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
@@ -31,7 +30,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewModel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.QuestActionIcons;
@@ -120,13 +118,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Boolean closingEditingPreference;
     // Chapter icon changes stay local until the dialog is applied. Child selectors only update this value.
 
-    private EditorTextField quickTextField;
-    private EditorLocalizedText quickLocalizedText;
-    private record PendingLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {}
-    private PendingLocalizedQuestText pendingLocalizedQuestText;
-    private QuickTextKind quickTextKind = QuickTextKind.NONE;
-    private ResourceLocation quickTextQuestId;
-    private Component quickTextIssue;
     private Component clipboardMessage;
     private long clipboardMessageUntil;
     private final QuestEditorChrome editorChrome = new QuestEditorChrome();
@@ -165,13 +156,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private ResourceLocation recoveryCopyBookId;
 
     private final QuestPropertiesEditor questProperties = new QuestPropertiesEditor(new QuestPropertiesEditor.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
         public QuestBookSnapshot snapshot() { return displaySnapshot(); }
         public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
         public EditorButtonInput buttons() { return formButtons; }
         public void focus(EditorTextField field) { setFocused(field); }
         public void openItems(Consumer<ItemStack> result) { openEditorItemSelector(result); }
         public void openTexture(Consumer<String> result) { openChildScreen(new EditorTextureBrowserScreen(QuestScreen.this, result)); }
-        public void openLocalized(QuestDefinition quest) { openLocalizedQuestTextEditor(quest); }
+        public void openLocalized(QuestDefinition quest, java.util.function.BooleanSupplier current) { questText.openLocalizedQuestTextEditor(quest, current); }
         public void openRegistered(Component title, Map<String, String> values, List<QuestPropertySchema.Property> schema,
                                    Consumer<Map<String, String>> result) {
             openChildScreen(new EditorRegisteredPropertiesScreen(QuestScreen.this, title, values, schema, result));
@@ -223,6 +215,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private final QuestDependenciesEditor dependencies = new QuestDependenciesEditor(new QuestDependenciesEditor.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
         public QuestBookSnapshot snapshot() { return displaySnapshot(); }
         public QuestDefinition selected() { return selectedQuest(); }
         public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
@@ -253,6 +246,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorChildScreens editorChildren = new EditorChildScreens(() -> this, this::openChildScreen, this::openEditorItemSelector);
 
     private final QuestTypedEntriesEditor typedEntries = new QuestTypedEntriesEditor(new QuestTypedEntriesEditor.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
         public QuestBookSnapshot snapshot() { return displaySnapshot(); }
         public QuestDefinition selected() { return selectedQuest(); }
         public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
@@ -264,6 +258,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         public String serverContext() { return serverContextId; }
         public ItemStack item(ResourceLocation id, String snbt) { return QuestScreen.this.item(id, snbt); }
         public QuestStatus status(QuestDefinition quest) { return QuestScreen.this.status(quest); }
+        public long taskProgress(ResourceLocation id) { return ClientQuestState.get().taskProgress().getOrDefault(id.toString(), 0L); }
         public void hover(RecipeLookupTarget item, List<Component> tooltip) {
             if (item != null) { hoveredRecipeLookupTarget = item; hoveredDetailStack = item.stack(); }
             if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
@@ -287,6 +282,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private final QuestStructureEditor structure = new QuestStructureEditor(new QuestStructureEditor.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
         public QuestBookSnapshot snapshot() { return displaySnapshot(); }
         public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
         public String serverContext() { return serverContextId; }
@@ -343,6 +339,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }, editorOverlays);
 
     private final EditorPropertySurface propertySurface = new EditorPropertySurface(new EditorPropertySurface.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
         public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
         public double elapsed() { return currentMotionFrameSeconds; }
         public int drawerOffset() { return detailsDrawerOffsetX(); }
@@ -360,6 +357,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void synchronizeEditorModules(ClientEditorState editor) {
         editorSessionLifecycle.accept(new EditorSessionLifecycle.Scope(editor.sessionId(), editor.bookId(), EditorSessionLifecycle.canEdit(editor)), () -> {
             closeQuestEditingPanels();
+            questText.sessionChanged();
             switch (editorOverlays.active()) {
                 case CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
                         QUICK_TEXT, PUBLISH_CONFIRMATION -> closeActiveEditorOverlay();
@@ -370,6 +368,24 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (catalogAuthorizationDenied(editor.mode(), editor.allowed()) && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))
             closeActiveEditorOverlay();
     }
+
+    private final QuestTextEditor questText = new QuestTextEditor(new QuestTextEditor.Host() {
+        public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
+        public QuestBookSnapshot snapshot() { return displaySnapshot(); }
+        public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
+        public EditorButtonInput buttons() { return formButtons; }
+        public EditorChildScreens children() { return editorChildren; }
+        public String locale() { return minecraft.getLanguageManager().getSelected(); }
+        public void focus(EditorTextField field) { setFocused(field); }
+        public void closeOverlay() { closeActiveEditorOverlay(); }
+        public void nativeClick(double x, double y, int button) { QuestScreen.super.mouseClicked(x, y, button); }
+        public void tooltip(List<Component> lines) { hoveredComponentTooltip = lines; }
+        public void text(GuiGraphics g, UiRect bounds, Component label, Component tooltip, boolean enabled, EditorButton.Tone tone, int x, int y) {
+            renderEditorTextButton(g, bounds, label, tooltip, enabled, tone, x, y);
+        }
+        public boolean mutate(EditorMutationIntent intent) { return sendMutation(intent); }
+        public void submitted(ResourceLocation quest) { editorSelectedQuest = quest; }
+    }, editorOverlays);
 
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
@@ -399,6 +415,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questProperties.bind(font, this::registerPropertyField);
         structure.bind(font, this::addRenderableWidget);
         typedPropertySection.attach(new QuestTypedPropertySection.Host() {
+            public EditorSessionView session() { return EditorSessionView.capture(ClientEditorState.get()); }
             public QuestTypedEntryKind kind() { return typedEntries.kind(); }
             public ResourceLocation quest() { return typedEntries.target(); }
             public QuestBookSnapshot snapshot() { return displaySnapshot(); }
@@ -439,9 +456,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
         });
         typedPropertySection.bind(font, this::registerPropertyField);
-        quickTextField = reinitializeOverlayEditorField(quickTextField,
-                "screen.brnquest.editor.quick_edit.input", 256);
-        quickTextField.setNativeFormatting(true);
+        questText.bind(font, this::addWidget);
         serverContextId = currentServerContext();
         synchronizeEditorModules(ClientEditorState.get());
 
@@ -581,7 +596,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void reconcileModeSelection(ClientEditorState editor) {
         reconcilePendingEditUi(editor);
-        reconcileLocalizedQuestText(editor);
+        questText.reconcileLocalizedQuestText(EditorSessionView.capture(editor));
         boolean nextEditorMode = editor.draft().isPresent();
         boolean modeChanged = nextEditorMode != editorSelectionMode;
         QuestBookSnapshot target = nextEditorMode
@@ -1199,7 +1214,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case QUICK_EDIT_TEXT -> {
                 if (ClientEditorState.get().editing() && intent.textArea() != null) {
-                    openQuickTextEditor(quest, QuickTextKind.valueOf(intent.textArea()));
+                    questText.openQuickTextEditor(quest, QuestTextEditor.Kind.valueOf(intent.textArea()));
                 }
             }
             case EDIT_PROPERTIES -> { if (ClientEditorState.get().editing()) { openQuestEditor(quest); } }
@@ -2167,7 +2182,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         registerOverlay(EditorOverlayHost.Kind.ENUM_DROPDOWN, this::renderEnumDropdown, this::handleEnumDropdownClick);
         registerOverlay(EditorOverlayHost.Kind.DEPENDENCY_PICKER, dependencies::renderPicker, dependencies::clickPicker);
         registerOverlay(EditorOverlayHost.Kind.TYPED_TYPE_PICKER, typedEntries::renderPicker, typedEntries::clickPicker);
-        registerOverlay(EditorOverlayHost.Kind.QUICK_TEXT, this::renderQuickTextEditor, this::handleQuickTextEditorClick);
+        registerOverlay(EditorOverlayHost.Kind.QUICK_TEXT, questText::renderQuickTextEditor, questText::handleQuickTextEditorClick);
         registerOverlay(EditorOverlayHost.Kind.CATALOG, (g, x, y) -> { if (ClientEditorState.get().allowed()) bookWorkflow.renderEditorCatalog(g, x, y); }, (x, y, button) -> displaySnapshot() != null && handleEditorChromeClick(x, y, button, displaySnapshot().book()));
     }
 
@@ -2182,7 +2197,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) return typedEntries.pickerKey(key, modifiers);
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) return bookWorkflow.catalogKey(key, modifiers);
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT) && (key == 257 || key == 335)) {
-            submitQuickTextEdit();
+            questText.submitQuickTextEdit();
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) return dependencies.pickerKey(key, modifiers);
@@ -2224,7 +2239,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case STRUCTURE_FORM -> structure.close();
             case DEPENDENCY_PICKER -> dependencies.closePicker();
             case TYPED_TYPE_PICKER -> typedEntries.closePicker();
-            case QUICK_TEXT -> closeQuickTextEditor();
+            case QUICK_TEXT -> questText.closeQuickTextEditor();
             case DELETE_CONFIRMATION -> {
                 deleteSelection = java.util.Set.of();
                 deleteKind = DeleteKind.NONE;
@@ -2242,36 +2257,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case DRAFT_SOURCE_CHOICE -> bookWorkflow.clearDraftSourceChoice();
             case NONE -> { }
         }
-    }
-
-    private void openQuickTextEditor(QuestDefinition quest, QuickTextKind kind) {
-        if (kind == QuickTextKind.NONE || ClientEditorState.get().busy()) return;
-        if (kind == QuickTextKind.DESCRIPTION) {
-            openLocalizedQuestTextEditor(quest);
-            return;
-        }
-        closeActiveEditorOverlay();
-        quickTextKind = kind;
-        quickTextQuestId = quest.id();
-        quickTextIssue = null;
-        quickLocalizedText = new EditorLocalizedText(displaySnapshot().book().localization(),
-                BookText.questPrefix(quest) + (kind == QuickTextKind.TITLE ? "title" : "quest_subtitle"),
-                kind == QuickTextKind.TITLE ? quest.title() : quest.subtitle(), minecraft.getLanguageManager().getSelected());
-        quickTextField.setValue(quickLocalizedText.value());
-        editorOverlays.show(EditorOverlayHost.Kind.QUICK_TEXT);
-        setFocused(quickTextField);
-    }
-
-    private void openLocalizedQuestTextEditor(QuestDefinition quest) {
-        QuestBookSnapshot snapshot = displaySnapshot();
-        if (snapshot == null || minecraft == null || ClientEditorState.get().busy()) return;
-        // This is the same suspended-parent transition as item and raw-config editors. Without
-        // the token, Screen.removed() may close a clean server lease before Apply is dispatched.
-        EditorLocalizedQuestTextScreen.Value recovery = pendingLocalizedQuestText != null
-                && pendingLocalizedQuestText.questId().equals(quest.id()) ? pendingLocalizedQuestText.value() : null;
-        openChildScreen(new EditorLocalizedQuestTextScreen(this, snapshot.book().localization(), quest,
-                minecraft.getLanguageManager().getSelected(), value -> submitLocalizedQuestText(quest.id(), value),
-                recovery, () -> discardLocalizedQuestText(quest.id())));
     }
 
     /** An in-flight permission refresh is undecided, not a denial that should dismiss its own overlay. */
@@ -2301,97 +2286,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         };
     }
 
-    private boolean submitLocalizedQuestText(ResourceLocation questId, EditorLocalizedQuestTextScreen.Value value) {
-        if (sendMutation("UPDATE_QUEST_TRANSLATION", questId, null, null, value.locale(), 0, 0, 0, List.of(),
-                Map.of("title", value.title(), "subtitle", value.subtitle(), "description", value.description(),
-                        "description_format", value.descriptionFormat().serializedName()))) {
-            editorSelectedQuest = questId;
-            // Keep the exact submitted buffer until the verified server draft agrees; rejection can reopen it.
-            pendingLocalizedQuestText = new PendingLocalizedQuestText(questId, value);
-            return true;
-        }
-        return false;
-    }
-
-    private void discardLocalizedQuestText(ResourceLocation questId) {
-        if (pendingLocalizedQuestText != null && pendingLocalizedQuestText.questId().equals(questId))
-            pendingLocalizedQuestText = null;
-    }
-
     /** Accepted replacements clear recovery; retryable server rejection deliberately leaves it available. */
-    private void reconcileLocalizedQuestText(ClientEditorState editor) {
-        if (pendingLocalizedQuestText == null || editor.busy() || editor.mode() == ClientEditorState.Mode.ERROR) return;
-        QuestBookSnapshot snapshot = editor.draft().orElse(null);
-        if (snapshot == null) return;
-        QuestDefinition quest = snapshot.quests().get(pendingLocalizedQuestText.questId());
-        if (quest == null) return;
-        if (LocalizedQuestTextRecovery.matches(snapshot.book(), quest, pendingLocalizedQuestText.value()))
-            pendingLocalizedQuestText = null;
-    }
-
-    private void renderQuickTextEditor(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (quickTextKind == QuickTextKind.NONE || quickTextField == null) return;
-        Component fieldName = Component.translatable(quickTextKind.translationKey());
-        EditorQuickTextDialog.render(graphics, font, layout(), formButtons,
-                Component.translatable("screen.brnquest.editor.quick_edit.heading", fieldName),
-                quickTextIssue, !ClientEditorState.get().busy(), mouseX, mouseY);
-        quickLocalizedText.remember(quickTextField.getValue());
-        UiRect textRow = EditorQuickTextDialog.layout(layout()).input();
-        quickTextField.show(EditorLocalizedText.inputBounds(textRow), !ClientEditorState.get().busy());
-        showLocalizedPlaceholder(quickTextField, quickLocalizedText);
-        renderLocaleButton(graphics, quickLocalizedText, textRow, mouseX, mouseY);
-        // The editor chrome is translated to the final overlay depth. Rendering this field through
-        // Screen's ordinary renderable list would leave its border and text behind the modal panel.
-        quickTextField.render(graphics, mouseX, mouseY, 0.0F);
-    }
-
-    private boolean handleQuickTextEditorClick(double mouseX, double mouseY, int button) {
-        if (button == 0) {
-            if (!ClientEditorState.get().busy() && EditorLocalizedText.languageBounds(
-                    EditorQuickTextDialog.layout(layout()).input()).contains(mouseX, mouseY)) {
-                openLocalePicker(quickLocalizedText, quickTextField);
-                return true;
-            }
-            EditorQuickTextDialog.Action action = EditorQuickTextDialog.actionAt(layout(), mouseX, mouseY);
-            if (action == EditorQuickTextDialog.Action.CANCEL) {
-                closeQuickTextEditor();
-                return true;
-            }
-            if (action == EditorQuickTextDialog.Action.APPLY) {
-                submitQuickTextEdit();
-                return true;
-            }
-        }
-        super.mouseClicked(mouseX, mouseY, button);
-        return true;
-    }
 
     /** Confirm all local language drafts together, touching only this single field. */
-    private void submitQuickTextEdit() {
-        QuestBookSnapshot snapshot = displaySnapshot();
-        QuestDefinition quest = snapshot == null || quickTextQuestId == null
-                ? null : snapshot.quests().get(quickTextQuestId);
-        if (ClientEditorState.get().busy() || quest == null || quickTextKind == QuickTextKind.NONE
-                || minecraft == null) return;
-        quickLocalizedText.remember(quickTextField.getValue());
-        if (quickLocalizedText.changes().isEmpty()) { closeQuickTextEditor(); return; }
-        if (sendMutation("UPDATE_QUEST_TRANSLATION", quest.id(), null, null, quickLocalizedText.locale(), 0, 0, 0,
-                List.of(), localizedConfig(quickLocalizedText,
-                        quickTextKind == QuickTextKind.TITLE ? "title" : "quest_subtitle", Map.of()))) {
-            editorSelectedQuest = quest.id();
-            closeQuickTextEditor();
-        }
-    }
-
-    private void closeQuickTextEditor() {
-        quickTextKind = QuickTextKind.NONE;
-        quickLocalizedText = null;
-        quickTextQuestId = null;
-        quickTextIssue = null;
-        setFocused(null);
-        if (quickTextField != null) quickTextField.hide();
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) editorOverlays.close();
-    }
 
     private void renderConflictRecovery(GuiGraphics graphics, int mouseX, int mouseY) {
         UiRect panel = conflictRecoveryBounds();
@@ -2457,36 +2354,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 + "_recovered_" + Long.toString(System.currentTimeMillis(), 36));
     }
 
-    private void showLocalizedPlaceholder(EditorTextField field, EditorLocalizedText text) {
-        // Native suggestions are gray and remain visible with focus, but are never selected or submitted.
-        field.setSuggestion(field.getValue().isEmpty() && text != null
-                ? font.plainSubstrByWidth(text.placeholder(), Math.max(0, field.getWidth() - 8)) : null);
-    }
-
     /** Both quick dialogs and property forms share the same compact language control. */
-    private void renderLocaleButton(GuiGraphics graphics, EditorLocalizedText text, UiRect row, int mouseX, int mouseY) {
-        if (text == null) return;
-        String source = text.source();
-        Component tooltip = Component.translatable(source.isEmpty() ? "screen.brnquest.editor.locale.native"
-                : source.equals(text.locale()) ? "screen.brnquest.editor.locale.current" : "screen.brnquest.editor.locale.fallback", source);
-        renderEditorTextButton(graphics, EditorLocalizedText.languageBounds(row), Component.literal(text.locale()),
-                tooltip, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-    }
-
-    private void openLocalePicker(EditorLocalizedText text, EditorTextField field) {
-        if (text == null) return;
-        text.remember(field.getValue());
-        openChildScreen(new EditorLocaleScreen(this, text.locales(), text.locale(), locale -> {
-            text.select(locale); quickTextField.setValue(text.value());
-        }));
-    }
-
-    private Map<String, String> localizedConfig(EditorLocalizedText text, String field, Map<String, String> metadata) {
-        var result = new java.util.TreeMap<String, String>(metadata);
-        result.put(LocalizedSingleLineEdits.FIELD, field);
-        text.changes().forEach((locale, value) -> result.put(LocalizedSingleLineEdits.PREFIX + locale, value));
-        return Map.copyOf(result);
-    }
 
     private void requestDelete(DeleteKind kind, ResourceLocation target, QuestBookDefinition book) {
         deleteSelection = java.util.Set.of();
@@ -2848,14 +2716,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
-    private EditorTextField reinitializeOverlayEditorField(EditorTextField field, String translationKey,
-                                                            int maximumLength) {
-        if (field == null) {
-            field = new EditorTextField(font, Component.translatable(translationKey), maximumLength);
-        }
-        field.hide();
-        return addWidget(field);
-    }
 
     /** Keep native fields in input/focus routing while drawing them ourselves inside the property viewport. */
     private void registerPropertyField(EditorTextField field) {
@@ -3231,7 +3091,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Every editor entry point reads the same locale-resolved value that the player-facing screen renders. */
-    private String localizedQuestTextValue(QuestDefinition quest, QuickTextKind kind) {
+    private String localizedQuestTextValue(QuestDefinition quest, QuestTextEditor.Kind kind) {
         return switch (kind) {
             case TITLE -> {
                 String value = localizedQuestText(quest, "title", quest.title());
@@ -3681,23 +3541,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private enum ContextKind { NONE, CANVAS, NODE, DECORATION, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
-
-    private enum QuickTextKind {
-        NONE(""),
-        TITLE("screen.brnquest.editor.quest.title"),
-        SUBTITLE("screen.brnquest.editor.quest.subtitle"),
-        DESCRIPTION("screen.brnquest.editor.quest.description");
-
-        private final String translationKey;
-
-        QuickTextKind(String translationKey) {
-            this.translationKey = translationKey;
-        }
-
-        String translationKey() {
-            return translationKey;
-        }
-    }
 
     private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
 

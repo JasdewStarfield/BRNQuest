@@ -10,7 +10,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
@@ -42,6 +41,7 @@ import net.minecraft.client.Minecraft;
 /** One local working copy for chapter/group metadata, creation and their nested selectors. */
 final class QuestStructureEditor {
     interface Host {
+        EditorSessionView session();
         QuestBookSnapshot snapshot();
         QuestScreenLayout layout();
         String serverContext();
@@ -79,8 +79,8 @@ final class QuestStructureEditor {
     private <T> Consumer<T> returning(Consumer<T> result) {
         var token = identity.token();
         return value -> {
-            var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), structureFormTarget) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
+            var editor = host.session();
+            if (identity.matches(token, editor.sessionId(), structureFormTarget) && editor.editable() && !editor.busy()) result.accept(value);
         };
     }
     private void openLocalePicker(EditorLocalizedText text, EditorTextField field) {
@@ -126,7 +126,7 @@ final class QuestStructureEditor {
                 List.of(EditorPropertyPanel.text(font, structureFields.field("id"),
                                 "screen.brnquest.editor.structure.id", 70, null, structureFormKind.createsStableId()),
                         EditorPropertyPanel.text(font, structureFields.field("title"),
-                                "screen.brnquest.editor.structure.title", 70, null, !ClientEditorState.get().busy())),
+                                "screen.brnquest.editor.structure.title", 70, null, !host.session().busy())),
                 new EditorPropertyPanel.Footer(structureFormCancelBounds(), structureFormDoneBounds(),
                         Component.translatable("gui.done"), true, EditorButton.Tone.PRIMARY),
                 (g, bounds, label, enabled, tone) -> host.text(
@@ -136,7 +136,7 @@ final class QuestStructureEditor {
     private void renderChapterProperties(GuiGraphics graphics, int mouseX, int mouseY) {
         UiRect form = structureFormBounds();
         graphics.fill(0, 0, host.layout().width(), host.layout().height(), 0x88000000);
-        boolean enabled = !ClientEditorState.get().busy();
+        boolean enabled = !host.session().busy();
         var rows = new ArrayList<EditorPropertyPanel.RowContent>();
         // Identity is informational until a dedicated reference-migration operation is supported.
         structureFields.field("id").hide();
@@ -303,9 +303,9 @@ final class QuestStructureEditor {
     }
 
     boolean click(double mouseX, double mouseY, int button) {
-        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return true;
+        if (!host.session().editable()) return true;
         if (button == 0 && structureMetadataForm()
-                && !ClientEditorState.get().busy()) {
+                && !host.session().busy()) {
             if (structureFormKind == Kind.RENAME_CHAPTER && chapterProgressBounds().contains(mouseX, mouseY)) {
                 // The generic popup replaces and closes the active modal. Suspend this form instead,
                 // so the selected value and all other pending chapter edits survive until confirmation.
@@ -332,8 +332,8 @@ final class QuestStructureEditor {
                     var result = returning((yourscraft.jasdewstarfield.brnquest.data.CanvasScene scene) -> structureArtwork = scene.backgrounds());
                     host.children().backgrounds(host.serverContext(), host.snapshot().book().id(), structureArtwork,
                             value -> {
-                                if (!identity.matches(childToken, ClientEditorState.get().sessionId(), structureFormTarget)
-                                        || !EditorSessionLifecycle.canEdit(ClientEditorState.get()) || ClientEditorState.get().busy()) return false;
+                                if (!identity.matches(childToken, host.session().sessionId(), structureFormTarget)
+                                        || !host.session().editable() || host.session().busy()) return false;
                                 result.accept(value); return true;
                             });
                     return true;
@@ -390,9 +390,10 @@ final class QuestStructureEditor {
 
     void open(Kind kind, ResourceLocation target, ResourceLocation parent,
                                    double x, double y) {
+        if (!host.session().editable() || host.session().busy()) return;
         host.closeOverlay();
         QuestBookDefinition book = host.snapshot().book();
-        identity.open(ClientEditorState.get().sessionId(), target);
+        identity.open(host.session().sessionId(), target);
         structureFormKind = kind;
         structureFormTarget = target;
         structureFormParent = parent;
@@ -468,8 +469,8 @@ final class QuestStructureEditor {
     }
 
     private void submitStructureForm() {
-        ClientEditorState editor = ClientEditorState.get();
-        if (editor.busy()) return;
+        EditorSessionView editor = host.session();
+        if (editor.busy() || !editor.editable()) return;
         QuestBookDefinition book = host.snapshot().book();
         ResourceLocation id = ResourceLocation.tryParse(structureFields.field("id").getValue());
         if (id == null || !structureTitleValid()) return;
@@ -556,7 +557,7 @@ final class QuestStructureEditor {
         Component tooltip = Component.translatable(source.isEmpty() ? "screen.brnquest.editor.locale.native"
                 : source.equals(text.locale()) ? "screen.brnquest.editor.locale.current" : "screen.brnquest.editor.locale.fallback", source);
         host.text(graphics, EditorLocalizedText.languageBounds(row), Component.literal(text.locale()),
-                tooltip, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                tooltip, !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
     private Map<String, String> localizedConfig(EditorLocalizedText text, String field, Map<String, String> metadata) {
         var result = new java.util.TreeMap<String, String>(metadata);
@@ -567,7 +568,7 @@ final class QuestStructureEditor {
     private QuestIconEditorRow.Layout renderTextureSelector(GuiGraphics graphics, int left, int top, int rowWidth,
             EditorTextField input, IconEditorMode mode, int mouseX, int mouseY) {
         return EditorTextureSelector.render(graphics, font, left, top, rowWidth, input, mode == IconEditorMode.TEXTURE,
-                !ClientEditorState.get().busy(),
+                !host.session().busy(),
                 (g, bounds, label, enabled, tone) -> host.text(g, bounds, label, null, enabled, tone, mouseX, mouseY),
                 (g, bounds, definition, enabled, tone) -> host.action(g, bounds, definition, enabled, tone, mouseX, mouseY));
     }

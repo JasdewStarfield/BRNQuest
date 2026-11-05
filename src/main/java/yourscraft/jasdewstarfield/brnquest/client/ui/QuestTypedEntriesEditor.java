@@ -1,16 +1,10 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import yourscraft.jasdewstarfield.brnquest.client.ClientQuestState;
-import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryRow;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
@@ -37,6 +31,7 @@ import net.minecraft.client.Minecraft;
 /** Task/reward lists and type selection share one target identity and input lifecycle. */
 final class QuestTypedEntriesEditor {
     interface Host {
+        EditorSessionView session();
         QuestBookSnapshot snapshot();
         QuestDefinition selected();
         QuestScreenLayout layout();
@@ -48,6 +43,7 @@ final class QuestTypedEntriesEditor {
         String serverContext();
         ItemStack item(ResourceLocation id, String snbt);
         QuestStatus status(QuestDefinition quest);
+        long taskProgress(ResourceLocation id);
         void hover(RecipeLookupTarget item, List<Component> tooltip);
         void iconButton(GuiGraphics g, UiRect bounds, Component glyph, Component label, boolean enabled, boolean dangerous, int x, int y);
         void context(ResourceLocation id, int x, int y);
@@ -99,8 +95,8 @@ final class QuestTypedEntriesEditor {
     private <T> Consumer<T> returning(Consumer<T> result) {
         var token = identity.token();
         return value -> {
-            var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), typedEditorQuestId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
+            var editor = host.session();
+            if (identity.matches(token, editor.sessionId(), typedEditorQuestId) && editor.editable() && !editor.busy()) result.accept(value);
         };
     }
     private boolean typedEditorOpen;
@@ -125,7 +121,7 @@ final class QuestTypedEntriesEditor {
         QuestTypedEntryListSection.Model model = new QuestTypedEntryListSection.Model(
                 host.frame(), quest.id(), typedEditorKind,
                 Component.translatable(typedEditorKind.headingKey()),
-                typedEditorMessage, !ClientEditorState.get().busy(), typedEditorKind.size(quest),
+                typedEditorMessage, !host.session().busy(), typedEditorKind.size(quest),
                 index -> typedEditorKind.value(quest, index).id(), row -> typedRowContent(quest, row.index()), canPasteTypedClipboard());
         QuestTypedEntryListSection.Layout sectionLayout = new QuestTypedEntryListSection.Layout(offset,
                 new UiRect(detailLeft() + 4 + offset, topToolbarHeight() + 4,
@@ -147,7 +143,7 @@ final class QuestTypedEntriesEditor {
         }
         typedEntryList.mouseClicked(host.frame(), typedEditorQuestId, typedEditorKind,
                         typedListInputReady(),
-                        ClientEditorState.get().busy(), mouseX, mouseY, button)
+                        host.session().busy(), mouseX, mouseY, button)
                 .ifPresent(this::handleTypedListIntent);
         return true;
     }
@@ -178,7 +174,7 @@ final class QuestTypedEntriesEditor {
     }
 
     private boolean typedListInputReady() {
-        return typedEditorOpen && !typedPropertySection.open() && EditorSessionLifecycle.canEdit(ClientEditorState.get())
+        return typedEditorOpen && !typedPropertySection.open() && host.session().editable()
                 && host.selected() != null && host.selected().id().equals(typedEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && host.panelReady();
@@ -236,7 +232,7 @@ final class QuestTypedEntriesEditor {
             String snbt = presentation.itemSnbt(view);
             ItemStack parsed = snbt.isBlank() ? ItemStack.EMPTY : host.item(task.id(), snbt);
             TaskPresentationContext context = new TaskPresentationContext(Minecraft.getInstance(), view, host.status(quest),
-                    ClientQuestState.get().taskProgress().getOrDefault(task.id().toString(), 0L), parsed);
+                    host.taskProgress(task.id()), parsed);
             ItemStack displayed = presentation.displayedItem(context);
             var icon = presentation.icon(view);
             // Author rows use the registered type sprite when there is no instance artwork or real item.
@@ -262,9 +258,9 @@ final class QuestTypedEntriesEditor {
     }
 
     void open(QuestDefinition quest, QuestTypedEntryKind kind) {
-        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
+        if (!host.session().editable()) return;
         host.closeOverlay();
-        identity.open(ClientEditorState.get().sessionId(), quest.id());
+        identity.open(host.session().sessionId(), quest.id());
         typedEditorOpen = true;
         typedEditorKind = kind;
         typedEditorQuestId = quest.id();
@@ -341,7 +337,7 @@ final class QuestTypedEntriesEditor {
         ResourceLocation typeId = typedTypePicker.entryAt(mouseX, mouseY).orElse(null);
         QuestTypePickerModel.Entry choice = typeId == null || typedTypePickerFrame == null ? null
                 : typedTypePickerFrame.select(host.frame(), typedEditorKind, typeId).orElse(null);
-        if (choice == null || ClientEditorState.get().busy()) return true;
+        if (choice == null || host.session().busy()) return true;
         QuestBookSnapshot snapshot = host.snapshot();
         if (snapshot == null || typedEditorQuestId == null) return true;
         if (choice.route() == QuestTypePickerModel.Route.CHOICE_SELECTOR || choice.route() == QuestTypePickerModel.Route.ITEM_SELECTOR) {
@@ -415,7 +411,7 @@ final class QuestTypedEntriesEditor {
     }
 
     private void pasteTypedClipboard() {
-        if (ClientEditorState.get().busy() || !typedListInputReady()) return;
+        if (host.session().busy() || !typedListInputReady()) return;
         var snapshot = host.snapshot();
         if (snapshot == null) return;
         EditorTypedClipboard.get(host.serverContext(), snapshot.book().id(), typedEditorKind == QuestTypedEntryKind.TASK)

@@ -57,6 +57,7 @@ import java.util.function.Consumer;
 final class QuestTypedPropertySection {
     /** Rendering and child-screen services, without access to parent form state. */
     interface Host {
+        EditorSessionView session();
         QuestTypedEntryKind kind();
         ResourceLocation quest();
         QuestBookSnapshot snapshot();
@@ -94,8 +95,8 @@ final class QuestTypedPropertySection {
     private <T> Consumer<T> returning(Consumer<T> result) {
         var token = identity.token();
         return value -> {
-            var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), originalId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
+            var editor = host.session();
+            if (identity.matches(token, editor.sessionId(), originalId) && editor.editable() && !editor.busy()) result.accept(value);
         };
     }
     private final Map<Integer, UiRect> typedConfigRenderedFields = new java.util.HashMap<>();
@@ -175,7 +176,7 @@ final class QuestTypedPropertySection {
     void openExisting(QuestTypedEntryKind.Entry entry, ConfigEditorSchema schema) {
         open = true;
         originalId = entry.id();
-        identity.open(ClientEditorState.get().sessionId(), originalId);
+        identity.open(host == null ? null : host.session().sessionId(), originalId);
         typeId = entry.typeId();
         creating = false;
         optional = entry.optional();
@@ -190,7 +191,7 @@ final class QuestTypedPropertySection {
     void openNew(ResourceLocation id, ResourceLocation nextTypeId, ConfigEditorSchema schema) {
         open = true;
         originalId = id;
-        identity.open(ClientEditorState.get().sessionId(), originalId);
+        identity.open(host == null ? null : host.session().sessionId(), originalId);
         typeId = nextTypeId;
         creating = true;
         optional = false;
@@ -314,7 +315,7 @@ final class QuestTypedPropertySection {
 
     void openEditor(QuestDefinition quest, ResourceLocation typedId) {
         QuestTypedEntryKind.Entry entry = host.kind().entry(quest, typedId);
-        if (entry == null || ClientEditorState.get().busy()) return;
+        if (entry == null || host.session().busy()) return;
         typedPropertyMessage = null;
         ConfigEditorSchema schema = host.kind() == QuestTypedEntryKind.TASK
                 ? ConfigEditorSchemas.forTask(ApiViews.task(entry.task()))
@@ -349,7 +350,7 @@ final class QuestTypedPropertySection {
     void render(GuiGraphics graphics, QuestDefinition quest, int mouseX, int mouseY) {
         refreshTypedPropertySubmission();
         if (!open()) return;
-        boolean enabled = !ClientEditorState.get().busy();
+        boolean enabled = !host.session().busy();
         Map<String, String> issues = typedPropertyLocalIssues();
         Component heading = typedPropertyMessage == null ? firstTypedIssue(issues) : typedPropertyMessage;
         if (heading == null) heading = Component.translatable("screen.brnquest.editor.typed.property.heading");
@@ -457,30 +458,30 @@ final class QuestTypedPropertySection {
             var icon = editor.icon(field.getValue());
             if (icon.isPresent()) host.action(graphics, row.field(),
                     EditorButton.Definition.iconAndText(editor.label(field.getValue()), editor.label(field.getValue()), icon.get()),
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             else host.text(graphics, row.field(), editor.label(field.getValue()), null,
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.INTEGER_VECTOR3) {
             var vector = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorVectorRow.layout(row.field(), descriptor.serverSource().isPresent());
             for (int axis = 0; axis < 3; axis++) {
                 UiRect bounds = vector.axes().get(axis);
                 graphics.drawString(font, new String[]{"X", "Y", "Z"}[axis], bounds.left(), bounds.top() + 5, GraystonePalette.SECONDARY, false);
-                form().vectorField(index, axis).show(new UiRect(bounds.left() + 8, bounds.top(), bounds.right(), bounds.bottom()), !ClientEditorState.get().busy());
+                form().vectorField(index, axis).show(new UiRect(bounds.left() + 8, bounds.top(), bounds.right(), bounds.bottom()), !host.session().busy());
             }
             if (vector.current() != null) host.action(graphics, vector.current(),
                     EditorButton.Definition.iconOnly(Component.translatable("screen.brnquest.field.current"),
                             Component.translatable("screen.brnquest.field.current"), QuestActionIcons.symbol(Component.literal("@"))),
-                    !ClientEditorState.get().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
         } else if (descriptor.serverSource().isPresent()) {
             host.action(graphics, row.field(), EditorButton.Definition.iconAndText(
                             Component.literal(field.getValue()), null, QuestActionIcons.named("detail")),
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.BOOLEAN) {
             host.text(graphics, row.field(), booleanValue(field.getValue())
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
-                    null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                    null, !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ENUM) {
-            host.action(graphics, row.field(), EditorButton.Definition.iconAndText(ConfigFieldLabels.value(descriptor, field.getValue()), null, QuestActionIcons.named("unfold")), !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            host.action(graphics, row.field(), EditorButton.Definition.iconAndText(ConfigFieldLabels.value(descriptor, field.getValue()), null, QuestActionIcons.named("unfold")), !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
             ItemStack stack = host.item(originalId(), field.getValue());
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");
@@ -488,10 +489,10 @@ final class QuestTypedPropertySection {
                     ? QuestActionIcons.named("plus") : EditorIcon.item(stack);
             EditorButton.Definition definition = EditorButton.Definition.iconAndText(select, select, icon);
             host.action(graphics, row.field(), definition,
-                    !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
             // This icon opens an editor; it is not a recipe lookup target.
         } else {
-            field.show(row.field(), !ClientEditorState.get().busy());
+            field.show(row.field(), !host.session().busy());
         }
     }
 
@@ -501,7 +502,7 @@ final class QuestTypedPropertySection {
         drawTypedLabel(graphics, labelKey, row.label());
         host.text(graphics, row.field(), value
                         ? Component.translatable("options.on") : Component.translatable("options.off"),
-                null, !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                null, !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     private void renderTypedRawConfigRow(GuiGraphics graphics, int left, int top, int width, String issue,
@@ -512,7 +513,7 @@ final class QuestTypedPropertySection {
                 "screen.brnquest.editor.typed.property.edit_raw", form().rawConfig().size());
         host.action(graphics, row.field(), EditorButton.Definition.iconAndText(
                         edit, edit, QuestActionIcons.named("raw")),
-                !ClientEditorState.get().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
 
     private void drawTypedLabel(GuiGraphics graphics, String labelKey, UiRect bounds) {
@@ -559,7 +560,7 @@ final class QuestTypedPropertySection {
     }
 
     boolean handleClick(double mouseX, double mouseY) {
-        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get()) || ClientEditorState.get().busy()) return true;
+        if (!host.session().editable() || host.session().busy()) return true;
         if (!host.viewport().contains(mouseX, mouseY) && !host.cancel().contains(mouseX, mouseY)
                 && !host.save().contains(mouseX, mouseY)) return true;
         Optional<QuestTypedPropertySection.Intent> result = click(
@@ -750,7 +751,7 @@ final class QuestTypedPropertySection {
 
     private void refreshTypedPropertySubmission() {
         if (!submissionPending()) return;
-        ClientEditorState editor = ClientEditorState.get();
+        EditorSessionView editor = host.session();
         if (editor.busy()) return;
         if (editor.mode() == ClientEditorState.Mode.EDITING) {
             closeEditor();

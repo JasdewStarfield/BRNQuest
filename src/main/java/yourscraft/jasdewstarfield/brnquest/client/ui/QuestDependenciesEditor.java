@@ -6,7 +6,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorActionGroup;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
@@ -26,6 +25,7 @@ import net.minecraft.client.gui.Font;
 /** Owns dependency selection, candidate search, rendered identity and add/remove intents. */
 final class QuestDependenciesEditor {
     interface Host {
+        EditorSessionView session();
         QuestBookSnapshot snapshot();
         QuestDefinition selected();
         QuestScreenLayout layout();
@@ -123,8 +123,8 @@ final class QuestDependenciesEditor {
                 Component label = Component.translatable("screen.brnquest.editor.dependency.remove");
                 actions.add(new EditorActionGroup.Placed<>(new EditorActionGroup.Action<>(row.key(),
                         EditorButton.Definition.iconOnly(label, label, QuestActionIcons.named("close")),
-                        !ClientEditorState.get().busy(), EditorButton.Tone.DANGER, (x, y) -> {
-                            if (!dependencyListInputReady() || ClientEditorState.get().busy()) return;
+                        !host.session().busy(), EditorButton.Tone.DANGER, (x, y) -> {
+                            if (!dependencyListInputReady() || host.session().busy()) return;
                             if (!host.selected().dependencies().contains(row.key())) return;
                             host.change(new Submission(true, dependencyEditorQuestId, row.key()));
                             dependencyEditorMessage = null;
@@ -145,7 +145,7 @@ final class QuestDependenciesEditor {
             Component add = Component.translatable("screen.brnquest.editor.dependency.add");
             host.button(graphics, dependencyAddBounds().translated(offset, 0),
                     EditorButton.Definition.iconAndText(add, add, QuestActionIcons.named("plus")),
-                    !ClientEditorState.get().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
+                    !host.session().busy(), EditorButton.Tone.PRIMARY, mouseX, mouseY);
             host.button(graphics, dependencyDoneBounds().translated(offset, 0), EditorButton.Definition.text(Component.translatable("gui.done"), null), true, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } finally {
             graphics.pose().popPose();
@@ -161,11 +161,11 @@ final class QuestDependenciesEditor {
         if (!dependencyListInputReady()) return true;
         if (dependencyList.mouseClicked(mouseX, mouseY, button)) return true;
         if (button == 0 && dependencyAddBounds().contains(mouseX, mouseY)) {
-            if (!ClientEditorState.get().busy()) openDependencyPicker();
+            if (!host.session().busy()) openDependencyPicker();
             return true;
         }
         if (dependencyActions.mouseClicked(mouseX, mouseY, button)) return true;
-        if (button == 1 && !ClientEditorState.get().busy()) {
+        if (button == 1 && !host.session().busy()) {
             dependencyList.rowAt(mouseX, mouseY).ifPresent(row ->
                     host.context(row.key(), (int) mouseX, (int) mouseY));
         }
@@ -174,7 +174,7 @@ final class QuestDependenciesEditor {
 
     private boolean dependencyListInputReady() {
         return dependencyEditorOpen && dependencyListSnapshot != null && dependencyListSnapshot == host.snapshot()
-                && EditorSessionLifecycle.canEdit(ClientEditorState.get()) && host.selected() != null
+                && host.session().editable() && host.selected() != null
                 && host.selected().id().equals(dependencyEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && host.panelReady();
@@ -187,7 +187,7 @@ final class QuestDependenciesEditor {
     }
 
     void open(QuestDefinition quest) {
-        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
+        if (!host.session().editable()) return;
         host.closeOverlay();
         dependencyEditorOpen = true;
         dependencyEditorQuestId = quest.id();
@@ -259,7 +259,7 @@ final class QuestDependenciesEditor {
             dependencyEditorMessage = Component.translatable("screen.brnquest.editor.dependency.cycle_warning");
             return true;
         }
-        if (!ClientEditorState.get().busy()) {
+        if (!host.session().busy()) {
             host.change(new Submission(false, dependencyEditorQuestId, candidate.questId()));
             dependencyEditorMessage = null;
             host.closeOverlay();

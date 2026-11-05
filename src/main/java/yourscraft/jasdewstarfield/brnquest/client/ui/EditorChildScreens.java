@@ -7,6 +7,8 @@ import net.minecraft.world.item.ItemStack;
 import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
 import yourscraft.jasdewstarfield.brnquest.data.CanvasScene;
 import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
+import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
+import yourscraft.jasdewstarfield.brnquest.data.BookLocalization;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.Map;
@@ -49,5 +51,9 @@ final class EditorChildScreens {
                   boolean hideLines, Consumer<Boolean> hideResult, Boolean consume, boolean inheritedConsume, Consumer<Boolean> consumeResult) {
         open.accept(new EditorCreationDefaultsScreen(parent.get(), value, inherited, result, hideLines, hideResult,
                 consume, inheritedConsume, consumeResult));
+    }
+    void localized(BookLocalization localization, QuestDefinition quest, String locale,
+                   Predicate<EditorLocalizedQuestTextScreen.Value> result, EditorLocalizedQuestTextScreen.Value recovery, Runnable cancel) {
+        open.accept(new EditorLocalizedQuestTextScreen(parent.get(), localization, quest, locale, result, recovery, cancel));
     }
 }

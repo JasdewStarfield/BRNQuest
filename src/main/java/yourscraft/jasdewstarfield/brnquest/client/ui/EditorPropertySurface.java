@@ -3,7 +3,6 @@ package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
-import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
@@ -18,6 +17,7 @@ import net.minecraft.client.gui.Font;
 /** Shared detail-form viewport: owns scroll, row geometry and clipped native field rendering. */
 final class EditorPropertySurface {
     interface Host {
+        EditorSessionView session();
         QuestScreenLayout layout();
         double elapsed();
         int drawerOffset();
@@ -82,7 +82,7 @@ final class EditorPropertySurface {
                 topToolbarHeight() + 7, viewport.top(), 22);
         EditorPropertyPanel.render(graphics, font, form, heading, headingColor, List.of(),
                 new EditorPropertyPanel.Footer(cancel(), save(), done,
-                        !ClientEditorState.get().busy(), tone),
+                        !host.session().busy(), tone),
                 (g, bounds, label, enabled, buttonTone) -> host.button(g, bounds, label, enabled, buttonTone, mouseX, mouseY));
         propertyRowLayouts = EditorPropertyPanel.rows(form, rows);
         propertyContentHeight = propertyRowLayouts.isEmpty() ? 0

@@ -220,12 +220,18 @@ public final class ClientEditorState {
         }
         String responseAction = safe(response.action());
         boolean success = "SUCCESS".equals(response.status()) || "NO_CHANGE".equals(response.status());
-        if (success && ("UPDATE".equals(responseAction) || "MUTATE".equals(responseAction)
-                || "PATCH".equals(responseAction)) && sessionId != null
-                && !sessionId.equals(parseUuid(response.sessionId()))) {
-            // Old-connection and superseded-session responses are harmless: they
-            // neither replace the current draft nor force it into an error mode.
+        boolean leaseResponse = switch (responseAction) {
+            case "UPDATE", "MUTATE", "PATCH", "RENEW", "SAVE", "PUBLISH", "REVIEW", "CLOSE" -> true;
+            default -> false;
+        };
+        if (success && leaseResponse && (sessionId == null || !sessionId.equals(parseUuid(response.sessionId())))) {
+            // All successful lease replies carry their identity, including CLOSE and SAVE.
+            // Ignore superseded replies before they can change the current operation's status or draft.
             return Optional.empty();
+        }
+        if (success && "OPEN".equals(responseAction)) {
+            ResourceLocation responseBook = ResourceLocation.tryParse(safe(response.bookId()));
+            if (mode != Mode.OPENING || responseBook != null && !responseBook.equals(bookId)) return Optional.empty();
         }
         statusCode = safe(response.code());
         statusMessage = safe(response.message());
@@ -244,11 +250,6 @@ public final class ClientEditorState {
             recoverableConflict = "CONFLICT".equals(response.status()) && hasSession() && draft != null
                     && requiresAuthoritativeRecovery(statusCode);
             fail(statusCode.isBlank() ? "EDITOR_SESSION_FAILED" : statusCode, statusMessage);
-            return Optional.empty();
-        }
-        if ("OPEN".equals(response.action()) && mode != Mode.OPENING) {
-            // An acknowledgement queued by a previous connection or an abandoned
-            // open request must never resurrect its lease in the current client state.
             return Optional.empty();
         }
         return switch (responseAction) {

@@ -713,6 +713,40 @@ class ClientEditorStateTest {
         assertEquals(snapshot.revision(), state.draft().orElseThrow().revision());
     }
 
+    @Test void successfulRepliesFromAnOldLeaseCannotClearOrFailTheCurrentPreview() {
+        var before = positionedBook(ResourceLocation.parse("test:old_lease_reply"), 1, 2);
+        var current = openPreviewBook(before);
+        assertTrue(state.beginMutation());
+        state.previewEdit(book -> positionedBook(book.id(), 3, 4).book());
+        var displayed = state.displayDraft().orElseThrow();
+        String operation = state.statusCode();
+        // CLOSE is particularly important: clearing a new lease would also drop its only pending projection.
+        for (String action : List.of("CLOSE", "SAVE", "PUBLISH", "REVIEW", "RENEW")) {
+            state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "OLD_REPLY", "old",
+                    UUID.randomUUID().toString(), before.book().id().toString(), "", before.revision(), before.revision(), 36000, 0, 0)));
+            assertEquals(current, state.sessionId(), action);
+            assertEquals(ClientEditorState.Mode.MUTATING, state.mode(), action);
+            assertSame(displayed, state.displayDraft().orElseThrow(), action);
+            assertEquals(operation, state.statusCode(), action);
+        }
+    }
+
+    @Test void openingReplyForAnotherBookCannotReplaceTheRequestedBook() {
+        var before = positionedBook(ResourceLocation.parse("test:abandoned_open"), 1, 2);
+        var old = openPreviewBook(before);
+        state.abandonLocalSession();
+        var target = ResourceLocation.parse("test:requested_open");
+        assertTrue(state.beginOpenCurrent(target));
+        String json = NativeBookJson.encode(before.book());
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("OPEN", "SUCCESS", "SESSION_OPENED", "old",
+                old.toString(), before.book().id().toString(), "", before.revision(), before.revision(), 36000, 1,
+                json.getBytes(StandardCharsets.UTF_8).length)));
+        assertEquals(ClientEditorState.Mode.OPENING, state.mode());
+        assertEquals(target, state.bookId());
+        assertTrue(state.draft().isEmpty());
+        assertFalse(state.acceptDraftChunk(old.toString(), before.revision(), 0, json));
+    }
+
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {
         String json = NativeBookJson.encode(snapshot.book());
         var response = new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "SESSION_OPENED", "ok",

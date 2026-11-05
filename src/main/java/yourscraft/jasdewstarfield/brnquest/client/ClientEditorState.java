@@ -1,19 +1,16 @@
 package yourscraft.jasdewstarfield.brnquest.client;
 
 import com.google.gson.Gson;
+import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
-import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -39,11 +36,7 @@ public final class ClientEditorState {
     private Mode mode = Mode.VIEW;
     private boolean allowed;
     private boolean live;
-    private List<CatalogEntry> catalog = List.of();
-    private ResourceLocation versionsBookId;
-    private List<DraftVersionEntry> draftVersions = List.of();
-    private boolean versionsLoading;
-    private String versionsError = "";
+    private final EditorQueryState queries = new EditorQueryState();
     private String statusCode = "";
     private String statusMessage = "";
     private List<AuthoringNetwork.EditorDiagnosticWire> diagnostics = List.of();
@@ -75,7 +68,7 @@ public final class ClientEditorState {
         if (hasSession()) return;
         mode = Mode.CATALOG_LOADING;
         allowed = false;
-        catalog = List.of();
+        queries.clearCatalog();
         statusCode = "";
         statusMessage = "";
         diagnostics = List.of();
@@ -84,26 +77,9 @@ public final class ClientEditorState {
     }
 
     public synchronized void acceptCatalog(String json) {
-        // openCurrent sends a catalog refresh before OPEN. Catalog data must never
-        // reset the handshake or an established lease back to the browsing mode.
         boolean editorFlowActive = mode == Mode.OPENING || hasSession();
         try {
-            AuthoringNetwork.CatalogResponseWire response = GSON.fromJson(json,
-                    AuthoringNetwork.CatalogResponseWire.class);
-            if (response == null) throw new IllegalArgumentException("Missing catalog response");
-            List<CatalogEntry> decoded = new ArrayList<>();
-            if (response.entries() != null) {
-                for (AuthoringNetwork.CatalogEntryWire entry : response.entries()) {
-                    ResourceLocation id = ResourceLocation.tryParse(entry.bookId());
-                    DraftOrigin origin = parseOrigin(entry.origin());
-                    if (id != null && entry.draftRevision() != null && !entry.draftRevision().isBlank()) {
-                        decoded.add(new CatalogEntry(id, entry.title() == null ? "" : entry.title(),
-                                entry.draftRevision(), origin, entry.importSource() == null ? "" : entry.importSource()));
-                    }
-                    if (decoded.size() >= BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES) break;
-                }
-            }
-            catalog = List.copyOf(decoded);
+            var response = queries.acceptCatalog(json);
             allowed = response.allowed();
             if (!editorFlowActive) {
                 statusCode = safe(response.code());
@@ -112,17 +88,16 @@ public final class ClientEditorState {
                 mode = Mode.VIEW;
             }
         } catch (RuntimeException exception) {
-            // The catalog is auxiliary to an already-started OPEN handshake. A malformed
-            // refresh must not orphan the server lease by making its following reply stale.
+            // A failed refresh must leave an in-flight OPEN and an established lease intact.
             if (editorFlowActive) return;
             fail("INVALID_EDITOR_CATALOG", "The server returned an invalid editor catalog");
             allowed = false;
-            catalog = List.of();
+            queries.clearCatalog();
         }
     }
 
     public synchronized boolean beginOpen(ResourceLocation targetBookId) {
-        if (!allowed || targetBookId == null || hasSession() || !contains(targetBookId)) return false;
+        if (!allowed || targetBookId == null || hasSession() || !queries.contains(targetBookId)) return false;
         return beginOpenRequest(targetBookId);
     }
 
@@ -146,43 +121,8 @@ public final class ClientEditorState {
         return beginClose(openAfterClose, "");
     }
 
-    /** The history belongs to one book and is replaced only by its matching server reply. */
-    public synchronized void beginDraftVersions(ResourceLocation targetBookId) {
-        versionsBookId = targetBookId;
-        draftVersions = List.of();
-        versionsError = "";
-        versionsLoading = true;
-    }
-
-    public synchronized void acceptDraftVersions(String json) {
-        try {
-            var response = GSON.fromJson(json, AuthoringNetwork.DraftVersionsResponseWire.class);
-            if (response == null || versionsBookId == null
-                    || !versionsBookId.equals(ResourceLocation.tryParse(response.bookId()))) return;
-            versionsLoading = false;
-            if (!"SUCCESS".equals(response.status()) && !"NO_CHANGE".equals(response.status())) {
-                versionsError = safe(response.code());
-                draftVersions = List.of();
-                return;
-            }
-            List<DraftVersionEntry> decoded = new ArrayList<>();
-            if (response.versions() != null) {
-                for (var version : response.versions()) {
-                    if (version.backupId() == null || version.backupId().isBlank()
-                            || version.revision() == null || version.revision().isBlank()) continue;
-                    decoded.add(new DraftVersionEntry(version.backupId(), version.revision(),
-                            safe(version.title()), Math.max(0L, version.savedAtEpochMillis())));
-                    if (decoded.size() >= 40) break;
-                }
-            }
-            draftVersions = List.copyOf(decoded);
-            versionsError = "";
-        } catch (RuntimeException exception) {
-            versionsLoading = false;
-            draftVersions = List.of();
-            versionsError = "INVALID_DRAFT_VERSIONS";
-        }
-    }
+    public synchronized void beginDraftVersions(ResourceLocation bookId) { queries.beginDraftVersions(bookId); }
+    public synchronized void acceptDraftVersions(String json) { queries.acceptDraftVersions(json); }
 
     /** Carries the selected catalog version through the old lease's close acknowledgement. */
     public synchronized Optional<LeaseRequest> beginClose(ResourceLocation openAfterClose,
@@ -421,11 +361,7 @@ public final class ClientEditorState {
     /** A new connection must never inherit a draft or lease token from the previous server. */
     public synchronized void disconnected() {
         allowed = false;
-        catalog = List.of();
-        versionsBookId = null;
-        draftVersions = List.of();
-        versionsLoading = false;
-        versionsError = "";
+        queries.clear();
         statusCode = "";
         statusMessage = "";
         pendingBookId = null;
@@ -456,30 +392,18 @@ public final class ClientEditorState {
         return draft == null || live && !busy() && draft.revision().equals(activeRevision);
     }
     public synchronized boolean allowed() { return allowed; }
-    public synchronized List<CatalogEntry> catalog() { return catalog; }
+    public synchronized List<CatalogEntry> catalog() { return queries.catalog(); }
 
-    /** Keeps the displayed book easy to reach while retaining backup-like drafts at the end. */
-    public synchronized List<CatalogEntry> orderedCatalog(ResourceLocation displayedBookId) {
-        return catalog.stream().sorted(Comparator
-                .comparingInt((CatalogEntry entry) -> catalogRank(entry, displayedBookId))
-                .thenComparing(entry -> catalogLabel(entry).toLowerCase(Locale.ROOT))
-                .thenComparing(entry -> entry.bookId().toString()))
-                .toList();
-    }
-
-    /** Applies the menu's title-or-ID filter after stable relevance ordering. */
-    public synchronized List<CatalogEntry> filteredCatalog(ResourceLocation displayedBookId, String query) {
-        String needle = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-        return orderedCatalog(displayedBookId).stream()
-                .filter(entry -> needle.isEmpty() || catalogSearchText(entry).contains(needle))
-                .toList();
+    public synchronized List<CatalogEntry> orderedCatalog(ResourceLocation bookId) { return queries.orderedCatalog(bookId); }
+    public synchronized List<CatalogEntry> filteredCatalog(ResourceLocation bookId, String query) {
+        return queries.filteredCatalog(bookId, query);
     }
 
     public synchronized Optional<QuestBookSnapshot> draft() { return Optional.ofNullable(draft); }
     public synchronized ResourceLocation bookId() { return bookId; }
-    public synchronized List<DraftVersionEntry> draftVersions() { return draftVersions; }
-    public synchronized boolean versionsLoading() { return versionsLoading; }
-    public synchronized String versionsError() { return versionsError; }
+    public synchronized List<DraftVersionEntry> draftVersions() { return queries.draftVersions(); }
+    public synchronized boolean versionsLoading() { return queries.versionsLoading(); }
+    public synchronized String versionsError() { return queries.versionsError(); }
     public synchronized UUID sessionId() { return sessionId; }
     public synchronized String draftRevision() { return draftRevision; }
     /** The saved revision identifies the catalog row behind this editing session, even after local edits. */
@@ -647,18 +571,7 @@ public final class ClientEditorState {
         savedRevision = response.savedRevision();
         // The catalog can remain open across a save. Keep its selection revision in
         // step with the acknowledged disk write before the player versions this draft.
-        List<CatalogEntry> updatedCatalog = new ArrayList<>(catalog.size() + 1);
-        boolean found = false;
-        for (CatalogEntry entry : catalog) {
-            if (entry.bookId().equals(bookId)) {
-                updatedCatalog.add(new CatalogEntry(bookId, draft == null ? entry.title() : draft.book().title(),
-                        savedRevision, entry.origin(), entry.importSource()));
-                found = true;
-            } else updatedCatalog.add(entry);
-        }
-        if (!found && draft != null) updatedCatalog.add(new CatalogEntry(bookId, draft.book().title(),
-                savedRevision, DraftOrigin.UNKNOWN, ""));
-        catalog = List.copyOf(updatedCatalog);
+        queries.saved(bookId, savedRevision, draft == null ? null : draft.book().title());
         undoSteps = response.undoSteps();
         redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
@@ -709,28 +622,6 @@ public final class ClientEditorState {
                 || "LIVE_BOOK_CHANGED".equals(code);
     }
 
-    private boolean contains(ResourceLocation target) {
-        return catalog.stream().anyMatch(entry -> entry.bookId().equals(target));
-    }
-
-    private static int catalogRank(CatalogEntry entry, ResourceLocation displayedBookId) {
-        if (entry.bookId().equals(displayedBookId)) return 0;
-        return isBackupLike(entry) ? 2 : 1;
-    }
-
-    private static boolean isBackupLike(CatalogEntry entry) {
-        String searchable = (entry.bookId() + " " + entry.title()).toLowerCase(Locale.ROOT);
-        return searchable.contains("backup") || searchable.contains("备份");
-    }
-
-    private static String catalogLabel(CatalogEntry entry) {
-        return entry.title().isBlank() ? entry.bookId().toString() : entry.title();
-    }
-
-    private static String catalogSearchText(CatalogEntry entry) {
-        return (entry.bookId() + " " + entry.title() + " " + entry.importSource()).toLowerCase(Locale.ROOT);
-    }
-
     private void clearLease() {
         live = false;
         sessionId = null;
@@ -760,14 +651,6 @@ public final class ClientEditorState {
         statusCode = safe(code);
         statusMessage = safe(message);
         renewPending = false;
-    }
-
-    private static DraftOrigin parseOrigin(String value) {
-        try {
-            return DraftOrigin.valueOf(value);
-        } catch (RuntimeException exception) {
-            return DraftOrigin.UNKNOWN;
-        }
     }
 
     private static UUID parseUuid(String value) {

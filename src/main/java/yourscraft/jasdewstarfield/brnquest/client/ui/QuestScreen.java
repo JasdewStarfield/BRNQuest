@@ -358,7 +358,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Module invalidation follows session identity changes, including a return from a suspended child. */
     private void synchronizeEditorModules(ClientEditorState editor) {
-        editorSessionLifecycle.accept(new EditorSessionLifecycle.Scope(editor.sessionId(), editor.bookId(), editor.editing()), () -> {
+        editorSessionLifecycle.accept(new EditorSessionLifecycle.Scope(editor.sessionId(), editor.bookId(), EditorSessionLifecycle.canEdit(editor)), () -> {
             closeQuestEditingPanels();
             switch (editorOverlays.active()) {
                 case CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
@@ -2790,7 +2790,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Read-only field replies return to the still-open form; they never save a draft by themselves. */
     public void receiveServerField(yourscraft.jasdewstarfield.brnquest.network.ServerFieldNetwork.Reply reply) {
-        if (reply != null && reply.result() != null)
+        synchronizeEditorModules(ClientEditorState.get());
+        if (EditorSessionLifecycle.canEdit(ClientEditorState.get()) && reply != null && reply.result() != null)
             typedPropertySection.receiveCurrent(reply.id(), reply.result().current());
     }
 

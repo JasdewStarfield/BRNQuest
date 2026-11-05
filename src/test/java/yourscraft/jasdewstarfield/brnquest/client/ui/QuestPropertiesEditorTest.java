@@ -68,6 +68,14 @@ class QuestPropertiesEditorTest {
             assertEquals(1, submissions.size());
             assertEquals(quest.id(), submissions.getFirst().originalId());
             assertFalse(form.open());
+
+            // An authority rejection must stop a still-visible form before another render or tick.
+            form.open(quest);
+            editor.acceptSession(gson.toJson(new AuthoringNetwork.SessionResponseWire("RENEW", "EXPIRED",
+                    "SESSION_EXPIRED", "Lease expired", session.toString(), bookId.toString(), "",
+                    snapshot.revision(), snapshot.revision(), 0, 0, 0)));
+            form.click(5, 105, 0, viewport, save, cancel);
+            assertEquals(1, submissions.size(), "an expired lease cannot accept more property input");
         } finally { editor.disconnected(); }
     }
 }

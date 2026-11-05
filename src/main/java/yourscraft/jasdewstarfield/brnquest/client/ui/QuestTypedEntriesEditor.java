@@ -100,7 +100,7 @@ final class QuestTypedEntriesEditor {
         var token = identity.token();
         return value -> {
             var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), typedEditorQuestId) && editor.editing() && !editor.busy()) result.accept(value);
+            if (identity.matches(token, editor.sessionId(), typedEditorQuestId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
         };
     }
     private boolean typedEditorOpen;
@@ -178,7 +178,7 @@ final class QuestTypedEntriesEditor {
     }
 
     private boolean typedListInputReady() {
-        return typedEditorOpen && !typedPropertySection.open() && ClientEditorState.get().editing()
+        return typedEditorOpen && !typedPropertySection.open() && EditorSessionLifecycle.canEdit(ClientEditorState.get())
                 && host.selected() != null && host.selected().id().equals(typedEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && host.panelReady();
@@ -262,6 +262,7 @@ final class QuestTypedEntriesEditor {
     }
 
     void open(QuestDefinition quest, QuestTypedEntryKind kind) {
+        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
         host.closeOverlay();
         identity.open(ClientEditorState.get().sessionId(), quest.id());
         typedEditorOpen = true;

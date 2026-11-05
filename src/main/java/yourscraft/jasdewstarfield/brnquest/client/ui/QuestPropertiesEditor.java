@@ -104,7 +104,7 @@ final class QuestPropertiesEditor {
         var token = identity.token();
         return value -> {
             var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), questEditorQuestId) && editor.editing() && !editor.busy()) result.accept(value);
+            if (identity.matches(token, editor.sessionId(), questEditorQuestId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
         };
     }
     private String questEditorOriginalIconItemId = "";
@@ -266,7 +266,7 @@ final class QuestPropertiesEditor {
         }));
     }
     void open(QuestDefinition quest) {
-        if (ClientEditorState.get().busy()) return;
+        if (ClientEditorState.get().busy() || !EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
         identity.open(ClientEditorState.get().sessionId(), quest.id());
         host.resetScroll();
         questEditorOpen = true;
@@ -454,7 +454,7 @@ final class QuestPropertiesEditor {
         return true;
     }
     boolean click(double mouseX, double mouseY, int button, UiRect viewport, UiRect save, UiRect cancel) {
-        if (!open() || !ClientEditorState.get().editing()) return true;
+        if (!open() || !EditorSessionLifecycle.canEdit(ClientEditorState.get())) return true;
         if (ClientEditorState.get().busy()) return true;
             // Partially visible controls may only receive clicks in the clipped part; footer stays independent.
             if (!viewport.containsExclusive(mouseX, mouseY)
@@ -533,7 +533,7 @@ final class QuestPropertiesEditor {
     }
     private void submitQuestPropertyEdit(ResourceLocation replacementId) {
         var editor = ClientEditorState.get();
-        if (!open() || editor.busy() || !editor.editing()) return;
+        if (!open() || editor.busy() || !EditorSessionLifecycle.canEdit(editor)) return;
         QuestDefinition currentQuest = draftQuest(questEditorQuestId);
         if (currentQuest == null) return;
         String iconValue = questFields.field("icon").getValue().strip();

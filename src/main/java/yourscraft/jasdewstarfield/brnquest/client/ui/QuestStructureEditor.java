@@ -80,7 +80,7 @@ final class QuestStructureEditor {
         var token = identity.token();
         return value -> {
             var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), structureFormTarget) && editor.editing() && !editor.busy()) result.accept(value);
+            if (identity.matches(token, editor.sessionId(), structureFormTarget) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
         };
     }
     private void openLocalePicker(EditorLocalizedText text, EditorTextField field) {
@@ -303,6 +303,7 @@ final class QuestStructureEditor {
     }
 
     boolean click(double mouseX, double mouseY, int button) {
+        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return true;
         if (button == 0 && structureMetadataForm()
                 && !ClientEditorState.get().busy()) {
             if (structureFormKind == Kind.RENAME_CHAPTER && chapterProgressBounds().contains(mouseX, mouseY)) {
@@ -331,7 +332,8 @@ final class QuestStructureEditor {
                     var result = returning((yourscraft.jasdewstarfield.brnquest.data.CanvasScene scene) -> structureArtwork = scene.backgrounds());
                     host.children().backgrounds(host.serverContext(), host.snapshot().book().id(), structureArtwork,
                             value -> {
-                                if (!identity.matches(childToken, ClientEditorState.get().sessionId(), structureFormTarget)) return false;
+                                if (!identity.matches(childToken, ClientEditorState.get().sessionId(), structureFormTarget)
+                                        || !EditorSessionLifecycle.canEdit(ClientEditorState.get()) || ClientEditorState.get().busy()) return false;
                                 result.accept(value); return true;
                             });
                     return true;

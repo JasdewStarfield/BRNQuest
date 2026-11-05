@@ -174,7 +174,7 @@ final class QuestDependenciesEditor {
 
     private boolean dependencyListInputReady() {
         return dependencyEditorOpen && dependencyListSnapshot != null && dependencyListSnapshot == host.snapshot()
-                && ClientEditorState.get().editing() && host.selected() != null
+                && EditorSessionLifecycle.canEdit(ClientEditorState.get()) && host.selected() != null
                 && host.selected().id().equals(dependencyEditorQuestId)
                 && editorOverlays.active() == EditorOverlayHost.Kind.NONE
                 && host.panelReady();
@@ -187,6 +187,7 @@ final class QuestDependenciesEditor {
     }
 
     void open(QuestDefinition quest) {
+        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get())) return;
         host.closeOverlay();
         dependencyEditorOpen = true;
         dependencyEditorQuestId = quest.id();

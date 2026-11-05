@@ -95,7 +95,7 @@ final class QuestTypedPropertySection {
         var token = identity.token();
         return value -> {
             var editor = ClientEditorState.get();
-            if (identity.matches(token, editor.sessionId(), originalId) && editor.editing() && !editor.busy()) result.accept(value);
+            if (identity.matches(token, editor.sessionId(), originalId) && EditorSessionLifecycle.canEdit(editor) && !editor.busy()) result.accept(value);
         };
     }
     private final Map<Integer, UiRect> typedConfigRenderedFields = new java.util.HashMap<>();
@@ -559,6 +559,7 @@ final class QuestTypedPropertySection {
     }
 
     boolean handleClick(double mouseX, double mouseY) {
+        if (!EditorSessionLifecycle.canEdit(ClientEditorState.get()) || ClientEditorState.get().busy()) return true;
         if (!host.viewport().contains(mouseX, mouseY) && !host.cancel().contains(mouseX, mouseY)
                 && !host.save().contains(mouseX, mouseY)) return true;
         Optional<QuestTypedPropertySection.Intent> result = click(

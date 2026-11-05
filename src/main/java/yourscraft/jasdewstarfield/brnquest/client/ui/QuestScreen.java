@@ -1,9 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
 
-import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
 
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorLocalizedText;
@@ -15,7 +13,6 @@ import yourscraft.jasdewstarfield.brnquest.data.BookText;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -28,20 +25,11 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorActionGroup;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryRow;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorEntryListPanel;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorListViewport;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPickerList;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewModel;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyFormLayout;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorFormFields;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyRow;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPropertyPanel;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorQuickTextDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothValue;
@@ -62,30 +50,19 @@ import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.DisplayOverrides;
-import yourscraft.jasdewstarfield.brnquest.data.QuestNotificationPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterGroupDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
-import yourscraft.jasdewstarfield.brnquest.data.QuestAppearance;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchemas;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypes;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -150,10 +127,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private QuickTextKind quickTextKind = QuickTextKind.NONE;
     private ResourceLocation quickTextQuestId;
     private Component quickTextIssue;
-    private final yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll propertyScroll = new yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorSmoothScroll();
-    private double propertyDrawnScroll;
-    private int propertyContentHeight;
-    private List<UiRect> propertyRowLayouts = List.of();
     private Component clipboardMessage;
     private long clipboardMessageUntil;
     private final QuestEditorChrome editorChrome = new QuestEditorChrome();
@@ -185,7 +158,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component hoveredDetailText;
     private List<Component> hoveredComponentTooltip = List.of();
     // Legacy form dispatch shares one rendered-button feedback adapter.
-    private final List<EditorTextField> propertyNativeFields = new ArrayList<>();
     private final EditorButtonInput formButtons = new EditorButtonInput();
     private QuestScreenFrameIdentity formButtonFrame;
     private EditorOverlayHost.Kind formButtonOverlay;
@@ -211,10 +183,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (open) { closeActiveEditorOverlay(); editorOverlays.show(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION); }
             else editorOverlays.close();
         }
-        public void resetScroll() { propertyScroll.snap(0); }
+        public void resetScroll() { propertySurface.reset(); }
         public void panel(GuiGraphics g, Component heading, int color, List<EditorPropertyPanel.RowContent> rows,
                           Component done, EditorButton.Tone tone, int mouseX, int mouseY) {
-            renderPropertyPanel(g, heading, color, rows, done, tone, mouseX, mouseY);
+            propertySurface.render(g, heading, color, rows, done, tone, mouseX, mouseY);
         }
         public void textButton(GuiGraphics g, UiRect bounds, Component label, Component tooltip, boolean enabled,
                                EditorButton.Tone tone, int mouseX, int mouseY) {
@@ -370,6 +342,35 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
     }, editorOverlays);
 
+    private final EditorPropertySurface propertySurface = new EditorPropertySurface(new EditorPropertySurface.Host() {
+        public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
+        public double elapsed() { return currentMotionFrameSeconds; }
+        public int drawerOffset() { return detailsDrawerOffsetX(); }
+        public int canvasRight() { return QuestScreen.this.canvasRight(); }
+        public EditorButtonInput buttons() { return formButtons; }
+        public boolean changed() { return localFormChanged(); }
+        public void button(GuiGraphics g, UiRect bounds, Component label, boolean enabled, EditorButton.Tone tone, int x, int y) {
+            renderEditorTextButton(g, bounds, label, null, enabled, tone, x, y);
+        }
+    });
+
+    private final EditorSessionLifecycle editorSessionLifecycle = new EditorSessionLifecycle();
+
+    /** Module invalidation follows session identity changes, including a return from a suspended child. */
+    private void synchronizeEditorModules(ClientEditorState editor) {
+        editorSessionLifecycle.accept(new EditorSessionLifecycle.Scope(editor.sessionId(), editor.bookId(), editor.editing()), () -> {
+            closeQuestEditingPanels();
+            switch (editorOverlays.active()) {
+                case CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
+                        QUICK_TEXT, PUBLISH_CONFIRMATION -> closeActiveEditorOverlay();
+                default -> { }
+            }
+        });
+        // Catalog refresh temporarily clears permission while loading; keep its overlay until a final result.
+        if (catalogAuthorizationDenied(editor.mode(), editor.allowed()) && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))
+            closeActiveEditorOverlay();
+    }
+
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
         QuestScreenSessionState.Snapshot defaults = QuestScreenSessionState.Snapshot.defaults();
@@ -394,7 +395,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         // setScreen(parent) initializes this same QuestScreen again after an item/raw-config child
         // closes. Re-register existing fields instead of replacing them, preserving the complete
         // in-progress form (stable ID, semantics, config values, cursor, and selection).
-        propertyNativeFields.clear();
+        propertySurface.bind(font);
         questProperties.bind(font, this::registerPropertyField);
         structure.bind(font, this::addRenderableWidget);
         typedPropertySection.attach(new QuestTypedPropertySection.Host() {
@@ -405,14 +406,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
             public EditorChildScreens children() { return editorChildren; }
             public void focus(EditorTextField field) { setFocused(field); }
-            public void resetScroll() { propertyScroll.snap(0); }
-            public UiRect viewport() { return propertyViewport(); }
-            public UiRect cancel() { return questEditorCancelBounds(); }
-            public UiRect save() { return questEditorSaveBounds(); }
-            public UiRect row(int index) { return drawnPropertyRow(index); }
-            public UiRect visible(UiRect bounds) { return visiblePropertyBounds(bounds); }
+            public void resetScroll() { propertySurface.reset(); }
+            public UiRect viewport() { return propertySurface.viewport(); }
+            public UiRect cancel() { return propertySurface.cancel(); }
+            public UiRect save() { return propertySurface.save(); }
+            public UiRect row(int index) { return propertySurface.row(index); }
+            public UiRect visible(UiRect bounds) { return propertySurface.visible(bounds); }
             public void panel(GuiGraphics g, Component heading, int color, List<EditorPropertyPanel.RowContent> rows, Component done, EditorButton.Tone tone, int x, int y) {
-                renderPropertyPanel(g, heading, color, rows, done, tone, x, y);
+                propertySurface.render(g, heading, color, rows, done, tone, x, y);
             }
             public void action(GuiGraphics g, UiRect bounds, EditorButton.Definition definition, boolean enabled, EditorButton.Tone tone, int x, int y) {
                 renderEditorActionButton(g, bounds, definition, enabled, tone, x, y);
@@ -442,6 +443,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 "screen.brnquest.editor.quick_edit.input", 256);
         quickTextField.setNativeFormatting(true);
         serverContextId = currentServerContext();
+        synchronizeEditorModules(ClientEditorState.get());
 
     }
 
@@ -495,21 +497,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         restoreEditingPreference(editor);
         bookWorkflow.tick();
         reconcileModeSelection(editor);
-        // Session loss must also remove the typed form widgets, not merely stop painting its panel.
-        if (!editor.editing() && (typedEntries.open() || typedPropertySection.open())) typedEntries.close();
-        if (questProperties.open() && !editor.editing()) questProperties.closeQuestEditor();
-        if (dependencies.open() && !editor.editing()) dependencies.close();
-        if ((!editor.editing() && switch (editorOverlays.active()) {
-                case CONTEXT_MENU, ENUM_DROPDOWN, STRUCTURE_FORM, DELETE_CONFIRMATION, QUEST_RENAME_CONFIRMATION,
-                        QUICK_TEXT, PUBLISH_CONFIRMATION -> true;
-                default -> false;
-            // A non-editing catalog refresh temporarily clears allowed while its
-            // authoritative response is in flight. Keep the requested overlay open
-            // during that state; close it only after a completed denial or failure.
-            }) || (catalogAuthorizationDenied(editor.mode(), editor.allowed())
-                    && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
-            closeActiveEditorOverlay();
-        }
+        synchronizeEditorModules(editor);
         editor.pollPublishReview().ifPresent(review -> bookWorkflow.acceptReview(publishReviewModel(review)));
         reconcileDragPreview();
         requestExpiredRepeatRecovery();
@@ -764,13 +752,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 if (structure.open()) structure.render(graphics, mouseX, mouseY);
                 offsetDetailsDrawerFieldsForMotion();
                 // Native inputs render later than their rows, so give them the same viewport explicitly.
-                var inputClip = propertyViewport().translated(detailsDrawerOffsetX(), 0);
-                graphics.enableScissor(Math.max(canvasRight(), inputClip.left()), inputClip.top(), inputClip.right(), inputClip.bottom());
-                try {
-                    for (var field : propertyNativeFields) field.render(graphics,
-                            inputClip.containsExclusive(mouseX, mouseY) ? mouseX : Integer.MIN_VALUE,
-                            inputClip.containsExclusive(mouseX, mouseY) ? mouseY : Integer.MIN_VALUE, partialTick);
-                } finally { graphics.disableScissor(); }
+                propertySurface.renderFields(graphics, mouseX, mouseY, partialTick);
                 super.render(graphics, mouseX, mouseY, partialTick);
                 renderDeferredTooltip(graphics, mouseX, mouseY);
                 graphics.flush();
@@ -1067,8 +1049,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 true, EditorButton.Tone.PRIMARY, mouseX, mouseY);
     }
 
-    /** Registers only the visible portion, so scrolled-away text cannot capture a right click. */
-
     private int renderTask(GuiGraphics graphics, QuestDefinition quest, TaskDefinition task, QuestStatus status,
                            int x, int y, int width, int mouseX, int mouseY) {
         ClientTaskPresentation presentation = ClientTaskPresentationRegistry.get(task.typeId());
@@ -1336,6 +1316,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        synchronizeEditorModules(ClientEditorState.get());
         if (java.util.Objects.equals(formButtonFrame, currentFrameIdentity())
                 && formButtonOverlay == editorOverlays.active()) formButtons.clicked(mouseX, mouseY, button);
         if (editorOverlays.mouseClicked(mouseX, mouseY, button)) return true;
@@ -1348,14 +1329,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
 
         if ((questProperties.open() || typedPropertySection.open()) && detailsPanelAcceptsPointer(mouseX) && button == 0
-                && propertyScroll.handleTrackClick(mouseX, mouseY, propertyViewport().right() + 2,
-                propertyViewport().top(), propertyViewport().bottom(), propertyContentHeight, propertyViewport().height())) return true;
+                && propertySurface.trackClick(mouseX, mouseY, button)) return true;
         if (typedEntries.open() && detailsPanelAcceptsPointer(mouseX)) {
             return typedEntries.click(mouseX, mouseY, button);
         }
 
         if (questProperties.open() && detailsPanelAcceptsPointer(mouseX)) {
-            if (!questProperties.click(mouseX, mouseY, button, propertyViewport(), questEditorSaveBounds(), questEditorCancelBounds()))
+            if (!questProperties.click(mouseX, mouseY, button, propertySurface.viewport(), propertySurface.save(), propertySurface.cancel()))
                 super.mouseClicked(mouseX, mouseY, button);
             return true;
         }
@@ -1410,9 +1390,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseReleased(double x, double y, int button) {
+        synchronizeEditorModules(ClientEditorState.get());
         if (releaseOverlayScroll(button)) return true;
         if (editorOverlays.mouseReleased(x, y, button, super::mouseReleased)) return true;
-        if (propertyScroll.handleRelease(button) || detailsPanel.scroll().handleRelease(button)
+        if (propertySurface.release(button) || detailsPanel.scroll().handleRelease(button)
                 || navigationPanel.releaseScroll(button) || dependencies.release(button)
                 || typedEntries.release(button)) return true;
         if (button == 0 && canvasArtwork.dragging()) {
@@ -1435,9 +1416,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseDragged(double x, double y, int button, double dx, double dy) {
+        synchronizeEditorModules(ClientEditorState.get());
         if (dragOverlayScroll(y, button)) return true;
         if (editorOverlays.mouseDragged(x, y, button, dx, dy, super::mouseDragged)) return true;
-        if (propertyScroll.handleDrag(y, button) || detailsPanel.scroll().handleDrag(y, button)
+        if (propertySurface.drag(y, button) || detailsPanel.scroll().handleDrag(y, button)
                 || navigationPanel.dragScroll(y, button) || dependencies.drag(y, button)
                 || typedEntries.drag(y, button)) return true;
         if (canvasArtwork.drag(currentFrameIdentity(), x, y, button)) return true;
@@ -1450,12 +1432,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+        synchronizeEditorModules(ClientEditorState.get());
         if (editorOverlays.mouseScrolled(x, y, vertical)) return true;
         if (canvasArtwork.dragging()) return true;
         // The property form is painted over the entry list; it owns wheel input throughout this panel.
         if ((questProperties.open() || typedPropertySection.open()) && detailsPanelAcceptsPointer(x)) {
-            if (propertyViewport().contains(x, y))
-                propertyScroll.scrollWheel(vertical, scrollStep(), propertyContentHeight, propertyViewport().height());
+            propertySurface.wheel(x, y, vertical);
             return true;
         }
         if (dependencies.open() && detailsPanelAcceptsPointer(x)) {
@@ -1486,6 +1468,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        synchronizeEditorModules(ClientEditorState.get());
         if (keyCode == 256 && canvasArtwork.cancel()) return true;
         if (keyCode == 256 && navigationPanel.cancelDrag()) return true;
         if (editorOverlays.keyPressed(keyCode, scanCode, modifiers)) return true;
@@ -1674,6 +1657,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
+        synchronizeEditorModules(ClientEditorState.get());
         return editorOverlays.charTyped(codePoint, modifiers) || super.charTyped(codePoint, modifiers);
     }
 
@@ -2149,11 +2133,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         });
     }
 
-    /** Copy freezes every config string, including localized text and opaque nested reward data. */
-
-
-    /** Each accepted paste appends one new ID and creates one server-owned undo step. */
-
     private void copyTechnicalId(String value) {
         if (minecraft == null) return;
         minecraft.keyboardHandler.setClipboard(value);
@@ -2478,19 +2457,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 + "_recovered_" + Long.toString(System.currentTimeMillis(), 36));
     }
 
-
-    /** Modal editing matches the input boundary; selecting an icon never saves implicitly. */
-
-    /** Empty untranslated names may retain their fallback while other properties are saved. */
-
     private void showLocalizedPlaceholder(EditorTextField field, EditorLocalizedText text) {
         // Native suggestions are gray and remain visible with focus, but are never selected or submitted.
         field.setSuggestion(field.getValue().isEmpty() && text != null
                 ? font.plainSubstrByWidth(text.placeholder(), Math.max(0, field.getWidth() - 8)) : null);
     }
-
-
-    /** Smaller chapter row gaps fit the extra property without enlarging the existing modal. */
 
     /** Both quick dialogs and property forms share the same compact language control. */
     private void renderLocaleButton(GuiGraphics graphics, EditorLocalizedText text, UiRect row, int mouseX, int mouseY) {
@@ -2516,34 +2487,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         text.changes().forEach((locale, value) -> result.put(LocalizedSingleLineEdits.PREFIX + locale, value));
         return Map.copyOf(result);
     }
-
-    /** Keep the background child beside the defaults child at the minimum GUI height. */
-
-
-    /** A dedicated property row stages the shared override until the chapter form is confirmed. */
-
-
-    /** Stable IDs are distinct from localized labels; choosing only changes the pending form. */
-
-    /** The picker edits only the pending form; the parent submits the selected stable ID. */
-
-
-
-
-    /** Empty is an intentional absence of decoration, not a request for a fallback item. */
-
-
-
-
-    /** Initialize shared icon controls from the source; switching containers must not reuse stale candidates. */
-
-
-
-
-
-
-
-
 
     private void requestDelete(DeleteKind kind, ResourceLocation target, QuestBookDefinition book) {
         deleteSelection = java.util.Set.of();
@@ -2736,7 +2679,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return target != null && sendMutation("UPDATE_CANVAS", target, null, null, "", 0, 0, 0, List.of(), Map.of("scene", scene.encode()));
     }
 
-
     private ResourceLocation defaultGroupId(QuestBookDefinition book) {
         ResourceLocation chapterId = currentChapterId();
         if (chapterId != null) {
@@ -2789,22 +2731,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return revision.length() > 12 ? revision.substring(0, 12) : revision;
     }
 
-
-
-    /** Captures both revisions shown to the player so a later server change cannot silently alter the choice. */
-
-    /** The catalog copies a saved draft; only the first draft comes from the active book. */
-
-    /** Opens the current book's server-validated version history without an edit lease. */
-
-
-
-
-
-
-
-
-
     /** History never discards values that are still only present in an open client-side form. */
     private boolean editorHistorySurfaceReady() {
         return !questProperties.open() && !dependencies.open() && !typedEntries.open() && !structure.open()
@@ -2816,10 +2742,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (questProperties.open()) return questProperties.changed();
         if (typedPropertySection.open()) return typedPropertySection.changed();
         return structure.changed();
-    }
-
-    private List<Object> localFormValues() {
-        return List.of();
     }
 
     private Component editorStatus() {
@@ -2866,36 +2788,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         };
     }
 
-
-
-
-    /** Old list geometry is rejected after a data, mode, overlay or drawer transition. */
-
-
-
-
-
-
-    /** Starts a configured extension entry locally so required fields can be filled before server validation. */
-
-
-
-    /** Long type-owned actions use a full-width row with enough height for their complete caption and icon. */
-
-
-
-
-
-
-
-
-
     /** Read-only field replies return to the still-open form; they never save a draft by themselves. */
     public void receiveServerField(yourscraft.jasdewstarfield.brnquest.network.ServerFieldNetwork.Reply reply) {
         if (reply != null && reply.result() != null)
             typedPropertySection.receiveCurrent(reply.id(), reply.result().current());
     }
-
 
     /** Permission hiding is only a convenience; the server checks every request independently. */
     private boolean hasAdminProgressPermission() {
@@ -2937,69 +2834,17 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 questId.toString(), taskId == null ? "" : taskId.toString(), action));
     }
 
-
-
-
-
-
-
-    private UiRect drawnPropertyRow(int index) {
-        return propertyRowLayouts.get(index).translated(0, -(int)Math.round(propertyDrawnScroll));
-    }
-
-
-    private static boolean booleanValue(String value) {
-        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
-    }
-
-    /** Missing registrations stay read-only because there is no corresponding Codec to approve an edit. */
-
-
-    /** Combines descriptor validation with the client registry check needed for an ItemStack field. */
-
-
-
-    /** Keeps the form open on server rejection and closes it only after the verified replacement draft arrives. */
-
-
-
-
-
-    /** Uses the client presentation contract while keeping stable IDs confined to storage and diagnostics. */
-
-
     /** Opens a real child Screen so JEI initializes ghost dragging before the first interaction. */
     private void openEditorItemSelector(java.util.function.Consumer<ItemStack> selectionConsumer) {
         if (minecraft == null) return;
         openChildScreen(new EditorItemSelectorScreen(this, selectionConsumer));
     }
 
-
-
-
-
-
-
-
-
-
-
-
     private void closeQuestEditingPanels() {
         questProperties.closeQuestEditor();
         dependencies.close();
         typedEntries.close();
     }
-
-
-
-
-
-
-
-
-
-
 
     /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
     private EditorTextField reinitializeOverlayEditorField(EditorTextField field, String translationKey,
@@ -3011,69 +2856,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return addWidget(field);
     }
 
-    /** Uses the middle section of the existing detail drawer as a compact property form. */
-
-
-
-
-    /** The row and its renderer both ask the same layout helper, so expanded actions remain clickable. */
-
     /** Keep native fields in input/focus routing while drawing them ourselves inside the property viewport. */
     private void registerPropertyField(EditorTextField field) {
-        propertyNativeFields.add(field);
+        propertySurface.register(field);
         addWidget(field);
     }
-
-    /** Pointer targets use the visible intersection, while row rendering retains its original geometry. */
-    private UiRect visiblePropertyBounds(UiRect bounds) {
-        var viewport = propertyViewport();
-        var visible = bounds.intersection(viewport);
-        return visible.width() > 0 && visible.height() > 0 ? visible : null;
-    }
-
-    private UiRect propertyViewport() {
-        return new UiRect(detailLeft() + 10, topToolbarHeight() + 20,
-                detailLeft() + detailsWidth() - 14, Math.max(topToolbarHeight() + 20, questEditorCancelBounds().top() - 18));
-    }
-
-    /** Rows and native fields share a scroll viewport; footer actions always remain outside it. */
-    private void renderPropertyPanel(GuiGraphics graphics, Component heading, int headingColor,
-                                     List<EditorPropertyPanel.RowContent> rows, Component done,
-                                     EditorButton.Tone tone, int mouseX, int mouseY) {
-        var viewport = propertyViewport();
-        var form = new EditorPropertyPanel.Layout(new UiRect(detailLeft(), topToolbarHeight(), width,
-                height - bottomToolbarHeight() - 4), viewport.left(), viewport.width(),
-                topToolbarHeight() + 7, viewport.top(), 22);
-        EditorPropertyPanel.render(graphics, font, form, heading, headingColor, List.of(),
-                new EditorPropertyPanel.Footer(questEditorCancelBounds(), questEditorSaveBounds(), done,
-                        !ClientEditorState.get().busy(), tone),
-                (g, bounds, label, enabled, buttonTone) -> renderEditorTextButton(g, bounds, label, null, enabled, buttonTone, mouseX, mouseY));
-        propertyRowLayouts = EditorPropertyPanel.rows(form, rows);
-        propertyContentHeight = propertyRowLayouts.isEmpty() ? 0
-                : propertyRowLayouts.getLast().bottom() - viewport.top() + 4;
-        propertyDrawnScroll = propertyScroll.frameAndRender(graphics, viewport.right() + 2, viewport.top(), viewport.bottom(),
-                propertyContentHeight, viewport.height(), currentMotionFrameSeconds, scrollSmoothSpeed());
-        graphics.enableScissor(viewport.left(), viewport.top(), viewport.right(), viewport.bottom());
-        formButtons.viewport(viewport.translated(detailsDrawerOffsetX(), 0), detailsDrawerOffsetX());
-        try {
-            for (int index = 0; index < rows.size(); index++) {
-                UiRect row = drawnPropertyRow(index);
-                // Keep edge rows; the scissor clips their hidden pixels instead of removing the whole control.
-                if (row.bottom() <= viewport.top() || row.top() >= viewport.bottom()) continue;
-                rows.get(index).render(graphics, row.left(), row.top(), row.width());
-            }
-        } finally { graphics.disableScissor(); }
-        graphics.drawString(font, Component.translatable(localFormChanged() ? "screen.brnquest.editor.scope.form"
-                        : "screen.brnquest.editor.scope.unchanged"), viewport.left(),
-                questEditorCancelBounds().top() - 12, GraystonePalette.SECONDARY, false);
-    }
-
-    private static Component authorValueLabel(String category, String value) {
-        String key = "screen.brnquest.editor.value." + category + "." + value;
-        return net.minecraft.client.resources.language.I18n.exists(key) ? Component.translatable(key) : Component.literal(value);
-    }
-
-    /** Shows an ordinary item ID while retaining the native SNBT representation behind the form. */
 
     /** Chapter and quest forms share decorative picker icons and their action tooltips. */
     private QuestIconEditorRow.Layout renderTextureSelector(GuiGraphics graphics, int left, int top, int width,
@@ -3083,22 +2870,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 (g, bounds, label, enabled, tone) -> renderEditorTextButton(g, bounds, label, null, enabled, tone, mouseX, mouseY),
                 (g, bounds, definition, enabled, tone) -> renderEditorActionButton(g, bounds, definition, enabled, tone, mouseX, mouseY));
     }
-
-    /** Keeps exact coordinate entry available even though pointer dragging snaps to the visible grid. */
-
-    /** Reuses the ghost inventory/JEI Screen while the quest form retains identity-only item input. */
-
-
-
-    /** Rejects NaN and infinity because both would poison viewport bounds and serialized drafts. */
-
-
-
-
-
-    /** Frame-derived hitboxes are invalid as soon as their owning form closes or this Screen re-initializes. */
-
-    /** Registered projection replaces per-form field lists and keeps future extension fields in the save request. */
 
     /** EditBox widgets render through Screen after custom panels, so apply the drawer translation explicitly. */
     private void offsetDetailsDrawerFieldsForMotion() {
@@ -3111,11 +2882,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         questProperties.offset(offset);
         typedPropertySection.offsetForDrawerAnimation(offset);
     }
-
-
-    /** Retains each mode's in-progress value so comparing item and texture choices is non-destructive. */
-
-
 
     private UiRect questPropertyButtonBounds() {
         int bottom = height - bottomToolbarHeight() - 6;
@@ -3142,18 +2908,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return layout().detailEditorButton(index);
     }
 
-    private UiRect questEditorCancelBounds() {
-        int bottom = height - bottomToolbarHeight() - 6;
-        int center = detailLeft() + detailsWidth() / 2;
-        return new UiRect(detailLeft() + 10, bottom - 20, center - 4, bottom);
-    }
-
-    private UiRect questEditorSaveBounds() {
-        int bottom = height - bottomToolbarHeight() - 6;
-        int center = detailLeft() + detailsWidth() / 2;
-        return new UiRect(center + 4, bottom - 20, width - 10, bottom);
-    }
-
     private UiRect editorTitleBounds() {
         ClientEditorState editor = ClientEditorState.get();
         return QuestEditorChrome.layout(layout(), editor.live(), editor.hasLease(), editor.allowed()).title();
@@ -3173,10 +2927,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return new EditorPublishReviewModel.Diagnostic(diagnostic.severity(), diagnostic.code(),
                 diagnostic.objectId(), diagnostic.path(), diagnostic.message());
     }
-
-
-
-    /** Dispatches review intents while the extracted overlay remains protocol-agnostic. */
 
     private QuestBookSnapshot reviewPresentationSnapshot;
     private final Map<ResourceLocation, QuestPublishReviewSection.Presentation> reviewPresentations = new java.util.HashMap<>();
@@ -3255,27 +3005,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         return true;
     }
-
-
-
-
-
-
-
-
-
-
-    /** One bordered panel owns both the choices and their action row. */
-
-
-
-
-
-
-    /** Picker chrome and its list share the same available screen area, including on very short windows. */
-
-
-    /** Reserve all picker chrome before deciding how many complete rows fit above the footer. */
 
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
         // Match the server's empty-definition gate while the author is still configuring objectives.
@@ -3392,8 +3121,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean isCompleted(QuestStatus status) {
         return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED;
     }
-
-    /** Keeps the claimed check above the item while leaving its vanilla count corner unobstructed. */
 
     private int statusColor(QuestStatus status) {
         return switch (status) {
@@ -3533,15 +3260,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         });
     }
 
-    /** Shrinks compact one-line labels before truncating them, preserving more meaningful text. */
-
-    /** Right-aligns compact detail text while using the same shrink-before-truncate policy. */
-
-    /**
-     * Draws built-in item semantics as a styled prefix and returns that prefix's exact hover area.
-     * Other presentations retain the public objective-title path and do not inherit item semantics.
-     */
-
     private int graphCoordinate(double coordinate) {
         return (int) Math.round(coordinate * QuestViewportMath.GRID_SCALE);
     }
@@ -3559,8 +3277,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private void selectOnly(ResourceLocation questId) {
         canvasController.selectOnly(questId);
     }
-
-    /** Resolves click versus long-press independently from render or mouse-event frequency. */
 
     /** Completes the click branch only after release proves that no drag gesture was intended. */
     private void openEditorQuestDetails(ResourceLocation questId) {
@@ -3842,7 +3558,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : QuestScreenFrameIdentity.of(snapshot, ClientEditorState.get().editing(), width, height);
     }
 
-
     private void ensureViewportBook(ResourceLocation bookId) {
         if (bookId.equals(viewportBookId)) return;
         if (viewportBookId != null) saveViewport(rememberedChapterId);
@@ -3984,6 +3699,5 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
-
 
 }

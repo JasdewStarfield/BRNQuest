@@ -141,16 +141,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean editorSelectionMode;
     private boolean reopenEditorChecked;
     private Boolean closingEditingPreference;
-    private boolean copyCurrentAfterClose;
-    private boolean showVersionsAfterClose;
-    private ResourceLocation versionsBookId;
-    private final EditorPickerList<ClientEditorState.DraftVersionEntry> versionPicker = new EditorPickerList<>();
-    private ClientEditorState.DraftVersionEntry selectedRestoreVersion;
-    private String restoreCurrentRevision = "";
-    private boolean catalogRequested;
-    private final EditorPickerList<ClientEditorState.CatalogEntry> catalogPicker = new EditorPickerList<>();
-    private String catalogFilter = "";
-    private boolean catalogSearchFocused;
     // Chapter icon changes stay local until the dialog is applied. Child selectors only update this value.
 
     private EditorTextField quickTextField;
@@ -167,20 +157,12 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private Component clipboardMessage;
     private long clipboardMessageUntil;
     private final QuestEditorChrome editorChrome = new QuestEditorChrome();
-    private final QuestPublishReviewSection publishReviewSection = new QuestPublishReviewSection();
     private final QuestTypedPropertySection typedPropertySection =
             new QuestTypedPropertySection(MAX_TYPED_CONFIG_FIELDS);
     private UiRect enumDropdownAnchor;
     private List<String> enumDropdownValues = List.of();
     private java.util.function.Function<String, Component> enumDropdownLabel = Component::literal;
     private Consumer<String> enumDropdownConsumer;
-    private ResourceLocation discardSwitchTarget;
-    private String discardSwitchRevision = "";
-    private boolean discardClosesScreen;
-    private ResourceLocation draftChoiceBookId;
-    private String draftChoiceActiveRevision = "";
-    private String draftChoiceDraftRevision = "";
-    private String draftChoiceTitle = "";
     private final TransientScreenLifecycle childLifecycle = new TransientScreenLifecycle();
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
     private final CanvasArtwork canvasArtwork = new CanvasArtwork();
@@ -359,6 +341,35 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         closeQuestEditingPanels(); closeActiveEditorOverlay(); structure.open(kind, target, parent, x, y);
     }
 
+    private final QuestBookWorkflow bookWorkflow = new QuestBookWorkflow(new QuestBookWorkflow.Host() {
+        public QuestBookSnapshot snapshot() { return displaySnapshot(); }
+        public QuestScreenLayout layout() { return QuestScreen.this.layout(); }
+        public UiRect titleBounds() { return editorTitleBounds(); }
+        public double elapsed() { return currentMotionFrameSeconds; }
+        public EditorButtonInput buttons() { return formButtons; }
+        public void closePanels() { closeQuestEditingPanels(); }
+        public void closeOverlay() { closeActiveEditorOverlay(); }
+        public void closingPreference(Boolean value) { closingEditingPreference = value; }
+        public void closeScreen() { QuestScreen.super.onClose(); }
+        public void tooltip(List<Component> text) { hoveredComponentTooltip = text; }
+        public boolean jump(ResourceLocation id) { return jumpToEditorObject(id); }
+        public QuestPublishReviewSection.Presentation presentation(ResourceLocation id) { return reviewPresentation(id); }
+        public void details(List<Component> lines) {
+            openChildScreen(new ResolvedOptionsScreen(QuestScreen.this, () -> lines, Component.translatable("screen.brnquest.editor.publish.review.details")));
+        }
+    }, new EditorBookTransport() {
+        public void catalog() { AuthoringNetwork.requestCatalog(); }
+        public void open(ResourceLocation book, String revision) { AuthoringNetwork.openSession(book, revision); }
+        public void openCurrent(ResourceLocation book, String activeRevision, String draftRevision, boolean replace) { AuthoringNetwork.openCurrentSession(book, activeRevision, draftRevision, replace); }
+        public void version(ResourceLocation book, String revision) { AuthoringNetwork.versionSavedDraft(book, revision); }
+        public void versions(ResourceLocation book) { AuthoringNetwork.requestDraftVersions(book); }
+        public void restore(ResourceLocation book, String backup, String revision) { AuthoringNetwork.restoreDraftVersion(book, backup, revision); }
+        public void close(java.util.UUID session, String revision) { AuthoringNetwork.closeSession(session, revision); }
+        public void publish(java.util.UUID session, ResourceLocation book, String revision, String workspaceRevision, String activeBook, String activeRevision) {
+            AuthoringNetwork.publishAndApply(session, book, revision, workspaceRevision, activeBook, activeRevision);
+        }
+    }, editorOverlays);
+
     public QuestScreen() {
         super(Component.translatable("screen.brnquest.title"));
         QuestScreenSessionState.Snapshot defaults = QuestScreenSessionState.Snapshot.defaults();
@@ -378,7 +389,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedEntries.bind(font);
         editorChrome.invalidate();
         dependencies.bind(font);
-        catalogPicker.invalidate();
+        bookWorkflow.bind(font);
 
         // setScreen(parent) initializes this same QuestScreen again after an item/raw-config child
         // closes. Re-register existing fields instead of replacing them, preserving the complete
@@ -431,11 +442,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 "screen.brnquest.editor.quick_edit.input", 256);
         quickTextField.setNativeFormatting(true);
         serverContextId = currentServerContext();
-        if (!catalogRequested && !ClientEditorState.get().editing()) {
-            catalogRequested = true;
-            ClientEditorState.get().beginCatalogRequest();
-            AuthoringNetwork.requestCatalog();
-        }
+
     }
 
     @Override
@@ -475,7 +482,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     @Override
     public void onClose() {
         if (ClientEditorState.get().dirty()) {
-            requestDiscardConfirmation(null, true);
+            bookWorkflow.requestDiscardConfirmation(null, true);
             return;
         }
         super.onClose();
@@ -486,20 +493,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         super.tick();
         ClientEditorState editor = ClientEditorState.get();
         restoreEditingPreference(editor);
-        if (copyCurrentAfterClose && editor.mode() == ClientEditorState.Mode.VIEW && !editor.hasLease()) {
-            copyCurrentAfterClose = false;
-            createCurrentDraftCopy(ClientQuestState.get().book().orElse(null));
-        }
-        if (showVersionsAfterClose && editor.mode() == ClientEditorState.Mode.VIEW && !editor.hasLease()) {
-            showVersionsAfterClose = false;
-            openDraftVersions(ClientQuestState.get().book().orElse(null));
-        }
-        if (copyCurrentAfterClose && editor.mode() == ClientEditorState.Mode.ERROR) {
-            copyCurrentAfterClose = false;
-        }
-        if (showVersionsAfterClose && editor.mode() == ClientEditorState.Mode.ERROR) {
-            showVersionsAfterClose = false;
-        }
+        bookWorkflow.tick();
         reconcileModeSelection(editor);
         // Session loss must also remove the typed form widgets, not merely stop painting its panel.
         if (!editor.editing() && (typedEntries.open() || typedPropertySection.open())) typedEntries.close();
@@ -516,11 +510,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                     && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG))) {
             closeActiveEditorOverlay();
         }
-        editor.pollPublishReview().ifPresent(review -> {
-            closeActiveEditorOverlay();
-            publishReviewSection.open(publishReviewModel(review));
-            editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
-        });
+        editor.pollPublishReview().ifPresent(review -> bookWorkflow.acceptReview(publishReviewModel(review)));
         reconcileDragPreview();
         requestExpiredRepeatRecovery();
         // Only a live selected quest may query execution status; previews/rendering remain read-only.
@@ -1641,10 +1631,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 editor.beginUndo().ifPresent(request -> AuthoringNetwork.history(request.sessionId(), editor.bookId(), request.draftRevision(), false));
             }
             case EXIT -> {
-                if (editor.dirty()) requestDiscardConfirmation(null, false);
+                if (editor.dirty()) bookWorkflow.requestDiscardConfirmation(null, false);
                 else {
                     closingEditingPreference = false;
-                    closeEditorSession(null);
+                    bookWorkflow.closeEditorSession(null);
                 }
             }
             case OPEN_LIVE -> {
@@ -1655,20 +1645,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case OPEN_ADVANCED -> {
                 closingEditingPreference = null;
-                requestDraftSourceChoice(displaySnapshot());
+                bookWorkflow.requestDraftSourceChoice(displaySnapshot());
             }
             case OPEN_CATALOG -> {
                 boolean opening = !editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG);
                 closeActiveEditorOverlay();
                 if (opening) {
-                    // Imports can create server drafts while this screen remains open.
-                    // Refresh on every explicit catalog open instead of showing the init-time snapshot.
-                    editor.beginCatalogRequest();
-                    AuthoringNetwork.requestCatalog();
-                    editorOverlays.show(EditorOverlayHost.Kind.CATALOG);
-                    catalogFilter = "";
-                    catalogSearchFocused = true;
-                    catalogPicker.reset();
+                    bookWorkflow.openCatalog();
                 }
             }
         }
@@ -1695,6 +1678,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Adds editor controls as overlays so switching modes never resizes the established three regions. */
+    private boolean handleEditorChromeClick(double x, double y, int button, QuestBookDefinition displayedBook) {
+        if (bookWorkflow.catalogClick(x, y, button)) return true;
+        if (button != 0) return false;
+        var result = editorChrome.click(currentFrameIdentity(), x, y);
+        if (result.intent() != null) handleEditorChromeIntent(result.intent(), displayedBook);
+        return result.consumed();
+    }
+
     private void renderEditorChrome(GuiGraphics graphics, QuestBookDefinition book, int mouseX, int mouseY) {
         graphics.pose().pushPose();
         // Item rendering uses a raised GUI depth; keep opaque editor popovers above
@@ -2182,23 +2173,23 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         });
         registerOverlay(EditorOverlayHost.Kind.STRUCTURE_FORM, null, structure::click);
         registerOverlay(EditorOverlayHost.Kind.DELETE_CONFIRMATION, this::renderDeleteConfirmation, this::handleDeleteConfirmationClick);
-        registerOverlay(EditorOverlayHost.Kind.DISCARD_CONFIRMATION, this::renderDiscardConfirmation, this::handleDiscardConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.DISCARD_CONFIRMATION, bookWorkflow::renderDiscardConfirmation, bookWorkflow::handleDiscardConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION, questProperties::renderRename, questProperties::clickRename);
-        registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, this::renderPublishConfirmation,
-                this::handlePublishConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION, bookWorkflow::renderPublishConfirmation,
+                bookWorkflow::handlePublishConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.CONFLICT_RECOVERY, this::renderConflictRecovery, this::handleConflictRecoveryClick);
-        registerOverlay(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE, this::renderDraftSourceChoice,
-                this::handleDraftSourceChoiceClick);
-        registerOverlay(EditorOverlayHost.Kind.DRAFT_VERSIONS, this::renderDraftVersions,
-                this::handleDraftVersionsClick);
-        registerOverlay(EditorOverlayHost.Kind.DRAFT_RESTORE_CONFIRMATION, this::renderDraftRestoreConfirmation,
-                this::handleDraftRestoreConfirmationClick);
+        registerOverlay(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE, bookWorkflow::renderDraftSourceChoice,
+                bookWorkflow::handleDraftSourceChoiceClick);
+        registerOverlay(EditorOverlayHost.Kind.DRAFT_VERSIONS, bookWorkflow::renderDraftVersions,
+                bookWorkflow::handleDraftVersionsClick);
+        registerOverlay(EditorOverlayHost.Kind.DRAFT_RESTORE_CONFIRMATION, bookWorkflow::renderDraftRestoreConfirmation,
+                bookWorkflow::handleDraftRestoreConfirmationClick);
         registerOverlay(EditorOverlayHost.Kind.CONTEXT_MENU, this::renderEditContextMenu, (x, y, button) -> displaySnapshot() != null && handleEditContextClick(x, y, button, displaySnapshot().book()));
         registerOverlay(EditorOverlayHost.Kind.ENUM_DROPDOWN, this::renderEnumDropdown, this::handleEnumDropdownClick);
         registerOverlay(EditorOverlayHost.Kind.DEPENDENCY_PICKER, dependencies::renderPicker, dependencies::clickPicker);
         registerOverlay(EditorOverlayHost.Kind.TYPED_TYPE_PICKER, typedEntries::renderPicker, typedEntries::clickPicker);
         registerOverlay(EditorOverlayHost.Kind.QUICK_TEXT, this::renderQuickTextEditor, this::handleQuickTextEditorClick);
-        registerOverlay(EditorOverlayHost.Kind.CATALOG, (g, x, y) -> { if (ClientEditorState.get().allowed()) renderEditorCatalog(g, x, y); }, (x, y, button) -> displaySnapshot() != null && handleEditorChromeClick(x, y, button, displaySnapshot().book()));
+        registerOverlay(EditorOverlayHost.Kind.CATALOG, (g, x, y) -> { if (ClientEditorState.get().allowed()) bookWorkflow.renderEditorCatalog(g, x, y); }, (x, y, button) -> displaySnapshot() != null && handleEditorChromeClick(x, y, button, displaySnapshot().book()));
     }
 
     private void registerOverlay(EditorOverlayHost.Kind kind, EditorOverlayHost.Draw draw, EditorOverlayHost.Click click) {
@@ -2210,23 +2201,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private boolean handleOverlayKey(int key, int scan, int modifiers) {
         // Overlay-owned navigation never falls through into the suspended editor or canvas.
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.TYPED_TYPE_PICKER)) return typedEntries.pickerKey(key, modifiers);
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
-            if (catalogPicker.navigate(key, (modifiers & 1) != 0)) return true;
-            if (key == 257 || key == 335) {
-                catalogPicker.focusedRow().ifPresent(row -> {
-                    if (displaySnapshot() != null) handleEditorChromeClick(row.visible().centerX(), row.visible().centerY(), 0, displaySnapshot().book());
-                });
-                return true;
-            }
-        }
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) return bookWorkflow.catalogKey(key, modifiers);
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT) && (key == 257 || key == 335)) {
             submitQuickTextEdit();
-            return true;
-        }
-        if (key == 259 && editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
-                && catalogSearchFocused && !catalogFilter.isEmpty()) {
-            catalogFilter = catalogFilter.substring(0, catalogFilter.length() - 1);
-            catalogPicker.reset();
             return true;
         }
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) return dependencies.pickerKey(key, modifiers);
@@ -2237,10 +2214,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean handleOverlayText(char character, int modifiers) {
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)
-                && catalogSearchFocused && !Character.isISOControl(character) && catalogFilter.length() < 48) {
-            catalogFilter += character;
-            catalogPicker.reset();
+        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
+            return bookWorkflow.catalogText(character);
         } else if (editorOverlays.isOpen(EditorOverlayHost.Kind.DEPENDENCY_PICKER)) {
             return dependencies.pickerText(character);
         } else if (structure.open() || editorOverlays.isOpen(EditorOverlayHost.Kind.QUICK_TEXT)) {
@@ -2251,33 +2226,20 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private void handleOverlayWheel(double x, double y, double amount) {
         switch (editorOverlays.active()) {
-            case CATALOG -> catalogPicker.mouseScrolled(x, y, amount, scrollStep());
-            case DRAFT_VERSIONS -> versionPicker.mouseScrolled(x, y, amount, scrollStep());
+            case CATALOG -> bookWorkflow.wheel(editorOverlays.active(), x, y, amount);
+            case DRAFT_VERSIONS -> bookWorkflow.wheel(editorOverlays.active(), x, y, amount);
             case DEPENDENCY_PICKER -> dependencies.pickerWheel(x, y, amount);
             case TYPED_TYPE_PICKER -> typedEntries.pickerWheel(x, y, amount);
-            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseScrolled(layout(), amount, scrollStep());
+            case PUBLISH_CONFIRMATION -> bookWorkflow.wheel(editorOverlays.active(), x, y, amount);
             default -> { }
         }
     }
 
     private void closeActiveEditorOverlay() {
         switch (editorOverlays.active()) {
-            case CATALOG -> {
-                catalogFilter = "";
-                catalogSearchFocused = false;
-                catalogPicker.reset();
-                editorOverlays.close();
-            }
-            case DRAFT_VERSIONS -> {
-                versionPicker.reset();
-                versionsBookId = null;
-                editorOverlays.close();
-            }
-            case DRAFT_RESTORE_CONFIRMATION -> {
-                selectedRestoreVersion = null;
-                restoreCurrentRevision = "";
-                editorOverlays.close();
-            }
+            case CATALOG -> bookWorkflow.closeCatalog();
+            case DRAFT_VERSIONS -> bookWorkflow.closeVersions();
+            case DRAFT_RESTORE_CONFIRMATION -> bookWorkflow.closeRestore();
             case CONTEXT_MENU -> closeEditContext();
             case ENUM_DROPDOWN -> closeEnumDropdown();
             case STRUCTURE_FORM -> structure.close();
@@ -2291,24 +2253,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 deleteImpact = "";
                 editorOverlays.close();
             }
-            case DISCARD_CONFIRMATION -> {
-                discardSwitchTarget = null;
-                discardSwitchRevision = "";
-                discardClosesScreen = false;
-                copyCurrentAfterClose = false;
-                showVersionsAfterClose = false;
-                editorOverlays.close();
-            }
+            case DISCARD_CONFIRMATION -> bookWorkflow.closeDiscard();
             case QUEST_RENAME_CONFIRMATION -> editorOverlays.close();
-            case PUBLISH_CONFIRMATION -> {
-                publishReviewSection.close();
-                editorOverlays.close();
-            }
+            case PUBLISH_CONFIRMATION -> bookWorkflow.closePublish();
             case CONFLICT_RECOVERY -> {
                 recoveryCopyBookId = null;
                 editorOverlays.close();
             }
-            case DRAFT_SOURCE_CHOICE -> clearDraftSourceChoice();
+            case DRAFT_SOURCE_CHOICE -> bookWorkflow.clearDraftSourceChoice();
             case NONE -> { }
         }
     }
@@ -2350,22 +2302,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private boolean dragOverlayScroll(double y, int button) {
         return switch (editorOverlays.active()) {
-            case CATALOG -> catalogPicker.mouseDragged(y, button);
-            case DRAFT_VERSIONS -> versionPicker.mouseDragged(y, button);
+            case CATALOG -> bookWorkflow.drag(editorOverlays.active(), y, button);
+            case DRAFT_VERSIONS -> bookWorkflow.drag(editorOverlays.active(), y, button);
             case DEPENDENCY_PICKER -> dependencies.dragPicker(y, button);
             case TYPED_TYPE_PICKER -> typedEntries.dragPicker(y, button);
-            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseDragged(y, button);
+            case PUBLISH_CONFIRMATION -> bookWorkflow.drag(editorOverlays.active(), y, button);
             default -> false;
         };
     }
 
     private boolean releaseOverlayScroll(int button) {
         return switch (editorOverlays.active()) {
-            case CATALOG -> catalogPicker.mouseReleased(button);
-            case DRAFT_VERSIONS -> versionPicker.mouseReleased(button);
+            case CATALOG -> bookWorkflow.release(editorOverlays.active(), button);
+            case DRAFT_VERSIONS -> bookWorkflow.release(editorOverlays.active(), button);
             case DEPENDENCY_PICKER -> dependencies.releasePicker(button);
             case TYPED_TYPE_PICKER -> typedEntries.releasePicker(button);
-            case PUBLISH_CONFIRMATION -> publishReviewSection.mouseReleased(button);
+            case PUBLISH_CONFIRMATION -> bookWorkflow.release(editorOverlays.active(), button);
             default -> false;
         };
     }
@@ -2837,305 +2789,21 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return revision.length() > 12 ? revision.substring(0, 12) : revision;
     }
 
-    private void renderEditorCatalog(GuiGraphics graphics, int mouseX, int mouseY) {
-        List<ClientEditorState.CatalogEntry> entries = editorCatalogEntries();
-        renderEditorPickerShell(graphics, editorCatalogBounds(), EDITOR_CATALOG_ACTION_HEIGHT);
-        UiRect bounds = editorCatalogListBounds();
-        catalogPicker.advance(bounds, new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight()),
-                entries.size(), entries::get, currentMotionFrameSeconds, scrollSmoothSpeed());
-        boolean searchHint = catalogFilter.isBlank() && !catalogSearchFocused;
-        Component searchText = searchHint
-                ? Component.translatable("screen.brnquest.editor.catalog.search_hint")
-                : Component.literal(catalogFilter);
-        Component empty = Component.translatable(catalogFilter.isBlank()
-                ? "screen.brnquest.editor.catalog.current_missing" : "screen.brnquest.editor.catalog.no_match");
-        ClientEditorState editor = ClientEditorState.get();
-        ResourceLocation activeBookId = ClientQuestState.get().book()
-                .map(active -> active.book().id()).orElse(null);
-        List<Component> tooltip = catalogPicker.render(graphics, font, searchText, searchHint,
-                catalogSearchFocused, entry -> {
-            Component title = Component.literal(entry.title().isBlank() ? entry.bookId().toString() : entry.title());
-            Component id = Component.literal(entry.bookId().toString());
-            Component origin = Component.translatable("screen.brnquest.editor.catalog.origin." +
-                    entry.origin().name().toLowerCase(java.util.Locale.ROOT));
-            Component detail = entry.importSource().isBlank() ? id
-                    : Component.translatable("screen.brnquest.editor.catalog.ftb_source",
-                            entry.importSource(), entry.bookId().toString());
-            boolean editingDraft = editor.editingCatalogEntry(entry);
-            // Live editing operates on the active book; its same-ID server draft is related but unopened.
-            boolean related = editor.relatedCatalogEntry(entry, activeBookId);
-            List<Component> entryTooltip = new ArrayList<>(List.of(title, id, origin));
-            if (!entry.importSource().isBlank()) entryTooltip.add(Component.translatable(
-                    "screen.brnquest.editor.catalog.ftb_source_tooltip", entry.importSource()));
-            if (editingDraft) entryTooltip.add(Component.translatable(
-                    "screen.brnquest.editor.catalog.editing_revision", shortRevision(entry.draftRevision())));
-            else if (related) entryTooltip.add(Component.translatable(
-                    "screen.brnquest.editor.catalog.related_draft"));
-            return new EditorPickerList.Entry(title, detail, EditorPickerList.Tone.NORMAL,
-                    editingDraft ? EditorPickerList.Highlight.EDITING_DRAFT
-                            : related ? EditorPickerList.Highlight.SAME_BOOK : EditorPickerList.Highlight.NONE,
-                    entryTooltip);
-        }, empty, mouseX, mouseY);
-        if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
-        boolean hasCurrentDraft = ClientEditorState.get().catalog().stream()
-                .anyMatch(entry -> ClientQuestState.get().book().map(book -> book.book().id().equals(entry.bookId()))
-                        .orElse(false));
-        boolean createHovered = EditorButton.renderInteractive(graphics, font, editorCatalogCopyBounds(),
-                EditorButton.Definition.text(Component.translatable(hasCurrentDraft
-                                ? "screen.brnquest.editor.catalog.copy_saved" : "screen.brnquest.editor.catalog.create_current"),
-                        Component.translatable("screen.brnquest.editor.catalog.copy_hint")),
-                ClientQuestState.get().book().isPresent() && ClientEditorState.get().allowed()
-                        && !ClientEditorState.get().busy(), false,
-                EditorButton.Tone.PRIMARY, mouseX, mouseY);
-        if (createHovered) hoveredComponentTooltip = List.of(
-                Component.translatable("screen.brnquest.editor.catalog.copy_hint"));
-        boolean versionsHovered = EditorButton.renderInteractive(graphics, font, editorCatalogVersionsBounds(),
-                EditorButton.Definition.text(Component.translatable("screen.brnquest.editor.catalog.versions"), null),
-                ClientQuestState.get().book().isPresent() && ClientEditorState.get().allowed()
-                        && !ClientEditorState.get().busy(), false,
-                EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-        if (versionsHovered) hoveredComponentTooltip = List.of(
-                Component.translatable("screen.brnquest.editor.catalog.versions_hint"));
-    }
 
-    private boolean handleEditorChromeClick(double mouseX, double mouseY, int button,
-                                            QuestBookDefinition displayedBook) {
-        if (button != 0) return false;
-        ClientEditorState editor = ClientEditorState.get();
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
-            UiRect catalogBounds = editorCatalogBounds();
-            if (!catalogClickDismisses(catalogBounds, mouseX, mouseY, button)) {
-                if (editorCatalogSearchBounds().contains(mouseX, mouseY)) {
-                    catalogSearchFocused = true;
-                    catalogPicker.clearFocus();
-                    return true;
-                }
-                catalogSearchFocused = false;
-                if (editorCatalogCopyBounds().contains(mouseX, mouseY)) {
-                    if (ClientQuestState.get().book().isPresent() && !editor.busy()) {
-                        editorOverlays.close();
-                        if (editor.hasLease()) {
-                            copyCurrentAfterClose = true;
-                            if (editor.dirty()) requestDiscardConfirmation(null, false);
-                            else closeEditorSession(null);
-                        } else createCurrentDraftCopy(ClientQuestState.get().book().orElse(null));
-                    }
-                    return true;
-                }
-                if (editorCatalogVersionsBounds().contains(mouseX, mouseY)) {
-                    if (ClientQuestState.get().book().isPresent() && editor.allowed() && !editor.busy()) {
-                        editorOverlays.close();
-                        if (editor.hasLease()) {
-                            showVersionsAfterClose = true;
-                            if (editor.dirty()) requestDiscardConfirmation(null, false);
-                            else closeEditorSession(null);
-                        } else openDraftVersions(ClientQuestState.get().book().orElse(null));
-                    }
-                    return true;
-                }
-                if (catalogPicker.mouseClicked(mouseX, mouseY, button)) return true;
-                var chosen = catalogPicker.entryAt(mouseX, mouseY);
-                if (chosen.isPresent()) {
-                    ClientEditorState.CatalogEntry selected = chosen.orElseThrow();
-                    ResourceLocation target = selected.bookId();
-                    if (editorCatalogEntries().stream().noneMatch(entry -> entry.bookId().equals(target))) return true;
-                    editorOverlays.close();
-                    catalogFilter = "";
-                    if (editor.hasLease()) {
-                        if (!target.equals(editor.bookId())) {
-                            if (editor.dirty()) requestDiscardConfirmation(target, selected.draftRevision(), false);
-                            else closeEditorSession(target, selected.draftRevision());
-                        }
-                    } else if (editor.beginOpen(target)) {
-                        AuthoringNetwork.openSession(target, selected.draftRevision());
-                    }
-                }
-                return true;
-            }
-            // The open popup owns this click. Returning immediately prevents a
-            // title click from closing and reopening the catalog in one event.
-            editorOverlays.close();
-            return true;
-        }
-        QuestEditorChrome.ClickResult result = editorChrome.click(currentFrameIdentity(), mouseX, mouseY);
-        if (result.intent() != null) handleEditorChromeIntent(result.intent(), displayedBook);
-        return result.consumed();
-    }
 
     /** Captures both revisions shown to the player so a later server change cannot silently alter the choice. */
-    private void requestDraftSourceChoice(QuestBookSnapshot activeSnapshot) {
-        if (activeSnapshot == null || ClientEditorState.get().busy()) return;
-        closeActiveEditorOverlay();
-        draftChoiceBookId = activeSnapshot.book().id();
-        draftChoiceActiveRevision = activeSnapshot.revision();
-        ClientEditorState.CatalogEntry existing = ClientEditorState.get().catalog().stream()
-                .filter(entry -> entry.bookId().equals(draftChoiceBookId)).findFirst().orElse(null);
-        draftChoiceDraftRevision = existing == null ? "" : existing.draftRevision();
-        draftChoiceTitle = existing == null ? "" : existing.title();
-        editorOverlays.show(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE);
-    }
 
     /** The catalog copies a saved draft; only the first draft comes from the active book. */
-    private void createCurrentDraftCopy(QuestBookSnapshot activeSnapshot) {
-        ClientEditorState editor = ClientEditorState.get();
-        if (activeSnapshot == null || !editor.allowed() || editor.busy()) return;
-        ResourceLocation bookId = activeSnapshot.book().id();
-        String selectedDraftRevision = editor.catalog().stream()
-                .filter(entry -> entry.bookId().equals(bookId))
-                .map(ClientEditorState.CatalogEntry::draftRevision).findFirst().orElse("");
-        if (editor.beginOpenCurrent(bookId)) {
-            if (selectedDraftRevision.isBlank()) {
-                AuthoringNetwork.openCurrentSession(bookId, activeSnapshot.revision(), "", true);
-            } else {
-                AuthoringNetwork.versionSavedDraft(bookId, selectedDraftRevision);
-            }
-        }
-    }
 
     /** Opens the current book's server-validated version history without an edit lease. */
-    private void openDraftVersions(QuestBookSnapshot activeSnapshot) {
-        ClientEditorState editor = ClientEditorState.get();
-        if (activeSnapshot == null || !editor.allowed() || editor.busy() || editor.hasLease()) return;
-        closeActiveEditorOverlay();
-        versionsBookId = activeSnapshot.book().id();
-        versionPicker.reset();
-        editor.beginDraftVersions(versionsBookId);
-        AuthoringNetwork.requestDraftVersions(versionsBookId);
-        editorOverlays.show(EditorOverlayHost.Kind.DRAFT_VERSIONS);
-    }
 
-    private void renderDraftVersions(GuiGraphics graphics, int mouseX, int mouseY) {
-        ClientEditorState editor = ClientEditorState.get();
-        List<ClientEditorState.DraftVersionEntry> versions = editor.draftVersions();
-        UiRect popup = editorVersionsBounds();
-        renderEditorPickerShell(graphics, popup, EDITOR_CATALOG_ACTION_HEIGHT);
-        UiRect listBounds = new UiRect(popup.left() + 2, popup.top() + 2, popup.right() - 2,
-                Math.max(popup.top() + 2, popup.bottom() - EDITOR_CATALOG_ACTION_HEIGHT));
-        versionPicker.advance(listBounds, pickerScreenBounds(), versions.size(), versions::get,
-                currentMotionFrameSeconds, scrollSmoothSpeed());
-        Component empty = editor.versionsLoading()
-                ? Component.translatable("screen.brnquest.editor.versions.loading")
-                : editor.versionsError().isBlank()
-                ? Component.translatable("screen.brnquest.editor.versions.empty")
-                : EditorDiagnosticPresentation.operationError(editor.versionsError());
-        List<Component> tooltip = versionPicker.renderHeading(graphics, font,
-                Component.translatable("screen.brnquest.editor.versions.title"), version -> {
-                    String date = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-                            .withZone(java.time.ZoneId.systemDefault())
-                            .format(java.time.Instant.ofEpochMilli(version.savedAtEpochMillis()));
-                    Component label = Component.literal(date + "  " + shortDraftRevision(version.revision()));
-                    return new EditorPickerList.Entry(label, Component.literal(version.title()),
-                            EditorPickerList.Tone.NORMAL, false,
-                            List.of(Component.literal(version.revision()), Component.literal(version.backupId())));
-                }, empty, mouseX, mouseY);
-        if (!tooltip.isEmpty()) hoveredComponentTooltip = tooltip;
-        EditorButton.renderInteractive(graphics, font, editorVersionsBackBounds(),
-                EditorButton.Definition.text(Component.translatable("screen.brnquest.editor.versions.back"), null),
-                true, false, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-    }
 
-    private boolean handleDraftVersionsClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        if (!editorVersionsBounds().contains(mouseX, mouseY)) {
-            closeActiveEditorOverlay();
-            return true;
-        }
-        if (editorVersionsBackBounds().contains(mouseX, mouseY)) {
-            closeActiveEditorOverlay();
-            ClientEditorState.get().beginCatalogRequest();
-            AuthoringNetwork.requestCatalog();
-            editorOverlays.show(EditorOverlayHost.Kind.CATALOG);
-            catalogSearchFocused = true;
-            return true;
-        }
-        if (versionPicker.mouseClicked(mouseX, mouseY, button)) return true;
-        var chosen = versionPicker.entryAt(mouseX, mouseY);
-        if (chosen.isEmpty() || versionsBookId == null) return true;
-        selectedRestoreVersion = chosen.orElseThrow();
-        restoreCurrentRevision = ClientEditorState.get().catalog().stream()
-                .filter(entry -> entry.bookId().equals(versionsBookId))
-                .map(ClientEditorState.CatalogEntry::draftRevision).findFirst().orElse("");
-        editorOverlays.show(EditorOverlayHost.Kind.DRAFT_RESTORE_CONFIRMATION);
-        return true;
-    }
 
-    private void renderDraftRestoreConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (selectedRestoreVersion == null) return;
-        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
-                Component.translatable("screen.brnquest.editor.versions.restore_title"),
-                Component.translatable("screen.brnquest.editor.versions.restore_detail",
-                        shortDraftRevision(selectedRestoreVersion.revision())),
-                GraystonePalette.SECONDARY, Component.translatable("gui.cancel"),
-                Component.translatable("screen.brnquest.editor.versions.restore"), mouseX, mouseY);
-    }
 
-    private boolean handleDraftRestoreConfirmationClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        var action = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
-        if (action == EditorConfirmDialog.Action.CANCEL) {
-            selectedRestoreVersion = null;
-            restoreCurrentRevision = "";
-            editorOverlays.show(EditorOverlayHost.Kind.DRAFT_VERSIONS);
-        } else if (action == EditorConfirmDialog.Action.CONFIRM && selectedRestoreVersion != null
-                && versionsBookId != null) {
-            ResourceLocation bookId = versionsBookId;
-            String backupId = selectedRestoreVersion.backupId();
-            String expected = restoreCurrentRevision;
-            selectedRestoreVersion = null;
-            restoreCurrentRevision = "";
-            closeActiveEditorOverlay();
-            if (ClientEditorState.get().beginOpenCurrent(bookId)) {
-                AuthoringNetwork.restoreDraftVersion(bookId, backupId, expected);
-            }
-        }
-        return true;
-    }
 
-    private static String shortDraftRevision(String revision) {
-        return revision == null || revision.isBlank() ? "-"
-                : revision.substring(0, Math.min(8, revision.length()));
-    }
 
-    private void renderDraftSourceChoice(GuiGraphics graphics, int mouseX, int mouseY) {
-        boolean existing = !draftChoiceDraftRevision.isBlank();
-        Component title = draftChoiceTitle.isBlank() ? null : Component.literal(draftChoiceTitle);
-        yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.render(
-                graphics, font, layout(), existing, title, mouseX, mouseY);
-    }
 
-    private boolean handleDraftSourceChoiceClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        boolean existing = !draftChoiceDraftRevision.isBlank();
-        var action = yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.actionAt(
-                layout(), existing, mouseX, mouseY);
-        if (action == yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CANCEL) {
-            clearDraftSourceChoice();
-            return true;
-        }
-        boolean replace = action
-                == yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CREATE_FROM_ACTIVE;
-        if (!replace && action
-                != yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorDraftChoiceDialog.Action.CONTINUE) {
-            return true;
-        }
-        ResourceLocation bookId = draftChoiceBookId;
-        String activeRevision = draftChoiceActiveRevision;
-        String draftRevision = draftChoiceDraftRevision;
-        clearDraftSourceChoice();
-        ClientEditorState editor = ClientEditorState.get();
-        if (bookId != null && editor.beginOpenCurrent(bookId)) {
-            AuthoringNetwork.openCurrentSession(bookId, activeRevision, draftRevision, replace);
-        }
-        return true;
-    }
 
-    private void clearDraftSourceChoice() {
-        draftChoiceBookId = null;
-        draftChoiceActiveRevision = "";
-        draftChoiceDraftRevision = "";
-        draftChoiceTitle = "";
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.DRAFT_SOURCE_CHOICE)) editorOverlays.close();
-    }
 
     /** History never discards values that are still only present in an open client-side form. */
     private boolean editorHistorySurfaceReady() {
@@ -3506,48 +3174,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 diagnostic.objectId(), diagnostic.path(), diagnostic.message());
     }
 
-    private void renderPublishConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        graphics.pose().pushPose();
-        graphics.pose().translate(0, 0, 500);
-        publishReviewSection.presentation(this::reviewPresentation);
-        QuestPublishReviewSection.RenderResult result = publishReviewSection.render(
-                graphics, font, layout(), currentMotionFrameSeconds, scrollSmoothSpeed(), mouseX, mouseY);
-        if (!result.tooltip().isEmpty()) graphics.renderComponentTooltip(font, result.tooltip(), mouseX, mouseY);
-        graphics.flush();
-        graphics.pose().popPose();
-    }
 
-    private boolean handlePublishConfirmationClick(double mouseX, double mouseY, int button) {
-        QuestPublishReviewSection.ClickResult result = publishReviewSection.click(layout(), mouseX, mouseY, button);
-        if (result.intent() != null) handlePublishReviewIntent(result.intent());
-        return result.consumed();
-    }
 
     /** Dispatches review intents while the extracted overlay remains protocol-agnostic. */
-    private void handlePublishReviewIntent(QuestPublishReviewSection.Intent intent) {
-        switch (intent.action()) {
-            case CANCEL -> closeActiveEditorOverlay();
-            case DETAILS -> {
-                var lines = publishReviewSection.detailLines();
-                openChildScreen(new ResolvedOptionsScreen(this, () -> lines,
-                        Component.translatable("screen.brnquest.editor.publish.review.details")));
-            }
-            case JUMP_TO_OBJECT -> {
-                if (intent.objectId() != null && jumpToEditorObject(intent.objectId())) closeActiveEditorOverlay();
-            }
-            case CONFIRM -> {
-                String reviewedRevision = intent.reviewedRevision();
-                closeActiveEditorOverlay();
-                ClientEditorState editor = ClientEditorState.get();
-                // The preview is revision-bound; never confirm a different draft with stale review data.
-                if (reviewedRevision.equals(editor.draftRevision())) {
-                    editor.beginPublish().ifPresent(request -> AuthoringNetwork.publishAndApply(
-                            request.sessionId(), editor.bookId(), request.draftRevision(),
-                            intent.workspaceRevision(), intent.activeBookId(), intent.activeRevision()));
-                }
-            }
-        }
-    }
 
     private QuestBookSnapshot reviewPresentationSnapshot;
     private final Map<ResourceLocation, QuestPublishReviewSection.Presentation> reviewPresentations = new java.util.HashMap<>();
@@ -3627,146 +3256,26 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return true;
     }
 
-    private void requestDiscardConfirmation(ResourceLocation switchTarget, boolean closeScreen) {
-        requestDiscardConfirmation(switchTarget, "", closeScreen);
-    }
 
-    private void requestDiscardConfirmation(ResourceLocation switchTarget, String expectedDraftRevision,
-                                            boolean closeScreen) {
-        closeQuestEditingPanels();
-        closeActiveEditorOverlay();
-        discardSwitchTarget = switchTarget;
-        discardSwitchRevision = expectedDraftRevision;
-        discardClosesScreen = closeScreen;
-        editorOverlays.show(EditorOverlayHost.Kind.DISCARD_CONFIRMATION);
-    }
 
-    private void renderDiscardConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
-                Component.translatable("screen.brnquest.editor.discard.warning"), null, 0,
-                Component.translatable("screen.brnquest.editor.discard.cancel"),
-                Component.translatable("screen.brnquest.editor.discard.confirm"), mouseX, mouseY);
-    }
 
-    private boolean handleDiscardConfirmationClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        EditorConfirmDialog.Action dialogAction = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
-        if (dialogAction == EditorConfirmDialog.Action.CANCEL) {
-            editorOverlays.close();
-            discardSwitchTarget = null;
-            discardSwitchRevision = "";
-            discardClosesScreen = false;
-            copyCurrentAfterClose = false;
-            showVersionsAfterClose = false;
-            return true;
-        }
-        if (dialogAction == EditorConfirmDialog.Action.CONFIRM) {
-            ResourceLocation target = discardSwitchTarget;
-            String expectedRevision = discardSwitchRevision;
-            boolean closeScreen = discardClosesScreen;
-            editorOverlays.close();
-            discardSwitchTarget = null;
-            discardSwitchRevision = "";
-            discardClosesScreen = false;
-            // Closing the UI remembers editing; explicitly leaving the mode remembers browsing.
-            closingEditingPreference = target == null ? closeScreen : null;
-            closeEditorSession(target, expectedRevision);
-            if (closeScreen) super.onClose();
-        }
-        return true;
-    }
 
-    private void closeEditorSession(ResourceLocation openAfterClose) {
-        closeEditorSession(openAfterClose, "");
-    }
 
-    private void closeEditorSession(ResourceLocation openAfterClose, String expectedDraftRevision) {
-        ClientEditorState.get().beginClose(openAfterClose, expectedDraftRevision).ifPresent(request ->
-                AuthoringNetwork.closeSession(request.sessionId(), request.draftRevision()));
-    }
 
-    private UiRect editorCatalogBounds() {
-        UiRect title = editorTitleBounds();
-        int visibleRows = editorCatalogVisibleRows();
-        int height = EditorPickerList.popupHeightForRows(visibleRows, EDITOR_CATALOG_ACTION_HEIGHT);
-        int availableWidth = Math.max(title.width(), width - 8);
-        int catalogWidth = Math.min(420, availableWidth);
-        int left = Math.max(4, title.centerX() - catalogWidth / 2);
-        int right = Math.min(width - 4, left + catalogWidth);
-        left = Math.max(4, right - catalogWidth);
-        return new UiRect(left, title.bottom() + 2, right, title.bottom() + 2 + height).intersection(pickerScreenBounds());
-    }
 
-    private UiRect editorCatalogListBounds() {
-        UiRect popup = editorCatalogBounds();
-        return new UiRect(popup.left() + 2, popup.top() + 2, popup.right() - 2,
-                Math.max(popup.top() + 2, popup.bottom() - EDITOR_CATALOG_ACTION_HEIGHT));
-    }
 
-    private UiRect editorCatalogSearchBounds() {
-        UiRect list = editorCatalogListBounds();
-        return new UiRect(list.left() + 2, list.top() + 2, list.right() - 2,
-                Math.min(list.bottom(), list.top() + EDITOR_CATALOG_SEARCH_HEIGHT));
-    }
 
     /** One bordered panel owns both the choices and their action row. */
-    private void renderEditorPickerShell(GuiGraphics graphics, UiRect popup, int actionHeight) {
-        GraystoneSurface.raised(graphics, popup, GraystonePalette.PANEL, true);
-        int seamY = popup.bottom() - actionHeight;
-        if (seamY > popup.top() + 2 && seamY < popup.bottom() - 2)
-            graphics.fill(popup.left() + 3, seamY, popup.right() - 3, seamY + 1,
-                    GraystonePalette.EDGE);
-    }
 
-    private UiRect editorCatalogActionBounds() {
-        UiRect popup = editorCatalogBounds();
-        return new UiRect(popup.left() + 4, popup.bottom() - EDITOR_CATALOG_ACTION_HEIGHT + 2,
-                popup.right() - 4, popup.bottom() - 3);
-    }
 
-    private UiRect editorCatalogCopyBounds() {
-        UiRect actions = editorCatalogActionBounds();
-        return new UiRect(actions.left(), actions.top(), actions.centerX() - 2, actions.bottom());
-    }
 
-    private UiRect editorCatalogVersionsBounds() {
-        UiRect actions = editorCatalogActionBounds();
-        return new UiRect(actions.centerX() + 2, actions.top(), actions.right(), actions.bottom());
-    }
 
-    private UiRect editorVersionsBounds() {
-        UiRect title = editorTitleBounds();
-        int rows = editorPickerVisibleRows(ClientEditorState.get().draftVersions().size());
-        int popupHeight = EditorPickerList.popupHeightForRows(rows, EDITOR_CATALOG_ACTION_HEIGHT);
-        int popupWidth = Math.min(420, Math.max(title.width(), width - 8));
-        int left = Math.max(4, Math.min(width - 4 - popupWidth, title.centerX() - popupWidth / 2));
-        return new UiRect(left, title.bottom() + 2, left + popupWidth,
-                title.bottom() + 2 + popupHeight).intersection(pickerScreenBounds());
-    }
 
-    private UiRect editorVersionsBackBounds() {
-        UiRect popup = editorVersionsBounds();
-        return new UiRect(popup.left() + 4, popup.bottom() - EDITOR_CATALOG_ACTION_HEIGHT + 2,
-                popup.right() - 4, popup.bottom() - 3);
-    }
 
     /** Picker chrome and its list share the same available screen area, including on very short windows. */
-    private UiRect pickerScreenBounds() {
-        return new UiRect(4, topToolbarHeight(), Math.max(4, width - 4),
-                Math.max(topToolbarHeight(), height - bottomToolbarHeight() - 4));
-    }
 
-    private int editorCatalogVisibleRows() {
-        return editorPickerVisibleRows(editorCatalogEntries().size());
-    }
 
     /** Reserve all picker chrome before deciding how many complete rows fit above the footer. */
-    private int editorPickerVisibleRows(int entries) {
-        int availablePopupHeight = pickerScreenBounds().bottom() - editorTitleBounds().bottom() - 2;
-        int chromeHeight = EditorPickerList.popupHeightForRows(0, EDITOR_CATALOG_ACTION_HEIGHT);
-        int possible = Math.max(1, (availablePopupHeight - chromeHeight) / EDITOR_CATALOG_ROW_HEIGHT);
-        return Math.min(8, Math.min(Math.max(1, entries), possible));
-    }
 
     private boolean canSubmit(QuestDefinition quest, QuestStatus status) {
         // Match the server's empty-definition gate while the author is still configuring objectives.
@@ -4299,8 +3808,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     /** Left-clicking anywhere outside the popup dismisses it without activating the covered surface. */
-    static boolean catalogClickDismisses(UiRect catalogBounds, double mouseX, double mouseY, int button) {
-        return button == 0 && !catalogBounds.contains(mouseX, mouseY);
+    static boolean catalogClickDismisses(UiRect bounds, double x, double y, int button) {
+        return QuestScreenCatalogInput.dismisses(bounds, x, y, button);
     }
 
     /** Hover resolves against the same live snapshot and visibility rules used by click navigation. */
@@ -4333,14 +3842,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 : QuestScreenFrameIdentity.of(snapshot, ClientEditorState.get().editing(), width, height);
     }
 
-    private List<ClientEditorState.CatalogEntry> editorCatalogEntries() {
-        QuestBookSnapshot snapshot = displaySnapshot();
-        ResourceLocation displayedBookId = snapshot == null ? null : snapshot.book().id();
-        // This is an explicit "Advanced drafts" catalog: show every draft by default.
-        // ClientEditorState still ranks the currently displayed book first, while
-        // the search field can narrow the complete server-authoritative list.
-        return ClientEditorState.get().filteredCatalog(displayedBookId, catalogFilter);
-    }
 
     private void ensureViewportBook(ResourceLocation bookId) {
         if (bookId.equals(viewportBookId)) return;

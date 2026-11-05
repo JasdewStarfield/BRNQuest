@@ -669,6 +669,50 @@ class ClientEditorStateTest {
         acceptTransfer("OPEN",session,snapshot,snapshot.revision()); return session;
     }
 
+    @Test void closingDuringReplacementRejectsLateChunksAndClosesOnlyOnce() {
+        // Preserve the verified picture until CLOSE; a late transfer must never reopen editing.
+        var before = QuestBookSnapshot.of(new QuestBookDefinition(ResourceLocation.parse("test:close_trace"),
+                1, "Before", List.of(), List.of(), Map.of()));
+        var after = QuestBookSnapshot.of(new QuestBookDefinition(before.book().id(),
+                1, "After", List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(before.book().id()));
+        UUID session = UUID.randomUUID();
+        acceptTransfer("OPEN", session, before, before.revision());
+        assertTrue(state.beginMutation());
+        state.previewEdit(book -> after.book());
+        state.acceptSession(GSON.toJson(new AuthoringNetwork.SessionResponseWire("MUTATE", "SUCCESS",
+                "DRAFT_UPDATED", "ok", session.toString(), before.book().id().toString(), "",
+                after.revision(), before.revision(), 36000, 1,
+                NativeBookJson.encode(after.book()).getBytes(StandardCharsets.UTF_8).length)));
+        state.abandonLocalSession();
+        assertFalse(state.acceptDraftChunk(session.toString(), after.revision(), 0, NativeBookJson.encode(after.book())));
+        assertEquals(ClientEditorState.Mode.VIEW, state.mode());
+        assertTrue(state.draft().isEmpty());
+        assertFalse(state.hasPendingPreview());
+        assertTrue(state.pollImmediateClose().isEmpty());
+    }
+
+    @Test void auxiliaryVersionFailureCannotFinishAnInFlightMutation() {
+        // Version-list failures have their own error channel and leave lease operations untouched.
+        var snapshot = QuestBookSnapshot.of(new QuestBookDefinition(ResourceLocation.parse("test:versions_trace"),
+                1, "Book", List.of(), List.of(), Map.of()));
+        state.acceptCatalog(GSON.toJson(new AuthoringNetwork.CatalogResponseWire(
+                "SUCCESS", "DRAFT_CATALOG", "ok", true, List.of())));
+        assertTrue(state.beginOpenCurrent(snapshot.book().id()));
+        UUID session = UUID.randomUUID();
+        acceptTransfer("OPEN", session, snapshot, snapshot.revision());
+        assertTrue(state.beginMutation());
+        state.beginDraftVersions(snapshot.book().id());
+        state.acceptDraftVersions("not-json");
+        assertEquals("INVALID_DRAFT_VERSIONS", state.versionsError());
+        assertEquals(ClientEditorState.Mode.MUTATING, state.mode());
+        assertEquals(session, state.sessionId());
+        assertEquals(snapshot.book().id(), state.bookId());
+        assertEquals(snapshot.revision(), state.draft().orElseThrow().revision());
+    }
+
     private void acceptTransfer(String action, UUID sessionId, QuestBookSnapshot snapshot, String savedRevision) {
         String json = NativeBookJson.encode(snapshot.book());
         var response = new AuthoringNetwork.SessionResponseWire(action, "SUCCESS", "SESSION_OPENED", "ok",
@@ -699,3 +743,4 @@ class ClientEditorStateTest {
                 List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of()));
     }
 }
+

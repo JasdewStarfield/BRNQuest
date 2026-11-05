@@ -1,9 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextLayout;
-
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -28,7 +25,6 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBehavior;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +33,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
-
 import net.minecraft.client.gui.Font;
 
 /** Owns the complete quest property buffer, its controls and immutable submission intent. */
@@ -53,7 +48,6 @@ final class QuestPropertiesEditor {
         void openLocalized(QuestDefinition quest, java.util.function.BooleanSupplier current);
         void openRegistered(Component title, Map<String, String> values, List<QuestPropertySchema.Property> schema,
                             Consumer<Map<String, String>> result);
-        void dropdown(UiRect anchor, List<String> values, Consumer<String> result, java.util.function.Function<String, Component> labels);
         void rename(boolean open);
         void resetScroll();
         void panel(GuiGraphics graphics, Component heading, int color, List<EditorPropertyPanel.RowContent> rows,
@@ -72,7 +66,6 @@ final class QuestPropertiesEditor {
     private Font font;
     private List<Object> baseline = List.of();
     private final EditorFormIdentity identity = new EditorFormIdentity();
-    private static final List<String> QUEST_SHAPES = List.of("chamfer", "square", "circle", "diamond");
     QuestPropertiesEditor(Host host) { this.host = host; }
     void bind(Font font, Consumer<EditorTextField> register) {
         this.font = font;
@@ -114,8 +107,6 @@ final class QuestPropertiesEditor {
     private String questEditorTextureIconValue = "";
     private QuestIconEditorRow.Layout questIconRowLayout;
     private UiRect questLocalizedTextEditorBounds;
-    private UiRect questShapeDropdownBounds;
-    private UiRect questNamePositionBounds;
     private UiRect questNotificationsBounds;
     private QuestNotificationPolicy questNotifications = QuestNotificationPolicy.DEFAULT;
     private DisplayOverrides.NamePosition questNamePosition = DisplayOverrides.NamePosition.INHERIT;
@@ -148,10 +139,8 @@ final class QuestPropertiesEditor {
         questFields.field("subtitle").hide();
         questFields.field("description").hide();
         questFields.field("shape").hide();
-        questNamePositionBounds = null;
         questNotificationsBounds = null;
         questLocalizedTextEditorBounds = null;
-        questShapeDropdownBounds = null;
         questBehaviorEditorBounds = null;
         questAppearanceEditorBounds = null;
         questIconRowLayout = null;
@@ -200,14 +189,6 @@ final class QuestPropertiesEditor {
                 Component.translatable("screen.brnquest.editor.quest.localized_text_open"),
                 Component.translatable("screen.brnquest.editor.quest.localized_text_hint"), enabled,
                 EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-    }
-    private void renderQuestShapeEditorField(GuiGraphics graphics, int left, int top, int width,
-                                             boolean enabled, int mouseX, int mouseY) {
-        EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(left, top, width, 78);
-        EditorPropertyRow.label(graphics, font, Component.translatable("screen.brnquest.editor.quest.shape"),
-                row.label(), null);
-        questShapeDropdownBounds = row.field();
-        host.textButton(graphics, row.field(), authorValueLabel("shape", questFields.field("shape").getValue()), null, enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
     }
     private void renderQuestBehaviorEditorField(GuiGraphics graphics, int left, int top, int width,
                                                 boolean enabled, int mouseX, int mouseY) {
@@ -380,12 +361,9 @@ final class QuestPropertiesEditor {
         questAppearanceEditorBounds = null;
         questIconRowLayout = null;
         questLocalizedTextEditorBounds = null;
-        questShapeDropdownBounds = null;
-        questNamePositionBounds = null;
         questNotificationsBounds = null;
         questBehaviorEditorBounds = null;
     }
-    private Map<String, String> behaviorConfig(QuestBehavior value) { return registeredQuestValues(value); }
     private Map<String, String> registeredQuestValues() { return registeredQuestValues(questEditorBehavior); }
     private Map<String, String> registeredQuestValues(QuestBehavior behavior) {
         var staged = new TreeMap<>(questRegisteredValues);
@@ -469,18 +447,6 @@ final class QuestPropertiesEditor {
                 }
                 return true;
             }
-            if (button == 0 && questShapeDropdownBounds != null
-                    && questShapeDropdownBounds.contains(mouseX, mouseY)) {
-                host.dropdown(questShapeDropdownBounds, QUEST_SHAPES,
-                        questFields.field("shape")::setValue, value -> authorValueLabel("shape", value));
-                return true;
-            }
-            if (button == 0 && questNamePositionBounds != null && questNamePositionBounds.contains(mouseX, mouseY)) {
-                host.dropdown(questNamePositionBounds, List.of("inherit", "off", "above", "below"),
-                        value -> questNamePosition = DisplayOverrides.parseName(value),
-                        value -> Component.translatable("screen.brnquest.display.name." + value));
-                return true;
-            }
             if (button == 0 && questAppearanceEditorBounds != null && questAppearanceEditorBounds.contains(mouseX, mouseY)) {
                 host.openRegistered( Component.translatable("screen.brnquest.editor.section.appearance"),
                         registeredQuestValues(), QuestPropertySchema.instance("appearance"), returning(this::applyRegisteredQuestValues));
@@ -529,10 +495,6 @@ final class QuestPropertiesEditor {
                 return true;
             }
         return false;
-    }
-    private static Component authorValueLabel(String category, String value) {
-        String key = "screen.brnquest.editor.value." + category + "." + value;
-        return net.minecraft.client.resources.language.I18n.exists(key) ? Component.translatable(key) : Component.literal(value);
     }
     private void submitQuestPropertyEdit(ResourceLocation replacementId) {
         var editor = host.session();

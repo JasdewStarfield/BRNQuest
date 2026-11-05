@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;

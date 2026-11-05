@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import java.util.Optional;

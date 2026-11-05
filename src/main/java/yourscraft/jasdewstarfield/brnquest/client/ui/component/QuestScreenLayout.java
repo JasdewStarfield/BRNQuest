@@ -65,6 +65,12 @@ public record QuestScreenLayout(int width, int height, boolean navigationCollaps
         return new UiRect(0, topToolbarHeight(), width, height - bottomToolbarHeight());
     }
 
+    /** Every editor picker keeps the same four-pixel margin, including very short windows. */
+    public UiRect editorPickerClip() {
+        return new UiRect(4, topToolbarHeight(), Math.max(4, width - 4),
+                Math.max(topToolbarHeight(), height - bottomToolbarHeight() - 4));
+    }
+
     public int canvasLeft() {
         return canvasLeft(navigationCollapsed ? 0.0 : 1.0);
     }

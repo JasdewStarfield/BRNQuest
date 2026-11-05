@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -35,20 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
-
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.Minecraft;
-import net.minecraft.resources.ResourceLocation;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextField;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.UiRect;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigEditorSchema;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigFieldDescriptor;
-import yourscraft.jasdewstarfield.brnquest.editor.ConfigValueType;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.function.Consumer;
 
 /**
  * Coordinates one typed task/reward property form without owning protocol dispatch.
@@ -74,6 +61,7 @@ final class QuestTypedPropertySection {
         void panel(GuiGraphics g, Component heading, int color, List<EditorPropertyPanel.RowContent> rows, Component done, EditorButton.Tone tone, int x, int y);
         void action(GuiGraphics g, UiRect bounds, EditorButton.Definition definition, boolean enabled, EditorButton.Tone tone, int x, int y);
         void text(GuiGraphics g, UiRect bounds, Component label, Component tooltip, boolean enabled, EditorButton.Tone tone, int x, int y);
+        void dropdownButton(GuiGraphics g, UiRect bounds, Component label, boolean enabled, int x, int y);
         void dropdown(UiRect anchor, List<String> values, Consumer<String> result, java.util.function.Function<String, Component> labels);
         ItemStack item(ResourceLocation id, String snbt);
         void invalidateIcon(ResourceLocation id);
@@ -393,7 +381,7 @@ final class QuestTypedPropertySection {
                 EditorPropertyFormLayout.Row row = EditorPropertyFormLayout.row(x, y, w, 68);
                 drawTypedLabel(g, "screen.brnquest.editor.typed.property.claim_policy", row.label(),
                         form().serverIssues().get("claim_policy"));
-                host.action(g, row.field(), EditorButton.Definition.iconAndText(authorValueLabel("claim", form().claim()), null, QuestActionIcons.named("unfold")), enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+                host.dropdownButton(g, row.field(), authorValueLabel("claim", form().claim()), enabled, mouseX, mouseY);
             });
             rows.add((g, x, y, w) -> renderTypedToggleRow(g, "screen.brnquest.editor.typed.property.team_reward",
                     teamReward(), x, y, w, mouseX, mouseY));
@@ -481,7 +469,7 @@ final class QuestTypedPropertySection {
                             ? Component.translatable("options.on") : Component.translatable("options.off"),
                     null, !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ENUM) {
-            host.action(graphics, row.field(), EditorButton.Definition.iconAndText(ConfigFieldLabels.value(descriptor, field.getValue()), null, QuestActionIcons.named("unfold")), !host.session().busy(), EditorButton.Tone.NEUTRAL, mouseX, mouseY);
+            host.dropdownButton(graphics, row.field(), ConfigFieldLabels.value(descriptor, field.getValue()), !host.session().busy(), mouseX, mouseY);
         } else if (descriptor.valueType() == ConfigValueType.ITEM_STACK) {
             ItemStack stack = host.item(originalId(), field.getValue());
             Component select = Component.translatable("screen.brnquest.editor.typed.property.select_item");

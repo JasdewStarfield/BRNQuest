@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.data.QuestCreationDefaults;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorLocalizedText;

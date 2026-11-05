@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import net.minecraft.resources.ResourceLocation;
 import java.util.UUID;
 

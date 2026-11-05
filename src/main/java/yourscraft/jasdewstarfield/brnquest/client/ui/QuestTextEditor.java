@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorLocalizedText;
 import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;

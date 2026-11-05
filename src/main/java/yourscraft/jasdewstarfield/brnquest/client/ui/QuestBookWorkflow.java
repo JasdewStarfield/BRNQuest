@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import net.minecraft.client.gui.GuiGraphics;
@@ -538,7 +537,7 @@ final class QuestBookWorkflow {
         ClientEditorState editor = ClientEditorState.get();
         if (editorOverlays.isOpen(EditorOverlayHost.Kind.CATALOG)) {
             UiRect catalogBounds = editorCatalogBounds();
-            if (!QuestScreenCatalogInput.dismisses(catalogBounds, mouseX, mouseY, button)) {
+            if (!catalogClickDismisses(catalogBounds, mouseX, mouseY, button)) {
                 if (editorCatalogSearchBounds().contains(mouseX, mouseY)) {
                     catalogSearchFocused = true;
                     catalogPicker.clearFocus();
@@ -594,4 +593,7 @@ final class QuestBookWorkflow {
     private static double scrollStep() { return BrnQuestClientConfig.VALUES.scrollStep.get(); }
     private static double scrollSmoothSpeed() { return BrnQuestClientConfig.VALUES.smoothSpeed.get(); }
     private static String shortRevision(String revision) { return revision.length() > 12 ? revision.substring(0, 12) : revision; }
+    static boolean catalogClickDismisses(UiRect catalogBounds, double mouseX, double mouseY, int button) {
+        return button == 0 && !catalogBounds.contains(mouseX, mouseY);
+    }
 }

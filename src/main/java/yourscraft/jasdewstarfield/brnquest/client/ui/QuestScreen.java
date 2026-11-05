@@ -1,11 +1,8 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
-
 import yourscraft.jasdewstarfield.brnquest.editor.QuestPropertySchema;
-
 import yourscraft.jasdewstarfield.brnquest.author.LocalizedSingleLineEdits;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystoneSurface;
 import yourscraft.jasdewstarfield.brnquest.data.BookText;
@@ -54,14 +51,12 @@ import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestIconValue;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
-import yourscraft.jasdewstarfield.brnquest.data.RewardClaimPolicy;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.text.RichDocument;
 import yourscraft.jasdewstarfield.brnquest.config.BrnQuestClientConfig;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 import yourscraft.jasdewstarfield.brnquest.progress.QuestStatus;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -75,15 +70,7 @@ import java.util.function.Consumer;
 
 /** Quest-book UI with grouped navigation, a scalable directed graph, and intent-only details. */
 public final class QuestScreen extends Screen implements RecipeLookupSource, TransientChildScreenParent {
-    private static final int EDITOR_CATALOG_ROW_HEIGHT = 30;
-    private static final int EDITOR_CATALOG_SEARCH_HEIGHT = 18;
-    private static final int EDITOR_CATALOG_ACTION_HEIGHT = 24;
-    private static final int DEPENDENCY_ROW_HEIGHT = 32;
-    private static final int TYPED_ROW_HEIGHT = 38;
     private static final int MAX_TYPED_CONFIG_FIELDS = 8;
-    private static final List<String> QUEST_SHAPES = List.of("chamfer", "square", "circle", "diamond");
-    private static final List<String> REWARD_CLAIM_POLICIES = java.util.Arrays.stream(RewardClaimPolicy.values())
-            .map(RewardClaimPolicy::serializedName).toList();
 
     private int attentionPingOffsetY;
     private long previousMotionFrameNanos;
@@ -168,9 +155,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                                    Consumer<Map<String, String>> result) {
             openChildScreen(new EditorRegisteredPropertiesScreen(QuestScreen.this, title, values, schema, result));
         }
-        public void dropdown(UiRect anchor, List<String> values, Consumer<String> result, java.util.function.Function<String, Component> labels) {
-            openEnumDropdown(anchor, values, result, labels);
-        }
         public void rename(boolean open) {
             if (open) { closeActiveEditorOverlay(); editorOverlays.show(EditorOverlayHost.Kind.QUEST_RENAME_CONFIRMATION); }
             else editorOverlays.close();
@@ -186,7 +170,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }
         public QuestIconEditorRow.Layout texture(GuiGraphics g, int left, int top, int width, EditorTextField input,
                                                  boolean texture, int mouseX, int mouseY) {
-            return renderTextureSelector(g, left, top, width, input, texture ? IconEditorMode.TEXTURE : IconEditorMode.ITEM, mouseX, mouseY);
+            return renderTextureSelector(g, left, top, width, input, texture, mouseX, mouseY);
         }
         public boolean submit(QuestPropertiesEditor.Submission intent) { return submitQuestProperties(intent); }
     });
@@ -210,7 +194,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 intent.iconValue(), intent.preserveIcon(), replacement.x(), replacement.y(), replacement.appearance().shape(),
                 replacement.appearance().size(), replacement.appearance().iconScale(), replacement.appearance().minWidth(), intent.config());
         editorSelectedQuest = replacement.id();
-        closeQuestEditingPanels(); editorOverlays.close();
+        editorOverlays.close();
         return true;
     }
 
@@ -440,6 +424,11 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             public void dropdown(UiRect anchor, List<String> values, Consumer<String> result, java.util.function.Function<String, Component> labels) {
                 openEnumDropdown(anchor, values, result, labels);
+            }
+            public void dropdownButton(GuiGraphics g, UiRect bounds, Component label, boolean enabled, int x, int y) {
+                renderEditorActionButton(g, bounds, EditorButton.Definition.iconAndText(label, null,
+                                QuestActionIcons.named(enumDropdownAnchor != null && enumDropdownAnchor.equals(bounds) ? "fold" : "unfold")),
+                        enabled, EditorButton.Tone.NEUTRAL, x, y);
             }
             public ItemStack item(ResourceLocation id, String snbt) { return QuestScreen.this.item(id, snbt); }
             public void invalidateIcon(ResourceLocation id) { itemCache.remove(id); }
@@ -1747,15 +1736,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 enabled, tone, mouseX, mouseY);
     }
 
-    /** Dropdown values remain localized text; the disclosure cue uses the shared native-size PNG. */
-    private void renderEditorDropdownButton(GuiGraphics graphics, UiRect bounds, Component label,
-                                            boolean enabled, int mouseX, int mouseY) {
-        renderEditorActionButton(graphics, bounds, EditorButton.Definition.iconAndText(
-                        label, null, QuestActionIcons.named(enumDropdownAnchor != null
-                                && enumDropdownAnchor.equals(bounds) ? "fold" : "unfold")),
-                enabled, EditorButton.Tone.NEUTRAL, mouseX, mouseY);
-    }
-
     /** Compact icon buttons retain a localized semantic label for Tooltip and future narration. */
     private void renderEditorIconButton(GuiGraphics graphics, UiRect bounds, Component glyph,
                                         Component accessibleLabel, boolean enabled, boolean dangerous,
@@ -2286,10 +2266,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         };
     }
 
-    /** Accepted replacements clear recovery; retryable server rejection deliberately leaves it available. */
-
-    /** Confirm all local language drafts together, touching only this single field. */
-
     private void renderConflictRecovery(GuiGraphics graphics, int mouseX, int mouseY) {
         UiRect panel = conflictRecoveryBounds();
         graphics.fill(0, 0, width, height, 0x99000000);
@@ -2353,8 +2329,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         return ResourceLocation.fromNamespaceAndPath(source.getNamespace(), source.getPath()
                 + "_recovered_" + Long.toString(System.currentTimeMillis(), 36));
     }
-
-    /** Both quick dialogs and property forms share the same compact language control. */
 
     private void requestDelete(DeleteKind kind, ResourceLocation target, QuestBookDefinition book) {
         deleteSelection = java.util.Set.of();
@@ -2715,8 +2689,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         typedEntries.close();
     }
 
-    /** Registers a focused overlay field for input/narration while its owning overlay renders it manually. */
-
     /** Keep native fields in input/focus routing while drawing them ourselves inside the property viewport. */
     private void registerPropertyField(EditorTextField field) {
         propertySurface.register(field);
@@ -2725,8 +2697,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Chapter and quest forms share decorative picker icons and their action tooltips. */
     private QuestIconEditorRow.Layout renderTextureSelector(GuiGraphics graphics, int left, int top, int width,
-            EditorTextField input, IconEditorMode mode, int mouseX, int mouseY) {
-        return EditorTextureSelector.render(graphics, font, left, top, width, input, mode == IconEditorMode.TEXTURE,
+            EditorTextField input, boolean texture, int mouseX, int mouseY) {
+        return EditorTextureSelector.render(graphics, font, left, top, width, input, texture,
                 !ClientEditorState.get().busy(),
                 (g, bounds, label, enabled, tone) -> renderEditorTextButton(g, bounds, label, null, enabled, tone, mouseX, mouseY),
                 (g, bounds, definition, enabled, tone) -> renderEditorActionButton(g, bounds, definition, enabled, tone, mouseX, mouseY));
@@ -3090,19 +3062,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 minecraft.getLanguageManager().getSelected(), field, fallback);
     }
 
-    /** Every editor entry point reads the same locale-resolved value that the player-facing screen renders. */
-    private String localizedQuestTextValue(QuestDefinition quest, QuestTextEditor.Kind kind) {
-        return switch (kind) {
-            case TITLE -> {
-                String value = localizedQuestText(quest, "title", quest.title());
-                yield value.isBlank() ? questTitle(quest) : value;
-            }
-            case SUBTITLE -> localizedQuestText(quest, "quest_subtitle", quest.subtitle());
-            case DESCRIPTION -> localizedQuestText(quest, "quest_desc", quest.description());
-            case NONE -> "";
-        };
-    }
-
     private String localizedStructureTitle(String kind, ResourceLocation id, String fallback) {
         QuestBookSnapshot snapshot = displaySnapshot();
         if (snapshot == null) return fallback;
@@ -3386,7 +3345,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Left-clicking anywhere outside the popup dismisses it without activating the covered surface. */
     static boolean catalogClickDismisses(UiRect bounds, double x, double y, int button) {
-        return QuestScreenCatalogInput.dismisses(bounds, x, y, button);
+        return QuestBookWorkflow.catalogClickDismisses(bounds, x, y, button);
     }
 
     /** Hover resolves against the same live snapshot and visibility rules used by click navigation. */
@@ -3525,19 +3484,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     private int detailViewportHeight() {
         return Math.max(1, detailContentBottom() - detailContentTop());
-    }
-
-    private record TypedRowPresentation(Component typeName, String symbol, ItemStack stack, java.util.Optional<EditorIcon> icon) {}
-
-    private enum IconEditorMode {
-        ITEM("screen.brnquest.editor.quest.icon_mode.item"),
-        TEXTURE("screen.brnquest.editor.quest.icon_mode.texture");
-
-        private final String translationKey;
-
-        IconEditorMode(String translationKey) {
-            this.translationKey = translationKey;
-        }
     }
 
     private enum ContextKind { NONE, CANVAS, NODE, DECORATION, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }

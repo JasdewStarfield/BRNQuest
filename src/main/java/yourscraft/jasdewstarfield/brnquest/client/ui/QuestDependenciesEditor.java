@@ -1,5 +1,4 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
-
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.NativeText;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorTextRenderer;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.GraystonePalette;
@@ -308,7 +307,7 @@ final class QuestDependenciesEditor {
     private int detailsWidth() { return host.layout().detailsWidth(); }
     private int topToolbarHeight() { return host.layout().topToolbarHeight(); }
     private int bottomToolbarHeight() { return host.layout().bottomToolbarHeight(); }
-    private UiRect pickerScreenBounds() { return new UiRect(0, topToolbarHeight(), width(), height() - bottomToolbarHeight()); }
+    private UiRect pickerScreenBounds() { return host.layout().editorPickerClip(); }
     private static double scrollStep() { return BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.scrollStep); }
     private static double scrollSmoothSpeed() { return BrnQuestClientConfig.read(BrnQuestClientConfig.VALUES.smoothSpeed); }
 }

@@ -1,7 +1,6 @@
 package yourscraft.jasdewstarfield.brnquest.client;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonParser;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
 import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
@@ -62,9 +61,7 @@ public final class ClientEditorState {
     private int redoSteps;
     private ResourceLocation pendingBookId;
     private String pendingBookRevision = "";
-    private String[] chunks = new String[0];
-    private int expectedBytes;
-    private int receivedChunks;
+    private final EditorDraftReceiver receiver = new EditorDraftReceiver();
     private QuestBookSnapshot draft;
     // The pending projection is never exposed by draft(), used for a packet revision, or installed into ClientQuestState.
     private QuestBookSnapshot displayPreview;
@@ -393,33 +390,18 @@ public final class ClientEditorState {
     }
 
     public synchronized boolean acceptDraftChunk(String rawSessionId, String revision, int index, String data) {
-        if (mode != Mode.RECEIVING_DRAFT || sessionId == null || !sessionId.toString().equals(rawSessionId)
-                || !draftRevision.equals(revision) || index < 0 || index >= chunks.length || data == null
-                || data.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_BOOK_CHUNK_BYTES) {
-            return false;
-        }
-        if (chunks[index] == null) {
-            chunks[index] = data;
-            receivedChunks++;
-        }
-        if (receivedChunks != chunks.length) return true;
+        if (mode != Mode.RECEIVING_DRAFT) return false;
         try {
-            String json = String.join("", chunks);
-            if (json.getBytes(StandardCharsets.UTF_8).length != expectedBytes) {
-                throw new IllegalArgumentException("Draft byte count does not match its manifest");
+            var result = receiver.accept(rawSessionId, revision, index, data);
+            if (!result.accepted()) return false;
+            if (result.snapshot() != null) {
+                confirmDraft(result.snapshot());
+                mode = Mode.EDITING;
+                statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
             }
-            var book = NativeBookJson.decode(JsonParser.parseString(json).getAsJsonObject());
-            QuestBookSnapshot candidate = QuestBookSnapshot.of(book);
-            if (!book.id().equals(bookId) || !candidate.revision().equals(draftRevision)
-                    || candidate.quests().size() > BrnQuestConstants.MAX_QUESTS) {
-                throw new IllegalArgumentException("Draft identity or revision does not match its manifest");
-            }
-            confirmDraft(candidate);
-            chunks = new String[0];
-            mode = Mode.EDITING;
-            statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
             return true;
         } catch (RuntimeException exception) {
+            receiver.clear();
             fail("INVALID_EDITOR_DRAFT", "The synchronized draft could not be verified");
             return false;
         }
@@ -589,9 +571,7 @@ public final class ClientEditorState {
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
-        expectedBytes = response.decodedBytes();
-        chunks = new String[response.chunks()];
-        receivedChunks = 0;
+        receiver.begin(sessionId, bookId, draftRevision, response.chunks(), response.decodedBytes());
         if (!preserveVerifiedDraft) {
             draft = null;
             discardPreview(); undoPreviews.clear(); redoPreviews.clear();
@@ -790,9 +770,7 @@ public final class ClientEditorState {
         renewPending = false;
         undoSteps = 0;
         redoSteps = 0;
-        chunks = new String[0];
-        expectedBytes = 0;
-        receivedChunks = 0;
+        receiver.clear();
         draft = null;
         discardPreview(); undoPreviews.clear(); redoPreviews.clear();
         diagnostics = List.of();

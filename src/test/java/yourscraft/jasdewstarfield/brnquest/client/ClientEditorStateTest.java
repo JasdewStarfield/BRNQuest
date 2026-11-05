@@ -743,4 +743,3 @@ class ClientEditorStateTest {
                 List.of(new ChapterGroupDefinition(bookId, groupId, "Group", 0)), List.of(chapter), Map.of()));
     }
 }
-

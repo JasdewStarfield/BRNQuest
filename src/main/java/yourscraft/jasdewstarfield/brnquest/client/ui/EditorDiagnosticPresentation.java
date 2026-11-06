@@ -5,6 +5,7 @@ import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPublishReviewModel;
 
 import java.util.Locale;
+import java.util.function.Predicate;
 
 /** Maps stable diagnostic protocol values to localized, player-facing components. */
 final class EditorDiagnosticPresentation {
@@ -21,8 +22,8 @@ final class EditorDiagnosticPresentation {
     }
 
     static Component diagnostic(EditorPublishReviewModel.Diagnostic diagnostic) {
-        String key = DIAGNOSTIC_PREFIX + safeCode(diagnostic.code());
-        if (I18n.exists(key)) return Component.translatable(key);
+        String key = translationKey(safeCode(diagnostic.code()), I18n::exists);
+        if (!key.isBlank()) return Component.translatable(key);
         // Keep the server's actual reason visible when a code has no localized summary yet.
         if (diagnostic.message() != null && !diagnostic.message().isBlank())
             return Component.literal(diagnostic.message());
@@ -30,6 +31,19 @@ final class EditorDiagnosticPresentation {
                 ? Component.translatable("screen.brnquest.editor.diagnostic.unknown_field").getString()
                 : diagnostic.path();
         return Component.translatable(DIAGNOSTIC_PREFIX + "UNKNOWN", path);
+    }
+
+    /** Task/reward field validators share issue codes; explicit addon translations still take precedence. */
+    static String translationKey(String code, Predicate<String> exists) {
+        String key = DIAGNOSTIC_PREFIX + code;
+        if (exists.test(key)) return key;
+        if (code.startsWith("BQA-T-") || code.startsWith("BQA-R-")) {
+            key = DIAGNOSTIC_PREFIX + "config." + code.substring("BQA-T-".length());
+            if (exists.test(key)) return key;
+        }
+        // Revision conflicts also appear as operation errors, with the same recovery advice.
+        key = ERROR_PREFIX + code;
+        return exists.test(key) ? key : "";
     }
 
     static Component severity(String severity) {

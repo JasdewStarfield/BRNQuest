@@ -115,7 +115,6 @@ final class ProgressRewards {
                     rewardId.toString()), true);
         }
         return OperationResult.success(message);
-
     }
 
     /** Completion uses its original authored reward order and re-enters the same protected claim entry. */

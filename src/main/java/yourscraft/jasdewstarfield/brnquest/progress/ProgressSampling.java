@@ -120,7 +120,6 @@ final class ProgressSampling {
                 pending.forEach(this::prepareOwnerSamples);
             }
         }
-
     }
 
     void prepareOwnerSamples(ServerPlayer actor) {
@@ -238,12 +237,9 @@ final class ProgressSampling {
             }
         }
         if (changed) effects.sync(player, true);
-        return;
-
     }
 
     void recordCraft(ServerPlayer player, ItemStack crafted) {
-        if (crafted.isEmpty()) return;
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
         PlayerProgress progress = queries.progress(player);
@@ -273,8 +269,6 @@ final class ProgressSampling {
         }
         QuestProgressData.get(player.getServer()).setDirty();
         effects.sync(player, true);
-        return;
-
     }
 
     void resetTransientStates(ServerPlayer player, QuestDefinition quest, List<TaskDefinition> tasks) {

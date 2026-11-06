@@ -81,7 +81,12 @@ public final class ProgressEngine {
         return plan;
     }
 
-    private ProgressEngine() {}
+    private final ProgressEffects effects;
+
+    private ProgressEngine() { this(ProgressEffects.LIVE); }
+
+    /** Package-local fixture construction observes effects without changing the public singleton entry point. */
+    ProgressEngine(ProgressEffects effects) { this.effects = java.util.Objects.requireNonNull(effects); }
     public static ProgressEngine get() { return INSTANCE; }
 
     public PlayerProgress progress(ServerPlayer player) {
@@ -230,7 +235,7 @@ public final class ProgressEngine {
         if (changed) {
             QuestProgressData.get(player.getServer()).setDirty();
             prepareOwnerSamples(player);
-            BrnQuestNetwork.syncProgress(player, true);
+            effects.sync(player, true);
         }
     }
 
@@ -279,7 +284,7 @@ public final class ProgressEngine {
                     if (changed) {
                         QuestProgressData.get(player.server).setDirty();
                         complete(player, quest.id(), false);
-                        BrnQuestNetwork.syncProgress(player, true);
+                        effects.sync(player, true);
                     }
                 }
                 return null;
@@ -542,7 +547,7 @@ public final class ProgressEngine {
                     changed = true;
                 }
             }
-            if (changed) BrnQuestNetwork.syncProgress(player, true);
+            if (changed) effects.sync(player, true);
             return null;
         });
     }
@@ -600,7 +605,7 @@ public final class ProgressEngine {
         });
         // A response is sent for both accepted and rejected intents so the client can clear
         // its pending-click guard. Full inventory state avoids stale counts on paused screens.
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         player.inventoryMenu.broadcastFullState();
         return result;
     }
@@ -636,7 +641,7 @@ public final class ProgressEngine {
         }
         changeTaskProgress(player, owner, task, progress, amount);
         QuestProgressData.get(player.getServer()).setDirty();
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         return OperationResult.success("Task progress updated");
     }
 
@@ -672,7 +677,7 @@ public final class ProgressEngine {
                 }
             }
             QuestProgressData.get(player.getServer()).setDirty();
-            BrnQuestNetwork.syncProgress(player, true);
+            effects.sync(player, true);
             return null;
         });
     }
@@ -715,7 +720,7 @@ public final class ProgressEngine {
                     return OperationResult.failure("CLAIM_HANDLER_FAILED", "Reward attempt failed; consult the type's recovery policy");
                 }
                 if (result.state() != RewardClaimResult.State.SUCCESS) {
-                    BrnQuestNetwork.syncProgress(player, true);
+                    effects.sync(player, true);
                     return result.state() == RewardClaimResult.State.PENDING
                             ? OperationResult.noChange(result.code(), result.message())
                             : OperationResult.failure(result.code(), result.message());
@@ -734,11 +739,11 @@ public final class ProgressEngine {
                 message = result.message();
             }
             if (rewardsResolved(owner, progress)) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
-            BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
+            effects.publish(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
                     snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
                     BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
             if (advanceRepeatIfReady(owner, progress, System.currentTimeMillis())) prepareOwnerSamples(player);
-            BrnQuestNetwork.syncProgress(player, true);
+            effects.sync(player, true);
             if (notifyAutomatic) {
                 player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
                         rewardId.toString()), true);
@@ -756,7 +761,7 @@ public final class ProgressEngine {
             resetTransientStates(player, quest, quest.tasks());
             QuestProgressData.get(player.getServer()).setDirty();
             reconcile(player);
-            BrnQuestNetwork.syncProgress(player, false);
+            effects.sync(player, false);
             return null;
         });
     }
@@ -791,7 +796,7 @@ public final class ProgressEngine {
                     dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
             QuestProgressData.get(player.getServer()).setDirty();
             resetTransientStates(player, quest, List.of(task));
-            if (previous != 0) BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(),
+            if (previous != 0) effects.publish(new TaskProgressChangedEvent(player.getUUID(),
                     player.getScoreboardName(), quest.bookId(), quest.id(), taskId, ApiViews.task(task), previous, 0));
             // A task reset can invalidate descendants, so recompute the owner graph before synchronization.
             reconcile(player);
@@ -843,7 +848,7 @@ public final class ProgressEngine {
             if (!next.isEmpty() && progress.status(next) == QuestStatus.AVAILABLE) progress.status(next, QuestStatus.ACTIVE);
         }
         QuestProgressData.get(player.getServer()).tracked(player.getUUID(), next);
-        BrnQuestNetwork.syncProgress(player, !shared);
+        effects.sync(player, !shared);
         return OperationResult.success("Tracking updated");
     }
 
@@ -879,7 +884,7 @@ public final class ProgressEngine {
             return markCompleted(player, quest, progress, data);
         }
         data.setDirty();
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         return new OperationResult(changed ? yourscraft.jasdewstarfield.brnquest.api.OperationStatus.SUCCESS
                 : yourscraft.jasdewstarfield.brnquest.api.OperationStatus.NO_CHANGE,
                 "WAITING_FOR_TEAM", "Your objectives are complete; waiting for all team members");
@@ -896,7 +901,7 @@ public final class ProgressEngine {
                 completedAt + quest.behavior().repeatCooldownSeconds() * 1000L);
         data.setDirty();
         prepareOwnerSamplesNow(player);
-        BrnQuestEvents.post(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
+        effects.publish(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
                 quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
         // Automatic and manual rewards enter the same idempotent claim ledger;
         // only the trigger differs.
@@ -909,7 +914,7 @@ public final class ProgressEngine {
         reconcile(player);
         // Newly unlocked holding objectives should be checked on the next inventory sample.
         yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor.mark(player);
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         return OperationResult.success("Quest completed");
     }
 
@@ -976,7 +981,7 @@ public final class ProgressEngine {
                 prepareSamples(player, snapshot, progress, new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues(), List.of(quest));
             }
             prepareOwnerSamples(player);
-            BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
+            effects.publish(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
                     quest.bookId(), quest.id(), task.id(), ApiViews.task(task), previous, current));
         }
         return current;

@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /** Pixel geometry shared by normal and focused dependencies, independent of drawing and node state. */
@@ -69,6 +70,10 @@ final class QuestDependencyGeometry {
 
     /** Odd widths share the same pixel center; the shaft stops at the arrow base so its tip stays pointed. */
     static void paint(Path path, boolean focused, Pixels pixels) {
+        paintShape(path, focused, new UniquePixels(pixels));
+    }
+
+    private static void paintShape(Path path, boolean focused, Pixels pixels) {
         int width = focused ? 3 : 1;
         var points = path.points();
         for (int index = 1; index < points.size(); index++) {
@@ -99,5 +104,41 @@ final class QuestDependencyGeometry {
                 Math.max(start.x(), end.x()) + 1, start.y() + half + 1);
         else pixels.fill(start.x() - half, Math.min(start.y(), end.y()), start.x() + half + 1,
                 Math.max(start.y(), end.y()) + 1);
+    }
+
+    /** Clip later quads against earlier coverage so arrow bases and elbows never accumulate alpha. */
+    private static final class UniquePixels implements Pixels {
+        private final Pixels output;
+        // Bounds are stored as left/top/right/bottom; current paths have at most three legs and five slices.
+        private int[] covered = new int[8 * 4];
+        private int used;
+
+        private UniquePixels(Pixels output) { this.output = output; }
+
+        public void fill(int left, int top, int right, int bottom) {
+            fillUncovered(left, top, right, bottom, 0);
+            if (used + 4 > covered.length) covered = Arrays.copyOf(covered, covered.length * 2);
+            covered[used++] = left; covered[used++] = top;
+            covered[used++] = right; covered[used++] = bottom;
+        }
+
+        private void fillUncovered(int left, int top, int right, int bottom, int first) {
+            if (left >= right || top >= bottom) return;
+            for (int index = first; index < used; index += 4) {
+                int overlapLeft = Math.max(left, covered[index]);
+                int overlapTop = Math.max(top, covered[index + 1]);
+                int overlapRight = Math.min(right, covered[index + 2]);
+                int overlapBottom = Math.min(bottom, covered[index + 3]);
+                if (overlapLeft >= overlapRight || overlapTop >= overlapBottom) continue;
+                // These four strips partition the remaining area without sharing any pixel cells.
+                int next = index + 4;
+                fillUncovered(left, top, right, overlapTop, next);
+                fillUncovered(left, overlapBottom, right, bottom, next);
+                fillUncovered(left, overlapTop, overlapLeft, overlapBottom, next);
+                fillUncovered(overlapRight, overlapTop, right, overlapBottom, next);
+                return;
+            }
+            output.fill(left, top, right, bottom);
+        }
     }
 }

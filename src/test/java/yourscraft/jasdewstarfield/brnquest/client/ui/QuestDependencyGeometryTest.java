@@ -1,6 +1,7 @@
 package yourscraft.jasdewstarfield.brnquest.client.ui;
 
 import org.junit.jupiter.api.Test;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -9,6 +10,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /** Checks the actual emitted pixel cells, including odd stroke centers and the unobscured arrow tip. */
 class QuestDependencyGeometryTest {
+    @Test void everyPixelIsPaintedOnlyOnceAcrossArrowBasesAndBends() {
+        // A set of final pixels hides repeated fills; count actual draw coverage to catch alpha accumulation.
+        for (var target : List.of(point(100, 0), point(-100, 0), point(0, 100), point(0, -100),
+                point(100, 60), point(-100, -60), point(34, 34), point(-34, 34), point(8, 100),
+                point(20, 8), point(8, 20), point(31, 0), point(0, 0))) {
+            for (boolean focused : new boolean[]{false, true}) {
+                var coverage = new HashMap<QuestDependencyGeometry.Point, Integer>();
+                QuestDependencyGeometry.paint(route(target.x(), target.y()), focused, (left, top, right, bottom) -> {
+                    assertTrue(left < right && top < bottom, "Only nonempty rectangles are submitted");
+                    for (int y = top; y < bottom; y++) for (int x = left; x < right; x++)
+                        coverage.merge(point(x, y), 1, Integer::sum);
+                });
+                var repeated = coverage.entrySet().stream().filter(pixel -> pixel.getValue() > 1).limit(5).toList();
+                assertTrue(repeated.isEmpty(), "Repeated alpha at " + target + ", focused=" + focused + ": " + repeated);
+            }
+        }
+    }
+
     @Test void focusedStrokesGrowSymmetricallyAroundTheOriginalPixelCenter() {
         var horizontal = route(100, 0);
         assertEquals(Set.of(0), crossSection(horizontal, false, true, 50));

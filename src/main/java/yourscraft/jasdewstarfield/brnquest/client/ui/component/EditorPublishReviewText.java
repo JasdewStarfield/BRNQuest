@@ -30,7 +30,7 @@ public final class EditorPublishReviewText {
                 : readablePath(change.path()).copy().append(": " + values);
     }
 
-    private static Component readablePath(String value) {
+    public static Component readablePath(String value) {
         String key = value.startsWith("behavior.") ? "screen.brnquest.editor.behavior." + value.substring(9)
                 : value.startsWith("appearance.") ? "screen.brnquest.editor.quest." + value.substring(11)
                 : value.startsWith("config.") ? "screen.brnquest.editor.config." + value.substring(7) : "";
@@ -64,8 +64,22 @@ public final class EditorPublishReviewText {
             var json = com.google.gson.JsonParser.parseString(raw);
             if (json.isJsonObject()) return Component.translatable(PREFIX + "fields", json.getAsJsonObject().size()).getString();
             if (json.isJsonArray()) return Component.translatable(PREFIX + "entries", json.getAsJsonArray().size()).getString();
-        } catch (RuntimeException ignored) { /* Scalar protocol values are already readable. */ }
+        } catch (RuntimeException ignored) {
+            // Bounded review values may end inside JSON; a broken fragment is not a useful row summary.
+            if (raw.stripLeading().startsWith("{") || raw.stripLeading().startsWith("["))
+                return Component.translatable(PREFIX + "structured_preview").getString();
+        }
         return raw.length() > 100 ? raw.substring(0, 97) + "…" : raw;
+    }
+
+    /** The wire carries bounded previews, so details must disclose an ellipsis rather than imply completeness. */
+    public static boolean shortened(String raw) {
+        return raw != null && raw.endsWith("…");
+    }
+
+    /** Empty translation values remain visible when one side of a change has been cleared. */
+    public static Component textValue(String raw) {
+        return raw == null || raw.isEmpty() ? Component.translatable(PREFIX + "empty") : Component.literal(raw);
     }
 
     public static List<Component> valueTooltip(EditorPublishReviewModel.Change change) {
@@ -116,6 +130,7 @@ public final class EditorPublishReviewText {
             case "title" -> Component.translatable(PREFIX + "path.title");
             case "subtitle" -> Component.translatable(PREFIX + "path.subtitle");
             case "description" -> Component.translatable(PREFIX + "path.description");
+            case "description_format" -> Component.translatable(PREFIX + "path.description_format");
             case "icon" -> Component.translatable(PREFIX + "path.icon");
             case "group_id" -> Component.translatable(PREFIX + "path.group");
             case "chapter_id" -> Component.translatable(PREFIX + "path.chapter");

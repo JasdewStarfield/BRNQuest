@@ -43,4 +43,11 @@ class EditorPublishReviewTextTest {
         assertTrue(EditorPublishReviewText.compactValue("x".repeat(200)).length() <= 100);
     }
 
+    @Test void truncatedStructuredValuesUseASafeSummaryAndKeepEmptyTextExplicit() {
+        assertTrue(EditorPublishReviewText.shortened("{\"tasks\":[…"));
+        assertTrue(!EditorPublishReviewText.compactValue("{\"tasks\":[…").contains("\"tasks\""));
+        assertTranslation("screen.brnquest.editor.publish.review.diff.empty", EditorPublishReviewText.textValue(""));
+        assertEquals("1145", EditorPublishReviewText.textValue("1145").getString());
+    }
+
 }

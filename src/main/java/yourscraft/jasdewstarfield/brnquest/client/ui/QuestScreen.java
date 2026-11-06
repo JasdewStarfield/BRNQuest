@@ -306,8 +306,9 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         public void tooltip(List<Component> text) { hoveredComponentTooltip = text; }
         public boolean jump(ResourceLocation id) { return jumpToEditorObject(id); }
         public QuestPublishReviewSection.Presentation presentation(ResourceLocation id) { return reviewPresentation(id); }
+        public String locale() { return minecraft.getLanguageManager().getSelected(); }
         public void details(List<Component> lines) {
-            openChildScreen(new ResolvedOptionsScreen(QuestScreen.this, () -> lines, Component.translatable("screen.brnquest.editor.publish.review.details")));
+            openChildScreen(new QuestPublishReviewDetailsScreen(QuestScreen.this, lines));
         }
     }, new EditorBookTransport() {
         public void catalog() { AuthoringNetwork.requestCatalog(); }
@@ -2781,9 +2782,14 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             if (quest.id().equals(id)) return new QuestPublishReviewSection.Presentation(NativeText.component(questTitle(quest)), reviewIcon(quest.id(), quest.icon()));
             for (var task : quest.tasks()) if (task.id().equals(id)) {
                 var view = ApiViews.task(task);
+                var presentation = ClientTaskPresentationRegistry.get(task.typeId());
+                String snbt = presentation.itemSnbt(view);
+                // Author review describes the configured objective with no live ledger or submission state.
+                var context = new TaskPresentationContext(minecraft, view, QuestStatus.AVAILABLE, 0,
+                        snbt.isBlank() ? ItemStack.EMPTY : item(task.id(), snbt));
                 return new QuestPublishReviewSection.Presentation(task.config().getOrDefault("title", "").isBlank()
-                        ? ClientTaskPresentationRegistry.get(task.typeId()).typeName(view) : Component.literal(task.config().get("title")),
-                        ClientTaskPresentationRegistry.typeIcon(task.typeId()));
+                        ? presentation.typeName(view) : Component.literal(task.config().get("title")),
+                        ClientTaskPresentationRegistry.typeIcon(task.typeId()), presentation.completionDescription(context));
             }
             for (var reward : quest.rewards()) if (reward.id().equals(id)) {
                 var details = RewardEntryDetails.resolve(minecraft, ApiViews.reward(reward));

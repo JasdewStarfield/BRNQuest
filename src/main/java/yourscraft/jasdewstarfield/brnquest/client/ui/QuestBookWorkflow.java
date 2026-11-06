@@ -25,6 +25,7 @@ import net.minecraft.client.gui.Font;
 final class QuestBookWorkflow {
     interface Host {
         QuestBookSnapshot snapshot();
+        default String locale() { return "en_us"; }
         QuestScreenLayout layout();
         UiRect titleBounds();
         double elapsed();
@@ -70,6 +71,7 @@ final class QuestBookWorkflow {
     }
     void acceptReview(EditorPublishReviewModel model) {
         host.closeOverlay(); publishReviewSection.open(model); editorOverlays.show(EditorOverlayHost.Kind.PUBLISH_CONFIRMATION);
+        publishReviewSection.context(host.snapshot(), host.locale());
     }
     void openCatalog() {
         ClientEditorState.get().beginCatalogRequest(); transport.catalog();
@@ -367,9 +369,12 @@ final class QuestBookWorkflow {
         graphics.pose().pushPose();
         graphics.pose().translate(0, 0, 500);
         publishReviewSection.presentation(host::presentation);
+        publishReviewSection.context(host.snapshot(), host.locale());
         QuestPublishReviewSection.RenderResult result = publishReviewSection.render(
                 graphics, font, host.layout(), host.elapsed(), scrollSmoothSpeed(), mouseX, mouseY);
-        if (!result.tooltip().isEmpty()) graphics.renderComponentTooltip(font, result.tooltip(), mouseX, mouseY);
+        if (!result.tooltip().isEmpty()) graphics.renderTooltip(font, result.tooltip().stream()
+                .flatMap(line -> font.split(line, Math.max(80, Math.min(420, host.layout().width() - 40))).stream())
+                .toList(), mouseX, mouseY);
         graphics.flush();
         graphics.pose().popPose();
     }

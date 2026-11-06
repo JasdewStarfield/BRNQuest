@@ -27,7 +27,7 @@ public class ArchitectureBoundaryTest {
             + "(Section|Panel|Widget|Renderer|Controller|Interaction|"
             + "NodeDrag|DiagnosticPresentation|TooltipComposer|TypePickerModel|TypedEntryKind|"
             + "TypedPropertyFormModel|ScreenFrameIdentity|FormFields|SelectionFocus|PropertiesEditor|DependenciesEditor|"
-            + "TypedEntriesEditor|StructureEditor|TextEditor|BookWorkflow|PropertySurface|ChildScreens)(\\$.*)?";
+            + "TypedEntriesEditor|StructureEditor|TextEditor|BookWorkflow|PropertySurface|ChildScreens|PublishReviewContent)(\\$.*)?";
 
     @ArchTest
     static final ArchRule coreMustNotDependOnBuiltinTypes = noClasses()

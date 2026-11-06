@@ -36,11 +36,29 @@ final class QuestPublishReviewSection {
     }
     record ClickResult(boolean consumed, Intent intent) {}
 
-    record Presentation(Component name, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon icon) {}
+    record Presentation(Component name, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon icon,
+                        Component objective) {
+        Presentation(Component name, yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon icon) {
+            this(name, icon, Component.empty());
+        }
+    }
     private java.util.function.Function<ResourceLocation, Presentation> resolver = id -> null;
     private List<Component> detailLines = List.of();
+    private yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot contentSnapshot;
+    private String contentLocale = "";
+    private QuestPublishReviewContent content = new QuestPublishReviewContent(null, "en_us");
     void presentation(java.util.function.Function<ResourceLocation, Presentation> resolver) { this.resolver = resolver; }
     List<Component> detailLines() { return detailLines; }
+
+    /** Match summaries to the reviewed revision, so later edits cannot silently change the displayed counts. */
+    void context(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot, String locale) {
+        if (review == null || snapshot == null || !snapshot.revision().equals(review.targetRevision())) snapshot = null;
+        if (snapshot != contentSnapshot || !contentLocale.equals(locale)) {
+            contentSnapshot = snapshot;
+            contentLocale = locale;
+            content = new QuestPublishReviewContent(snapshot, locale);
+        }
+    }
 
     private final yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput buttons = new yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput();
     private final EditorSmoothScroll scroll = new EditorSmoothScroll();
@@ -55,6 +73,8 @@ final class QuestPublishReviewSection {
 
     void close() {
         detailLines = List.of();
+        contentSnapshot = null;
+        content = new QuestPublishReviewContent(null, contentLocale);
         review = null;
         filter = EditorPublishReviewRows.Filter.ALL;
         scroll.snap(0);
@@ -160,13 +180,21 @@ final class QuestPublishReviewSection {
             var selected = rows.get(row);
             var lines = new java.util.ArrayList<Component>();
             lines.add(Component.translatable("screen.brnquest.editor.publish.review.revisions", review.fromRevision(), review.targetRevision()));
+            var view = content(selected);
+            lines.add(view.heading());
+            lines.addAll(view.fields());
             if (selected.kind() == EditorPublishReviewRows.Kind.CHANGE) {
                 var change = review.changes().get(selected.sourceIndex());
-                lines.add(EditorPublishReviewText.heading(change));
+                if (!change.kind().equals("ADDED") && !change.kind().equals("REMOVED")
+                        && !change.path().startsWith("localization.")) lines.add(view.detail());
+                lines.add(Component.translatable("screen.brnquest.editor.publish.review.content.technical"));
                 lines.add(Component.literal(change.objectId() + " · " + change.path()));
+                if (EditorPublishReviewText.shortened(change.before()) || EditorPublishReviewText.shortened(change.after()))
+                    lines.add(Component.translatable("screen.brnquest.editor.publish.review.content.shortened"));
                 lines.addAll(EditorPublishReviewText.valueTooltip(change));
             } else {
                 var diagnostic = review.diagnostics().get(selected.sourceIndex());
+                lines.add(Component.translatable("screen.brnquest.editor.publish.review.content.technical"));
                 lines.add(Component.literal(diagnostic.objectId() + " · " + diagnostic.path()));
                 lines.addAll(EditorTooltipComposer.diagnostic(diagnostic));
             }
@@ -185,16 +213,17 @@ final class QuestPublishReviewSection {
         boolean hovered = row.contains(mouseX, mouseY);
         graphics.fill(row.left(), row.top(), row.right(), row.bottom(),
                 hovered ? GraystonePalette.HOVER : (rowIndex % 2 == 0 ? 0xFF33372F : 0xFF292D26));
-        Presentation presentation = resolver.apply(objectId(reviewRow));
+        ResourceLocation target = objectId(reviewRow);
+        Presentation presentation = target == null ? null : resolver.apply(target);
         String heading;
         String detail;
         List<Component> tooltip;
         int headingColor;
         if (reviewRow.kind() == EditorPublishReviewRows.Kind.DIAGNOSTIC) {
             EditorPublishReviewModel.Diagnostic diagnostic = review.diagnostics().get(reviewRow.sourceIndex());
-            heading = EditorDiagnosticPresentation.severity(diagnostic.severity()).getString() + " · "
-                    + EditorDiagnosticPresentation.diagnostic(diagnostic).getString();
-            detail = presentation == null ? "" : presentation.name().getString();
+            var view = content(reviewRow);
+            heading = view.heading().getString();
+            detail = view.detail().getString();
             tooltip = List.of(Component.literal(heading), Component.literal(detail));
             // Conventional severity colors keep recoverable warnings yellow and blocking errors red.
             headingColor = "WARN".equals(diagnostic.severity()) ? 0xFFFFD35A
@@ -212,11 +241,9 @@ final class QuestPublishReviewSection {
             tooltip = List.of(Component.literal(heading), Component.literal(detail));
             headingColor = GraystonePalette.SECONDARY;
         } else {
-            EditorPublishReviewModel.Change change = review.changes().get(reviewRow.sourceIndex());
-            String name = presentation == null ? EditorPublishReviewText.storedTitle(
-                    change.after().isBlank() ? change.before() : change.after()) : presentation.name().getString();
-            heading = (name.isBlank() ? "" : name + " · ") + EditorPublishReviewText.heading(change).getString();
-            detail = EditorPublishReviewText.readableDetail(change).getString();
+            var view = content(reviewRow);
+            heading = view.heading().getString();
+            detail = view.detail().getString();
             tooltip = List.of(Component.literal(heading), Component.literal(detail));
             headingColor = 0xFF83D69A;
         }
@@ -273,10 +300,13 @@ final class QuestPublishReviewSection {
 
     private ResourceLocation objectId(EditorPublishReviewRows.Row row) {
         if (row.kind() == EditorPublishReviewRows.Kind.EMPTY) return null;
-        String raw = row.kind() == EditorPublishReviewRows.Kind.DIAGNOSTIC
-                ? review.diagnostics().get(row.sourceIndex()).objectId()
-                : review.changes().get(row.sourceIndex()).objectId();
-        return ResourceLocation.tryParse(raw);
+        return content(row).target();
+    }
+
+    private QuestPublishReviewContent.View content(EditorPublishReviewRows.Row row) {
+        return row.kind() == EditorPublishReviewRows.Kind.DIAGNOSTIC
+                ? content.diagnostic(review.diagnostics().get(row.sourceIndex()), resolver)
+                : content.change(review.changes().get(row.sourceIndex()), resolver);
     }
 
     private static String shortRevision(String revision) {

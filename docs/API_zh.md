@@ -4,7 +4,7 @@
 
 ## 版本与公共边界
 
-模组 **1.1.0** 的 Java API 基线为 **0.1.0-experimental.30**；模组 1.0.2 使用 experimental.28。网络协议为 **21**。任务书 schema 1 与进度 schema 2 是独立格式，客户端和服务端需一起更新。
+模组 **1.1.0 和 1.2.0** 使用 Java API 基线 **0.1.0-experimental.30**；模组 1.0.2 使用 experimental.28。网络协议保持为 **21**。任务书 schema 1 与进度 schema 2 是独立格式，客户端和服务端需一起更新。
 
 `api.ApiStatus` 与本文公共清单共同定义兼容边界。`STABLE` 在对应 API major 内保持源码和二进制兼容，破坏性修改需要新 major 与迁移说明。`EXPERIMENTAL` 可随基线、文档和签名检查一起调整。`INTERNAL` 标记供内部使用的实现细节。
 

@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-06
+
+Changes since the 1.1.0 release.
+
+### Changed
+
+- Publish review shows readable summaries for added groups, chapters, quests, objectives and rewards, including their parent, content counts, type and configuration. Localization changes identify the affected object, language and field. Details wrap and scroll, with technical data and explicit truncation notices available for inspection.
+- Built-in publish validation errors, warnings, field issues and revision conflicts now have Chinese translations. Diagnostic codes and technical details remain available for troubleshooting.
+- Split editor state, forms and book workflows into focused modules, and separated progress queries, sampling, reward execution and completion transitions. Existing completion, repeat, reset and reward failure behavior is preserved.
+- Reuse stateful objective selections during polling while continuing to check current type registrations, reducing repeated list construction.
+
+### Fixed
+
+- Stop editor input when the server denies or invalidates the editing lease. Ignore superseded lease responses and acknowledgements for another book so they cannot replace the current editing session.
+- Keep highlighted dependency lines centered with symmetric 1/3-pixel widths. Arrow endpoints leave room for node outlines and stay in place when selection or tracking changes, including short connections and oversized icons.
+- Prevent repeated alpha blending where a dependency line meets its arrow or turns a corner, preserving uniform opacity within each connection.
+- Restore optional JEI, KubeJS and Open Parties and Claims dependencies in Modrinth release metadata. Release upload recovery handles empty CurseForge relations and Modrinth file metadata field order correctly.
+
+### Compatibility
+
+- Minecraft 1.21.1, NeoForge 21.1 and Java 21. Install 1.2.0 on the server and all clients.
+- Public Java API baseline `0.1.0-experimental.30`, network protocol 21, book schema 1 and progress schema 2 are unchanged. Existing quest books and progress require no format migration; this release adds no required dependencies or configuration options.
+
 ## [1.1.0] - 2026-10-14
 
 Changes since the 1.0.2 release.

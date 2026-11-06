@@ -44,6 +44,12 @@ def gameTestRunDirectory = layout.dir(providers.provider {
 }).get()
 def kubeJsSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-smoke')
 def kubeJsReloadSmokeRunDirectory = layout.projectDirectory.dir('run/kubejs-reload-smoke')
+
+// Fresh acceptance roots keep OPAC initial/restart fixtures independent of earlier disposable worlds.
+def opacTestRoot = providers.gradleProperty('brnquestOpacTestRoot').getOrElse(
+        layout.projectDirectory.dir('run').asFile.absolutePath)
+def opacSmokeRunDirectory = layout.dir(providers.provider { new File(opacTestRoot, 'opac-smoke') }).get()
+def opacFallbackRunDirectory = layout.dir(providers.provider { new File(opacTestRoot, 'opac-fallback') }).get()
 def resetGameTestBrnQuestState = tasks.register('resetGameTestBrnQuestState', Delete) {
     delete gameTestRunDirectory.dir('config/brnquest'), gameTestRunDirectory.dir('world'),
             gameTestRunDirectory.dir('kubejs')
@@ -74,8 +80,10 @@ def resetKubeJsSmokeState = tasks.register('resetKubeJsSmokeState', Delete) {
 }
 def prepareKubeJsSmokeFixture = tasks.register('prepareKubeJsSmokeFixture', Copy) {
     dependsOn resetKubeJsSmokeState
-    from layout.projectDirectory.dir('src/test/resources/kubejs_smoke')
-    into kubeJsSmokeRunDirectory.dir('kubejs')
+    def fixture = layout.projectDirectory.dir('src/test/resources/kubejs_smoke')
+    into kubeJsSmokeRunDirectory
+    from fixture.file('server.properties')
+    into('kubejs/server_scripts') { from fixture.dir('server_scripts') }
 }
 def resetKubeJsReloadSmokeState = tasks.register('resetKubeJsReloadSmokeState', Delete) {
     delete kubeJsReloadSmokeRunDirectory.dir('config/brnquest'), kubeJsReloadSmokeRunDirectory.dir('world'),
@@ -201,19 +209,19 @@ neoForge {
 
         opacSmokeServer {
             server()
-            gameDirectory = layout.projectDirectory.dir('run/opac-smoke')
+            gameDirectory = opacSmokeRunDirectory
             programArgument '--nogui'
             systemProperty 'brnquest.opac.smoke', 'initial'
         }
         opacRestartServer {
             server()
-            gameDirectory = layout.projectDirectory.dir('run/opac-smoke')
+            gameDirectory = opacSmokeRunDirectory
             programArgument '--nogui'
             systemProperty 'brnquest.opac.smoke', 'restart'
         }
         opacFallbackServer {
             server()
-            gameDirectory = layout.projectDirectory.dir('run/opac-fallback')
+            gameDirectory = opacFallbackRunDirectory
             programArgument '--nogui'
             systemProperty 'brnquest.opac.smoke', 'initial'
             systemProperty 'brnquest.opac.disableHooks', 'true'
@@ -457,12 +465,12 @@ tasks.named('runKubeJsReloadSmokeServer').configure {
 ['OpacSmoke', 'OpacRestart', 'OpacFallback'].each { label ->
     tasks.named("run${label}Server").configure {
         doFirst {
-            def runRoot = layout.projectDirectory.dir(label == 'OpacFallback' ? 'run/opac-fallback' : 'run/opac-smoke').asFile
+            def runRoot = (label == 'OpacFallback' ? opacFallbackRunDirectory : opacSmokeRunDirectory).asFile
             runRoot.mkdirs()
             new File(runRoot, 'server.properties').setText('server-port=0\nonline-mode=false\nlevel-type=minecraft:flat\ngenerator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\ngenerate-structures=false\nspawn-protection=0\nview-distance=2\nsimulation-distance=2\n', 'UTF-8')
         }
         doLast {
-            def runRoot = layout.projectDirectory.dir(label == 'OpacFallback' ? 'run/opac-fallback' : 'run/opac-smoke').asFile
+            def runRoot = (label == 'OpacFallback' ? opacFallbackRunDirectory : opacSmokeRunDirectory).asFile
             def log = new File(runRoot, 'logs/latest.log')
             def phase = label == 'OpacRestart' ? 'restart' : 'initial'
             if (!log.isFile() || !log.getText('UTF-8').contains("[BRNQuest/OPAC_SMOKE] ${phase} PASS")) {

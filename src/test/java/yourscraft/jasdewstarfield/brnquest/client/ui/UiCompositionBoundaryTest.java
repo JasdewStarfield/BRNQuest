@@ -16,6 +16,7 @@ class UiCompositionBoundaryTest {
                 "QuestDetailsInteraction.java",
                 "QuestTaskRowWidget.java", "QuestRewardCellWidget.java",
                 "QuestCanvasRenderer.java", "QuestCanvasController.java", "QuestNodeDrag.java",
+                "QuestDependencyGeometry.java",
                 "QuestEditorChrome.java", "QuestPublishReviewSection.java",
                 "QuestPublishReviewContent.java",
                 "EditorDiagnosticPresentation.java", "EditorTooltipComposer.java",

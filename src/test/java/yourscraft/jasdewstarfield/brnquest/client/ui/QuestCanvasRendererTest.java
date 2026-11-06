@@ -127,6 +127,61 @@ class QuestCanvasRendererTest {
         }
     }
 
+    @Test void dependencyEndpointsStayFixedAcrossSelectionAndTracking() {
+        var parent = node(id("parent"), 0, 0, List.of());
+        var base = node(id("child"), 4, 0, List.of(parent.id()));
+        var original = QuestCanvasRenderer.dependencyPath(QuestCanvasRenderer.composeFrame(model(List.of(parent, base)))
+                .dependencies().getFirst());
+        for (boolean selected : new boolean[]{false, true}) for (boolean tracked : new boolean[]{false, true}) {
+            var child = decorated(base, QuestAppearance.DEFAULT, selected, tracked, false, base.visual());
+            var edge = QuestCanvasRenderer.composeFrame(model(List.of(parent, child))).dependencies().getFirst();
+            assertEquals(original, QuestCanvasRenderer.dependencyPath(edge));
+            assertEquals(12, QuestCanvasRenderer.dependencyRadius(edge.child()));
+        }
+    }
+
+    @Test void dependencyClearanceUsesActualSizeMinimumWidthAndPickedUpVisual() {
+        var parent = node(id("parent"), 0, 0, List.of());
+        var base = node(id("child"), 4, 0, List.of(parent.id()));
+        var appearances = List.of(new QuestAppearance("circle", .5, 1, 0), new QuestAppearance("square", 2, 1, 0),
+                new QuestAppearance("diamond", .5, 1, 1.5));
+        var radii = List.of(8, 21, 17);
+        for (int index = 0; index < appearances.size(); index++) {
+            var child = decorated(base, appearances.get(index), false, false, false, base.visual());
+            var edge = QuestCanvasRenderer.composeFrame(model(List.of(parent, child))).dependencies().getFirst();
+            assertEquals(radii.get(index), QuestCanvasRenderer.dependencyRadius(edge.child()));
+            assertEquals(136 - radii.get(index) - 3, QuestCanvasRenderer.dependencyPath(edge).points().getLast().x());
+        }
+        var pickedUp = decorated(base, QuestAppearance.DEFAULT, true, true, true, base.visual());
+        var edge = QuestCanvasRenderer.composeFrame(model(List.of(parent, pickedUp))).dependencies().getFirst();
+        assertEquals(14, QuestCanvasRenderer.dependencyRadius(edge.child()));
+    }
+
+    @Test void oversizedTextureArtworkAlsoKeepsArrowsOutsideItsBounds() {
+        var parent = node(id("parent"), 0, 0, List.of());
+        var base = node(id("child"), 4, 0, List.of(parent.id()));
+        var child = decorated(base, new QuestAppearance("square", 1, 3, 0), true, false, false,
+                new QuestPresentation.QuestVisual(QuestPresentation.VisualKind.TEXTURE, "test:icon"));
+        var edge = QuestCanvasRenderer.composeFrame(model(List.of(parent, child))).dependencies().getFirst();
+        assertEquals(27, QuestCanvasRenderer.dependencyRadius(edge.child()));
+        assertEquals(106, QuestCanvasRenderer.dependencyPath(edge).points().getLast().x());
+    }
+
+    @Test void offscreenNodesCanKeepAnOutsideDependencyBendVisible() {
+        var parent = node(id("parent"), 0, 121.0 / QuestViewportMath.GRID_SCALE, List.of());
+        var child = node(id("child"), 20.0 / QuestViewportMath.GRID_SCALE, 121.0 / QuestViewportMath.GRID_SCALE, List.of(parent.id()));
+        var frame = QuestCanvasRenderer.composeFrame(model(List.of(parent, child)));
+        assertTrue(frame.nodes().isEmpty());
+        assertEquals(1, frame.dependencies().size(), "The focused outside bend reaches the bottom viewport edge");
+    }
+
+    private static QuestCanvasRenderer.NodeModel decorated(QuestCanvasRenderer.NodeModel base, QuestAppearance appearance,
+                                                            boolean selected, boolean tracked, boolean pickedUp,
+                                                            QuestPresentation.QuestVisual visual) {
+        return new QuestCanvasRenderer.NodeModel(base.id(), appearance, base.position(), null, 0, selected, tracked,
+                pickedUp, false, false, visual, ItemStack.EMPTY, base.tooltip(), base.dependencies());
+    }
+
     private static QuestCanvasRenderer.Model model(List<QuestCanvasRenderer.NodeModel> nodes) {
         return new QuestCanvasRenderer.Model(IDENTITY, CHAPTER, new UiRect(0, 0, 200, 200),
                 new QuestCanvasRenderer.Camera(100, 100, 1.0), nodes, false, 0, 100, 100);

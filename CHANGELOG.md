@@ -16,7 +16,6 @@ Changes since the 1.1.0 release.
 
 - **Editor refactoring:** Separated draft reception, preview history, auxiliary queries, property forms, text editing and book workflows into focused modules.
 - **Progress engine:** Separated queries, sampling, reward execution and completion transitions. Reuse stateful objective selections during polling to reduce repeated list construction.
-- **Release workflow:** Restored optional JEI, KubeJS and Open Parties and Claims dependencies in Modrinth metadata. Fixed upload recovery handling of empty CurseForge relations and Modrinth file metadata field order.
 
 ## [1.1.0] - 2026-10-14
 

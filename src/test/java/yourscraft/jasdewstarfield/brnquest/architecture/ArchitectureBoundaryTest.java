@@ -26,7 +26,8 @@ public class ArchitectureBoundaryTest {
     private static final String COMPOSED_CLIENT_UI_PATTERN = "yourscraft\\.jasdewstarfield\\.brnquest\\.client\\.ui\\..*"
             + "(Section|Panel|Widget|Renderer|Controller|Interaction|"
             + "NodeDrag|DiagnosticPresentation|TooltipComposer|TypePickerModel|TypedEntryKind|"
-            + "TypedPropertyFormModel|ScreenFrameIdentity|FormFields|SelectionFocus)";
+            + "TypedPropertyFormModel|ScreenFrameIdentity|FormFields|SelectionFocus|PropertiesEditor|DependenciesEditor|"
+            + "TypedEntriesEditor|StructureEditor|TextEditor|BookWorkflow|PropertySurface|ChildScreens|PublishReviewContent)(\\$.*)?";
 
     @ArchTest
     static final ArchRule coreMustNotDependOnBuiltinTypes = noClasses()

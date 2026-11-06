@@ -24,6 +24,9 @@ import java.util.Map;
 /** Renders one immutable canvas model and exposes the exact visible geometry used for input. */
 final class QuestCanvasRenderer {
     static final int NODE_BASE_SIZE = 18;
+    private static final int NODE_SEAM_GROWTH = 4;
+    private static final int SELECTED_SEAM_GROWTH = 6;
+    private static final int TRACKED_OUTLINE_GROWTH = 7;
     // Automatically chosen type artwork leaves a small margin inside the quest marker.
     private static final float DEFAULT_TYPE_ICON_SCALE = 0.8F;
     private static final int ATTENTION_PING_SIZE = 10;
@@ -127,9 +130,9 @@ final class QuestCanvasRenderer {
         // Paint highlighted paths last so unrelated crossing paths cannot cover their directional cue.
         frame.dependencies().stream().filter(d -> dependencyVisible(d, model.focusedQuestId(), model.defaultHideDependencyLines()))
                 .filter(d -> edgeColor(d, model.focusedQuestId()) == GraystonePalette.EDGE)
-                .forEach(d -> renderDependency(graphics, d, GraystonePalette.EDGE, 1));
+                .forEach(d -> renderDependency(graphics, d, GraystonePalette.EDGE, false));
         frame.dependencies().stream().filter(d -> edgeColor(d, model.focusedQuestId()) != GraystonePalette.EDGE)
-                .forEach(d -> renderDependency(graphics, d, edgeColor(d, model.focusedQuestId()), 2));
+                .forEach(d -> renderDependency(graphics, d, edgeColor(d, model.focusedQuestId()), true));
         frame.nodes().forEach(node -> renderSnapGhost(graphics, font, node, frame.graphBounds()));
         frame.nodes().forEach(node -> renderNode(graphics, font, node, model.attentionPingOffsetY()));
         frame.nodes().forEach(node -> {
@@ -247,7 +250,7 @@ final class QuestCanvasRenderer {
     }
 
     private static boolean dependencyMayBeVisible(NodeFrame first, NodeFrame second, GraphBounds bounds) {
-        double margin = NODE_BASE_SIZE;
+        double margin = QuestDependencyGeometry.cullingMargin(Math.max(dependencyRadius(first), dependencyRadius(second)));
         return !(first.graphX() < bounds.left() - margin && second.graphX() < bounds.left() - margin)
                 && !(first.graphX() > bounds.right() + margin && second.graphX() > bounds.right() + margin)
                 && !(first.graphY() < bounds.top() - margin && second.graphY() < bounds.top() - margin)
@@ -266,7 +269,6 @@ final class QuestCanvasRenderer {
         for (int y = firstY; y <= drawBottom; y += grid) graphics.fill(drawLeft, y, drawRight, y + 1, GraystonePalette.GRID);
     }
 
-    /** Draws an orthogonal dependency path whose arrow always points at the dependent node. */
     /** Visibility belongs to the dependent quest; focused neighbors remain inspectable without changing stored settings. */
     static boolean dependencyVisible(DependencyFrame edge, ResourceLocation focused, boolean chapterDefault) {
         return edgeColor(edge, focused) != GraystonePalette.EDGE || !edge.child().model().appearance().hideDependencyLines(chapterDefault);
@@ -276,34 +278,37 @@ final class QuestCanvasRenderer {
         return QuestRelations.edgeColor(dependency.parent().model().id(), dependency.child().model().id(), focused, GraystonePalette.EDGE);
     }
 
-    private static void renderDependency(GuiGraphics graphics, DependencyFrame dependency, int color, int thickness) {
-        int x1 = dependency.parent().graphX(), y1 = dependency.parent().graphY();
-        int x2 = dependency.child().graphX(), y2 = dependency.child().graphY();
-        int radius = NODE_BASE_SIZE / 2;
-        if (Math.abs(x2 - x1) < radius * 2) {
-            int direction = y2 >= y1 ? 1 : -1;
-            int startY = y1 + direction * radius;
-            int endY = y2 - direction * radius;
-            vertical(graphics, x1, startY, endY, color, thickness);
-            arrowVertical(graphics, x1, endY, direction, color);
-            return;
-        }
-        int direction = x2 >= x1 ? 1 : -1;
-        int startX = x1 + direction * radius;
-        int endX = x2 - direction * radius;
-        int middleX = (startX + endX) / 2;
-        horizontal(graphics, startX, middleX, y1, color, thickness);
-        vertical(graphics, middleX, y1, y2, color, thickness);
-        horizontal(graphics, middleX, endX, y2, color, thickness);
-        arrowHorizontal(graphics, endX, y2, direction, color);
+    private static void renderDependency(GuiGraphics graphics, DependencyFrame dependency, int color, boolean focused) {
+        QuestDependencyGeometry.paint(dependencyPath(dependency), focused,
+                (left, top, right, bottom) -> graphics.fill(left, top, right, bottom, color));
+    }
+
+    static QuestDependencyGeometry.Path dependencyPath(DependencyFrame dependency) {
+        var parent = dependency.parent();
+        var child = dependency.child();
+        return QuestDependencyGeometry.route(new QuestDependencyGeometry.Node(parent.graphX(), parent.graphY(), dependencyRadius(parent)),
+                new QuestDependencyGeometry.Node(child.graphX(), child.graphY(), dependencyRadius(child)));
+    }
+
+    /** Reserve the largest outline even while unselected, so clicking never shifts a path or its arrow. */
+    static int dependencyRadius(NodeFrame node) {
+        int outline = (node.visualSize() + Math.max(SELECTED_SEAM_GROWTH, TRACKED_OUTLINE_GROWTH)) / 2;
+        var visual = node.model().visual();
+        double scale = Math.max(0.25, node.visualSize() / (double) NODE_BASE_SIZE * safeScale(node.model().appearance().iconScale()));
+        boolean itemArtwork = visual.kind() == QuestPresentation.VisualKind.ITEM && !node.model().item().isEmpty();
+        double artwork = visual.icon().isEmpty() && visual.kind() == QuestPresentation.VisualKind.TEXTURE
+                ? Math.round(node.visualSize() * safeScale(node.model().appearance().iconScale())) / 2.0
+                : 8 * scale * (visual.defaultTypeIcon() && !itemArtwork ? DEFAULT_TYPE_ICON_SCALE : 1.0);
+        // Authored oversized icons can extend past the rim; their visible bounds also need clearance.
+        return Math.max(outline, (int) Math.ceil(artwork));
     }
 
     private static void renderNode(GuiGraphics graphics, Font font, NodeFrame node, int pingOffsetY) {
         NodeModel model = node.model();
         int x = node.graphX(), y = node.graphY(), size = node.visualSize();
-        if (model.tracked()) fillNodeShape(graphics, model.appearance().shape(), x, y, size + 7, 0xFF57C7F2);
+        if (model.tracked()) fillNodeShape(graphics, model.appearance().shape(), x, y, size + TRACKED_OUTLINE_GROWTH, 0xFF57C7F2);
         // A contrasting rim separates every node from the canvas; the outer seam separates it from edges.
-        fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? 6 : 4), GraystonePalette.SEAM);
+        fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? SELECTED_SEAM_GROWTH : NODE_SEAM_GROWTH), GraystonePalette.SEAM);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size + (model.selected() ? 4 : 2),
                 model.selected() ? GraystonePalette.ACCENT : GraystonePalette.NODE_RIM);
         fillNodeShape(graphics, model.appearance().shape(), x, y, size, model.fillColor());
@@ -439,27 +444,4 @@ final class QuestCanvasRenderer {
         graphics.fill(x - radius, y - radius + cut, x + radius + 1, y + radius - cut + 1, color);
     }
 
-    private static void horizontal(GuiGraphics graphics, int x1, int x2, int y, int color, int thickness) {
-        graphics.fill(Math.min(x1, x2), y, Math.max(x1, x2) + 1, y + thickness, color);
-    }
-
-    private static void vertical(GuiGraphics graphics, int x, int y1, int y2, int color, int thickness) {
-        graphics.fill(x, Math.min(y1, y2), x + thickness, Math.max(y1, y2) + 1, color);
-    }
-
-    private static void arrowHorizontal(GuiGraphics graphics, int x, int y, int direction, int color) {
-        for (int offset = 0; offset <= 4; offset++) {
-            int half = Math.max(0, offset / 2);
-            int px = x - direction * offset;
-            graphics.fill(px, y - half, px + 1, y + half + 1, color);
-        }
-    }
-
-    private static void arrowVertical(GuiGraphics graphics, int x, int y, int direction, int color) {
-        for (int offset = 0; offset <= 4; offset++) {
-            int half = Math.max(0, offset / 2);
-            int py = y - direction * offset;
-            graphics.fill(x - half, py, x + half + 1, py + 1, color);
-        }
-    }
 }

@@ -1,22 +1,16 @@
 package yourscraft.jasdewstarfield.brnquest.client;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonParser;
+import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
 import net.minecraft.resources.ResourceLocation;
 import yourscraft.jasdewstarfield.brnquest.BrnQuestConstants;
-import yourscraft.jasdewstarfield.brnquest.author.DraftOrigin;
-import yourscraft.jasdewstarfield.brnquest.data.NativeBookJson;
 import yourscraft.jasdewstarfield.brnquest.data.ChapterDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot;
 import yourscraft.jasdewstarfield.brnquest.network.AuthoringNetwork;
 
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -42,11 +36,7 @@ public final class ClientEditorState {
     private Mode mode = Mode.VIEW;
     private boolean allowed;
     private boolean live;
-    private List<CatalogEntry> catalog = List.of();
-    private ResourceLocation versionsBookId;
-    private List<DraftVersionEntry> draftVersions = List.of();
-    private boolean versionsLoading;
-    private String versionsError = "";
+    private final EditorQueryState queries = new EditorQueryState();
     private String statusCode = "";
     private String statusMessage = "";
     private List<AuthoringNetwork.EditorDiagnosticWire> diagnostics = List.of();
@@ -62,23 +52,9 @@ public final class ClientEditorState {
     private int redoSteps;
     private ResourceLocation pendingBookId;
     private String pendingBookRevision = "";
-    private String[] chunks = new String[0];
-    private int expectedBytes;
-    private int receivedChunks;
+    private final EditorDraftReceiver receiver = new EditorDraftReceiver();
     private QuestBookSnapshot draft;
-    // The pending projection is never exposed by draft(), used for a packet revision, or installed into ClientQuestState.
-    private QuestBookSnapshot displayPreview;
-    private QuestBookSnapshot mutationBase;
-    private int historyDirection;
-    private record PreviewCheckpoint(QuestBookSnapshot snapshot, int bytes) {
-        static PreviewCheckpoint of(QuestBookSnapshot snapshot) {
-            return new PreviewCheckpoint(snapshot, NativeBookJson.encode(snapshot.book()).getBytes(StandardCharsets.UTF_8).length);
-        }
-    }
-    private final java.util.Deque<PreviewCheckpoint> undoPreviews = new java.util.ArrayDeque<>();
-    private final java.util.Deque<PreviewCheckpoint> redoPreviews = new java.util.ArrayDeque<>();
-    private static final int MAX_PREVIEW_HISTORY_BYTES = 8 * 1024 * 1024;
-    private static final int MAX_PREVIEW_HISTORY_STEPS = 16;
+    private final EditorPreviewHistory previews = new EditorPreviewHistory();
     private boolean closeWhenOpened;
     private LeaseRequest immediateClose;
     private AuthoringNetwork.PublishReviewWire pendingPublishReview;
@@ -92,7 +68,7 @@ public final class ClientEditorState {
         if (hasSession()) return;
         mode = Mode.CATALOG_LOADING;
         allowed = false;
-        catalog = List.of();
+        queries.clearCatalog();
         statusCode = "";
         statusMessage = "";
         diagnostics = List.of();
@@ -101,26 +77,9 @@ public final class ClientEditorState {
     }
 
     public synchronized void acceptCatalog(String json) {
-        // openCurrent sends a catalog refresh before OPEN. Catalog data must never
-        // reset the handshake or an established lease back to the browsing mode.
         boolean editorFlowActive = mode == Mode.OPENING || hasSession();
         try {
-            AuthoringNetwork.CatalogResponseWire response = GSON.fromJson(json,
-                    AuthoringNetwork.CatalogResponseWire.class);
-            if (response == null) throw new IllegalArgumentException("Missing catalog response");
-            List<CatalogEntry> decoded = new ArrayList<>();
-            if (response.entries() != null) {
-                for (AuthoringNetwork.CatalogEntryWire entry : response.entries()) {
-                    ResourceLocation id = ResourceLocation.tryParse(entry.bookId());
-                    DraftOrigin origin = parseOrigin(entry.origin());
-                    if (id != null && entry.draftRevision() != null && !entry.draftRevision().isBlank()) {
-                        decoded.add(new CatalogEntry(id, entry.title() == null ? "" : entry.title(),
-                                entry.draftRevision(), origin, entry.importSource() == null ? "" : entry.importSource()));
-                    }
-                    if (decoded.size() >= BrnQuestConstants.MAX_EDITOR_CATALOG_ENTRIES) break;
-                }
-            }
-            catalog = List.copyOf(decoded);
+            var response = queries.acceptCatalog(json);
             allowed = response.allowed();
             if (!editorFlowActive) {
                 statusCode = safe(response.code());
@@ -129,17 +88,16 @@ public final class ClientEditorState {
                 mode = Mode.VIEW;
             }
         } catch (RuntimeException exception) {
-            // The catalog is auxiliary to an already-started OPEN handshake. A malformed
-            // refresh must not orphan the server lease by making its following reply stale.
+            // A failed refresh must leave an in-flight OPEN and an established lease intact.
             if (editorFlowActive) return;
             fail("INVALID_EDITOR_CATALOG", "The server returned an invalid editor catalog");
             allowed = false;
-            catalog = List.of();
+            queries.clearCatalog();
         }
     }
 
     public synchronized boolean beginOpen(ResourceLocation targetBookId) {
-        if (!allowed || targetBookId == null || hasSession() || !contains(targetBookId)) return false;
+        if (!allowed || targetBookId == null || hasSession() || !queries.contains(targetBookId)) return false;
         return beginOpenRequest(targetBookId);
     }
 
@@ -163,43 +121,8 @@ public final class ClientEditorState {
         return beginClose(openAfterClose, "");
     }
 
-    /** The history belongs to one book and is replaced only by its matching server reply. */
-    public synchronized void beginDraftVersions(ResourceLocation targetBookId) {
-        versionsBookId = targetBookId;
-        draftVersions = List.of();
-        versionsError = "";
-        versionsLoading = true;
-    }
-
-    public synchronized void acceptDraftVersions(String json) {
-        try {
-            var response = GSON.fromJson(json, AuthoringNetwork.DraftVersionsResponseWire.class);
-            if (response == null || versionsBookId == null
-                    || !versionsBookId.equals(ResourceLocation.tryParse(response.bookId()))) return;
-            versionsLoading = false;
-            if (!"SUCCESS".equals(response.status()) && !"NO_CHANGE".equals(response.status())) {
-                versionsError = safe(response.code());
-                draftVersions = List.of();
-                return;
-            }
-            List<DraftVersionEntry> decoded = new ArrayList<>();
-            if (response.versions() != null) {
-                for (var version : response.versions()) {
-                    if (version.backupId() == null || version.backupId().isBlank()
-                            || version.revision() == null || version.revision().isBlank()) continue;
-                    decoded.add(new DraftVersionEntry(version.backupId(), version.revision(),
-                            safe(version.title()), Math.max(0L, version.savedAtEpochMillis())));
-                    if (decoded.size() >= 40) break;
-                }
-            }
-            draftVersions = List.copyOf(decoded);
-            versionsError = "";
-        } catch (RuntimeException exception) {
-            versionsLoading = false;
-            draftVersions = List.of();
-            versionsError = "INVALID_DRAFT_VERSIONS";
-        }
-    }
+    public synchronized void beginDraftVersions(ResourceLocation bookId) { queries.beginDraftVersions(bookId); }
+    public synchronized void acceptDraftVersions(String json) { queries.acceptDraftVersions(json); }
 
     /** Carries the selected catalog version through the old lease's close acknowledgement. */
     public synchronized Optional<LeaseRequest> beginClose(ResourceLocation openAfterClose,
@@ -242,9 +165,7 @@ public final class ClientEditorState {
 
     public synchronized boolean beginMutation() {
         if (!editing() || busy() || recoverableConflict) return false;
-        mutationBase = draft;
-        displayPreview = null;
-        historyDirection = 0;
+        previews.beginMutation(draft);
         mode = Mode.MUTATING;
         statusCode = "DRAFT_MUTATING";
         statusMessage = "";
@@ -260,22 +181,14 @@ public final class ClientEditorState {
     }
 
     public synchronized void previewEdit(java.util.function.UnaryOperator<QuestBookDefinition> edit) {
-        if (mode != Mode.MUTATING || mutationBase == null || displayPreview != null || historyDirection != 0) return;
-        try {
-            var value = edit.apply(mutationBase.book());
-            if (!value.id().equals(bookId)) return;
-            var candidate = QuestBookSnapshot.of(value);
-            if (candidate.quests().size() <= BrnQuestConstants.MAX_QUESTS) displayPreview = candidate;
-        } catch (RuntimeException ignored) {
-            // Preview is best effort: malformed/unsupported input still receives the real server's error response.
-        }
+        if (mode == Mode.MUTATING) previews.preview(edit);
     }
 
     /** UI reads may see pending changes, while all authority-facing accessors retain the verified draft. */
     public synchronized Optional<QuestBookSnapshot> displayDraft() {
-        return Optional.ofNullable(displayPreview == null ? draft : displayPreview);
+        return Optional.ofNullable(previews.display(draft));
     }
-    public synchronized boolean hasPendingPreview() { return displayPreview != null; }
+    public synchronized boolean hasPendingPreview() { return previews.pending(); }
 
     public synchronized Optional<LeaseRequest> beginUndo() {
         return beginHistory(false);
@@ -287,10 +200,7 @@ public final class ClientEditorState {
 
     private Optional<LeaseRequest> beginHistory(boolean redo) {
         if (mode != Mode.EDITING || !editing() || (redo ? redoSteps : undoSteps) <= 0) return Optional.empty();
-        mutationBase = draft;
-        historyDirection = redo ? 1 : -1;
-        var checkpoint = (redo ? redoPreviews : undoPreviews).peekLast();
-        displayPreview = checkpoint == null ? null : checkpoint.snapshot();
+        previews.beginHistory(draft, redo);
         mode = Mode.MUTATING;
         statusCode = redo ? "DRAFT_REDOING" : "DRAFT_UNDOING";
         statusMessage = "";
@@ -310,12 +220,18 @@ public final class ClientEditorState {
         }
         String responseAction = safe(response.action());
         boolean success = "SUCCESS".equals(response.status()) || "NO_CHANGE".equals(response.status());
-        if (success && ("UPDATE".equals(responseAction) || "MUTATE".equals(responseAction)
-                || "PATCH".equals(responseAction)) && sessionId != null
-                && !sessionId.equals(parseUuid(response.sessionId()))) {
-            // Old-connection and superseded-session responses are harmless: they
-            // neither replace the current draft nor force it into an error mode.
+        boolean leaseResponse = switch (responseAction) {
+            case "UPDATE", "MUTATE", "PATCH", "RENEW", "SAVE", "PUBLISH", "REVIEW", "CLOSE" -> true;
+            default -> false;
+        };
+        if (success && leaseResponse && (sessionId == null || !sessionId.equals(parseUuid(response.sessionId())))) {
+            // All successful lease replies carry their identity, including CLOSE and SAVE.
+            // Ignore superseded replies before they can change the current operation's status or draft.
             return Optional.empty();
+        }
+        if (success && "OPEN".equals(responseAction)) {
+            ResourceLocation responseBook = ResourceLocation.tryParse(safe(response.bookId()));
+            if (mode != Mode.OPENING || responseBook != null && !responseBook.equals(bookId)) return Optional.empty();
         }
         statusCode = safe(response.code());
         statusMessage = safe(response.message());
@@ -334,11 +250,6 @@ public final class ClientEditorState {
             recoverableConflict = "CONFLICT".equals(response.status()) && hasSession() && draft != null
                     && requiresAuthoritativeRecovery(statusCode);
             fail(statusCode.isBlank() ? "EDITOR_SESSION_FAILED" : statusCode, statusMessage);
-            return Optional.empty();
-        }
-        if ("OPEN".equals(response.action()) && mode != Mode.OPENING) {
-            // An acknowledgement queued by a previous connection or an abandoned
-            // open request must never resurrect its lease in the current client state.
             return Optional.empty();
         }
         return switch (responseAction) {
@@ -362,7 +273,7 @@ public final class ClientEditorState {
                 yield Optional.empty();
             }
             case "RECOVER" -> {
-                discardPreview(); undoPreviews.clear(); redoPreviews.clear();
+                previews.clear();
                 ResourceLocation recoveredBook = ResourceLocation.tryParse(response.bookId());
                 acceptOpened(response, recoveredBook != null && recoveredBook.equals(bookId));
                 recoverableConflict = false;
@@ -393,33 +304,18 @@ public final class ClientEditorState {
     }
 
     public synchronized boolean acceptDraftChunk(String rawSessionId, String revision, int index, String data) {
-        if (mode != Mode.RECEIVING_DRAFT || sessionId == null || !sessionId.toString().equals(rawSessionId)
-                || !draftRevision.equals(revision) || index < 0 || index >= chunks.length || data == null
-                || data.getBytes(StandardCharsets.UTF_8).length > BrnQuestConstants.MAX_BOOK_CHUNK_BYTES) {
-            return false;
-        }
-        if (chunks[index] == null) {
-            chunks[index] = data;
-            receivedChunks++;
-        }
-        if (receivedChunks != chunks.length) return true;
+        if (mode != Mode.RECEIVING_DRAFT) return false;
         try {
-            String json = String.join("", chunks);
-            if (json.getBytes(StandardCharsets.UTF_8).length != expectedBytes) {
-                throw new IllegalArgumentException("Draft byte count does not match its manifest");
+            var result = receiver.accept(rawSessionId, revision, index, data);
+            if (!result.accepted()) return false;
+            if (result.snapshot() != null) {
+                draft = previews.confirm(draft, result.snapshot());
+                mode = Mode.EDITING;
+                statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
             }
-            var book = NativeBookJson.decode(JsonParser.parseString(json).getAsJsonObject());
-            QuestBookSnapshot candidate = QuestBookSnapshot.of(book);
-            if (!book.id().equals(bookId) || !candidate.revision().equals(draftRevision)
-                    || candidate.quests().size() > BrnQuestConstants.MAX_QUESTS) {
-                throw new IllegalArgumentException("Draft identity or revision does not match its manifest");
-            }
-            confirmDraft(candidate);
-            chunks = new String[0];
-            mode = Mode.EDITING;
-            statusCode = dirty() ? "DRAFT_DIRTY" : "DRAFT_READY";
             return true;
         } catch (RuntimeException exception) {
+            receiver.clear();
             fail("INVALID_EDITOR_DRAFT", "The synchronized draft could not be verified");
             return false;
         }
@@ -466,11 +362,7 @@ public final class ClientEditorState {
     /** A new connection must never inherit a draft or lease token from the previous server. */
     public synchronized void disconnected() {
         allowed = false;
-        catalog = List.of();
-        versionsBookId = null;
-        draftVersions = List.of();
-        versionsLoading = false;
-        versionsError = "";
+        queries.clear();
         statusCode = "";
         statusMessage = "";
         pendingBookId = null;
@@ -501,30 +393,18 @@ public final class ClientEditorState {
         return draft == null || live && !busy() && draft.revision().equals(activeRevision);
     }
     public synchronized boolean allowed() { return allowed; }
-    public synchronized List<CatalogEntry> catalog() { return catalog; }
+    public synchronized List<CatalogEntry> catalog() { return queries.catalog(); }
 
-    /** Keeps the displayed book easy to reach while retaining backup-like drafts at the end. */
-    public synchronized List<CatalogEntry> orderedCatalog(ResourceLocation displayedBookId) {
-        return catalog.stream().sorted(Comparator
-                .comparingInt((CatalogEntry entry) -> catalogRank(entry, displayedBookId))
-                .thenComparing(entry -> catalogLabel(entry).toLowerCase(Locale.ROOT))
-                .thenComparing(entry -> entry.bookId().toString()))
-                .toList();
-    }
-
-    /** Applies the menu's title-or-ID filter after stable relevance ordering. */
-    public synchronized List<CatalogEntry> filteredCatalog(ResourceLocation displayedBookId, String query) {
-        String needle = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
-        return orderedCatalog(displayedBookId).stream()
-                .filter(entry -> needle.isEmpty() || catalogSearchText(entry).contains(needle))
-                .toList();
+    public synchronized List<CatalogEntry> orderedCatalog(ResourceLocation bookId) { return queries.orderedCatalog(bookId); }
+    public synchronized List<CatalogEntry> filteredCatalog(ResourceLocation bookId, String query) {
+        return queries.filteredCatalog(bookId, query);
     }
 
     public synchronized Optional<QuestBookSnapshot> draft() { return Optional.ofNullable(draft); }
     public synchronized ResourceLocation bookId() { return bookId; }
-    public synchronized List<DraftVersionEntry> draftVersions() { return draftVersions; }
-    public synchronized boolean versionsLoading() { return versionsLoading; }
-    public synchronized String versionsError() { return versionsError; }
+    public synchronized List<DraftVersionEntry> draftVersions() { return queries.draftVersions(); }
+    public synchronized boolean versionsLoading() { return queries.versionsLoading(); }
+    public synchronized String versionsError() { return queries.versionsError(); }
     public synchronized UUID sessionId() { return sessionId; }
     public synchronized String draftRevision() { return draftRevision; }
     /** The saved revision identifies the catalog row behind this editing session, even after local edits. */
@@ -589,12 +469,10 @@ public final class ClientEditorState {
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
         ticksSinceLeaseResponse = 0L;
         renewPending = false;
-        expectedBytes = response.decodedBytes();
-        chunks = new String[response.chunks()];
-        receivedChunks = 0;
+        receiver.begin(sessionId, bookId, draftRevision, response.chunks(), response.decodedBytes());
         if (!preserveVerifiedDraft) {
             draft = null;
-            discardPreview(); undoPreviews.clear(); redoPreviews.clear();
+            previews.clear();
         }
         mode = Mode.RECEIVING_DRAFT;
         if (closeWhenOpened) {
@@ -669,7 +547,7 @@ public final class ClientEditorState {
             fail("POSITION_PATCH_REVISION_MISMATCH", "The position update did not match the server revision");
             return;
         }
-        confirmDraft(candidate);
+        draft = previews.confirm(draft, candidate);
         baseRevision = safe(response.baseRevision());
         draftRevision = response.draftRevision();
         savedRevision = safe(response.savedRevision());
@@ -694,18 +572,7 @@ public final class ClientEditorState {
         savedRevision = response.savedRevision();
         // The catalog can remain open across a save. Keep its selection revision in
         // step with the acknowledged disk write before the player versions this draft.
-        List<CatalogEntry> updatedCatalog = new ArrayList<>(catalog.size() + 1);
-        boolean found = false;
-        for (CatalogEntry entry : catalog) {
-            if (entry.bookId().equals(bookId)) {
-                updatedCatalog.add(new CatalogEntry(bookId, draft == null ? entry.title() : draft.book().title(),
-                        savedRevision, entry.origin(), entry.importSource()));
-                found = true;
-            } else updatedCatalog.add(entry);
-        }
-        if (!found && draft != null) updatedCatalog.add(new CatalogEntry(bookId, draft.book().title(),
-                savedRevision, DraftOrigin.UNKNOWN, ""));
-        catalog = List.copyOf(updatedCatalog);
+        queries.saved(bookId, savedRevision, draft == null ? null : draft.book().title());
         undoSteps = response.undoSteps();
         redoSteps = response.redoSteps();
         leaseTicksAtResponse = Math.max(0L, response.remainingTicks());
@@ -756,28 +623,6 @@ public final class ClientEditorState {
                 || "LIVE_BOOK_CHANGED".equals(code);
     }
 
-    private boolean contains(ResourceLocation target) {
-        return catalog.stream().anyMatch(entry -> entry.bookId().equals(target));
-    }
-
-    private static int catalogRank(CatalogEntry entry, ResourceLocation displayedBookId) {
-        if (entry.bookId().equals(displayedBookId)) return 0;
-        return isBackupLike(entry) ? 2 : 1;
-    }
-
-    private static boolean isBackupLike(CatalogEntry entry) {
-        String searchable = (entry.bookId() + " " + entry.title()).toLowerCase(Locale.ROOT);
-        return searchable.contains("backup") || searchable.contains("备份");
-    }
-
-    private static String catalogLabel(CatalogEntry entry) {
-        return entry.title().isBlank() ? entry.bookId().toString() : entry.title();
-    }
-
-    private static String catalogSearchText(CatalogEntry entry) {
-        return (entry.bookId() + " " + entry.title() + " " + entry.importSource()).toLowerCase(Locale.ROOT);
-    }
-
     private void clearLease() {
         live = false;
         sessionId = null;
@@ -790,53 +635,16 @@ public final class ClientEditorState {
         renewPending = false;
         undoSteps = 0;
         redoSteps = 0;
-        chunks = new String[0];
-        expectedBytes = 0;
-        receivedChunks = 0;
+        receiver.clear();
         draft = null;
-        discardPreview(); undoPreviews.clear(); redoPreviews.clear();
+        previews.clear();
         diagnostics = List.of();
         pendingPublishReview = null;
         recoverableConflict = false;
     }
 
-    /** Confirm only after full content/revision verification. Never use a projection as a patch base. */
-    private void confirmDraft(QuestBookSnapshot candidate) {
-        if (mutationBase == null && draft != null && !draft.revision().equals(candidate.revision())) {
-            // An authoritative replacement outside our tracked request invalidates cached history predictions.
-            undoPreviews.clear(); redoPreviews.clear();
-        }
-        if (mutationBase != null && !mutationBase.revision().equals(candidate.revision())) {
-            if (historyDirection == 0) {
-                undoPreviews.addLast(PreviewCheckpoint.of(mutationBase));
-                redoPreviews.clear();
-            } else {
-                var from = historyDirection > 0 ? redoPreviews : undoPreviews;
-                var to = historyDirection > 0 ? undoPreviews : redoPreviews;
-                if (!from.isEmpty() && from.peekLast().snapshot().revision().equals(candidate.revision())) {
-                    from.removeLast(); to.addLast(PreviewCheckpoint.of(mutationBase));
-                } else { undoPreviews.clear(); redoPreviews.clear(); }
-            }
-            trimPreviewHistory();
-        }
-        // Reuse the already-visible immutable snapshot when the server verifies exactly the same content.
-        draft = displayPreview != null && displayPreview.revision().equals(candidate.revision()) ? displayPreview : candidate;
-        discardPreview();
-    }
-    private void discardPreview() { displayPreview = null; mutationBase = null; historyDirection = 0; }
-    private void trimPreviewHistory() {
-        // Whole snapshots avoid replaying server normalization; bound both memory and retained history depth.
-        long bytes = java.util.stream.Stream.concat(undoPreviews.stream(), redoPreviews.stream())
-                .mapToLong(PreviewCheckpoint::bytes).sum();
-        while (undoPreviews.size()+redoPreviews.size() > MAX_PREVIEW_HISTORY_STEPS || bytes > MAX_PREVIEW_HISTORY_BYTES) {
-            var queue = undoPreviews.isEmpty() ? redoPreviews : undoPreviews;
-            var removed = queue.removeFirst();
-            bytes -= removed.bytes();
-        }
-    }
-
     private void fail(String code, String message) {
-        discardPreview();
+        previews.discardPreview();
         // A manifest may already advertise a newer revision while its body failed verification.
         // Keep the old verified picture, but require recovery before allowing another write.
         if (draft != null && !draft.revision().equals(draftRevision)) recoverableConflict = true;
@@ -844,14 +652,6 @@ public final class ClientEditorState {
         statusCode = safe(code);
         statusMessage = safe(message);
         renewPending = false;
-    }
-
-    private static DraftOrigin parseOrigin(String value) {
-        try {
-            return DraftOrigin.valueOf(value);
-        } catch (RuntimeException exception) {
-            return DraftOrigin.UNKNOWN;
-        }
     }
 
     private static UUID parseUuid(String value) {

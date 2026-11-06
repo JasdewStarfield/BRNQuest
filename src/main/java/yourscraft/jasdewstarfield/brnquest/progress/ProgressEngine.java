@@ -3,33 +3,21 @@ package yourscraft.jasdewstarfield.brnquest.progress;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.network.chat.Component;
 import yourscraft.jasdewstarfield.brnquest.api.ApiViews;
-import yourscraft.jasdewstarfield.brnquest.api.BrnQuestApi;
 import yourscraft.jasdewstarfield.brnquest.api.OperationResult;
 import yourscraft.jasdewstarfield.brnquest.data.QuestBookDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.QuestDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.RewardDefinition;
 import yourscraft.jasdewstarfield.brnquest.data.TaskDefinition;
-import yourscraft.jasdewstarfield.brnquest.event.QuestCompletedEvent;
-import yourscraft.jasdewstarfield.brnquest.event.RewardClaimedEvent;
-import yourscraft.jasdewstarfield.brnquest.event.BrnQuestEvents;
 import yourscraft.jasdewstarfield.brnquest.event.TaskProgressChangedEvent;
 import yourscraft.jasdewstarfield.brnquest.network.BrnQuestNetwork;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerId;
 import yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerService;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardClaimContext;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardClaimResult;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardType;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardContext;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeExecutor;
-import yourscraft.jasdewstarfield.brnquest.reward.RewardTypeRegistry;
 import yourscraft.jasdewstarfield.brnquest.runtime.QuestBookManager;
 import yourscraft.jasdewstarfield.brnquest.task.TaskType;
 import yourscraft.jasdewstarfield.brnquest.task.TaskContext;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeExecutor;
 import yourscraft.jasdewstarfield.brnquest.task.TaskTypeRegistry;
-import yourscraft.jasdewstarfield.brnquest.task.TaskTypes;
 import yourscraft.jasdewstarfield.brnquest.task.TaskSubmissionSelection;
 import net.minecraft.world.item.ItemStack;
 
@@ -41,162 +29,95 @@ public final class ProgressEngine {
     private static final int MAX_CHAIN_OPERATIONS = 256;
     private static final ThreadLocal<Integer> COMPLETION_DEPTH = ThreadLocal.withInitial(() -> 0);
     private final Map<ProgressOwnerId, Object> locks = new WeakHashMap<>();
-    private volatile TaskPollingPlan pollingPlan;
-    // Batch preparation after ordinary samples; sequential transitions still prepare their next objective immediately.
-    private int pollingDepth;
-    private final Set<ServerPlayer> pendingSamplePreparation = new LinkedHashSet<>();
-    private volatile QuestVisibilityPlan visibilityPlan;
-    private volatile InventoryTaskPlan inventoryTaskPlan;
+    private final ProgressQueries queries = new ProgressQueries();
 
-    /** Snapshot-scoped index avoids decoding every task on each player's inventory sample. */
-    private InventoryTaskPlan inventoryTaskPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
-        InventoryTaskPlan plan = inventoryTaskPlan;
-        if (plan == null || plan.snapshot != snapshot) {
-            plan = new InventoryTaskPlan(snapshot);
-            inventoryTaskPlan = plan;
-        }
-        return plan;
+    private final ProgressEffects effects;
+    private final ProgressSampling sampling;
+    private final ProgressRewards rewards;
+    private final ProgressCompletion completion;
+
+    private ProgressEngine() { this(ProgressEffects.LIVE); }
+
+    /** Package-local fixture construction observes effects without changing the public singleton entry point. */
+    ProgressEngine(ProgressEffects effects) {
+        this.effects = java.util.Objects.requireNonNull(effects);
+        sampling = new ProgressSampling(queries, effects, new ProgressSampling.Host() {
+            public OperationResult complete(ServerPlayer player, ResourceLocation questId) {
+                return ProgressEngine.this.complete(player, questId, false);
+            }
+            public long changeTaskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task, PlayerProgress progress, long amount) {
+                return ProgressEngine.this.changeTaskProgress(player, quest, task, progress, amount);
+            }
+        });
+        rewards = new ProgressRewards(queries, effects, new ProgressRewards.Host() {
+            public OperationResult claim(ServerPlayer player, ResourceLocation rewardId, boolean notifyAutomatic) {
+                return ProgressEngine.this.claim(player, rewardId, notifyAutomatic);
+            }
+            public void claimCommitted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress) {
+                if (completion.advanceRepeatIfReady(quest, progress, System.currentTimeMillis())) sampling.prepareOwnerSamples(player);
+            }
+        });
+        completion = new ProgressCompletion(queries, effects, new ProgressCompletion.Host() {
+            public long changeTaskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task, PlayerProgress progress, long amount) {
+                return ProgressEngine.this.changeTaskProgress(player, quest, task, progress, amount);
+            }
+            public String trackedQuest(ServerPlayer player) { return ProgressEngine.this.trackedQuest(player); }
+            public void prepareOwnerSamples(ServerPlayer player) { sampling.prepareOwnerSamples(player); }
+            public void prepareOwnerSamplesNow(ServerPlayer player) { sampling.prepareOwnerSamplesNow(player); }
+            public void resetTransientStates(ServerPlayer player, QuestDefinition quest, List<TaskDefinition> tasks) { sampling.resetTransientStates(player, quest, tasks); }
+            public void restoreMainInventory(ServerPlayer player, List<ItemStack> inventory) { ProgressEngine.this.restoreMainInventory(player, inventory); }
+            public void reconcile(ServerPlayer player) { ProgressEngine.this.reconcile(player); }
+            public void deliverCompleted(ServerPlayer player, QuestDefinition quest) { rewards.deliverCompleted(player, quest); }
+            public OperationResult forceComplete(ServerPlayer player, ResourceLocation questId) { return ProgressEngine.this.forceComplete(player, questId); }
+            public void reset(ServerPlayer player, ResourceLocation questId) { ProgressEngine.this.reset(player, questId); }
+            public OperationResult completeWithinBudget(java.util.function.Supplier<OperationResult> operation) { return boundedCompletion(operation); }
+        });
     }
-
-    private static final class InventoryTaskPlan {
-        private final yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot;
-        private final List<QuestDefinition> quests;
-
-        private InventoryTaskPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
-            this.snapshot = snapshot;
-            this.quests = snapshot.book().quests().stream().filter(quest -> quest.tasks().stream().anyMatch(task -> {
-                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                return type != null && TaskTypeExecutor.reevaluateOnInventoryChange(type, ApiViews.task(task));
-            })).toList();
-        }
-    }
-
-    /** Replacement snapshots rebuild the index, including same-ID config edits and live authoring. */
-    private TaskPollingPlan pollingPlan(yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot) {
-        TaskPollingPlan plan = pollingPlan;
-        if (plan == null || plan.snapshot != snapshot) {
-            plan = new TaskPollingPlan(snapshot);
-            pollingPlan = plan;
-        }
-        return plan;
-    }
-
-    private ProgressEngine() {}
     public static ProgressEngine get() { return INSTANCE; }
 
     public PlayerProgress progress(ServerPlayer player) {
-        return QuestProgressData.get(player.getServer()).get(ProgressOwnerService.require(player));
+        return queries.progress(player);
     }
 
-    /** Objectives for all-member quests are personal within the active team and completion cycle. */
-    private boolean allMembers(ServerPlayer player, QuestDefinition quest) {
-        return quest.behavior().requireAllTeamMembers() && shared(player);
-    }
-    private PlayerProgress taskLedger(ServerPlayer player, QuestDefinition quest, PlayerProgress progress) {
-        return allMembers(player, quest) ? progress.objectives(player.getUUID()) : progress;
-    }
     public long taskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task) {
-        return taskLedger(player, quest, progress(player)).taskProgress(task.id().toString());
+        return queries.taskProgress(player, quest, task);
     }
     /** Every recipient receives their own objective counters, while quest status stays team-wide. */
     public Map<String, Long> visibleTaskProgress(ServerPlayer player) {
-        PlayerProgress progress = progress(player);
-        Map<String, Long> result = new HashMap<>(progress.taskProgressView());
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot != null && shared(player)) {
-            var personal = progress.objectives(player.getUUID());
-            for (var quest : snapshot.book().quests()) if (quest.behavior().requireAllTeamMembers()) {
-                for (var task : quest.tasks()) result.put(task.id().toString(), personal.taskProgress(task.id().toString()));
-            }
-        }
-        return Map.copyOf(result);
+        return queries.visibleTaskProgress(player);
     }
 
     /** Waiting is server-authored so inventory previews cannot claim personal completion. */
     public Set<String> waitingForTeam(ServerPlayer player) {
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot == null || !shared(player)) return Set.of();
-        var progress = progress(player);
-        return snapshot.book().quests().stream().filter(quest -> quest.behavior().requireAllTeamMembers())
-                .filter(quest -> progress.status(quest.id().toString()) == QuestStatus.AVAILABLE
-                        || progress.status(quest.id().toString()) == QuestStatus.ACTIVE)
-                .filter(quest -> progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED)
-                .map(quest -> quest.id().toString()).collect(java.util.stream.Collectors.toUnmodifiableSet());
-    }
-    private boolean shared(ServerPlayer player) {
-        return !ProgressOwnerService.require(player).providerId().equals(
-                yourscraft.jasdewstarfield.brnquest.owner.ProgressOwnerProviders.PERSONAL);
+        return queries.waitingForTeam(player);
     }
     public boolean rewardClaimed(ServerPlayer player, RewardDefinition reward) {
-        PlayerProgress progress = progress(player);
-        return !shared(player) || reward.teamReward() ? progress.isClaimed(reward.id().toString())
-                : progress.memberClaimed(player.getUUID(), reward.id().toString());
+        return queries.rewardClaimed(player, reward);
     }
     public Set<String> visibleClaims(ServerPlayer player) {
-        PlayerProgress progress = progress(player);
-        return shared(player) ? progress.claimsFor(player.getUUID()) : progress.claimedRewardsView();
+        return queries.visibleClaims(player);
     }
     public Map<String, QuestStatus> visibleStatuses(ServerPlayer player) {
-        PlayerProgress progress = progress(player);
-        if (!shared(player)) return progress.questsView();
-        // Resolve the viewer ledger once; ordinary receipts remain specific to this member.
-        Map<String, QuestStatus> result = new HashMap<>(progress.questsView());
-        String tracked = QuestProgressData.get(player.getServer()).tracked(player.getUUID());
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot != null) for (QuestDefinition quest : snapshot.quests().values()) {
-            String id = quest.id().toString();
-            QuestStatus status = progress.status(id);
-            if (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) {
-                result.put(id, id.equals(tracked) ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE);
-            } else if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
-                result.put(id, !quest.rewards().isEmpty() && quest.rewards().stream()
-                        .allMatch(reward -> reward.teamReward() ? progress.isClaimed(reward.id().toString())
-                                : progress.memberClaimed(player.getUUID(), reward.id().toString()))
-                        ? QuestStatus.REWARD_CLAIMED : QuestStatus.COMPLETED);
-            }
-        }
-        return Map.copyOf(result);
+        return queries.visibleStatuses(player);
     }
-    /** Repeat blocking uses the frozen cohort, including offline members, rather than the first claimant. */
-    private boolean rewardsResolved(QuestDefinition quest, PlayerProgress progress) {
-        Set<UUID> cohort = progress.completionMembers(quest.id().toString());
-        return quest.rewards().stream().allMatch(reward -> cohort.isEmpty() || reward.teamReward()
-                ? progress.isClaimed(reward.id().toString())
-                : cohort.stream().allMatch(player -> progress.memberClaimed(player, reward.id().toString())));
+    /** Sampling proposals commit under the same owner lock as submission and completion. */
+    public void pollTasks(ServerPlayer player) {
+        synchronizedOwner(player, () -> { sampling.pollTasks(player); return null; });
     }
-    /** Automatic delivery is retried idempotently for eligible online members; offline members wait for login. */
-    private void deliverAutomatic(ServerPlayer player) {
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot == null) return;
-        for (QuestDefinition quest : snapshot.book().quests()) {
-            QuestStatus status = progress(player).status(quest.id().toString());
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) {
-                for (RewardDefinition reward : quest.rewards()) if (automaticAllowed(reward)
-                        && !rewardClaimed(player, reward)) claim(player, reward.id(), reward.policy().notifyPlayer());
-            }
-        }
+
+    /** Sampling proposals commit under the same owner lock as submission and completion. */
+    public void submitInventoryTasks(ServerPlayer player) {
+        synchronizedOwner(player, () -> { sampling.submitInventoryTasks(player); return null; });
+    }
+
+    /** Sampling proposals commit under the same owner lock as submission and completion. */
+    public void recordCraft(ServerPlayer player, ItemStack crafted) {
+        if (crafted.isEmpty()) return;
+        synchronizedOwner(player, () -> { sampling.recordCraft(player, crafted); return null; });
     }
 
     public void reconcile(ServerPlayer player) {
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot == null) return;
-        QuestProgressData data = QuestProgressData.get(player.getServer());
-        PlayerProgress progress = data.get(ProgressOwnerService.require(player));
-        // Canonical quest renames are published as aliases; migrate quest-level state before
-        // availability and orphan checks so an intentional rename does not reset player progress.
-        reconcileLegacyIds(snapshot.book(), progress);
-        Set<String> current = new HashSet<>();
-        for (QuestDefinition quest : snapshot.book().quests()) {
-            current.add(quest.id().toString());
-            advanceRepeatIfReady(quest, progress, System.currentTimeMillis());
-            QuestStatus existing = progress.status(quest.id().toString());
-            QuestStatus reconciled = reconciledAvailability(existing, dependenciesComplete(quest, progress));
-            if (reconciled != existing) progress.status(quest.id().toString(), reconciled);
-        }
-        progress.questsView().keySet().stream().filter(id -> !current.contains(id)).forEach(progress::orphan);
-        progress.revision(snapshot.revision());
-        prepareOwnerSamples(player);
-        data.setDirty();
+        completion.reconcile(player);
     }
 
     /** Performs time-based repeat reopening even when no inventory event occurs. */
@@ -206,8 +127,8 @@ public final class ProgressEngine {
         if (player.getServer().getTickCount() % 20 != 0) return;
         var snapshot = QuestBookManager.get().active().orElse(null);
         if (snapshot == null) return;
-        if (shared(player)) {
-            deliverAutomatic(player);
+        if (queries.shared(player)) {
+            rewards.deliverAutomatic(player);
             var ledger = progress(player);
             var members = ProgressOwnerService.resolve(player).orElseThrow().members();
             for (var quest : snapshot.book().quests()) {
@@ -215,8 +136,8 @@ public final class ProgressEngine {
                 var status = ledger.status(quest.id().toString());
                 if ((status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE)
                         && ledger.allMembersCompleted(quest.id().toString(), members)
-                        && dependenciesComplete(quest, ledger)) {
-                    boundedCompletion(() -> synchronizedOwner(player, () -> markCompleted(player, quest, ledger,
+                        && queries.dependenciesComplete(quest, ledger)) {
+                    boundedCompletion(() -> synchronizedOwner(player, () -> completion.markCompleted(player, quest, ledger,
                             QuestProgressData.get(player.getServer()))));
                 }
             }
@@ -224,200 +145,24 @@ public final class ProgressEngine {
         PlayerProgress progress = progress(player);
         boolean changed = false;
         long now = System.currentTimeMillis();
-        for (QuestDefinition quest : pollingPlan(snapshot).quests) {
-            changed |= advanceRepeatIfReady(quest, progress, now);
+        for (QuestDefinition quest : sampling.quests(snapshot)) {
+            changed |= completion.advanceRepeatIfReady(quest, progress, now);
         }
         if (changed) {
             QuestProgressData.get(player.getServer()).setDirty();
-            prepareOwnerSamples(player);
-            BrnQuestNetwork.syncProgress(player, true);
-        }
-    }
-
-    /** Sample only eligible/current objectives, then retain hits through the existing progress ledger. */
-    public void pollTasks(ServerPlayer player) {
-        synchronizedOwner(player, () -> {
-            pollingDepth++;
-            try {
-                var snapshot = QuestBookManager.get().active().orElse(null);
-                if (snapshot == null) return null;
-                prepareSamples(player, snapshot, progress(player), new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues());
-                var due = pollingPlan(snapshot).dueQuests(player.server.getTickCount(), id -> {
-                    var type = TaskTypeRegistry.get(id);
-                    return type == null ? 0 : type.pollingIntervalTicks();
-                });
-                if (due.isEmpty()) return null;
-                var progress = progress(player);
-                boolean team = shared(player);
-                var values = new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues();
-                for (var quest : due) {
-                    var status = progress.status(quest.id().toString());
-                    if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) || !dependenciesComplete(quest, progress)) continue;
-                    boolean changed = false;
-                    for (var task : quest.tasks()) {
-                        var type = TaskTypeRegistry.get(task.typeId());
-                        if (type == null || type.pollingIntervalTicks() <= 0
-                                || player.server.getTickCount() % Math.max(1, type.pollingIntervalTicks()) != 0
-                                || !taskIsCurrent(player, quest, task, progress)) continue;
-                        var context = taskContext(player, quest, task, progress);
-                        if (type.usesSamplingState() && !progress.samplePrepared(task.id().toString(), player.getUUID())) {
-                            var prepared = TaskTypeExecutor.prepareSample(type, new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(
-                                    context, progress.sampleState(task.id().toString(), player.getUUID()), team, values));
-                            if (progress.sampleState(task.id().toString(), player.getUUID(), prepared.state())) QuestProgressData.get(player.server).setDirty();
-                            if (progress.samplePrepared(task.id().toString(), player.getUUID(), prepared.ready())) QuestProgressData.get(player.server).setDirty();
-                        }
-                        var sampleContext = new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(context,
-                                progress.sampleState(task.id().toString(), player.getUUID()), team, values);
-                        var result = TaskTypeExecutor.sample(type, sampleContext);
-                        if (type.usesSamplingState() && progress.sampleState(task.id().toString(), player.getUUID(), result.state()))
-                            QuestProgressData.get(player.server).setDirty();
-                        long next = result.progress();
-                        if (next > context.progress()) {
-                            changeTaskProgress(player, quest, task, progress, next - context.progress()); changed = true;
-                        }
-                    }
-                    if (changed) {
-                        QuestProgressData.get(player.server).setDirty();
-                        complete(player, quest.id(), false);
-                        BrnQuestNetwork.syncProgress(player, true);
-                    }
-                }
-                return null;
-            } finally {
-                if (--pollingDepth == 0) {
-                    var pending = List.copyOf(pendingSamplePreparation);
-                    pendingSamplePreparation.clear();
-                    pending.forEach(this::prepareOwnerSamples);
-                }
-            }
-        });
-    }
-
-    /** Establish baselines for every online member at an unlock/reset boundary, including the acting mock player. */
-    private void prepareOwnerSamples(ServerPlayer actor) {
-        if (pollingDepth > 0) { pendingSamplePreparation.add(actor); return; }
-        prepareOwnerSamplesNow(actor);
-    }
-    private void prepareOwnerSamplesNow(ServerPlayer actor) {
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot == null) return;
-        var owner = ProgressOwnerService.require(actor);
-        var members = new LinkedHashSet<ServerPlayer>();
-        members.add(actor);
-        for (var online : actor.server.getPlayerList().getPlayers())
-            if (online != actor && ProgressOwnerService.resolve(online).map(view -> view.id().equals(owner)).orElse(false)) members.add(online);
-        for (var member : members) prepareSamples(member, snapshot, progress(member), new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues());
-    }
-
-    /** State preparation has no completion/notification side effects; only the engine commits the immutable proposal. */
-    private void prepareSamples(ServerPlayer player, yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot,
-                                PlayerProgress progress, yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues values) {
-        var quests = pollingPlan(snapshot).statefulQuests(id -> {
-            var type = TaskTypeRegistry.get(id);
-            return type != null && type.usesSamplingState();
-        });
-        prepareSamples(player, snapshot, progress, values, quests);
-    }
-    private void prepareSamples(ServerPlayer player, yourscraft.jasdewstarfield.brnquest.data.QuestBookSnapshot snapshot,
-                                PlayerProgress progress, yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues values,
-                                List<QuestDefinition> quests) {
-        boolean team = shared(player);
-        QuestProgressData.get(player.server).activateSamplingOwner(player.getUUID(), ProgressOwnerService.require(player));
-        for (var quest : quests) {
-            var status = progress.status(quest.id().toString());
-            // Completed history keeps its receipt; identity changes are reconciled while unfinished, even if locked.
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) continue;
-            if (allMembers(player, quest) && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED
-                    && quest.tasks().stream().filter(task -> !task.optional()).anyMatch(task -> {
-                        var type = TaskTypeRegistry.get(task.typeId());
-                        return type == null || !TaskTypeExecutor.satisfied(type, taskContext(player, quest, task, progress));
-                    })) {
-                // A higher threshold or an added required objective reopens this member's unfinished quest.
-                progress.objectives(player.getUUID()).status(quest.id().toString(), QuestStatus.AVAILABLE);
-                QuestProgressData.get(player.server).setDirty();
-            }
-            if (status == QuestStatus.LOCKED && dependenciesComplete(quest, progress)) {
-                status = QuestStatus.AVAILABLE;
-                progress.status(quest.id().toString(), status);
-                QuestProgressData.get(player.server).setDirty();
-            }
-            boolean eligible = (status == QuestStatus.AVAILABLE || status == QuestStatus.ACTIVE) && dependenciesComplete(quest, progress);
-            boolean memberLedger = team && quest.behavior().requireAllTeamMembers();
-            for (var task : quest.tasks()) {
-                var type = TaskTypeRegistry.get(task.typeId());
-                if (type == null || !type.usesSamplingState()) continue;
-                var info = pollingPlan(snapshot).samplingInfo(task, type);
-                String identity = team && quest.behavior().requireAllTeamMembers() ? info.memberIdentity() : info.ownerIdentity();
-                if (identity.isEmpty()) continue;
-                if (progress.prepareSamplingIdentity(quest.id().toString(), info.taskId(), identity))
-                    QuestProgressData.get(player.server).setDirty();
-                boolean resuming = progress.sampleSuspended(info.taskId(), player.getUUID());
-                boolean memberComplete = memberLedger && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED;
-                boolean current = eligible && !memberComplete
-                        && (!quest.behavior().sequentialTasks() || task.optional() || taskIsCurrent(player, quest, task, progress));
-                if (!current) {
-                    // Relocked dependencies or a reset predecessor pause the read position until eligibility returns.
-                    if (!memberComplete && progress.samplePrepared(info.taskId(), player.getUUID())
-                            && progress.suspendSample(info.taskId(), player.getUUID())) QuestProgressData.get(player.server).setDirty();
-                    continue;
-                }
-                if (progress.samplePrepared(info.taskId(), player.getUUID()) && !resuming) continue;
-                var context = new TaskContext(player, quest.bookId(), quest.id(), info.view(), taskLedger(player, quest, progress).taskProgress(info.taskId()));
-                var before = progress.sampleState(info.taskId(), player.getUUID());
-                var prepared = TaskTypeExecutor.prepareSample(type,
-                        new yourscraft.jasdewstarfield.brnquest.task.TaskSamplingContext(context, before, team, values, resuming));
-                if (progress.sampleState(task.id().toString(), player.getUUID(), prepared.state())) QuestProgressData.get(player.server).setDirty();
-                if (progress.samplePrepared(info.taskId(), player.getUUID(), prepared.ready())) QuestProgressData.get(player.server).setDirty();
-                if (resuming && prepared.ready()) { progress.resumeSample(task.id().toString(), player.getUUID()); QuestProgressData.get(player.server).setDirty(); }
-                // An initial state may discard legacy count when selecting a new baseline-based mode.
-                if (before.values().isEmpty() && prepared.ready() && prepared.progress() != context.progress())
-                    changeTaskProgress(player, quest, task, progress, prepared.progress() - context.progress());
-            }
+            sampling.prepareOwnerSamples(player);
+            effects.sync(player, true);
         }
     }
 
     /** Server-authored visibility set; clients render it but never infer hidden quest access. */
     public Set<String> visibleQuestIds(ServerPlayer player) {
-        var snapshot = QuestBookManager.get().active().orElse(null);
-        if (snapshot == null) return Set.of();
-        QuestVisibilityPlan plan = visibilityPlan;
-        // Same-ID edits/reloads replace the snapshot and must rebuild even if the revision string is reused.
-        if (plan == null || plan.snapshot != snapshot) {
-            plan = new QuestVisibilityPlan(snapshot);
-            visibilityPlan = plan;
-        }
-        PlayerProgress progress = progress(player);
-        var tasks = visibleTaskProgress(player);
-        return plan.visible(progress, quest -> dependenciesComplete(quest, progress),
-                task -> tasks.getOrDefault(task.id().toString(), 0L));
-    }
-
-    private static ResourceLocation typedLegacyId(String key, String prefix) {
-        return key.startsWith(prefix) ? ResourceLocation.tryParse(key.substring(prefix.length())) : null;
+        return queries.visibleQuestIds(player);
     }
 
     /** Applies unambiguous ledger aliases while preserving any source ID that is live again. */
     static void reconcileLegacyIds(QuestBookDefinition book, PlayerProgress progress) {
-        Set<ResourceLocation> questIds = book.quests().stream().map(QuestDefinition::id)
-                .collect(java.util.stream.Collectors.toSet());
-        Set<ResourceLocation> taskIds = book.quests().stream().flatMap(quest -> quest.tasks().stream())
-                .map(TaskDefinition::id).collect(java.util.stream.Collectors.toSet());
-        Set<ResourceLocation> rewardIds = book.quests().stream().flatMap(quest -> quest.rewards().stream())
-                .map(RewardDefinition::id).collect(java.util.stream.Collectors.toSet());
-        book.legacyIds().forEach((oldId, newId) -> {
-            ResourceLocation oldTaskId = typedLegacyId(oldId, "@task:");
-            ResourceLocation oldRewardId = typedLegacyId(oldId, "@reward:");
-            if (oldTaskId != null && taskIds.contains(newId) && !taskIds.contains(oldTaskId)) {
-                progress.migrateTaskId(oldTaskId.toString(), newId.toString());
-            } else if (oldRewardId != null && rewardIds.contains(newId) && !rewardIds.contains(oldRewardId)) {
-                progress.migrateRewardId(oldRewardId.toString(), newId.toString());
-            } else if (!oldId.startsWith("@task:") && !oldId.startsWith("@reward:") && questIds.contains(newId)) {
-                ResourceLocation oldQuestId = ResourceLocation.tryParse(oldId);
-                if (oldQuestId == null || !questIds.contains(oldQuestId)) {
-                    progress.migrateQuestId(oldId, newId.toString());
-                }
-            }
-        });
+        ProgressCompletion.reconcileLegacyIds(book, progress);
     }
 
     /** Reconciles every connected player after a successfully installed task-book revision. */
@@ -431,65 +176,7 @@ public final class ProgressEngine {
     }
 
     public OperationResult complete(ServerPlayer player, ResourceLocation questId, boolean checkmarkIntent) {
-        return boundedCompletion(() -> synchronizedOwner(player, () -> {
-            var snapshot = QuestBookManager.get().active().orElse(null);
-            QuestDefinition quest = snapshot == null ? null : snapshot.quests().get(questId);
-            if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest " + questId);
-            QuestProgressData data = QuestProgressData.get(player.getServer());
-            PlayerProgress progress = data.get(ProgressOwnerService.require(player));
-            QuestStatus status = progress.status(questId.toString());
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
-            if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
-            // An empty authoring placeholder has no completion condition; keep its progress untouched until configured.
-            if (quest.tasks().isEmpty()) return OperationResult.failure("NO_OBJECTIVES", "Quest has no objectives configured");
-            if (allMembers(player, quest)
-                    && progress.objectives(player.getUUID()).status(questId.toString()) == QuestStatus.COMPLETED) {
-                return finishMemberCompletion(player, quest, progress, data);
-            }
-            if (checkmarkIntent) {
-                // Quest-wide completion remains a generic intent; each task type decides whether it accepts it.
-                for (TaskDefinition task : quest.tasks()) {
-                    TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                    TaskContext context = taskContext(player, quest, task, progress);
-                    if (type != null && taskIsCurrent(player, quest, task, progress)
-                            && TaskTypeExecutor.acceptsQuestCompletionIntent(type, context.task())
-                            && TaskTypeExecutor.submit(type, context).success()) {
-                        changeTaskProgress(player, quest, task, progress, 1);
-                        // Sequential mode represents one author-ordered step per user intent.
-                        if (quest.behavior().sequentialTasks()) break;
-                    }
-                }
-            }
-            for (TaskDefinition task : quest.tasks()) {
-                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                if (type == null || (!task.optional() && !TaskTypeExecutor.satisfied(type,
-                        taskContext(player, quest, task, progress)))) {
-                    return OperationResult.failure("UNSATISFIED", "Task is incomplete: " + task.id());
-                }
-            }
-            List<net.minecraft.world.item.ItemStack> inventoryBeforeConsume = player.getInventory().items.stream()
-                    .map(net.minecraft.world.item.ItemStack::copy).toList();
-            for (TaskDefinition task : quest.tasks()) {
-                TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                // Submitted rows already consumed once; unsubmitted optional rows must not be
-                // swept into another row's completion transaction or spend the player's items.
-                if (type != null && !task.optional() && taskLedger(player, quest, progress).taskProgress(task.id().toString()) < 1
-                        && !TaskTypeExecutor.consume(type, taskContext(player, quest, task, progress))) {
-                    restoreMainInventory(player, inventoryBeforeConsume);
-                    return OperationResult.failure("CONSUME_FAILED", "Could not consume task items");
-                }
-            }
-            if (allMembers(player, quest)) {
-                // Inventory-satisfied objectives need a receipt before resources disappear or the player logs out.
-                for (var task : quest.tasks()) if (!task.optional()
-                        && taskLedger(player, quest, progress).taskProgress(task.id().toString()) == 0) {
-                    changeTaskProgress(player, quest, task, progress, 1);
-                }
-                data.setDirty();
-                return finishMemberCompletion(player, quest, progress, data);
-            }
-            return markCompleted(player, quest, progress, data);
-        }));
+        return boundedCompletion(() -> synchronizedOwner(player, () -> completion.completeLocked(player, questId, checkmarkIntent)));
     }
 
     /** Applies one task-row intent, then lets the normal transaction decide whether the quest can finish. */
@@ -509,44 +196,6 @@ public final class ProgressEngine {
         return submitTask(player, questId, taskId, selection, true);
     }
 
-    /** Records eligible non-consuming inventory objectives without a client submission intent. */
-    public void submitInventoryTasks(ServerPlayer player) {
-        synchronizedOwner(player, () -> {
-            var snapshot = QuestBookManager.get().active().orElse(null);
-            if (snapshot == null) return null;
-            PlayerProgress progress = progress(player);
-            boolean changed = false;
-            for (QuestDefinition quest : inventoryTaskPlan(snapshot).quests) {
-                QuestStatus status = progress.status(quest.id().toString());
-                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE)
-                        || !dependenciesComplete(quest, progress)) continue;
-                boolean questChanged = false;
-                for (TaskDefinition task : quest.tasks()) {
-                    TaskType<?> type = TaskTypeRegistry.get(task.typeId());
-                    if (type == null || !TaskTypeExecutor.reevaluateOnInventoryChange(type, ApiViews.task(task))
-                            || taskLedger(player, quest, progress).taskProgress(task.id().toString()) >= 1
-                            || !taskIsCurrent(player, quest, task, progress)) continue;
-                    // The task validates the live stack and component policy on the server.
-                    // A rejected sample leaves both inventory and the receipt ledger untouched.
-                    try {
-                        if (!TaskTypeExecutor.submit(type, taskContext(player, quest, task, progress)).success()) continue;
-                    } catch (RuntimeException failure) {
-                        continue;
-                    }
-                    changeTaskProgress(player, quest, task, progress, 1);
-                    questChanged = true;
-                }
-                if (questChanged) {
-                    QuestProgressData.get(player.getServer()).setDirty();
-                    complete(player, quest.id(), false);
-                    changed = true;
-                }
-            }
-            if (changed) BrnQuestNetwork.syncProgress(player, true);
-            return null;
-        });
-    }
-
     private OperationResult submitTask(ServerPlayer player, ResourceLocation questId, ResourceLocation taskId,
                                        TaskSubmissionSelection selection, boolean reportSubmission) {
         OperationResult result = synchronizedOwner(player, () -> {
@@ -558,21 +207,21 @@ public final class ProgressEngine {
             PlayerProgress progress = progress(player);
             // Submission is an idempotent command. Check the per-task ledger before quest
             // status so a retransmission after quest completion is also a successful no-op.
-            if (taskLedger(player, quest, progress).taskProgress(taskId.toString()) >= 1) {
+            if (queries.taskLedger(player, quest, progress).taskProgress(taskId.toString()) >= 1) {
                 return OperationResult.noChange("ALREADY_SUBMITTED", "Task already submitted");
             }
             QuestStatus status = progress.status(questId.toString());
             if (status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE) {
                 return OperationResult.failure("LOCKED", "Quest is not available");
             }
-            if (!dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
-            if (!taskIsCurrent(player, quest, task, progress)) {
+            if (!queries.dependenciesComplete(quest, progress)) return OperationResult.failure("LOCKED", "Quest dependencies are incomplete");
+            if (!queries.taskIsCurrent(player, quest, task, progress)) {
                 return OperationResult.failure("OUT_OF_SEQUENCE", "An earlier required objective must be completed first");
             }
 
             TaskType<?> type = TaskTypeRegistry.get(task.typeId());
             if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown task type " + task.typeId());
-            TaskContext context = taskContext(player, quest, task, progress);
+            TaskContext context = queries.taskContext(player, quest, task, progress);
             if (!TaskTypeExecutor.allowsManualSubmission(type, context.task())) {
                 return OperationResult.failure("NOT_SUBMITTABLE", "Task does not accept manual submission: " + task.id());
             }
@@ -600,28 +249,13 @@ public final class ProgressEngine {
         });
         // A response is sent for both accepted and rejected intents so the client can clear
         // its pending-click guard. Full inventory state avoids stale counts on paused screens.
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         player.inventoryMenu.broadcastFullState();
         return result;
     }
 
     public OperationResult forceComplete(ServerPlayer player, ResourceLocation questId) {
-        return boundedCompletion(() -> synchronizedOwner(player, () -> {
-            var quest = QuestBookManager.get().active().map(s -> s.quests().get(questId)).orElse(null);
-            if (quest == null) return OperationResult.failure("NOT_FOUND", "Unknown quest");
-            QuestProgressData data = QuestProgressData.get(player.getServer());
-            PlayerProgress progress = data.get(ProgressOwnerService.require(player));
-            QuestStatus status = progress.status(questId.toString());
-            if (status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED) return OperationResult.noChange("ALREADY_COMPLETED", "Quest already completed");
-            // Administrative/API completion intentionally bypasses task resources;
-            // callers have already made an explicit server-side authority decision.
-            quest.tasks().forEach(task -> {
-                if (taskLedger(player, quest, progress).taskProgress(task.id().toString()) < 1) {
-                    changeTaskProgress(player, quest, task, progress, Long.MAX_VALUE / 4);
-                }
-            });
-            return markCompleted(player, quest, progress, data);
-        }));
+        return boundedCompletion(() -> synchronizedOwner(player, () -> completion.forceCompleteLocked(player, questId)));
     }
 
     public OperationResult addTaskProgress(ServerPlayer player, ResourceLocation taskId, long amount) {
@@ -631,50 +265,13 @@ public final class ProgressEngine {
         if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown task " + taskId);
         TaskDefinition task = owner.tasks().stream().filter(candidate -> candidate.id().equals(taskId)).findFirst().orElseThrow();
         PlayerProgress progress = progress(player);
-        if (!dependenciesComplete(owner, progress) || !taskIsCurrent(player, owner, task, progress)) {
+        if (!queries.dependenciesComplete(owner, progress) || !queries.taskIsCurrent(player, owner, task, progress)) {
             return OperationResult.failure("LOCKED", "Task is not currently progressable");
         }
         changeTaskProgress(player, owner, task, progress, amount);
         QuestProgressData.get(player.getServer()).setDirty();
-        BrnQuestNetwork.syncProgress(player, true);
+        effects.sync(player, true);
         return OperationResult.success("Task progress updated");
-    }
-
-    /** Counts actual player crafting output for item objectives marked only_from_crafting. */
-    public void recordCraft(ServerPlayer player, ItemStack crafted) {
-        if (crafted.isEmpty()) return;
-        synchronizedOwner(player, () -> {
-            var snapshot = QuestBookManager.get().active().orElse(null);
-            if (snapshot == null) return null;
-            PlayerProgress progress = progress(player);
-            for (QuestDefinition quest : snapshot.book().quests()) {
-                QuestStatus status = progress.status(quest.id().toString());
-                if ((status != QuestStatus.AVAILABLE && status != QuestStatus.ACTIVE)
-                        || !dependenciesComplete(quest, progress)) continue;
-                for (TaskDefinition task : quest.tasks()) {
-                    var type = TaskTypeRegistry.get(task.typeId());
-                    if (type == null || !taskIsCurrent(player, quest, task, progress)) continue;
-                    var context = taskContext(player, quest, task, progress);
-                    long sampled;
-                    try {
-                        sampled = TaskTypeExecutor.craftedProgress(type, context, crafted);
-                    } catch (RuntimeException failure) {
-                        // Ignore a broken observer; no progress has been written and other types still receive the event.
-                        continue;
-                    }
-                    long previous = taskLedger(player, quest, progress).taskProgress(task.id().toString());
-                    if (sampled <= previous) continue;
-                    changeTaskProgress(player, quest, task, progress, sampled - previous);
-                    if (TaskTypeExecutor.satisfied(type, taskContext(player, quest, task, progress))) {
-                        complete(player, quest.id(), false);
-                        break;
-                    }
-                }
-            }
-            QuestProgressData.get(player.getServer()).setDirty();
-            BrnQuestNetwork.syncProgress(player, true);
-            return null;
-        });
     }
 
     public OperationResult claim(ServerPlayer player, ResourceLocation rewardId) {
@@ -682,137 +279,17 @@ public final class ProgressEngine {
     }
 
     private OperationResult claim(ServerPlayer player, ResourceLocation rewardId, boolean notifyAutomatic) {
-        return synchronizedOwner(player, () -> {
-            var snapshot = QuestBookManager.get().active().orElse(null);
-            if (snapshot == null) return OperationResult.failure("NO_BOOK", "No active book");
-            QuestDefinition owner = snapshot.book().quests().stream().filter(q -> q.rewards().stream().anyMatch(r -> r.id().equals(rewardId))).findFirst().orElse(null);
-            if (owner == null) return OperationResult.failure("NOT_FOUND", "Unknown reward");
-            PlayerProgress progress = progress(player);
-            if (progress.status(owner.id().toString()).ordinal() < QuestStatus.COMPLETED.ordinal()) return OperationResult.failure("LOCKED", "Quest is incomplete");
-            RewardDefinition reward = owner.rewards().stream().filter(r -> r.id().equals(rewardId)).findFirst().orElseThrow();
-            if (rewardClaimed(player, reward))
-                return OperationResult.noChange("ALREADY_CLAIMED", "Reward already claimed");
-            if (shared(player) && !progress.completionMembers(owner.id().toString()).contains(player.getUUID())) {
-                return OperationResult.failure("NOT_ELIGIBLE", "Player was not a member when this cycle completed");
-            }
-            RewardType<?> type = RewardTypeRegistry.get(reward.typeId());
-            if (type == null) return OperationResult.failure("UNKNOWN_TYPE", "Unknown reward type");
-            var execution = new RewardContext(player, owner.bookId(), owner.id(), ApiViews.reward(reward));
-            var handler = type.claimHandler();
-            QuestProgressData data = QuestProgressData.get(player.getServer());
-            // Full reset can distinguish an unresolved attempt from an already empty quest.
-            progress.rewardAttempted(owner.id().toString());
-            data.setDirty();
-            String message;
-            if (handler.isPresent()) {
-                // Advanced types own attempt persistence; only a confirmed success commits the core ledger.
-                RewardClaimResult result;
-                try {
-                    result = java.util.Objects.requireNonNull(handler.orElseThrow().claim(new RewardClaimContext(
-                            execution, ProgressOwnerService.require(player), progress.completionCycles(owner.id().toString()), progress.claimGeneration(owner.id().toString()))));
-                } catch (Exception error) {
-                    yourscraft.jasdewstarfield.brnquest.BRNQuest.LOGGER.error("Reward claim handler failed for {} ({})", rewardId, reward.typeId(), error);
-                    return OperationResult.failure("CLAIM_HANDLER_FAILED", "Reward attempt failed; consult the type's recovery policy");
-                }
-                if (result.state() != RewardClaimResult.State.SUCCESS) {
-                    BrnQuestNetwork.syncProgress(player, true);
-                    return result.state() == RewardClaimResult.State.PENDING
-                            ? OperationResult.noChange(result.code(), result.message())
-                            : OperationResult.failure(result.code(), result.message());
-                }
-                message = result.message();
-                if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
-                else progress.claim(rewardId.toString());
-                data.setDirty();
-            } else {
-                // Preserve the existing ordinary-reward policy for extensions that only implement execute.
-                if (shared(player) && !reward.teamReward()) progress.claimMember(player.getUUID(), rewardId.toString());
-                else progress.claim(rewardId.toString());
-                data.setDirty();
-                var result = RewardTypeExecutor.execute(type, execution);
-                if (!result.success()) return OperationResult.failure("EXECUTION_FAILED", result.message());
-                message = result.message();
-            }
-            if (rewardsResolved(owner, progress)) progress.status(owner.id().toString(), QuestStatus.REWARD_CLAIMED);
-            BrnQuestEvents.post(new RewardClaimedEvent(player.getUUID(), player.getScoreboardName(),
-                    snapshot.book().id(), owner.id(), rewardId, ApiViews.reward(reward),
-                    BrnQuestApi.getProgress(player, owner.id().toString()).orElseThrow()));
-            if (advanceRepeatIfReady(owner, progress, System.currentTimeMillis())) prepareOwnerSamples(player);
-            BrnQuestNetwork.syncProgress(player, true);
-            if (notifyAutomatic) {
-                player.displayClientMessage(Component.translatable("message.brnquest.reward.auto_claimed",
-                        rewardId.toString()), true);
-            }
-            return OperationResult.success(message);
-        });
+        return synchronizedOwner(player, () -> rewards.claimLocked(player, rewardId, notifyAutomatic));
     }
 
     public void reset(ServerPlayer player, ResourceLocation questId) {
-        synchronizedOwner(player, () -> {
-            var quest = QuestBookManager.get().active().map(s -> s.quests().get(questId)).orElse(null);
-            if (quest == null) return null;
-            progress(player).resetQuest(questId.toString(), quest.tasks().stream().map(t -> t.id().toString()).toList(),
-                    quest.rewards().stream().map(r -> r.id().toString()).toList());
-            resetTransientStates(player, quest, quest.tasks());
-            QuestProgressData.get(player.getServer()).setDirty();
-            reconcile(player);
-            BrnQuestNetwork.syncProgress(player, false);
-            return null;
-        });
-    }
-
-    /** Dispatch through the type SPI so partial local state resets for every current owner member. */
-    private void resetTransientStates(ServerPlayer player, QuestDefinition quest, List<TaskDefinition> tasks) {
-        var owner = ProgressOwnerService.require(player);
-        var players = new java.util.LinkedHashSet<ServerPlayer>();
-        players.add(player);
-        for (var online : player.getServer().getPlayerList().getPlayers()) {
-            if (ProgressOwnerService.resolve(online).map(view -> view.id().equals(owner)).orElse(false)) players.add(online);
-        }
-        for (var member : players) for (var task : tasks) {
-            var type = TaskTypeRegistry.get(task.typeId());
-            if (type != null) type.resetTransientState(taskContext(member, quest, task, progress(member)));
-        }
+        synchronizedOwner(player, () -> { completion.resetLocked(player, questId); return null; });
     }
 
     /** Called only by the permission/revision-checked admin service while holding the same owner lock. */
     OperationResult administer(ServerPlayer player, QuestDefinition quest, ResourceLocation taskId,
                                AdminProgressAction action) {
-        PlayerProgress progress = progress(player);
-        if (action == AdminProgressAction.FORCE_QUEST) return forceComplete(player, quest.id());
-        if (action == AdminProgressAction.RESET_QUEST) {
-            reset(player, quest.id());
-            return OperationResult.success("Quest progress reset");
-        }
-        TaskDefinition task = quest.tasks().stream().filter(value -> value.id().equals(taskId)).findFirst().orElseThrow();
-        if (action == AdminProgressAction.RESET_TASK) {
-            long previous = taskLedger(player, quest, progress).taskProgress(taskId.toString());
-            progress.resetTask(quest.id().toString(), taskId.toString(),
-                    dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
-            QuestProgressData.get(player.getServer()).setDirty();
-            resetTransientStates(player, quest, List.of(task));
-            if (previous != 0) BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(),
-                    player.getScoreboardName(), quest.bookId(), quest.id(), taskId, ApiViews.task(task), previous, 0));
-            // A task reset can invalidate descendants, so recompute the owner graph before synchronization.
-            reconcile(player);
-            return OperationResult.success("Objective progress reset; reward claims preserved");
-        }
-        if (taskLedger(player, quest, progress).taskProgress(taskId.toString()) >= 1) {
-            return OperationResult.noChange("ALREADY_SUBMITTED", "Objective already completed");
-        }
-        // Do not call the normal submission path: it may consume other currently satisfied items.
-        changeTaskProgress(player, quest, task, progress, Long.MAX_VALUE / 4);
-        QuestStatus status = progress.status(quest.id().toString());
-        if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED
-                && dependenciesComplete(quest, progress)
-                && quest.tasks().stream().filter(value -> !value.optional())
-                .allMatch(value -> taskLedger(player, quest, progress).taskProgress(value.id().toString()) >= 1)) {
-            if (allMembers(player, quest)) {
-                return boundedCompletion(() -> finishMemberCompletion(player, quest, progress, QuestProgressData.get(player.getServer())));
-            }
-            return boundedCompletion(() -> markCompleted(player, quest, progress, QuestProgressData.get(player.getServer())));
-        }
-        return OperationResult.success("Objective force-completed without consuming resources");
+        return completion.administerLocked(player, quest, taskId, action);
     }
 
     /** The durable personal tracking record survives terminal lifecycle states and remains independent of team progress. */
@@ -820,7 +297,7 @@ public final class ProgressEngine {
         QuestProgressData data = QuestProgressData.get(player.getServer());
         String tracked = data.tracked(player.getUUID());
         if (!tracked.isEmpty()) return tracked;
-        if (!shared(player)) {
+        if (!queries.shared(player)) {
             // Migrate the older personal ACTIVE representation once, before completion replaces that lifecycle state.
             tracked = progress(player).questsView().entrySet().stream()
                     .filter(entry -> entry.getValue() == QuestStatus.ACTIVE).map(Map.Entry::getKey).findFirst().orElse("");
@@ -835,7 +312,7 @@ public final class ProgressEngine {
         if (!status.trackable() || !visibleQuestIds(player).contains(questId.toString()))
             return OperationResult.failure("NOT_TRACKABLE", "Quest is not visible or trackable");
         String next = questId.toString().equals(trackedQuest(player)) ? "" : questId.toString();
-        boolean shared = shared(player);
+        boolean shared = queries.shared(player);
         if (!shared) {
             // Preserve legacy ACTIVE display semantics without ever overwriting completed or reward-claimed states.
             progress.questsView().entrySet().stream().filter(entry -> entry.getValue() == QuestStatus.ACTIVE)
@@ -843,119 +320,13 @@ public final class ProgressEngine {
             if (!next.isEmpty() && progress.status(next) == QuestStatus.AVAILABLE) progress.status(next, QuestStatus.ACTIVE);
         }
         QuestProgressData.get(player.getServer()).tracked(player.getUUID(), next);
-        BrnQuestNetwork.syncProgress(player, !shared);
+        effects.sync(player, !shared);
         return OperationResult.success("Tracking updated");
-    }
-
-    private boolean dependenciesComplete(QuestDefinition quest, PlayerProgress progress) {
-        if (quest.dependencies().isEmpty()) return true;
-        long completed = quest.dependencies().stream().filter(id -> dependencyCompleted(id, progress)).count();
-        long started = quest.dependencies().stream().filter(id -> dependencyStarted(id, progress)).count();
-        return QuestDependencyEvaluator.satisfied(quest.behavior().dependencyRequirement(),
-                quest.behavior().minimumRequiredDependencies(), quest.dependencies().size(), completed, started);
     }
 
     /** Preserves terminal history while allowing prerequisite edits and resets to demote stale availability. */
     static QuestStatus reconciledAvailability(QuestStatus current, boolean dependenciesSatisfied) {
-        if (current == QuestStatus.COMPLETED || current == QuestStatus.REWARD_CLAIMED) return current;
-        if (!dependenciesSatisfied) return QuestStatus.LOCKED;
-        return current == QuestStatus.ACTIVE ? QuestStatus.ACTIVE : QuestStatus.AVAILABLE;
-    }
-
-    /** Interactive types are skipped by every automatic trigger, including restored completions. */
-    private static boolean automaticAllowed(RewardDefinition reward) {
-        var book = QuestBookManager.get().active().orElse(null);
-        if (book == null || book.book().settings().suppressAutoClaim()) return false;
-        var type = RewardTypeRegistry.get(reward.typeId());
-        return reward.policy().automatic() && type != null && !type.requiresManualClaim(reward.config());
-    }
-
-    /** Personal completion is durable, but only the full roster can commit the shared quest. */
-    private OperationResult finishMemberCompletion(ServerPlayer player, QuestDefinition quest,
-                                                   PlayerProgress progress, QuestProgressData data) {
-        boolean changed = progress.objectives(player.getUUID()).status(quest.id().toString()) != QuestStatus.COMPLETED;
-        progress.objectives(player.getUUID()).status(quest.id().toString(), QuestStatus.COMPLETED);
-        if (progress.allMembersCompleted(quest.id().toString(), ProgressOwnerService.resolve(player).orElseThrow().members())) {
-            return markCompleted(player, quest, progress, data);
-        }
-        data.setDirty();
-        BrnQuestNetwork.syncProgress(player, true);
-        return new OperationResult(changed ? yourscraft.jasdewstarfield.brnquest.api.OperationStatus.SUCCESS
-                : yourscraft.jasdewstarfield.brnquest.api.OperationStatus.NO_CHANGE,
-                "WAITING_FOR_TEAM", "Your objectives are complete; waiting for all team members");
-    }
-
-    private OperationResult markCompleted(ServerPlayer player, QuestDefinition quest, PlayerProgress progress, QuestProgressData data) {
-        // Capture a legacy personal ACTIVE focus before committing the terminal lifecycle state.
-        trackedQuest(player);
-        progress.status(quest.id().toString(), QuestStatus.COMPLETED);
-        if (shared(player)) progress.completionMembers(quest.id().toString(),
-                ProgressOwnerService.resolve(player).orElseThrow().members());
-        long completedAt = System.currentTimeMillis();
-        progress.completedCycle(quest.id().toString(), completedAt,
-                completedAt + quest.behavior().repeatCooldownSeconds() * 1000L);
-        data.setDirty();
-        prepareOwnerSamplesNow(player);
-        BrnQuestEvents.post(new QuestCompletedEvent(player.getUUID(), player.getScoreboardName(), quest.bookId(),
-                quest.id(), ApiViews.quest(quest), BrnQuestApi.getProgress(player, quest.id().toString()).orElseThrow()));
-        // Automatic and manual rewards enter the same idempotent claim ledger;
-        // only the trigger differs.
-        quest.rewards().stream().filter(ProgressEngine::automaticAllowed)
-                .forEach(reward -> claim(player, reward.id(), reward.policy().notifyPlayer()));
-        // A task-only reset preserves claims; completing it again must not reopen already claimed rewards.
-        if (!quest.rewards().isEmpty() && rewardsResolved(quest, progress)) {
-            progress.status(quest.id().toString(), QuestStatus.REWARD_CLAIMED);
-        }
-        reconcile(player);
-        // Newly unlocked holding objectives should be checked on the next inventory sample.
-        yourscraft.jasdewstarfield.brnquest.task.ItemTaskMonitor.mark(player);
-        BrnQuestNetwork.syncProgress(player, true);
-        return OperationResult.success("Quest completed");
-    }
-
-    private boolean advanceRepeatIfReady(QuestDefinition quest, PlayerProgress progress, long now) {
-        if (!quest.behavior().repeatable()) return false;
-        QuestStatus status = progress.status(quest.id().toString());
-        if (status != QuestStatus.COMPLETED && status != QuestStatus.REWARD_CLAIMED) return false;
-        boolean rewardsResolved = quest.behavior().ignoreRewardBlocking() || quest.rewards().isEmpty()
-                || rewardsResolved(quest, progress);
-        if (!rewardsResolved || now < progress.nextAvailableAt(quest.id().toString())) return false;
-        progress.beginNextCycle(quest.id().toString(), quest.tasks().stream().map(task -> task.id().toString()).toList(),
-                quest.rewards().stream().map(reward -> reward.id().toString()).toList(),
-                dependenciesComplete(quest, progress) ? QuestStatus.AVAILABLE : QuestStatus.LOCKED);
-        return true;
-    }
-
-    private boolean taskIsCurrent(ServerPlayer player, QuestDefinition quest, TaskDefinition task, PlayerProgress progress) {
-        if (allMembers(player, quest)
-                && progress.objectives(player.getUUID()).status(quest.id().toString()) == QuestStatus.COMPLETED) return false;
-        if (!quest.behavior().sequentialTasks() || task.optional()) return true;
-        for (TaskDefinition candidate : quest.tasks()) {
-            if (candidate.id().equals(task.id())) return true;
-            if (!candidate.optional()) {
-                TaskType<?> type = TaskTypeRegistry.get(candidate.typeId());
-                if (type == null || !TaskTypeExecutor.satisfied(type, taskContext(player, quest, candidate, progress))) return false;
-            }
-        }
-        return false;
-    }
-
-    private boolean dependencyCompleted(ResourceLocation id, PlayerProgress progress) {
-        QuestStatus status = progress.status(id.toString());
-        return status == QuestStatus.COMPLETED || status == QuestStatus.REWARD_CLAIMED
-                || progress.completionCycles(id.toString()) > 0;
-    }
-
-    private boolean dependencyStarted(ResourceLocation id, PlayerProgress progress) {
-        QuestStatus status = progress.status(id.toString());
-        if (status == QuestStatus.ACTIVE || dependencyCompleted(id, progress)) return true;
-        QuestDefinition quest = QuestBookManager.get().active().map(snapshot -> snapshot.quests().get(id)).orElse(null);
-        return quest != null && quest.tasks().stream().anyMatch(task -> progress.taskStarted(task.id().toString()));
-    }
-
-    private boolean booleanConfig(Map<String, String> config, String key) {
-        String value = config.getOrDefault(key, "false");
-        return "true".equalsIgnoreCase(value) || "1b".equalsIgnoreCase(value);
+        return ProgressQueries.reconciledAvailability(current, dependenciesSatisfied);
     }
 
     private void restoreMainInventory(ServerPlayer player, List<net.minecraft.world.item.ItemStack> snapshot) {
@@ -965,27 +336,16 @@ public final class ProgressEngine {
 
     private long changeTaskProgress(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
                                     PlayerProgress progress, long amount) {
-        long previous = taskLedger(player, quest, progress).taskProgress(task.id().toString());
-        long current = taskLedger(player, quest, progress).addTaskProgress(task.id().toString(), amount);
+        long previous = queries.taskLedger(player, quest, progress).taskProgress(task.id().toString());
+        long current = queries.taskLedger(player, quest, progress).addTaskProgress(task.id().toString(), amount);
         if (previous != current) {
             // Mark the authoritative world data dirty before observers see the committed value.
             QuestProgressData.get(player.getServer()).setDirty();
-            // Observers may immediately cause gameplay; initialize sequential successors before notifying them.
-            if (pollingDepth > 0 && quest.behavior().sequentialTasks()) {
-                var snapshot = QuestBookManager.get().active().orElseThrow();
-                prepareSamples(player, snapshot, progress, new yourscraft.jasdewstarfield.brnquest.task.TaskSampleValues(), List.of(quest));
-            }
-            prepareOwnerSamples(player);
-            BrnQuestEvents.post(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
+            sampling.progressChanged(player, quest, progress);
+            effects.publish(new TaskProgressChangedEvent(player.getUUID(), player.getScoreboardName(),
                     quest.bookId(), quest.id(), task.id(), ApiViews.task(task), previous, current));
         }
         return current;
-    }
-
-    private TaskContext taskContext(ServerPlayer player, QuestDefinition quest, TaskDefinition task,
-                                    PlayerProgress progress) {
-        return new TaskContext(player, quest.bookId(), quest.id(), ApiViews.task(task),
-                taskLedger(player, quest, progress).taskProgress(task.id().toString()));
     }
 
     private OperationResult boundedCompletion(java.util.function.Supplier<OperationResult> operation) {

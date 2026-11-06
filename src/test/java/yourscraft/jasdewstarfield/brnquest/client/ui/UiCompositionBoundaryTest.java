@@ -16,11 +16,15 @@ class UiCompositionBoundaryTest {
                 "QuestDetailsInteraction.java",
                 "QuestTaskRowWidget.java", "QuestRewardCellWidget.java",
                 "QuestCanvasRenderer.java", "QuestCanvasController.java", "QuestNodeDrag.java",
+                "QuestDependencyGeometry.java",
                 "QuestEditorChrome.java", "QuestPublishReviewSection.java",
+                "QuestPublishReviewContent.java",
                 "EditorDiagnosticPresentation.java", "EditorTooltipComposer.java",
                 "QuestTypedEntryListSection.java", "QuestTypePickerModel.java",
                 "QuestTypedEntryKind.java", "QuestTypedPropertySection.java",
                 "QuestTypedPropertyFormModel.java", "QuestScreenFrameIdentity.java",
+                "QuestPropertiesEditor.java", "QuestDependenciesEditor.java", "QuestTypedEntriesEditor.java",
+                "QuestStructureEditor.java", "QuestTextEditor.java", "EditorPropertySurface.java",
                 "component/EditorPropertyPanel.java", "component/EditorFormFields.java",
                 "component/EditorEntryListPanel.java", "component/EditorSelectionFocus.java")) {
             String source = Files.readString(ui.resolve(name), StandardCharsets.UTF_8);

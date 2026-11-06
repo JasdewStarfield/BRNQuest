@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-06
+
+Changes since the 1.1.0 release.
+
+### Added
+
+- **Publish review:** Added content shows names, parent objects, counts, types and configuration summaries; localization changes identify the object, language and field. Details wrap, scroll and indicate truncated data. Added Chinese translations for validation errors, warnings and revision conflicts.
+
+### Changed
+
+- **Editing sessions:** Fixed continued input after an editing lease is denied or invalidated, and stale responses or acknowledgements for another book overwriting the current session.
+- **Dependency lines:** Fixed off-center selection highlights, node outlines covering arrows, and repeated alpha blending where lines meet arrows or turn corners. Adjusted arrow spacing and stabilized endpoints when selecting or tracking quests.
+
+### Technical Changes
+
+- **Editor refactoring:** Separated draft reception, preview history, auxiliary queries, property forms, text editing and book workflows into focused modules.
+- **Progress engine:** Separated queries, sampling, reward execution and completion transitions. Reuse stateful objective selections during polling to reduce repeated list construction.
+
 ## [1.1.0] - 2026-10-14
 
 Changes since the 1.0.2 release.

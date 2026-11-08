@@ -9,13 +9,13 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.chat.Style;
-import net.minecraft.network.chat.TextColor;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
@@ -40,13 +40,14 @@ final class AuthorCommands {
 
     private AuthorCommands() {}
 
-    private static Component copyableComponent(String text)
-    {
+    /** Keeps identifiers readable and copies their exact value when clicked in chat. */
+    private static Component copyableComponent(String text) {
         return Component.literal(text)
-                .withStyle(Style.EMPTY
-                    .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text))
-                    .withColor(TextColor.fromRgb(0x0000FF))
-                    .withUnderlined(true));
+                .withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
+                .withStyle(style -> style
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text))
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                                Component.translatable("command.brnquest.author.click_to_copy"))));
     }
 
     static LiteralArgumentBuilder<CommandSourceStack> build() {
@@ -196,7 +197,8 @@ final class AuthorCommands {
         if (result.success()) {
             var handle = result.value();
             context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.session",
-                    copyableComponent(handle.sessionId().toString()), copyableComponent(handle.session().draftRevision()), copyableComponent(handle.session().savedRevision())), false);
+                    copyableComponent(handle.sessionId().toString()), copyableComponent(handle.session().draftRevision()),
+                    copyableComponent(handle.session().savedRevision())), false);
         }
         return report(context, "session_open", book.toString(), result);
     }
@@ -207,7 +209,8 @@ final class AuthorCommands {
         if (result.success()) {
             var view = result.value();
             context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.status",
-                    view.editorName(), copyableComponent(view.draftRevision()), copyableComponent(view.savedRevision()), view.dirty(), view.expiresAtTick()), false);
+                    view.editorName(), copyableComponent(view.draftRevision()), copyableComponent(view.savedRevision()),
+                    view.dirty(), view.expiresAtTick()), false);
         }
         return report(context, "session_status", book.toString(), result);
     }

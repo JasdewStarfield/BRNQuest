@@ -9,10 +9,13 @@ import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import yourscraft.jasdewstarfield.brnquest.BRNQuest;
@@ -36,6 +39,16 @@ final class AuthorCommands {
             Component.translatable("command.brnquest.author.invalid_config_json"));
 
     private AuthorCommands() {}
+
+    /** Keeps identifiers readable and copies their exact value when clicked in chat. */
+    private static Component copyableComponent(String text) {
+        return Component.literal(text)
+                .withStyle(ChatFormatting.AQUA, ChatFormatting.UNDERLINE)
+                .withStyle(style -> style
+                        .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text))
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                                Component.translatable("command.brnquest.author.click_to_copy"))));
+    }
 
     static LiteralArgumentBuilder<CommandSourceStack> build() {
         return Commands.literal("author").requires(source -> source.hasPermission(2))
@@ -184,7 +197,8 @@ final class AuthorCommands {
         if (result.success()) {
             var handle = result.value();
             context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.session",
-                    handle.sessionId().toString(), handle.session().draftRevision(), handle.session().savedRevision()), false);
+                    copyableComponent(handle.sessionId().toString()), copyableComponent(handle.session().draftRevision()),
+                    copyableComponent(handle.session().savedRevision())), false);
         }
         return report(context, "session_open", book.toString(), result);
     }
@@ -195,7 +209,8 @@ final class AuthorCommands {
         if (result.success()) {
             var view = result.value();
             context.getSource().sendSuccess(() -> Component.translatable("command.brnquest.author.status",
-                    view.editorName(), view.draftRevision(), view.savedRevision(), view.dirty(), view.expiresAtTick()), false);
+                    view.editorName(), copyableComponent(view.draftRevision()), copyableComponent(view.savedRevision()),
+                    view.dirty(), view.expiresAtTick()), false);
         }
         return report(context, "session_status", book.toString(), result);
     }
@@ -230,7 +245,7 @@ final class AuthorCommands {
         var result = new DraftEditService().setBookTitle(player(context), session(context), book,
                 revision(context), StringArgumentType.getString(context, "title"));
         if (result.success()) context.getSource().sendSuccess(() -> Component.translatable(
-                "command.brnquest.author.revision", result.value().snapshot().draftRevision()), false);
+                "command.brnquest.author.revision", copyableComponent(result.value().snapshot().draftRevision())), false);
         return report(context, "draft_set_title", book.toString(), result);
     }
 
@@ -294,7 +309,7 @@ final class AuthorCommands {
     private static int reportEdit(CommandContext<CommandSourceStack> context, String action, ResourceLocation object,
                                   AuthorOperationResult<DraftEditResult> result) {
         if (result.success() && result.value() != null) context.getSource().sendSuccess(() -> Component.translatable(
-                "command.brnquest.author.revision", result.value().snapshot().draftRevision()), false);
+                "command.brnquest.author.revision", copyableComponent(result.value().snapshot().draftRevision())), false);
         return report(context, action, object.toString(), result);
     }
 
@@ -368,7 +383,7 @@ final class AuthorCommands {
         var result = new AuthorBackupService().list(player(context), kind);
         if (result.success()) result.value().forEach(backup -> context.getSource().sendSuccess(
                 () -> Component.translatable("command.brnquest.author.backup_entry", backup.id(),
-                        backup.revision(), backup.fileCount()), false));
+                        copyableComponent(backup.revision()), backup.fileCount()), false));
         return report(context, "backup_list_" + kind.name().toLowerCase(Locale.ROOT), "", result);
     }
 
@@ -378,8 +393,8 @@ final class AuthorCommands {
         String backup = StringArgumentType.getString(context, "backup");
         var result = new AuthorBackupService().preview(player(context), kind, backup);
         if (result.success()) context.getSource().sendSuccess(() -> Component.translatable(
-                "command.brnquest.author.backup_preview", printableRevision(result.value().currentRevision()),
-                result.value().backup().revision(), result.value().willReplace()), false);
+                "command.brnquest.author.backup_preview", copyableComponent(printableRevision(result.value().currentRevision())),
+                copyableComponent(result.value().backup().revision()), result.value().willReplace()), false);
         return report(context, "backup_preview_" + kind.name().toLowerCase(Locale.ROOT), backup, result);
     }
 

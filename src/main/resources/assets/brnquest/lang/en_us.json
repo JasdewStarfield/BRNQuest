@@ -731,6 +731,7 @@
   "command.brnquest.import.more_diagnostics": "%1$s more diagnostics are available in the full report.",
   "command.brnquest.import.local_missing": "No saved FTB Quests book found at config/ftbquests/quests/data.snbt in this server instance. Save the FTB quest book before importing.",
   "command.brnquest.author.invalid_config_json": "Configuration must be a JSON object containing primitive string values.",
+  "command.brnquest.author.click_to_copy": "Click to copy",
   "command.brnquest.author.session": "Session %1$s; draft revision %2$s; saved revision %3$s.",
   "command.brnquest.author.status": "Editor %1$s; draft revision %2$s; saved revision %3$s; dirty %4$s; expires at tick %5$s.",
   "command.brnquest.author.diagnostics": "Diagnostics: %1$s",

@@ -21,7 +21,6 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.ContentAwareCache;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButton;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorButtonInput;
-import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorConfirmDialog;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorIcon;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorOverlayHost;
 import yourscraft.jasdewstarfield.brnquest.client.ui.component.EditorPopupMenu;
@@ -119,10 +118,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final CanvasArtwork canvasArtwork = new CanvasArtwork();
 
     private final QuestContextMenu contextMenu = new QuestContextMenu();
-    private Set<ResourceLocation> deleteSelection = Set.of();
-    private DeleteKind deleteKind = DeleteKind.NONE;
-    private ResourceLocation deleteTarget;
-    private String deleteImpact = "";
+    private final QuestDeleteConfirmation deleteConfirmation = new QuestDeleteConfirmation();
     private final ContentAwareCache<ResourceLocation, String, ItemStack> itemCache = new ContentAwareCache<>();
     private ItemStack hoveredDetailStack = ItemStack.EMPTY;
     private Component hoveredDetailText;
@@ -1542,7 +1538,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         if (editorKeyboardSurfaceReady() && keyCode == 261 && editorSelectedQuest != null) {
             QuestBookSnapshot snapshot = displaySnapshot();
             if (snapshot != null && snapshot.quests().containsKey(editorSelectedQuest)) {
-                requestDelete(DeleteKind.QUEST, editorSelectedQuest, snapshot.book());
+                requestDelete(QuestDeleteConfirmation.Kind.QUEST, editorSelectedQuest, snapshot.book());
             }
             return true;
         }
@@ -1881,22 +1877,22 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case COPY_SELECTION_SNAPSHOT -> copyQuestClipboard(context.selection());
             case COPY_QUEST_SNAPSHOT -> copyQuestClipboard(java.util.Set.of(CanvasSelectionKey.quest(target)));
             case PASTE_QUEST_SNAPSHOT -> pasteQuestClipboard(graphX, graphY);
-            case COPY_SELECTION -> sendSelectionMutation("COPY_CANVAS_SELECTION", context.selection());
+            case COPY_SELECTION -> sendSelectionMutation("COPY_CANVAS_SELECTION", context.parent(), context.selection());
             case DELETE_SELECTION -> requestCanvasSelectionDelete(context.selection(), book);
             case CLEAR_SELECTION -> canvasController.clearSelection();
             case COPY_QUEST -> openStructureForm(QuestStructureEditor.Kind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
-            case DELETE_QUEST -> requestDelete(DeleteKind.QUEST, target, book);
+            case DELETE_QUEST -> requestDelete(QuestDeleteConfirmation.Kind.QUEST, target, book);
             case ADD_CHAPTER -> openStructureForm(QuestStructureEditor.Kind.ADD_CHAPTER, null, target, 0, 0);
             case RENAME_GROUP -> openStructureForm(QuestStructureEditor.Kind.RENAME_GROUP, target, null, 0, 0);
             case MOVE_GROUP_UP -> moveGroup(book, target, -1);
             case MOVE_GROUP_DOWN -> moveGroup(book, target, 1);
-            case DELETE_GROUP -> requestDelete(DeleteKind.GROUP, target, book);
+            case DELETE_GROUP -> requestDelete(QuestDeleteConfirmation.Kind.GROUP, target, book);
             case BOOK_PROPERTIES -> openBookProperties();
             case COPY_CHAPTER -> sendMutation("COPY_CHAPTER", target, null, null, "", 0, 0, 0, List.of());
             case RENAME_CHAPTER -> openStructureForm(QuestStructureEditor.Kind.RENAME_CHAPTER, target, null, 0, 0);
             case MOVE_CHAPTER_UP -> moveChapter(book, target, -1);
             case MOVE_CHAPTER_DOWN -> moveChapter(book, target, 1);
-            case DELETE_CHAPTER -> requestDelete(DeleteKind.CHAPTER, target, book);
+            case DELETE_CHAPTER -> requestDelete(QuestDeleteConfirmation.Kind.CHAPTER, target, book);
             case EDIT_TYPED, COPY_TYPED, COPY_TYPED_SNAPSHOT, MOVE_TYPED_UP, MOVE_TYPED_DOWN,
                     COPY_TYPED_ID, COPY_TYPED_TYPE, DELETE_TYPED ->
                     performTypedContextAction(intent.action(), context, book);
@@ -2127,10 +2123,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case TYPED_TYPE_PICKER -> typedEntries.closePicker();
             case QUICK_TEXT -> questText.closeQuickTextEditor();
             case DELETE_CONFIRMATION -> {
-                deleteSelection = java.util.Set.of();
-                deleteKind = DeleteKind.NONE;
-                deleteTarget = null;
-                deleteImpact = "";
+                deleteConfirmation.close();
                 editorOverlays.close();
             }
             case DISCARD_CONFIRMATION -> bookWorkflow.closeDiscard();
@@ -2236,105 +2229,59 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 + "_recovered_" + Long.toString(System.currentTimeMillis(), 36));
     }
 
-    private void requestDelete(DeleteKind kind, ResourceLocation target, QuestBookDefinition book) {
-        deleteSelection = java.util.Set.of();
+    private void requestDelete(QuestDeleteConfirmation.Kind kind, ResourceLocation target, QuestBookDefinition book) {
         closeActiveEditorOverlay();
-        deleteKind = kind;
-        deleteTarget = target;
-        deleteImpact = switch (kind) {
-            case GROUP -> {
-                Set<ResourceLocation> chapters = book.chapters().stream()
-                        .filter(chapter -> chapter.groupId().equals(target)).map(ChapterDefinition::id)
-                        .collect(java.util.stream.Collectors.toSet());
-                long quests = book.chapters().stream().filter(chapter -> chapters.contains(chapter.id()))
-                        .mapToLong(chapter -> chapter.quests().size()).sum();
-                yield Component.translatable("screen.brnquest.editor.delete.group_impact", chapters.size(), quests).getString();
-            }
-            case CHAPTER -> {
-                ChapterDefinition chapter = book.chapters().stream().filter(value -> value.id().equals(target))
-                        .findFirst().orElse(null);
-                int quests = chapter == null ? 0 : chapter.quests().size();
-                yield Component.translatable("screen.brnquest.editor.delete.chapter_impact", quests).getString();
-            }
-            case QUEST -> {
-                long references = book.quests().stream().filter(quest -> quest.dependencies().contains(target)).count();
-                yield Component.translatable("screen.brnquest.editor.delete.quest_impact", references).getString();
-            }
-            case NONE -> "";
-        };
-        editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+        var editor = ClientEditorState.get();
+        if (deleteConfirmation.openTarget(EditorSessionLifecycle.Scope.capture(editor), editor.draftRevision(),
+                book, kind, target)) {
+            editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+        }
     }
 
-    /** Confirm one mixed delete; locked artwork stays selected but is excluded from destructive operations. */
     private void requestCanvasSelectionDelete(Set<ResourceLocation> keys, QuestBookDefinition book) {
-        var locked = currentChapter().canvasScene().decorations().stream().filter(d -> d.locked())
-                .map(d -> CanvasSelectionKey.decoration(d.id())).collect(java.util.stream.Collectors.toSet());
-        deleteSelection = keys.stream().filter(key -> !locked.contains(key)).collect(java.util.stream.Collectors.toSet());
-        if (deleteSelection.isEmpty()) return;
-        deleteKind = DeleteKind.NONE;
-        deleteTarget = null;
-        var nodes = CanvasSelectionKey.ids(deleteSelection, false);
-        long references = book.quests().stream().filter(q -> !nodes.contains(q.id()))
-                .filter(q -> q.dependencies().stream().anyMatch(nodes::contains)).count();
-        deleteImpact = Component.translatable("screen.brnquest.selection.delete_warning", deleteSelection.size(), references).getString();
-        editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+        var editor = ClientEditorState.get();
+        if (deleteConfirmation.openSelection(EditorSessionLifecycle.Scope.capture(editor), editor.draftRevision(),
+                book, currentChapter(), keys)) {
+            editorOverlays.show(EditorOverlayHost.Kind.DELETE_CONFIRMATION);
+        }
     }
 
     /** Freeze IDs in the request; the server reads current coordinates and validates the whole selection. */
-    private void sendSelectionMutation(String action, java.util.Set<ResourceLocation> ids) {
+    private void sendSelectionMutation(String action, ResourceLocation chapter, Set<ResourceLocation> ids) {
         if (ids.isEmpty() || ClientEditorState.get().busy()) return;
         var positions = ids.stream().sorted().map(id -> new AuthoringNetwork.PositionWire(id.toString(), 0, 0)).toList();
-        sendMutation(action, currentChapterId(), null, null, "", 0, 1, 1, positions);
+        sendMutation(action, chapter, null, null, "", 0, 1, 1, positions);
     }
 
     private void renderDeleteConfirmation(GuiGraphics graphics, int mouseX, int mouseY) {
-        EditorConfirmDialog.render(graphics, font, layout(), formButtons,
-                Component.translatable("screen.brnquest.editor.delete.warning"), Component.literal(deleteImpact),
-                0xFFFFC07A, Component.translatable("gui.cancel"),
-                Component.translatable("screen.brnquest.editor.delete.confirm"), mouseX, mouseY);
+        deleteConfirmation.render(graphics, font, layout(), formButtons, mouseX, mouseY);
     }
 
     private boolean handleDeleteConfirmationClick(double mouseX, double mouseY, int button) {
-        if (button != 0) return true;
-        EditorConfirmDialog.Action dialogAction = EditorConfirmDialog.actionAt(layout(), mouseX, mouseY);
-        if (dialogAction == EditorConfirmDialog.Action.CANCEL) {
-            deleteSelection = java.util.Set.of();
-            deleteKind = DeleteKind.NONE;
-            deleteTarget = null;
-            editorOverlays.close();
-            return true;
-        }
-        if (dialogAction == EditorConfirmDialog.Action.CONFIRM) {
-            if (!deleteSelection.isEmpty()) {
-                var selected = deleteSelection;
-                deleteSelection = java.util.Set.of();
-                editorOverlays.close();
-                sendSelectionMutation("DELETE_CANVAS_SELECTION", selected);
-                return true;
-            }
-            String action = switch (deleteKind) {
-                case GROUP -> "DELETE_GROUP";
-                case CHAPTER -> "DELETE_CHAPTER";
-                case QUEST -> "DELETE_QUEST";
-                case NONE -> "";
-            };
-            ResourceLocation target = deleteTarget;
-            deleteKind = DeleteKind.NONE;
-            deleteTarget = null;
-            editorOverlays.close();
-            if (!action.isEmpty()) {
-                sendMutation(action, target, null, null, "", 0, 0, 0, List.of());
-                if (action.equals("DELETE_QUEST")) {
-                    canvasController.removeSelection(target);
-                    if (target.equals(editorSelectedQuest)) {
-                        editorSelectedQuest = null;
-                        closeQuestEditingPanels();
-                    }
-                    detailsOpen = false;
-                }
-            }
-        }
+        var editor = ClientEditorState.get();
+        var intent = deleteConfirmation.click(layout(), EditorSessionLifecycle.Scope.capture(editor),
+                editor.draftRevision(), mouseX, mouseY, button);
+        if (!deleteConfirmation.isOpen()) editorOverlays.close();
+        intent.ifPresent(this::applyConfirmedDelete);
         return true;
+    }
+
+    private void applyConfirmedDelete(QuestDeleteConfirmation.Intent intent) {
+        ResourceLocation target = intent.target();
+        if (intent.kind() == QuestDeleteConfirmation.Kind.CANVAS_SELECTION) {
+            sendSelectionMutation(intent.action(), target, intent.selection());
+            return;
+        }
+        // Capture the old selection in sendMutation before changing the screen for a single quest deletion.
+        if (sendMutation(intent.action(), target, null, null, "", 0, 0, 0, List.of())
+                && intent.kind() == QuestDeleteConfirmation.Kind.QUEST) {
+            canvasController.removeSelection(target);
+            if (target.equals(editorSelectedQuest)) {
+                editorSelectedQuest = null;
+                closeQuestEditingPanels();
+            }
+            detailsOpen = false;
+        }
     }
 
     private void moveGroup(QuestBookDefinition book, ResourceLocation target, int delta) {
@@ -3404,7 +3351,5 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private int detailViewportHeight() {
         return Math.max(1, detailContentBottom() - detailContentTop());
     }
-
-    private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
 
 }

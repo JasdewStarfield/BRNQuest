@@ -118,16 +118,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private final EditorOverlayHost editorOverlays = new EditorOverlayHost();
     private final CanvasArtwork canvasArtwork = new CanvasArtwork();
 
-    private ContextKind editContextKind = ContextKind.NONE;
-    private ResourceLocation editContextTarget;
-    private java.util.Set<ResourceLocation> contextSelection = java.util.Set.of();
-    private java.util.Set<ResourceLocation> deleteSelection = java.util.Set.of();
-    private int editContextX;
-    private int editContextY;
-    private int editContextSubmenu = -1;
-    private int editContextTypedIndex = -1;
-    private double editContextGraphX;
-    private double editContextGraphY;
+    private final QuestContextMenu contextMenu = new QuestContextMenu();
+    private Set<ResourceLocation> deleteSelection = Set.of();
     private DeleteKind deleteKind = DeleteKind.NONE;
     private ResourceLocation deleteTarget;
     private String deleteImpact = "";
@@ -340,7 +332,7 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
 
     /** Module invalidation follows session identity changes, including a return from a suspended child. */
     private void synchronizeEditorModules(ClientEditorState editor) {
-        editorSessionLifecycle.accept(new EditorSessionLifecycle.Scope(editor.sessionId(), editor.bookId(), EditorSessionLifecycle.canEdit(editor)), () -> {
+        editorSessionLifecycle.accept(EditorSessionLifecycle.Scope.capture(editor), () -> {
             closeQuestEditingPanels();
             questText.sessionChanged();
             switch (editorOverlays.active()) {
@@ -844,8 +836,8 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case OPEN_GROUP_CONTEXT, OPEN_CHAPTER_CONTEXT -> {
                 if (ClientEditorState.get().editing() && intent.targetId() != null) {
                     openEditContext(intent.action() == QuestNavigationPanel.Action.OPEN_GROUP_CONTEXT
-                                    ? ContextKind.GROUP : ContextKind.CHAPTER,
-                            intent.targetId(), intent.pointerX(), intent.pointerY(), 0, 0);
+                                    ? QuestContextMenu.Kind.GROUP : QuestContextMenu.Kind.CHAPTER,
+                            intent.targetId(), intent.pointerX(), intent.pointerY());
                 }
             }
             case SELECT_CHAPTER -> selectNavigationChapter(book, intent.targetId());
@@ -1748,11 +1740,31 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private void renderEditContextMenu(GuiGraphics graphics, int mouseX, int mouseY) {
-        List<EditorPopupMenu.Entry> entries = contextMenuEntries();
-        UiRect root = editContextBounds(entries.size());
-        EditorPopupMenu.CascadeLayout current = editContextLayout(entries);
-        editContextSubmenu = EditorPopupMenu.resolveSubmenu(root, entries, current, mouseX, mouseY);
-        EditorPopupMenu.render(graphics, font, editContextLayout(entries), entries, mouseX, mouseY);
+        var context = contextMenu.context();
+        if (context != null) contextMenu.render(graphics, font, contextViewport(), contextOptions(context), mouseX, mouseY);
+    }
+
+    private QuestContextMenu.Viewport contextViewport() {
+        return new QuestContextMenu.Viewport(width, topToolbarHeight(), height - bottomToolbarHeight());
+    }
+
+    /** Menu availability follows live permissions and the current order of typed entries. */
+    private QuestContextMenu.Options contextOptions(QuestContextMenu.Context context) {
+        var quest = context.kind() == QuestContextMenu.Kind.TYPED_ENTRY ? selectedQuest() : null;
+        int index = context.entryKind() == typedEntries.kind() ? context.typedIndex(quest) : -1;
+        boolean canMoveDown = index >= 0 && index + 1 < context.entryKind().size(quest);
+        ResourceLocation progressQuest = context.kind() == QuestContextMenu.Kind.NODE
+                ? context.target() : context.parent();
+        ResourceLocation progressTask = context.kind() == QuestContextMenu.Kind.TYPED_ENTRY ? context.target() : null;
+        boolean showProgress = (context.kind() == QuestContextMenu.Kind.NODE || context.entryKind() == QuestTypedEntryKind.TASK)
+                && hasAdminProgressPermission();
+        boolean canPaste = switch (context.kind()) {
+            case CANVAS, DECORATION, SELECTION -> canPasteQuestClipboard();
+            default -> false;
+        };
+        return new QuestContextMenu.Options(canPaste, context.parent() != null, showProgress,
+                showProgress ? adminProgressLabel(progressQuest, progressTask) : Component.empty(),
+                showProgress && canManageProgress(progressQuest, progressTask), index > 0, canMoveDown);
     }
 
     /** Opens a real popup list while keeping the selected value in the form field owned by the caller. */
@@ -1828,73 +1840,77 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     }
 
     private boolean handleEditContextClick(double mouseX, double mouseY, int button, QuestBookDefinition book) {
-        if (button != 0) {
-            closeEditContext();
-            return true;
-        }
-        List<EditorPopupMenu.Entry> entries = contextMenuEntries();
-        EditorPopupMenu.CascadeLayout menu = editContextLayout(entries);
-        if (!menu.contains(mouseX, mouseY)) {
-            closeEditContext();
-            return true;
-        }
-        String action = EditorPopupMenu.actionAt(menu, entries, mouseX, mouseY);
-        // Clicking the parent row only opens its submenu; no editor intent is dispatched yet.
-        if (action.isEmpty()) return true;
-        ResourceLocation target = editContextTarget;
-        int typedIndex = editContextTypedIndex;
-        double graphX = editContextGraphX;
-        double graphY = editContextGraphY;
-        closeEditContext();
-        switch (action) {
-            case "ADMIN_QUEST" -> openAdminProgress(target, null);
-            case "ADMIN_TASK" -> openAdminProgress(typedEntries.target(), target);
-            case "SELF_FORCE_QUEST" -> openSelfProgress(target, null, false);
-            case "SELF_RESET_QUEST" -> openSelfProgress(target, null, true);
-            case "SELF_FORCE_TASK" -> openSelfProgress(typedEntries.target(), target, false);
-            case "SELF_RESET_TASK" -> openSelfProgress(typedEntries.target(), target, true);
-            case "ADD_QUEST" -> {
-                ResourceLocation chapterId = currentChapterId();
+        var context = contextMenu.context();
+        if (context == null) return true;
+        var scope = EditorSessionLifecycle.Scope.capture(ClientEditorState.get());
+        var intent = contextMenu.click(contextViewport(), contextOptions(context), scope, mouseX, mouseY, button);
+        if (contextMenu.context() == null) editorOverlays.close();
+        intent.ifPresent(value -> performContextAction(value, book));
+        return true;
+    }
+
+    /** Route the captured action through the same editors and mutation gateway used by other inputs. */
+    private void performContextAction(QuestContextMenu.Intent intent, QuestBookDefinition book) {
+        var context = intent.context();
+        ResourceLocation target = context.target();
+        double graphX = context.graphX();
+        double graphY = context.graphY();
+        // A popup may outlive its canvas or row if the current draft refreshes between input events.
+        boolean sameTarget = switch (context.kind()) {
+            case CANVAS, DECORATION, NODE, SELECTION -> Objects.equals(context.parent(), currentChapterId());
+            case TYPED_ENTRY -> context.entryKind() == typedEntries.kind()
+                    && Objects.equals(context.parent(), typedEntries.target()) && context.typedIndex(selectedQuest()) >= 0;
+            case DEPENDENCY_ENTRY -> Objects.equals(context.parent(), dependencies.target());
+            default -> true;
+        };
+        if (!sameTarget) return;
+        switch (intent.action()) {
+            case ADMIN_QUEST -> openAdminProgress(target, null);
+            case ADMIN_TASK -> openAdminProgress(context.parent(), target);
+            case SELF_FORCE_QUEST -> openSelfProgress(target, null, false);
+            case SELF_RESET_QUEST -> openSelfProgress(target, null, true);
+            case SELF_FORCE_TASK -> openSelfProgress(context.parent(), target, false);
+            case SELF_RESET_TASK -> openSelfProgress(context.parent(), target, true);
+            case ADD_QUEST -> {
+                ResourceLocation chapterId = context.parent();
                 if (chapterId != null) openStructureForm(QuestStructureEditor.Kind.ADD_QUEST, null, chapterId, graphX, graphY);
             }
-            case "ADD_DECORATION" -> addDecorationAt(graphX, graphY);
-            case "DECORATION_PROPERTIES" -> openDecorationProperties(target);
-            case "SET_CHAPTER_AUTOFOCUS" -> setChapterAutofocus(book, target);
-            case "COPY_SELECTION_SNAPSHOT" -> copyQuestClipboard(contextSelection);
-            case "COPY_QUEST_SNAPSHOT" -> copyQuestClipboard(java.util.Set.of(CanvasSelectionKey.quest(target)));
-            case "PASTE_QUEST_SNAPSHOT" -> pasteQuestClipboard(graphX, graphY);
-            case "COPY_SELECTION" -> sendSelectionMutation("COPY_CANVAS_SELECTION", contextSelection);
-            case "DELETE_SELECTION" -> requestCanvasSelectionDelete(contextSelection, book);
-            case "CLEAR_SELECTION" -> canvasController.clearSelection();
-            case "COPY_QUEST" -> openStructureForm(QuestStructureEditor.Kind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
-            case "DELETE_QUEST" -> requestDelete(DeleteKind.QUEST, target, book);
-            case "ADD_CHAPTER" -> openStructureForm(QuestStructureEditor.Kind.ADD_CHAPTER, null, target, 0, 0);
-            case "RENAME_GROUP" -> openStructureForm(QuestStructureEditor.Kind.RENAME_GROUP, target, null, 0, 0);
-            case "MOVE_GROUP_UP" -> moveGroup(book, target, -1);
-            case "MOVE_GROUP_DOWN" -> moveGroup(book, target, 1);
-            case "DELETE_GROUP" -> requestDelete(DeleteKind.GROUP, target, book);
-            case "BOOK_PROPERTIES" -> openBookProperties();
-            case "COPY_CHAPTER" -> sendMutation("COPY_CHAPTER", target, null, null, "", 0, 0, 0, List.of());
-            case "RENAME_CHAPTER" -> openStructureForm(QuestStructureEditor.Kind.RENAME_CHAPTER, target, null, 0, 0);
-            case "MOVE_CHAPTER_UP" -> moveChapter(book, target, -1);
-            case "MOVE_CHAPTER_DOWN" -> moveChapter(book, target, 1);
-            case "DELETE_CHAPTER" -> requestDelete(DeleteKind.CHAPTER, target, book);
-            case "EDIT_TYPED", "COPY_TYPED", "COPY_TYPED_SNAPSHOT", "MOVE_TYPED_UP", "MOVE_TYPED_DOWN",
-                    "COPY_TYPED_ID", "COPY_TYPED_TYPE", "DELETE_TYPED" ->
-                    performTypedContextAction(action, target, typedIndex, book);
-            case "COPY_DEPENDENCY_ID" -> {
+            case ADD_DECORATION -> addDecorationAt(graphX, graphY);
+            case DECORATION_PROPERTIES -> openDecorationProperties(target);
+            case SET_CHAPTER_AUTOFOCUS -> setChapterAutofocus(book, target);
+            case COPY_SELECTION_SNAPSHOT -> copyQuestClipboard(context.selection());
+            case COPY_QUEST_SNAPSHOT -> copyQuestClipboard(java.util.Set.of(CanvasSelectionKey.quest(target)));
+            case PASTE_QUEST_SNAPSHOT -> pasteQuestClipboard(graphX, graphY);
+            case COPY_SELECTION -> sendSelectionMutation("COPY_CANVAS_SELECTION", context.selection());
+            case DELETE_SELECTION -> requestCanvasSelectionDelete(context.selection(), book);
+            case CLEAR_SELECTION -> canvasController.clearSelection();
+            case COPY_QUEST -> openStructureForm(QuestStructureEditor.Kind.COPY_QUEST, target, null, graphX + 1, graphY + 1);
+            case DELETE_QUEST -> requestDelete(DeleteKind.QUEST, target, book);
+            case ADD_CHAPTER -> openStructureForm(QuestStructureEditor.Kind.ADD_CHAPTER, null, target, 0, 0);
+            case RENAME_GROUP -> openStructureForm(QuestStructureEditor.Kind.RENAME_GROUP, target, null, 0, 0);
+            case MOVE_GROUP_UP -> moveGroup(book, target, -1);
+            case MOVE_GROUP_DOWN -> moveGroup(book, target, 1);
+            case DELETE_GROUP -> requestDelete(DeleteKind.GROUP, target, book);
+            case BOOK_PROPERTIES -> openBookProperties();
+            case COPY_CHAPTER -> sendMutation("COPY_CHAPTER", target, null, null, "", 0, 0, 0, List.of());
+            case RENAME_CHAPTER -> openStructureForm(QuestStructureEditor.Kind.RENAME_CHAPTER, target, null, 0, 0);
+            case MOVE_CHAPTER_UP -> moveChapter(book, target, -1);
+            case MOVE_CHAPTER_DOWN -> moveChapter(book, target, 1);
+            case DELETE_CHAPTER -> requestDelete(DeleteKind.CHAPTER, target, book);
+            case EDIT_TYPED, COPY_TYPED, COPY_TYPED_SNAPSHOT, MOVE_TYPED_UP, MOVE_TYPED_DOWN,
+                    COPY_TYPED_ID, COPY_TYPED_TYPE, DELETE_TYPED ->
+                    performTypedContextAction(intent.action(), context, book);
+            case COPY_DEPENDENCY_ID -> {
                 if (target != null) copyTechnicalId(target.toString());
             }
-            case "REMOVE_DEPENDENCY" -> {
+            case REMOVE_DEPENDENCY -> {
                 if (dependencies.target() != null) {
                     sendMutation("REMOVE_DEPENDENCY", dependencies.target(), null,
                             target, "", 0, 0, 0, List.of());
                     dependencies.message(null);
                 }
             }
-            default -> { }
         }
-        return true;
     }
 
     /** Shortcut writes the same live config exposed by the settings screen, never an authoring mutation. */
@@ -1928,175 +1944,61 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
         }));
     }
 
-    private List<EditorPopupMenu.Entry> contextMenuEntries() {
-        return switch (editContextKind) {
-            case CANVAS -> EditorPopupMenu.menu(menu -> menu.action("ADD_QUEST",
-                    Component.translatable("screen.brnquest.editor.context.add_quest"), false)
-                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
-                    .action("ADD_DECORATION", EditorCanvasScreen.label("add_here"), false, currentChapterId() != null)
-                    .action("BOOK_PROPERTIES", Component.translatable("screen.brnquest.book.properties"), false));
-            case DECORATION -> EditorPopupMenu.menu(menu -> menu.action("DECORATION_PROPERTIES", EditorCanvasScreen.label("properties"), false)
-                    .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
-                    .action("COPY_SELECTION", Component.translatable("screen.brnquest.selection.copy", contextSelection.size()), false)
-                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
-                    .action("DELETE_SELECTION", Component.translatable("screen.brnquest.selection.delete", contextSelection.size()), true));
-            case SELECTION -> EditorPopupMenu.menu(menu -> menu
-                    .action("COPY_SELECTION_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
-                    .action("PASTE_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.paste"), false, canPasteQuestClipboard())
-                    .action("COPY_SELECTION", Component.translatable("screen.brnquest.selection.copy", contextSelection.size()), false)
-                    .action("DELETE_SELECTION", Component.translatable("screen.brnquest.selection.delete", contextSelection.size()), true)
-                    .action("CLEAR_SELECTION", Component.translatable("screen.brnquest.selection.clear"), false));
-            case NODE -> EditorPopupMenu.menu(menu -> menu
-                    .action("SELF_FORCE_QUEST", Component.translatable("screen.brnquest.admin.self_force"), false,
-                            canManageProgress(editContextTarget, null))
-                    .action("SELF_RESET_QUEST", Component.translatable("screen.brnquest.admin.self_reset"), true,
-                            canManageProgress(editContextTarget, null))
-                    .action("ADMIN_QUEST", adminProgressLabel(editContextTarget, null), false,
-                            canManageProgress(editContextTarget, null))
-                    .action("SET_CHAPTER_AUTOFOCUS", Component.translatable("screen.brnquest.chapter.autofocus.set_here"), false)
-                    .action("COPY_QUEST_SNAPSHOT", Component.translatable("screen.brnquest.quest_clipboard.copy"), false)
-                    .action("COPY_QUEST", Component.translatable("screen.brnquest.editor.context.copy_quest"), false)
-                    .action("DELETE_QUEST", Component.translatable(
-                            "screen.brnquest.editor.context.delete_quest"), true)).stream()
-                    .filter(entry -> !(entry.action().equals("ADMIN_QUEST") || entry.action().startsWith("SELF_"))
-                            || hasAdminProgressPermission()).toList();
-            case GROUP -> EditorPopupMenu.menu(menu -> menu
-                    .action("ADD_CHAPTER", Component.translatable(
-                            "screen.brnquest.editor.context.add_chapter"), false)
-                    .action("RENAME_GROUP", Component.translatable("screen.brnquest.editor.structure.group_properties"), false)
-                    .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
-                            .action("MOVE_GROUP_UP", Component.translatable(
-                                    "screen.brnquest.editor.context.move_up"), false)
-                            .action("MOVE_GROUP_DOWN", Component.translatable(
-                                    "screen.brnquest.editor.context.move_down"), false))
-                    .action("DELETE_GROUP", Component.translatable("screen.brnquest.editor.context.delete"), true));
-            case CHAPTER -> EditorPopupMenu.menu(menu -> menu
-                    .action("COPY_CHAPTER", Component.translatable("screen.brnquest.chapter.copy"), false)
-                    .action("RENAME_CHAPTER", Component.translatable(
-                            "screen.brnquest.editor.structure.chapter_properties"), false)
-                    .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
-                            .action("MOVE_CHAPTER_UP", Component.translatable(
-                                    "screen.brnquest.editor.context.move_up"), false)
-                            .action("MOVE_CHAPTER_DOWN", Component.translatable(
-                                    "screen.brnquest.editor.context.move_down"), false))
-                    .action("DELETE_CHAPTER", Component.translatable(
-                            "screen.brnquest.editor.context.delete"), true));
-            case TYPED_ENTRY -> EditorPopupMenu.menu(menu -> menu
-                    .action("SELF_FORCE_TASK", Component.translatable("screen.brnquest.admin.self_force"), false,
-                            canManageProgress(typedEntries.target(), editContextTarget))
-                    .action("SELF_RESET_TASK", Component.translatable("screen.brnquest.admin.self_reset"), true,
-                            canManageProgress(typedEntries.target(), editContextTarget))
-                    .action("ADMIN_TASK", adminProgressLabel(typedEntries.target(), editContextTarget), false,
-                            canManageProgress(typedEntries.target(), editContextTarget))
-                    .action("EDIT_TYPED", Component.translatable(
-                            "screen.brnquest.editor.action.edit"), false)
-                    .action("COPY_TYPED_SNAPSHOT", Component.translatable("screen.brnquest.clipboard.copy"), false)
-                    .action("COPY_TYPED", Component.translatable(
-                            "screen.brnquest.editor.action.copy"), false)
-                    .submenu(Component.translatable("screen.brnquest.editor.context.move"), move -> move
-                            .action("MOVE_TYPED_UP", Component.translatable(
-                                    "screen.brnquest.editor.context.move_up"), false,
-                                    editContextTypedIndex > 0)
-                            .action("MOVE_TYPED_DOWN", Component.translatable(
-                                    "screen.brnquest.editor.context.move_down"), false,
-                                    selectedQuest() != null && editContextTypedIndex >= 0
-                                            && editContextTypedIndex + 1 < typedEntries.kind().size(selectedQuest())))
-                    .submenu(Component.translatable("screen.brnquest.editor.context.technical"), technical -> technical
-                            .action("COPY_TYPED_ID", Component.translatable(
-                                    "screen.brnquest.editor.context.copy_stable_id"), false)
-                            .action("COPY_TYPED_TYPE", Component.translatable(
-                                    "screen.brnquest.editor.context.copy_type_id"), false))
-                    .action("DELETE_TYPED", Component.translatable(
-                            "screen.brnquest.editor.context.delete"), true)).stream()
-                    .filter(entry -> !(entry.action().equals("ADMIN_TASK") || entry.action().startsWith("SELF_"))
-                            || typedEntries.kind() == QuestTypedEntryKind.TASK && hasAdminProgressPermission()).toList();
-            case DEPENDENCY_ENTRY -> EditorPopupMenu.menu(menu -> menu
-                    .submenu(Component.translatable("screen.brnquest.editor.context.technical"), technical -> technical
-                            .action("COPY_DEPENDENCY_ID", Component.translatable(
-                                    "screen.brnquest.editor.context.copy_quest_id"), false))
-                    .action("REMOVE_DEPENDENCY", Component.translatable(
-                            "screen.brnquest.editor.dependency.remove"), true));
-            case NONE -> List.of();
-        };
-    }
-
-    private EditorPopupMenu.CascadeLayout editContextLayout(List<EditorPopupMenu.Entry> entries) {
-        UiRect root = editContextBounds(entries.size());
-        return EditorPopupMenu.cascadeLayout(root, entries, editContextSubmenu, width,
-                topToolbarHeight(), height - bottomToolbarHeight(), 142);
-    }
-
-    private UiRect editContextBounds(int rows) {
-        return EditorPopupMenu.layout(editContextX, editContextY, width,
-                topToolbarHeight(), height - bottomToolbarHeight(), 142, rows);
-    }
-
-    private void openEditContext(ContextKind kind, ResourceLocation target, int x, int y,
-                                 double graphX, double graphY) {
+    private void openEditContext(QuestContextMenu.Context context) {
+        if (!context.scope().editing()) return;
         closeActiveEditorOverlay();
-        editContextKind = kind;
-        editContextTarget = target;
-        editContextX = x;
-        editContextY = y;
-        editContextSubmenu = -1;
-        editContextTypedIndex = -1;
-        editContextGraphX = graphX;
-        editContextGraphY = graphY;
+        contextMenu.open(context);
         editorOverlays.show(EditorOverlayHost.Kind.CONTEXT_MENU);
     }
 
+    private void openEditContext(QuestContextMenu.Kind kind, ResourceLocation target, int x, int y) {
+        openEditContext(new QuestContextMenu.Context(EditorSessionLifecycle.Scope.capture(ClientEditorState.get()),
+                kind, target, null, null, Set.of(), x, y, 0, 0));
+    }
+
     private void openTypedEntryContext(ResourceLocation id, int x, int y) {
-        QuestDefinition quest = selectedQuest();
-        if (quest == null) return;
-        // Resolve ordering at dispatch time; a row's stable ID is never an old list index.
-        for (int index = 0; index < typedEntries.kind().size(quest); index++) {
-            if (!typedEntries.kind().value(quest, index).id().equals(id)) continue;
-            openEditContext(ContextKind.TYPED_ENTRY, id, x, y, 0, 0);
-            editContextTypedIndex = index;
-            return;
-        }
+        var context = new QuestContextMenu.Context(EditorSessionLifecycle.Scope.capture(ClientEditorState.get()),
+                QuestContextMenu.Kind.TYPED_ENTRY, id, typedEntries.target(), typedEntries.kind(),
+                Set.of(), x, y, 0, 0);
+        if (context.typedIndex(selectedQuest()) >= 0) openEditContext(context);
     }
 
     private void openDependencyEntryContext(ResourceLocation dependencyId, int x, int y) {
-        openEditContext(ContextKind.DEPENDENCY_ENTRY, dependencyId, x, y, 0, 0);
+        openEditContext(new QuestContextMenu.Context(EditorSessionLifecycle.Scope.capture(ClientEditorState.get()),
+                QuestContextMenu.Kind.DEPENDENCY_ENTRY, dependencyId, dependencies.target(), null,
+                Set.of(), x, y, 0, 0));
     }
 
-    private void closeEditContext() {
-        editContextKind = ContextKind.NONE;
-        editContextTarget = null;
-        editContextSubmenu = -1;
-        editContextTypedIndex = -1;
-        if (editorOverlays.isOpen(EditorOverlayHost.Kind.CONTEXT_MENU)) editorOverlays.close();
-    }
-
-    private void performTypedContextAction(String action, ResourceLocation typedId,
-                                           int index, QuestBookDefinition book) {
+    private void performTypedContextAction(QuestContextMenu.Action action, QuestContextMenu.Context context,
+                                           QuestBookDefinition book) {
         QuestDefinition quest = selectedQuest();
-        if (quest == null || typedId == null || index < 0 || index >= typedEntries.kind().size(quest)) return;
+        ResourceLocation typedId = context.target();
+        int index = context.typedIndex(quest);
+        if (index < 0) return;
         String prefix = typedEntries.kind().actionPrefix();
         switch (action) {
-            case "EDIT_TYPED" -> typedPropertySection.openEditor(quest, typedId);
-            case "COPY_TYPED_SNAPSHOT" -> typedEntries.copy(typedId);
-            case "COPY_TYPED" -> {
+            case EDIT_TYPED -> typedPropertySection.openEditor(quest, typedId);
+            case COPY_TYPED_SNAPSHOT -> typedEntries.copy(typedId);
+            case COPY_TYPED -> {
                 ResourceLocation copyId = EditorObjectIds.suggest(book, typedEntries.kind().idStem() + "_copy");
                 sendMutation("COPY_" + prefix, copyId, quest.id(), typedId, "", 0, 0, 0, List.of());
             }
-            case "MOVE_TYPED_UP" -> {
+            case MOVE_TYPED_UP -> {
                 if (index > 0) sendMutation("MOVE_" + prefix, typedId, quest.id(), null, "",
                         index - 1, 0, 0, List.of());
             }
-            case "MOVE_TYPED_DOWN" -> {
+            case MOVE_TYPED_DOWN -> {
                 if (index + 1 < typedEntries.kind().size(quest)) {
                     sendMutation("MOVE_" + prefix, typedId, quest.id(), null, "",
                             index + 1, 0, 0, List.of());
                 }
             }
-            case "COPY_TYPED_ID" -> copyTechnicalId(typedId.toString());
-            case "COPY_TYPED_TYPE" -> {
+            case COPY_TYPED_ID -> copyTechnicalId(typedId.toString());
+            case COPY_TYPED_TYPE -> {
                 QuestTypedEntryKind.Entry entry = typedEntries.kind().entry(quest, typedId);
                 if (entry != null) copyTechnicalId(entry.typeId().toString());
             }
-            case "DELETE_TYPED" ->
+            case DELETE_TYPED ->
                     sendMutation("DELETE_" + prefix, typedId, quest.id(), null, "", 0, 0, 0, List.of());
             default -> { }
         }
@@ -2215,7 +2117,10 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             case CATALOG -> bookWorkflow.closeCatalog();
             case DRAFT_VERSIONS -> bookWorkflow.closeVersions();
             case DRAFT_RESTORE_CONFIRMATION -> bookWorkflow.closeRestore();
-            case CONTEXT_MENU -> closeEditContext();
+            case CONTEXT_MENU -> {
+                contextMenu.close();
+                editorOverlays.close();
+            }
             case ENUM_DROPDOWN -> closeEnumDropdown();
             case STRUCTURE_FORM -> structure.close();
             case DEPENDENCY_PICKER -> dependencies.closePicker();
@@ -3153,26 +3058,27 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
             }
             case OPEN_NODE_CONTEXT -> {
                 QuestDefinition quest = snapshot.quests().get(intent.targetId());
-                if (ClientEditorState.get().editing() && quest != null) {
+                if (ClientEditorState.get().editing() && quest != null && chapter != null) {
                     boolean multiple = canvasController.selectionCount() > 1;
-                    openEditContext(multiple ? ContextKind.SELECTION : ContextKind.NODE, quest.id(), intent.pointerX(), intent.pointerY(),
-                            quest.x(), quest.y());
-                    contextSelection = multiple ? canvasController.allSelection() : java.util.Set.of();
+                    openCanvasContext(multiple ? QuestContextMenu.Kind.SELECTION : QuestContextMenu.Kind.NODE,
+                            chapter.id(), quest.id(), intent, quest.x(), quest.y(),
+                            multiple ? canvasController.allSelection() : Set.of());
                 }
             }
             case OPEN_CANVAS_CONTEXT -> {
                 if (ClientEditorState.get().editing() && chapter != null) {
                     boolean multiple = canvasController.selectionCount() > 1;
-                    openEditContext(multiple ? ContextKind.SELECTION : ContextKind.CANVAS, null, intent.pointerX(), intent.pointerY(),
-                            intent.questX(), intent.questY());
-                    contextSelection = multiple ? canvasController.allSelection() : java.util.Set.of();
+                    openCanvasContext(multiple ? QuestContextMenu.Kind.SELECTION : QuestContextMenu.Kind.CANVAS,
+                            chapter.id(), null, intent, intent.questX(), intent.questY(),
+                            multiple ? canvasController.allSelection() : Set.of());
                 }
             }
             case OPEN_DECORATION_CONTEXT -> {
                 if (ClientEditorState.get().editing() && chapter != null) {
-                    openEditContext(canvasController.selectionCount() > 1 ? ContextKind.SELECTION : ContextKind.DECORATION,
-                            intent.targetId(), intent.pointerX(), intent.pointerY(), intent.questX(), intent.questY());
-                    contextSelection = canvasController.allSelection();
+                    QuestContextMenu.Kind kind = canvasController.selectionCount() > 1
+                            ? QuestContextMenu.Kind.SELECTION : QuestContextMenu.Kind.DECORATION;
+                    openCanvasContext(kind, chapter.id(), intent.targetId(), intent, intent.questX(), intent.questY(),
+                            canvasController.allSelection());
                 }
             }
             case MOVE_CANVAS_SELECTION -> {
@@ -3197,6 +3103,13 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
                 }
             }
         }
+    }
+
+    /** The popup keeps the chapter and selection from the canvas event that opened it. */
+    private void openCanvasContext(QuestContextMenu.Kind kind, ResourceLocation chapter, ResourceLocation target,
+                                   QuestCanvasController.Intent intent, double graphX, double graphY, Set<ResourceLocation> selection) {
+        openEditContext(new QuestContextMenu.Context(EditorSessionLifecycle.Scope.capture(ClientEditorState.get()),
+                kind, target, chapter, null, selection, intent.pointerX(), intent.pointerY(), graphX, graphY));
     }
 
     private ChapterDefinition currentChapter() {
@@ -3491,8 +3404,6 @@ public final class QuestScreen extends Screen implements RecipeLookupSource, Tra
     private int detailViewportHeight() {
         return Math.max(1, detailContentBottom() - detailContentTop());
     }
-
-    private enum ContextKind { NONE, CANVAS, NODE, DECORATION, SELECTION, GROUP, CHAPTER, TYPED_ENTRY, DEPENDENCY_ENTRY }
 
     private enum DeleteKind { NONE, GROUP, CHAPTER, QUEST }
 

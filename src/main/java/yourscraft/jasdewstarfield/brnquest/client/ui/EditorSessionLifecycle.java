@@ -5,7 +5,12 @@ import yourscraft.jasdewstarfield.brnquest.client.ClientEditorState;
 
 /** Emits one invalidation per lease/book transition, shared by every editing module. */
 final class EditorSessionLifecycle {
-    record Scope(UUID session, ResourceLocation book, boolean editing) {}
+    /** Shared identity used both for overlay invalidation and for dispatch before the next tick. */
+    record Scope(UUID session, ResourceLocation book, boolean editing) {
+        static Scope capture(ClientEditorState editor) {
+            return new Scope(editor.sessionId(), editor.bookId(), canEdit(editor));
+        }
+    }
     private Scope previous;
     /** Only an authoritative denial revokes input; heartbeat latency and retryable form errors retain it. */
     static boolean canEdit(ClientEditorState editor) {
